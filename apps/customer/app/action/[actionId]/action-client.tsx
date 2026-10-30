@@ -1,8 +1,9 @@
 "use client"
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
-import { ACTION_UNAVAILABLE } from "@/lib/access"
-import { CUSTOMER_OTP_DIGITS, normalizeCustomerOtp } from "@/lib/otp"
+import { ACTION_CODE_INVALID, ACTION_OTP_RETRY, ACTION_RATE_LIMITED, ACTION_UNAVAILABLE } from "@/lib/access"
+import { CUSTOMER_OTP_PATTERN } from "@/lib/otp"
+import { OtpInput } from "@/app/login/otp-input"
 import { AgreementAcceptanceClosed, PaidServiceAgreementDocument } from "@/lib/commercial/agreement-document"
 import { CustomerQuotation } from "@/lib/commercial/quotation"
 import { assignTrustedStripeCheckout, trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
@@ -14,10 +15,6 @@ function ActionFrame({ children, wide = false }: { children: React.ReactNode; wi
   return (
     <div className={styles.action}>
       <div className={`${styles.actionCard} ${styles.page} ${wide ? styles.wide : ""}`}>
-        <p className={styles.brandRow}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/profile-relaunch-logo.png" alt="ProfileRelaunch" />
-        </p>
         <p className={styles.kicker}>Secure action</p>
         {children}
       </div>
@@ -158,17 +155,37 @@ function formatGbp(minor: number): string {
   return `${minor < 0 ? "-" : ""}£${Math.floor(absolute / 100)}.${String(absolute % 100).padStart(2, "0")}`
 }
 
-export function ActionClient({ actionId }: { actionId: string }) {
+type ActionPreview = {
+  phase?: "start" | "otp" | "unavailable"
+  maskedEmail?: string
+  otpSent?: boolean
+  code?: string
+  message?: string
+  resendIn?: number
+  pending?: "" | "send" | "resend" | "verify"
+}
+
+/**
+ * `preview` paints a verification state for a local visual fixture.
+ * The action page does not pass it, and it is not read from the request.
+ */
+export function ActionClient({ actionId, preview }: { actionId: string; preview?: ActionPreview }) {
   const router = useRouter()
-  const [phase, setPhase] = useState<"start" | "otp" | "review" | "done" | "unavailable">("start")
-  const [otpSent, setOtpSent] = useState(false)
-  const [resendReady, setResendReady] = useState(false)
-  const [message, setMessage] = useState("")
-  const [maskedEmail, setMaskedEmail] = useState("")
+  const [phase, setPhase] = useState<"start" | "otp" | "review" | "done" | "unavailable">(preview?.phase ?? "start")
+  const [otpSent, setOtpSent] = useState(preview?.otpSent ?? false)
+  const [resendIn, setResendIn] = useState(preview?.resendIn ?? 0)
+  const [message, setMessage] = useState(preview?.message ?? "")
+  const [maskedEmail, setMaskedEmail] = useState(preview?.maskedEmail ?? "")
+  const [code, setCode] = useState(preview?.code ?? "")
+  const [pending, setPending] = useState<"" | "send" | "resend" | "verify">(preview?.pending ?? "")
   const [session, setSession] = useState<Session | null>(null)
   const secretRef = useRef<string | null>(null)
-  const resendTimer = useRef<number | null>(null)
+  const codeInput = useRef<HTMLInputElement>(null)
+  const busyRef = useRef(false)
+  const paintOnly = preview !== undefined
+  const holdingResend = resendIn > 0
   useEffect(() => {
+    if (paintOnly) return
     let active = true
     if (secretRef.current === null) {
       const hash = window.location.hash
@@ -195,44 +212,79 @@ export function ActionClient({ actionId }: { actionId: string }) {
       active = false
       window.clearTimeout(timer)
     }
-  }, [actionId])
-  useEffect(() => () => { if (resendTimer.current) window.clearTimeout(resendTimer.current) }, [])
+  }, [actionId, paintOnly])
+  useEffect(() => {
+    if (paintOnly || !holdingResend) return
+    const timer = window.setInterval(() => setResendIn(current => (current > 0 ? current - 1 : 0)), 1000)
+    return () => window.clearInterval(timer)
+  }, [paintOnly, holdingResend])
+  useEffect(() => {
+    if (phase === "otp" && otpSent) codeInput.current?.focus()
+  }, [phase, otpSent])
 
-  function armResendWindow() {
-    setResendReady(false)
-    if (resendTimer.current) window.clearTimeout(resendTimer.current)
-    resendTimer.current = window.setTimeout(() => setResendReady(true), 60_000)
-  }
-
-  async function sendOtp(event: FormEvent) {
-    event.preventDefault()
+  async function sendOtp(event?: FormEvent) {
+    event?.preventDefault()
+    if (busyRef.current || pending || resendIn > 0) return
+    busyRef.current = true
+    setPending(otpSent ? "resend" : "send")
     setMessage("")
-    const response = await fetch("/api/action/otp", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
-    const result = await response.json() as { message?: string; maskedEmail?: string }
-    if (!response.ok) {
-      if (response.status === 429) { setMessage(result.message || ACTION_UNAVAILABLE); return }
-      setPhase("unavailable")
-      return
+    try {
+      const response = await fetch("/api/action/otp", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+      const result = await response.json() as { message?: string; maskedEmail?: string }
+      if (!response.ok) {
+        if (response.status === 429) {
+          setMessage(ACTION_RATE_LIMITED)
+          setResendIn(60)
+          return
+        }
+        setPhase("unavailable")
+        return
+      }
+      setMaskedEmail(result.maskedEmail || maskedEmail)
+      setOtpSent(true)
+      setCode("")
+      setMessage("")
+      setResendIn(60)
+    } catch {
+      setMessage(ACTION_OTP_RETRY)
+    } finally {
+      busyRef.current = false
+      setPending("")
     }
-    const nextMasked = result.maskedEmail || maskedEmail
-    setMaskedEmail(nextMasked)
-    setOtpSent(true)
-    setMessage("")
-    armResendWindow()
   }
   async function verify(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (busyRef.current || pending || !CUSTOMER_OTP_PATTERN.test(code)) return
+    busyRef.current = true
+    setPending("verify")
     setMessage("")
-    const code = new FormData(event.currentTarget).get("code")
-    const response = await fetch("/api/action/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }) })
-    const result = await response.json() as { message?: string; session?: Session }
-    if (!response.ok || !result.session) { setPhase("unavailable"); return }
-    if (result.session.kind === "CASE_ACCESS" || result.session.kind === "COMMUNICATION_ACCESS") {
-      router.push("/case")
-      return
+    try {
+      const response = await fetch("/api/action/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }) })
+      const result = await response.json() as { message?: string; reason?: string; session?: Session }
+      if (response.status === 429) {
+        setMessage(ACTION_RATE_LIMITED)
+        return
+      }
+      if (!response.ok || !result.session) {
+        if (result.reason === "invalid_code") {
+          setMessage(ACTION_CODE_INVALID)
+          return
+        }
+        setPhase("unavailable")
+        return
+      }
+      if (result.session.kind === "CASE_ACCESS" || result.session.kind === "COMMUNICATION_ACCESS") {
+        router.push("/case")
+        return
+      }
+      setSession(result.session)
+      setPhase("review")
+    } catch {
+      setMessage(ACTION_OTP_RETRY)
+    } finally {
+      busyRef.current = false
+      setPending("")
     }
-    setSession(result.session)
-    setPhase("review")
   }
   async function decide(operation: "accept" | "decline" | "revoke", extra: Record<string, unknown>) {
     setMessage("")
@@ -279,24 +331,46 @@ export function ActionClient({ actionId }: { actionId: string }) {
     setMessage(result.message || "Consent recorded. No fee is due today.")
   }
 
-  if (phase === "unavailable") return <ActionFrame><section><h1>This link is not available</h1><p>{ACTION_UNAVAILABLE}</p><p className={styles.next}>Request a new link from ProfileRelaunch, or return to the page that sent you here. Do not reuse an expired code.</p></section></ActionFrame>
-  if (phase === "start") return <ActionFrame><section><h1>Secure action</h1><p className="muted">Checking this link…</p></section></ActionFrame>
-  if (phase === "otp") return <ActionFrame><section>
-    <h1>Confirm it is you</h1>
-    {!otpSent && <>
-      <p>A one-time code will be sent to {maskedEmail || "the verified email for this action"}.</p>
-      <form onSubmit={sendOtp}><button type="submit">Send code</button></form>
-    </>}
-    {otpSent && <>
-      <p>We sent an eight-digit code to {maskedEmail}.</p>
-      <form onSubmit={verify}>
-        <label>Eight-digit code<input name="code" inputMode="numeric" pattern={`[0-9]{${CUSTOMER_OTP_DIGITS}}`} maxLength={CUSTOMER_OTP_DIGITS} required autoComplete="one-time-code" onInput={event => { event.currentTarget.value = normalizeCustomerOtp(event.currentTarget.value) }} /></label>
-        <button type="submit">Verify code</button>
-      </form>
-      {resendReady && <form onSubmit={sendOtp}><button className="secondary" type="submit">Resend code</button></form>}
-    </>}
-    <p role="status">{message}</p>
-  </section></ActionFrame>
+  if (phase === "unavailable") return <section className="auth-card" data-phase="unavailable">
+    <p className="eyebrow">Secure action</p>
+    <h1>This link is not available</h1>
+    <p className="lead">{ACTION_UNAVAILABLE}</p>
+    <p className={styles.next}>Request a new link from ProfileRelaunch, or return to the page that sent you here. Do not reuse an expired code.</p>
+  </section>
+  if (phase === "start") return <section className="auth-card" data-phase="start">
+    <p className="eyebrow">Secure action</p>
+    <h1>Secure action</h1>
+    <p className="muted">Checking this link…</p>
+  </section>
+  if (phase === "otp") {
+    const recipient = maskedEmail || "the verified email for this action"
+    const codeInvalid = message === ACTION_CODE_INVALID
+    return <section className="auth-card" data-phase={otpSent ? "code" : "send"}>
+      <p className="eyebrow">Secure action</p>
+      <h1>Confirm it&apos;s you</h1>
+      <p className="lead" role="status">{otpSent ? `We sent an eight-digit code to ${recipient}.` : `A one-time code will be sent to ${recipient}.`}</p>
+      <p className="auth-note">This code confirms this secure action only. It does not sign you in to the customer portal.</p>
+      {!otpSent && <form onSubmit={sendOtp} aria-busy={pending === "send"}>
+        {message ? <p id="action-send-error" className="notice-danger" role="alert">{message}</p> : null}
+        <button type="submit" disabled={pending !== "" || resendIn > 0}>
+          {pending === "send" ? "Sending code…" : resendIn > 0 ? <>Send code (<span className="auth-count">{resendIn}</span>)</> : "Send code"}
+        </button>
+      </form>}
+      {otpSent && <>
+        <form onSubmit={verify} aria-busy={pending === "verify"}>
+          <label htmlFor="action-code">Eight-digit code</label>
+          <OtpInput id="action-code" value={code} onChange={setCode} inputRef={codeInput} invalid={codeInvalid} describedBy={codeInvalid ? "action-code-error" : undefined} />
+          {message ? <p id="action-code-error" className="notice-danger" role="alert">{message}</p> : null}
+          <button type="submit" disabled={pending !== "" || !CUSTOMER_OTP_PATTERN.test(code)}>{pending === "verify" ? "Verifying…" : "Verify code"}</button>
+        </form>
+        <div className="button-row">
+          <button type="button" className="secondary" disabled={pending !== "" || resendIn > 0} onClick={() => void sendOtp()}>
+            {pending === "resend" ? "Sending a new code…" : resendIn > 0 ? <>Resend code (<span className="auth-count">{resendIn}</span>)</> : "Resend code"}
+          </button>
+        </div>
+      </>}
+    </section>
+  }
   if (phase === "done") return <ActionFrame><section><h1>Secure action</h1><p>{message}</p><p className={styles.next}>You can close this page. If this step continues in the customer portal, sign in there to see the updated case.</p></section></ActionFrame>
   const agreement = session?.agreement
   const quote = session?.quote

@@ -17,3 +17,12 @@ export const privateResponseHeaders = {
 
 export const ACTION_UNAVAILABLE =
   "This secure action is unavailable or has expired. Contact ProfileRelaunch if you need a new link."
+
+export const ACTION_CODE_INVALID =
+  "That code is not valid. Check the eight digits and try again."
+
+export const ACTION_RATE_LIMITED =
+  "Please wait a moment before requesting another code."
+
+export const ACTION_OTP_RETRY =
+  "We couldn't complete that request just now. Please try again in a moment."

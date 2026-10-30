@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import React from "react"
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
+import { ACTION_CODE_INVALID, ACTION_RATE_LIMITED, ACTION_UNAVAILABLE } from "@/lib/access"
 import { pdfPlainText } from "../../../../../lib/commercial/agreement-pdf"
 import { ActionClient } from "./action-client"
 
@@ -100,9 +101,12 @@ describe("customer action page", () => {
     expect(screen.queryByRole("button", { name: "Send code" })).toBeNull()
     expect(screen.getByRole("button", { name: "Verify code" })).toBeTruthy()
     expect(screen.getByLabelText("Eight-digit code")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Confirm it's you" })).toBeTruthy()
     expect(screen.getByText(/We sent an eight-digit code to d\*\*\*@gmail.com/)).toBeTruthy()
     expect(document.body.textContent).not.toContain("das.nabarun@gmail.com")
-    expect(screen.queryByRole("button", { name: "Resend code" })).toBeNull()
+    expect(screen.queryByRole("img", { name: "ProfileRelaunch" })).toBeNull()
+    expect(screen.getByRole("button", { name: /Resend code \(\d+\)/ })).toBeDisabled()
+    expect(document.querySelectorAll("[data-otp-slot]")).toHaveLength(8)
   })
 
   it("removes OTP controls and shows the agreement after verification", async () => {
@@ -112,6 +116,9 @@ describe("customer action page", () => {
     fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy())
+    const verifyCall = fetchMock.mock.calls.find(call => call[0] === "/api/action/verify")
+    expect(verifyCall?.[1]).toMatchObject({ method: "POST", body: JSON.stringify({ code: "12345678" }) })
+    expect(fetchMock.mock.calls.some(call => String(call[0]).includes("/api/portal"))).toBe(false)
     expect(screen.getByText("Managed recovery service agreement")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Send code" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Verify code" })).toBeNull()
@@ -668,7 +675,7 @@ describe("customer action page", () => {
     expect(screen.queryByLabelText("Eight-digit code")).toBeNull()
   })
 
-  it("keeps the send screen and shows the server message on 429", async () => {
+  it("keeps the send screen and shows the rate limit on 429", async () => {
     await renderAfterExchange()
     fetchMock.mockResolvedValueOnce({
       ok: false,
@@ -676,10 +683,162 @@ describe("customer action page", () => {
       json: async () => ({ message: "This secure action is unavailable or has expired. Contact ProfileRelaunch if you need a new link." }),
     })
     fireEvent.click(screen.getByRole("button", { name: "Send code" }))
-    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/unavailable or has expired/))
-    expect(screen.getByRole("button", { name: "Send code" })).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(ACTION_RATE_LIMITED))
+    expect(screen.getByRole("heading", { name: "Confirm it's you" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "This link is not available" })).toBeNull()
+    expect(screen.getByRole("button", { name: /Send code/ })).toBeDisabled()
     expect(screen.queryByText(/We sent an eight-digit code/)).toBeNull()
     expect(screen.queryByRole("button", { name: "Verify code" })).toBeNull()
     expect(screen.queryByLabelText("Eight-digit code")).toBeNull()
+    expect(fetchMock.mock.calls.filter(call => String(call[0]).includes("/api/portal"))).toHaveLength(0)
+  })
+})
+
+function slots() {
+  return [...document.querySelectorAll<HTMLElement>("[data-otp-slot]")]
+}
+
+describe("secure action OTP entry", () => {
+  it("fills eight slots, ignores other characters, and does not submit a short code", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    const code = screen.getByLabelText("Eight-digit code") as HTMLInputElement
+    expect(screen.getAllByRole("textbox")).toHaveLength(1)
+    expect(code).toHaveAttribute("autocomplete", "one-time-code")
+    expect(code).not.toHaveAttribute("maxlength")
+    expect(code).toHaveClass("otp-control")
+    fireEvent.change(code, { target: { value: "12a3-4" } })
+    expect(code).toHaveValue("1234")
+    expect(slots().map(slot => slot.textContent)).toEqual(["1", "2", "3", "4", "", "", "", ""])
+    expect(screen.getByRole("button", { name: "Verify code" })).toBeDisabled()
+    fireEvent.submit(code.closest("form")!)
+    expect(fetchMock.mock.calls.filter(call => call[0] === "/api/action/verify")).toHaveLength(0)
+  })
+
+  it("normalises a formatted paste and truncates an overlong paste without verifying", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    const code = screen.getByLabelText("Eight-digit code")
+    fireEvent.paste(code)
+    fireEvent.change(code, { target: { value: "12 34-5678" } })
+    expect(code).toHaveValue("12345678")
+    expect(slots().map(slot => slot.textContent).join("")).toBe("12345678")
+    fireEvent.change(code, { target: { value: "123456789999" } })
+    expect(code).toHaveValue("12345678")
+    expect(fetchMock.mock.calls.filter(call => call[0] === "/api/action/verify")).toHaveLength(0)
+  })
+
+  it("keeps one input for keyboard entry and focuses it from a slot", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    const code = screen.getByLabelText("Eight-digit code") as HTMLInputElement
+    await waitFor(() => expect(code).toHaveFocus())
+    expect(slots()[0]).toHaveAttribute("data-current", "true")
+    fireEvent.change(code, { target: { value: "12345678" } })
+    fireEvent.keyDown(code, { key: "Backspace" })
+    fireEvent.change(code, { target: { value: "1234567" } })
+    expect(screen.getAllByRole("textbox")).toHaveLength(1)
+    expect(code).toHaveValue("1234567")
+    await act(async () => { code.blur() })
+    expect(slots().every(slot => slot.getAttribute("data-current") === "false")).toBe(true)
+    fireEvent.mouseDown(slots()[3])
+    expect(code).toHaveFocus()
+    fireEvent.keyDown(code, { key: "Enter" })
+    expect(fetchMock.mock.calls.filter(call => call[0] === "/api/action/verify")).toHaveLength(0)
+  })
+
+  it("shows an invalid code on the verification screen and does not open the action", async () => {
+    let resolveVerify: (value: unknown) => void = () => {}
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
+    fetchMock.mockReturnValueOnce(new Promise(resolve => { resolveVerify = resolve }))
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    const verifying = await screen.findByRole("button", { name: "Verifying…" })
+    expect(verifying).toBeDisabled()
+    expect(verifying.closest("form")).toHaveAttribute("aria-busy", "true")
+    resolveVerify({ ok: false, status: 401, json: async () => ({ message: ACTION_CODE_INVALID, reason: "invalid_code" }) })
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(ACTION_CODE_INVALID))
+    expect(screen.getByRole("heading", { name: "Confirm it's you" })).toBeTruthy()
+    expect(screen.getByLabelText("Eight-digit code")).toHaveAttribute("aria-invalid", "true")
+    expect(screen.getByLabelText("Eight-digit code")).toHaveAttribute("aria-describedby", "action-code-error")
+    expect(document.querySelector(".otp-field")).toHaveAttribute("data-invalid", "true")
+    expect(screen.queryByRole("heading", { name: "This link is not available" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull()
+    const calls = fetchMock.mock.calls.filter(call => call[0] === "/api/action/verify")
+    expect(calls).toHaveLength(1)
+    expect(calls[0][1]).toMatchObject({ body: JSON.stringify({ code: "12345678" }) })
+    expect(fetchMock.mock.calls.some(call => String(call[0]).includes("/api/portal"))).toBe(false)
+  })
+
+  it("shows a rate limit during verification without treating the link as expired", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({ message: ACTION_UNAVAILABLE }) })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(ACTION_RATE_LIMITED))
+    expect(screen.getByRole("heading", { name: "Confirm it's you" })).toBeTruthy()
+    expect(screen.getByLabelText("Eight-digit code")).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "This link is not available" })).toBeNull()
+  })
+
+  it("shows an expired action when verification is no longer available", async () => {
+    await renderAfterExchange()
+    await sendCodeSuccessfully()
+    fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({ message: ACTION_UNAVAILABLE }) })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+    await waitFor(() => expect(screen.getByRole("heading", { name: "This link is not available" })).toBeTruthy())
+    expect(screen.getByText(ACTION_UNAVAILABLE)).toBeTruthy()
+    expect(screen.getByText(/Do not reuse an expired code/)).toBeTruthy()
+    expect(screen.queryByLabelText("Eight-digit code")).toBeNull()
+    expect(screen.queryByRole("img", { name: "ProfileRelaunch" })).toBeNull()
+  })
+
+  it("shows an expired link when the exchange itself is refused", async () => {
+    window.history.replaceState(null, "", `/action/${actionId}#t=${"b".repeat(64)}`)
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({ message: ACTION_UNAVAILABLE }) })
+    render(<ActionClient actionId={actionId} />)
+    await waitFor(() => expect(screen.getByRole("heading", { name: "This link is not available" })).toBeTruthy())
+    expect(screen.queryByRole("button", { name: "Send code" })).toBeNull()
+    expect(screen.queryByLabelText("Eight-digit code")).toBeNull()
+  })
+
+  it("waits out the resend hold, then posts only to the secure-action endpoint", async () => {
+    const ticks: Array<() => void> = []
+    const realInterval = window.setInterval.bind(window)
+    const spy = vi.spyOn(window, "setInterval").mockImplementation(((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+      if (timeout === 1000) {
+        ticks.push(() => {
+          if (typeof handler === "function") handler()
+        })
+        return 987654
+      }
+      return realInterval(handler, timeout, ...(args as []))
+    }) as typeof window.setInterval)
+    try {
+      await renderAfterExchange()
+      await sendCodeSuccessfully()
+      const held = screen.getByRole("button", { name: /Resend code \(\d+\)/ })
+      expect(held).toBeDisabled()
+      fireEvent.click(held)
+      expect(fetchMock.mock.calls.filter(call => call[0] === "/api/action/otp")).toHaveLength(1)
+      expect(ticks.length).toBeGreaterThan(0)
+      await act(async () => {
+        for (let step = 0; step < 60; step += 1) ticks[0]()
+      })
+      const ready = screen.getByRole("button", { name: "Resend code" })
+      expect(ready).toBeEnabled()
+      fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ status: "ok", maskedEmail: "d***@gmail.com" }) })
+      fireEvent.click(ready)
+      await waitFor(() => expect(fetchMock.mock.calls.filter(call => call[0] === "/api/action/otp")).toHaveLength(2))
+      const resend = fetchMock.mock.calls.filter(call => call[0] === "/api/action/otp")[1]
+      expect(resend[1]).toMatchObject({ method: "POST", body: "{}" })
+      expect(fetchMock.mock.calls.some(call => String(call[0]).includes("/api/portal"))).toBe(false)
+      await waitFor(() => expect(screen.getByRole("button", { name: /Resend code \(\d+\)/ })).toBeDisabled())
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

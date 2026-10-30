@@ -87,12 +87,37 @@ describe("customer progress presentation", () => {
     expect(unpublished?.find(step => step.code === "HANDOVER")?.position).toBe("upcoming")
     expect(ready?.some(step => step.code === "SUBMITTED" || step.code === "DECISION")).toBe(false)
     const handedOver = presentProgress("CLOSED", "FINISHED", { serviceTrack: "GUIDED", outcomeCode: null })
-    expect(handedOver?.find(step => step.position === "current")?.code).toBe("HANDOVER")
-    expect(handedOver?.some(step => step.code === "DECISION" || step.code === "SUBMISSION")).toBe(false)
     expect(customerProgressStep("CLOSED", "FINISHED", "GUIDED")).toBe("HANDOVER")
+    expect(handedOver?.some(step => step.position === "current")).toBe(false)
+    expect(handedOver?.every(step => step.position === "earlier")).toBe(true)
+    expect(handedOver?.map(step => step.code)).toEqual(["RECEIVED", "INFORMATION", "SERVICE_SETUP", "PREPARATION", "HANDOVER"])
+    expect(handedOver?.find(step => step.code === "HANDOVER")?.text).toBe("Pack ready for you. Completed.")
+    expect(handedOver?.some(step => step.code === "DECISION" || step.code === "SUBMISSION")).toBe(false)
+    const closedWithPack = presentProgress("CLOSED", "FINISHED", { serviceTrack: "GUIDED", outcomeCode: null, packPublished: true })
+    expect(closedWithPack?.find(step => step.code === "HANDOVER")?.position).toBe("earlier")
+    expect(closedWithPack?.some(step => step.position === "current")).toBe(false)
+    const closedWithoutPack = presentProgress("CLOSED", "FINISHED", { serviceTrack: "GUIDED", outcomeCode: null, packPublished: false })
+    expect(closedWithoutPack?.some(step => step.code === "HANDOVER")).toBe(false)
+    expect(closedWithoutPack?.find(step => step.code === "PREPARATION")?.text).toBe("Preparing your pack. Completed.")
+    expect(closedWithoutPack?.some(step => step.position === "current" || step.position === "upcoming")).toBe(false)
+    expect(closedWithoutPack?.some(step => step.code === "DECISION" || step.code === "SUBMISSION")).toBe(false)
+    expect(preparing?.find(step => step.code === "PREPARATION")?.ownerLabel).toBe("ProfileRelaunch")
+    const reopened = presentProgress("UNDER_REVIEW", "PREPARATION", { serviceTrack: "GUIDED", packPublished: false })
+    expect(reopened?.find(step => step.position === "current")?.label).toBe("Preparing your pack")
+    expect(reopened?.find(step => step.code === "HANDOVER")?.position).toBe("upcoming")
+    expect(reopened?.some(step => step.code === "DECISION" || step.code === "SUBMISSION")).toBe(false)
+    expect(presentProgress("UNDER_REVIEW", "PREPARATION", { serviceTrack: "MANAGED" })?.map(step => step.label)).toEqual([
+      "Case received",
+      "Information",
+      "Service setup",
+      "Preparing your case",
+      "Submitted to Google",
+      "Decision",
+    ])
     expect(customerProgressStep("CLOSED", "INITIAL_REVIEW", "GUIDED")).toBe("RECEIVED")
     const submitted = presentProgress("UNDER_REVIEW", "SUBMITTED", { serviceTrack: "GUIDED" })
     expect(submitted?.find(step => step.position === "current")?.label).toBe("Submission recorded")
+    expect(submitted?.find(step => step.position === "current")?.ownerLabel).toBe("Recorded")
     expect(submitted?.some(step => step.code === "DECISION")).toBe(false)
     const decided = presentProgress("CLOSED", "FINISHED", {
       serviceTrack: "GUIDED",
@@ -258,6 +283,45 @@ describe("what happens next", () => {
       body: "Your preparation is complete. Sending anything to Google is your choice, and a later Google decision is separate.",
       href: null,
     })
+    expect(presentNextStep({
+      ...base,
+      status: "CLOSED",
+      workStage: "FINISHED",
+      serviceTrack: "GUIDED",
+      packHref: "/portal/cases/PR-26-ABCDEF/documents",
+    })).toMatchObject({
+      title: "Your Guided preparation is complete",
+      body: "Your pack is ready for you. Sending it to Google is your choice, and a later Google decision is separate.",
+      href: "/portal/cases/PR-26-ABCDEF/documents",
+      actionLabel: "Open your pack",
+    })
+    expect(presentNextStep({
+      ...base,
+      status: "CLOSED",
+      workStage: "FINISHED",
+      serviceTrack: "GUIDED",
+      timeline: [{ code: "SUBMITTED_TO_GOOGLE" }],
+    })).toMatchObject({
+      title: "A submission has been recorded",
+      body: "We've recorded that this pack was sent to Google. That record is not a decision from Google.",
+    })
+    expect(presentNextStep({
+      ...base,
+      status: "CLOSED",
+      workStage: "FINISHED",
+      serviceTrack: "GUIDED",
+      timeline: [{ code: "GOOGLE_DECISION_RECORDED" }],
+    })).toMatchObject({
+      title: "A Google decision was recorded",
+      body: "We've recorded a decision from Google for this case.",
+    })
+    expect(presentNextStep({
+      ...base,
+      status: "CLOSED",
+      workStage: "FINISHED",
+      serviceTrack: "GUIDED",
+      timeline: [{ code: "GOOGLE_DECISION_RECORDED" }],
+    }).body).not.toMatch(/restored/i)
     expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "SUBMITTED", serviceTrack: "GUIDED" })).toMatchObject({
       title: "A submission has been recorded",
       body: "We've recorded that this pack was sent to Google. That record is not a decision from Google.",
@@ -282,7 +346,7 @@ describe("timeline wording", () => {
     expect(timelineMessage("CASE_PERMISSION_WITHDRAWN", null)).toBe("Case-management permission was withdrawn.")
     expect(timelineMessage("PAYMENT_RECEIVED", null)).toBe("We received a payment for this case.")
     expect(timelineMessage("PACK_PUBLISHED", null)).toBe("Your pack was published for you to download.")
-    expect(timelineMessage("NOTIFICATION_DELIVERED", null)).toBe("The pack-ready email was delivered. That record is not you reading it.")
+    expect(timelineMessage("NOTIFICATION_DELIVERED", null)).toBe("We emailed you to let you know your pack is ready.")
     expect(timelineMessage("SUBMITTED_TO_GOOGLE", null)).toBe("Your case was submitted to Google.")
     expect(timelineMessage("GOOGLE_DECISION_RECORDED", null)).toBe("A Google decision was recorded for your case.")
     expect(timelineMessage("CASE_COMPLETED", null)).toBe("This ProfileRelaunch case was completed.")

@@ -23,6 +23,7 @@ export function CaseDocuments({ documents }: { documents: CustomerCaseDocuments 
   const ready = documents.documents.length > 0 || documents.pack ? [{
     ...item,
     guidedPack: documents.pack !== null,
+    packEvidence: documents.pack ? "published" as const : "none" as const,
     packTitle: documents.pack?.title ?? null,
     files: documents.documents.map(file => ({
       ...file,
@@ -45,13 +46,17 @@ export function CaseDocuments({ documents }: { documents: CustomerCaseDocuments 
           <li aria-current="page">Documents and evidence</li>
         </ol>
       </nav>
-      <p className="case-ref">{item.reference}</p>
-      <h1>Documents and evidence</h1>
-      <p className="case-business">{item.businessName}</p>
-      {item.locationName ? <p className="case-location">{item.locationName}</p> : null}
-      <p>{caseTypeLabel(item.caseType)}{service ? ` · ${service}` : ""}</p>
+      <header className="case-summary-band documents-case-header">
+        <div>
+          <h1>Documents and evidence</h1>
+          <p className="case-identity-business">{item.businessName}</p>
+          {item.locationName ? <p className="case-location">{item.locationName}</p> : null}
+          <p className="case-service">{caseTypeLabel(item.caseType)}{service ? ` · ${service}` : ""}</p>
+          <p className="case-ref">{item.reference}</p>
+        </div>
+      </header>
 
-      {requests.length === 0 ? <p className="documents-status">Nothing is waiting for you to upload.</p> : (
+      {requests.length === 0 ? <p className="documents-status documents-empty">Nothing is waiting for you to upload.</p> : (
         <section className="documents-action" aria-labelledby="requests-heading">
           <h2 id="requests-heading">Action needed</h2>
           <ul className="document-list">

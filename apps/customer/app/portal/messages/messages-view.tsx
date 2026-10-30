@@ -1,6 +1,39 @@
+"use client"
+
+import { useId, useState } from "react"
 import { formatPortalDateTime } from "@/lib/portal/cases/model"
-import { messageParagraphs, messageTitle } from "@/lib/portal/messages/present"
+import { messageIsLong, messageParagraphs, messagePreview, messageTitle } from "@/lib/portal/messages/present"
 import type { CustomerMessageDetail, CustomerMessagePage, CustomerMessageThread } from "@/lib/portal/messages/parse"
+
+function MessageBody({ body }: { body: string }) {
+  const paragraphs = messageParagraphs(body)
+  const long = messageIsLong(body)
+  const [expanded, setExpanded] = useState(false)
+  const bodyId = useId()
+  if (!long) {
+    return (
+      <div className="message-body message-reading">
+        {paragraphs.map((paragraph, paragraphIndex) => (
+          <p key={paragraphIndex} className="preserve-lines">{paragraph}</p>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div className="message-body message-reading">
+      <div id={bodyId} className="preserve-lines">{expanded ? body : messagePreview(body)}</div>
+      <button
+        type="button"
+        className="message-disclosure"
+        aria-expanded={expanded}
+        aria-controls={bodyId}
+        onClick={() => setExpanded(open => !open)}
+      >
+        {expanded ? "Collapse message" : "Expand message"}
+      </button>
+    </div>
+  )
+}
 
 export function formatMessageTime(value: string) {
   return formatPortalDateTime(value)
@@ -37,13 +70,13 @@ export function MessagesView({ page, earlier }: { page: CustomerMessagePage; ear
       <p className="lead">Updates about your cases, kept in the order they were recorded.</p>
       {page.threads.length === 0 ? (
         earlier ? (
-          <>
+          <div className="state-panel messages-empty">
             <p>No earlier messages.</p>
             <p><a href="/portal/messages">Back to messages</a></p>
-          </>
-        ) : <p>You don&apos;t have any messages yet.</p>
+          </div>
+        ) : <p className="state-panel messages-empty">You don&apos;t have any messages yet.</p>
       ) : (
-        <ul className="messages-list">
+        <ul className="messages-list" aria-label="Message list">
           {page.threads.map(thread => {
             const title = messageTitle(thread.subject)
             const where = context(thread)
@@ -54,6 +87,7 @@ export function MessagesView({ page, earlier }: { page: CustomerMessagePage; ear
                   <span className="message-row-main">
                     <span className="message-row-title">{title}</span>
                     {where ? <span className="message-row-context">{where}</span> : null}
+                    {thread.preview ? <span className="message-row-preview">{thread.preview}</span> : null}
                     <span className="message-row-action">
                       View message
                       <span className="message-chevron" aria-hidden="true">›</span>
@@ -96,15 +130,11 @@ export function MessageView({ thread }: { thread: CustomerMessageDetail }) {
       <ol className="message-entries">
         {thread.entries.map((entry, index) => (
           <li key={`${entry.at}-${index}`}>
-            <article className="message-entry">
+            <article className={`message-entry ${entry.role === "ProfileRelaunch" ? "message-entry-team" : "message-entry-customer"}`}>
               <h2>{entry.role}</h2>
               <p><time dateTime={entry.at}>{formatMessageTime(entry.at)}</time></p>
               {entry.subject && entry.subject !== thread.subject ? <p>{entry.subject}</p> : null}
-              <div className="message-body">
-                {messageParagraphs(entry.body).map((paragraph, paragraphIndex) => (
-                  <p key={paragraphIndex} className="preserve-lines">{paragraph}</p>
-                ))}
-              </div>
+              <MessageBody body={entry.body} />
               {entry.delivery ? <p className="message-delivery">{entry.delivery}</p> : null}
             </article>
           </li>

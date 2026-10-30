@@ -16,7 +16,13 @@ export type ReadyFile = {
 
 type ReadyCase = PortalCaseContext & {
   files: ReadyFile[]
+  /**
+   * True only when a case documents read returned a published pack.
+   * The global documents list does not include that record.
+   */
   guidedPack: boolean
+  /** Where the pack fact came from. Global lists have no pack record. */
+  packEvidence?: "published" | "unavailable" | "none"
   packTitle?: string | null
   footer?: ReactNode
 }
@@ -45,9 +51,9 @@ function CaseIdentity({ item, count }: { item: PortalCaseContext; count?: number
   const service = serviceLabel(item.serviceTrack)
   return (
     <div className="document-case-identity">
-      <p className="case-ref">{item.reference}</p>
       <p className="document-case-business">{item.businessName}</p>
       {item.locationName ? <p className="document-case-location">{item.locationName}</p> : null}
+      <p className="case-ref">{item.reference}</p>
       <p className="document-case-service">
         {caseTypeLabel(item.caseType)}
         {service ? ` · ${service}` : ""}
@@ -59,7 +65,7 @@ function CaseIdentity({ item, count }: { item: PortalCaseContext; count?: number
 
 export function ActionNeeded({ needs }: { needs: EvidenceNeed[] }) {
   if (needs.length === 0) {
-    return <p className="documents-status">Nothing is waiting for you to upload.</p>
+    return <p className="documents-status documents-empty">Nothing is waiting for you to upload.</p>
   }
   const groups = groupByReference(needs)
   return (
@@ -89,7 +95,7 @@ export function ReadyForYou({ cases }: { cases: ReadyCase[] }) {
   return (
     <section className="documents-ready" aria-labelledby="published-heading">
       <h2 id="published-heading">Ready for you</h2>
-      {cases.length === 0 ? <p>ProfileRelaunch hasn&apos;t published any documents for you yet.</p> : (
+      {cases.length === 0 ? <p className="documents-empty">ProfileRelaunch hasn&apos;t published any documents for you yet.</p> : (
         <ul className="document-list">
           {cases.map(item => <ReadyCaseCard key={item.reference} item={item} />)}
         </ul>
@@ -108,6 +114,10 @@ function ReadyCaseCard({ item }: { item: ReadyCase }) {
           <p className="document-pack-title">{GUIDED_PACK_READY}</p>
           <p>{GUIDED_PACK_INSTRUCTIONS}</p>
         </div>
+      ) : item.serviceTrack === "GUIDED" && item.packEvidence === "unavailable" ? (
+        <p className="documents-status">Published documents are listed here. A submission pack is confirmed on the case documents page, and only after ProfileRelaunch has published one.</p>
+      ) : item.serviceTrack === "GUIDED" && item.packEvidence === "none" ? (
+        <p className="documents-status">ProfileRelaunch has not published a submission pack for this case.</p>
       ) : null}
       {item.files.length === 0 ? <p>ProfileRelaunch hasn&apos;t published any documents for this case yet.</p> : archiveFitsLimits(item.files) ? (
         <p>
@@ -140,7 +150,7 @@ function ReadyCaseCard({ item }: { item: ReadyCase }) {
 
 export function SubmittedEvidence({ submissions, expanded }: { submissions: EvidenceSubmission[]; expanded: boolean }) {
   if (submissions.length === 0) {
-    return <p className="documents-status">You haven&apos;t submitted any evidence yet.</p>
+    return <p className="documents-status documents-empty">You haven&apos;t submitted any evidence yet.</p>
   }
   const groups = groupByReference(submissions)
   return (
@@ -179,7 +189,10 @@ export function readyCases(documents: PublishedDocument[]): ReadyCase[] {
       serviceTrack: first.serviceTrack,
       businessName: first.businessName,
       locationName: first.locationName,
-      guidedPack: first.serviceTrack === "GUIDED",
+      // The global projection has published files and a service track, not a pack record.
+      // serviceTrack GUIDED is not evidence that a submission pack is published.
+      guidedPack: false,
+      packEvidence: "unavailable",
       files: group.items.map(item => ({
         selector: item.selector,
         title: item.title,

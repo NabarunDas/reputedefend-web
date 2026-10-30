@@ -128,8 +128,9 @@ describe("documents pages", () => {
     expect(action.compareDocumentPosition(ready) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(ready.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(history.closest("details")).toHaveAttribute("open")
-    expect(screen.getByText("Your submission pack is ready")).toBeTruthy()
-    expect(screen.getByText("You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you.")).toBeTruthy()
+    expect(screen.queryByText("Your submission pack is ready")).toBeNull()
+    expect(screen.queryByText("You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you.")).toBeNull()
+    expect(screen.getByText("Published documents are listed here. A submission pack is confirmed on the case documents page, and only after ProfileRelaunch has published one.")).toBeTruthy()
     expect(screen.getByText("letter.pdf")).toBeTruthy()
     expect(screen.getByText("PDF · 20 KB")).toBeTruthy()
     expect(screen.getByRole("link", { name: "Download Prepared letter" })).toHaveAttribute(
@@ -196,6 +197,14 @@ describe("documents pages", () => {
     expect(screen.getByRole("link", { name: "Download Prepared letter" })).toBeTruthy()
   })
 
+  it("does not call published Guided files a submission pack unless the case read includes one", () => {
+    render(<CaseDocuments documents={caseDocuments} />)
+    expect(screen.queryByText("Your submission pack is ready")).toBeNull()
+    expect(screen.queryByText("You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you.")).toBeNull()
+    expect(screen.getByText("ProfileRelaunch has not published a submission pack for this case.")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Download Prepared letter" })).toBeTruthy()
+  })
+
   it("uses the same download controls on a case page and keeps a closed case readable", () => {
     const withPack: CustomerCaseDocuments = {
       ...caseDocuments,
@@ -211,6 +220,7 @@ describe("documents pages", () => {
     }
     render(<CaseDocuments documents={withPack} />)
     expect(screen.getByText("Your submission pack is ready")).toBeTruthy()
+    expect(screen.queryByText("ProfileRelaunch has not published a submission pack for this case.")).toBeNull()
     expect(screen.getByText("Customer submission instructions")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Request a correction" })).toBeTruthy()
     expect(screen.getByRole("heading", { name: "control.pdf" })).toBeTruthy()

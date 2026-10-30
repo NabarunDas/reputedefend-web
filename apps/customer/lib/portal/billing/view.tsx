@@ -1,12 +1,13 @@
 import type { BillingDocument } from "../../../../../lib/billing/document"
+import styles from "./document.module.css"
 
 export function BillingUnavailable({ title }: { title: string }) {
   return (
-    <div className="billing-page state-panel">
+    <div className={`billing-page state-panel ${styles.page}`}>
       <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>{title}</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
-      <p className="case-back"><a href="/portal/payments">Back to payments</a></p>
+      <p className={styles.tools}><a className="portal-button secondary" href="/portal/payments">Back to payments</a></p>
     </div>
   )
 }
@@ -26,10 +27,10 @@ export function BillingDocumentScreen({
   backLabel: string
 }) {
   return (
-    <div className="billing-page">
-      <p className="billing-page-tools">
-        <a href={backHref}>{backLabel}</a>
-        <a href={downloadHref}>{downloadLabel}</a>
+    <div className={`billing-page ${styles.page}`}>
+      <p className={`billing-page-tools ${styles.tools}`}>
+        <a className="portal-button secondary" href={backHref}>{backLabel}</a>
+        <a className="portal-button" href={downloadHref}>{downloadLabel}</a>
       </p>
       <BillingDocumentView document={document} />
     </div>
@@ -39,7 +40,7 @@ export function BillingDocumentScreen({
 /** On-screen copy of a billing document. Downloads are a separate PDF of the same figures. */
 export function BillingDocumentView({ document }: { document: BillingDocument }) {
   return (
-    <article className="billing-document">
+    <article className={`billing-document ${styles.document}`}>
       <header className="billing-document-header">
         {/* The same static brand file is embedded in the PDF. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -66,6 +67,7 @@ export function BillingDocumentView({ document }: { document: BillingDocument })
           {document.billTo.email ? <p>{document.billTo.email}</p> : null}
         </section>
       </div>
+      <div className={styles.scroll}>
       <table className="billing-document-lines">
         <thead>
           <tr>
@@ -89,6 +91,8 @@ export function BillingDocumentView({ document }: { document: BillingDocument })
           ))}
         </tbody>
       </table>
+      </div>
+      <div className={styles.scroll}>
       <table className="billing-document-totals">
         <tbody>
           {document.totals.map(row => (
@@ -99,6 +103,7 @@ export function BillingDocumentView({ document }: { document: BillingDocument })
           ))}
         </tbody>
       </table>
+      </div>
       {document.details.length > 0 ? (
         <section className="billing-document-meta">
           <h2>{document.detailHeading}</h2>

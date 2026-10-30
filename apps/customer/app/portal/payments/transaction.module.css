@@ -1,0 +1,261 @@
+.page {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.action {
+  display: grid;
+  justify-items: center;
+  width: min(100%, 72rem);
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2.5rem;
+}
+
+.wide {
+  max-width: 52rem;
+}
+
+.summary,
+.panel,
+.returnCard,
+.actionCard,
+.profile,
+.location {
+  min-width: 0;
+  padding: 1.15rem 1.15rem 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.summaryHead,
+.brandRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.kicker {
+  margin: 0 0 0.2rem;
+  color: var(--green-dark);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.summary h1,
+.returnCard h1,
+.actionCard h1,
+.profile h1 {
+  margin: 0;
+  font-family: var(--font-display), var(--font-body), sans-serif;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1.25rem;
+  margin: 1rem 0 0;
+}
+
+.facts div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.facts dt,
+.moneyCaption {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.facts dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  margin: 0;
+  padding: 0.1rem 0.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.good { background: var(--lime); color: var(--green-dark); }
+.pending { background: var(--warm); color: var(--ink); }
+.problem { background: #f8e8e6; color: var(--danger); }
+.quiet { background: var(--paper); color: var(--muted); }
+
+.next {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border-left: 4px solid var(--green);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--paper);
+}
+
+.prose {
+  max-width: 65ch;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.brandRow img {
+  width: min(11.5rem, 70%);
+  height: auto;
+}
+
+.returnCard,
+.actionCard {
+  width: 100%;
+  max-width: 40rem;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.25rem 0 0;
+}
+
+.links a {
+  text-align: center;
+}
+
+.profile dl {
+  margin: 0;
+}
+
+.security {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.document {
+  overflow-wrap: anywhere;
+}
+
+.page :global(.payments-order),
+.page :global(.guard-location),
+.page :global(.service-section) {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+}
+
+.page :global(.service-section) {
+  padding: 1.15rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.page :global(.service-confirm),
+.page :global(.guard-action) {
+  border-radius: var(--radius-md);
+}
+
+.page :global(.checkbox),
+.page :global(.service-check) {
+  align-items: flex-start;
+  max-width: 65ch;
+  line-height: 1.45;
+}
+
+.page :global(button),
+.page :global(.portal-button) {
+  max-width: 100%;
+}
+
+@media (max-width: 767px) {
+  .facts,
+  .summaryHead {
+    grid-template-columns: 1fr;
+  }
+
+  .facts { display: grid; }
+
+  .links,
+  .links a,
+  .page :global(.portal-actions),
+  .page :global(.portal-actions) a,
+  .page :global(.guard-intro-actions),
+  .page :global(.guard-intro-actions) a,
+  .page :global(.button-row),
+  .page :global(.button-row) button,
+  .page :global(.service-confirm) button,
+  .page :global(.guard-action) button,
+  .page :global(.payments-obligation) button,
+  .page :global(.payments-refresh) button {
+    width: 100%;
+  }
+
+  .links,
+  .page :global(.portal-actions),
+  .page :global(.button-row) {
+    display: grid;
+  }
+}
+
+@media (max-width: 389px) {
+  .summary,
+  .panel,
+  .returnCard,
+  .actionCard,
+  .profile,
+  .location {
+    padding: 0.95rem;
+    border-radius: var(--radius-md);
+  }
+
+  .summary h1,
+  .returnCard h1,
+  .actionCard h1,
+  .profile h1 {
+    font-size: 1.65rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1024px) {
+  .summary,
+  .returnCard,
+  .actionCard,
+  .profile {
+    padding: 1.5rem 1.75rem;
+  }
+}
+
+@media (min-width: 1440px) {
+  .page { gap: 1.5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page :global(button:hover:not(:disabled)) { transform: none; }
+}

@@ -1,0 +1,115 @@
+.page {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.tools a {
+  text-align: center;
+}
+
+.scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.document {
+  min-width: 0;
+}
+
+@media (min-width: 641px) {
+  .scroll :global(.billing-document-lines),
+  .scroll :global(.billing-document-totals) {
+    min-width: 26rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .document.document :global(.billing-document-lines) thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .document.document :global(.billing-document-lines) tr {
+    display: block;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .document.document :global(.billing-document-lines) td {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.15rem 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .document.document :global(.billing-document-lines) td:first-child {
+    display: block;
+    padding-bottom: 0.35rem;
+    font-weight: 700;
+  }
+
+  .document.document :global(.billing-document-lines) td:nth-child(2)::before { content: "Qty"; }
+  .document.document :global(.billing-document-lines) td:nth-child(3)::before { content: "Unit price"; }
+  .document.document :global(.billing-document-lines) td:nth-child(4)::before { content: "Amount"; }
+
+  .document.document :global(.billing-document-lines) td:nth-child(n + 2)::before {
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .document.document :global(.billing-document-totals) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .document.document :global(.billing-document-totals) tr {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .document.document :global(.billing-document-totals) th,
+  .document.document :global(.billing-document-totals) td {
+    white-space: normal;
+  }
+
+  .document.document :global(.billing-document-totals) td {
+    font-weight: 800;
+  }
+}
+
+.document :global(p),
+.document :global(h1),
+.document :global(h2),
+.document :global(dd) {
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 767px) {
+  .tools,
+  .tools a {
+    display: grid;
+    width: 100%;
+  }
+}

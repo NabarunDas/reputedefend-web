@@ -29,7 +29,7 @@ function actionFor(actions: ServiceAction[], kind: ServiceAction["kind"], target
 
 export function ServiceUnavailable() {
   return (
-    <div className="service-page">
+    <div className="service-page state-panel">
       <h1>We couldn&apos;t load service details</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
       <p className="case-back"><a href="/portal/cases">Back to cases</a></p>

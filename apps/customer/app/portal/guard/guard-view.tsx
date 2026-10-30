@@ -17,7 +17,7 @@ function slotKey(keys: { current: Record<string, string> }, slot: string) {
 
 export function GuardUnavailable() {
   return (
-    <div className="guard-page">
+    <div className="guard-page state-panel">
       <h1>We couldn&apos;t load Relaunch Guard</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
       <p className="case-back"><a href="/portal">Back to your dashboard</a></p>

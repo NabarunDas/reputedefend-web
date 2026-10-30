@@ -8,13 +8,13 @@ import { SignOutButton } from "./sign-out-button"
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="portal-shell">
-      <div className="portal-context">
-        <div className="portal-context-copy">
+      <div className="portal-bar">
+        <div className="portal-context">
           <p className="portal-context-title">My ProfileRelaunch</p>
+          <SignOutButton />
         </div>
-        <SignOutButton />
+        <PortalNav />
       </div>
-      <PortalNav />
       {children}
     </div>
   )

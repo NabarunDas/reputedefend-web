@@ -2,7 +2,7 @@ import type { BillingDocument } from "../../../../../lib/billing/document"
 
 export function BillingUnavailable({ title }: { title: string }) {
   return (
-    <div className="billing-page">
+    <div className="billing-page state-panel">
       <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>{title}</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>

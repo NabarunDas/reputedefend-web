@@ -22,7 +22,7 @@ function actionFor(actions: PaymentAction[], kind: PaymentAction["kind"], orderR
 
 export function PaymentsUnavailable() {
   return (
-    <div className="payments-page">
+    <div className="payments-page state-panel">
       <h1>We couldn&apos;t load payments</h1>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>
       <p className="case-back"><a href="/portal">Back to your dashboard</a></p>

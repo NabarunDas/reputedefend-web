@@ -16,7 +16,7 @@ const EMPTY: Record<CasesView, string> = {
 
 export function CasesUnavailable() {
   return (
-    <div className="portal-dashboard">
+    <div className="portal-dashboard state-panel">
       <h1>Cases</h1>
       <h2>We couldn&apos;t load your cases</h2>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>

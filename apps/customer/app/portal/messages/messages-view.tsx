@@ -8,7 +8,7 @@ export function formatMessageTime(value: string) {
 
 export function MessagesUnavailable() {
   return (
-    <div className="messages-page">
+    <div className="messages-page state-panel">
       <h1>Messages</h1>
       <h2>We couldn&apos;t load your messages</h2>
       <p>Refresh the page and try again. If the problem continues, contact ProfileRelaunch.</p>

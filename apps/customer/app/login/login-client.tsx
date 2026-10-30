@@ -16,15 +16,28 @@ async function postJson(path: string, body: Record<string, unknown>) {
   return { ok: response.ok, status: response.status, payload }
 }
 
-export function LoginClient() {
+/**
+ * `preview` holds a painted sign-in phase for a local visual fixture.
+ * The login page does not pass it, and it is not read from the request.
+ */
+export function LoginClient({ preview }: {
+  preview?: {
+    phase?: "email" | "code" | "done"
+    email?: string
+    code?: string
+    error?: string
+    resendIn?: number
+    pending?: "" | "send" | "resend" | "verify"
+  }
+} = {}) {
   const router = useRouter()
-  const [phase, setPhase] = useState<"email" | "code">("email")
-  const [email, setEmail] = useState("")
-  const [typedEmail, setTypedEmail] = useState("")
-  const [code, setCode] = useState("")
-  const [error, setError] = useState("")
-  const [pending, setPending] = useState<"" | "send" | "resend" | "verify">("")
-  const [resendIn, setResendIn] = useState(0)
+  const [phase, setPhase] = useState<"email" | "code" | "done">(preview?.phase ?? "email")
+  const [email, setEmail] = useState(preview?.email ?? "")
+  const [typedEmail, setTypedEmail] = useState(preview?.phase === "email" ? "" : preview?.email ?? "")
+  const [code, setCode] = useState(preview?.code ?? "")
+  const [error, setError] = useState(preview?.error ?? "")
+  const [pending, setPending] = useState<"" | "send" | "resend" | "verify">(preview?.pending ?? "")
+  const [resendIn, setResendIn] = useState(preview?.resendIn ?? 0)
   const codeInput = useRef<HTMLInputElement>(null)
   const busy = pending !== ""
 
@@ -33,10 +46,15 @@ export function LoginClient() {
   }, [phase])
 
   useEffect(() => {
-    if (resendIn <= 0) return
+    if (phase !== "done" || preview) return
+    router.push("/portal")
+  }, [phase, preview, router])
+
+  useEffect(() => {
+    if (preview || resendIn <= 0) return
     const timer = window.setInterval(() => setResendIn(current => (current > 0 ? current - 1 : 0)), 1000)
     return () => window.clearInterval(timer)
-  }, [resendIn])
+  }, [preview, resendIn])
 
   async function sendCode(event: FormEvent) {
     event.preventDefault()
@@ -94,7 +112,7 @@ export function LoginClient() {
         setError(PORTAL_VERIFY_ERROR)
         return
       }
-      router.push("/portal")
+      setPhase("done")
     } catch {
       setError(PORTAL_VERIFY_ERROR)
     } finally {
@@ -102,38 +120,58 @@ export function LoginClient() {
     }
   }
 
+  if (phase === "done") {
+    return <section className="auth-card" data-phase="done">
+      <SignInSteps current="code" />
+      <p className="eyebrow">CUSTOMER PORTAL</p>
+      <h1>You&apos;re signed in</h1>
+      <p className="auth-done" role="status">Opening your customer space.</p>
+    </section>
+  }
+
   if (phase === "email") {
-    return <section className="auth-card">
+    return <section className="auth-card" data-phase="email">
+      <SignInSteps current="email" />
       <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Sign in to your ProfileRelaunch account</h1>
       <p className="lead">Use the email address verified with ProfileRelaunch. We&apos;ll send you an eight-digit code. You do not need a password.</p>
-      <form onSubmit={sendCode}>
+      <form onSubmit={sendCode} aria-busy={pending === "send"}>
         <label htmlFor="portal-email">Email address</label>
-        <input id="portal-email" name="email" type="email" autoComplete="email" maxLength={320} value={email} onChange={event => setEmail(event.target.value)} required />
-        {error ? <p className="notice-danger" role="alert">{error}</p> : null}
+        <input id="portal-email" name="email" type="email" autoComplete="email" inputMode="email" maxLength={320} value={email} onChange={event => setEmail(event.target.value)} required aria-invalid={error ? true : undefined} aria-describedby={error ? "portal-email-error" : undefined} />
+        {error ? <p id="portal-email-error" className="notice-danger" role="alert">{error}</p> : null}
         <button type="submit" disabled={busy}>{pending === "send" ? "Sending code…" : "Send code"}</button>
       </form>
       <p className="auth-note">Secure passwordless sign-in.</p>
     </section>
   }
 
-  return <section className="auth-card">
+  return <section className="auth-card" data-phase="code">
+    <SignInSteps current="code" />
     <p className="eyebrow">CUSTOMER PORTAL</p>
     <h1>Check your email</h1>
     <p className="lead" role="status">{portalLoginNotice(typedEmail)}</p>
-    <form onSubmit={verify}>
+    <form onSubmit={verify} aria-busy={pending === "verify"}>
       <label htmlFor="portal-code">Eight-digit code</label>
-      <OtpInput id="portal-code" value={code} onChange={setCode} inputRef={codeInput} />
-      {error ? <p className="notice-danger" role="alert">{error}</p> : null}
+      <OtpInput id="portal-code" value={code} onChange={setCode} inputRef={codeInput} invalid={Boolean(error)} describedBy={error ? "portal-code-error" : undefined} />
+      {error ? <p id="portal-code-error" className="notice-danger" role="alert">{error}</p> : null}
       <button type="submit" disabled={busy || !CUSTOMER_OTP_PATTERN.test(code)}>{pending === "verify" ? "Verifying…" : "Verify and sign in"}</button>
     </form>
     <div className="button-row">
       <button type="button" className="secondary" disabled={busy || resendIn > 0} onClick={resend}>
-        {resendIn > 0 ? `Resend code (${resendIn})` : "Resend code"}
+        {resendIn > 0 ? <>Resend code (<span className="auth-count">{resendIn}</span>)</> : "Resend code"}
       </button>
-      <button type="button" className="secondary" onClick={() => { setPhase("email"); setCode(""); setError(""); setResendIn(0) }}>
+      <button type="button" className="secondary" disabled={busy} onClick={() => { setPhase("email"); setCode(""); setError(""); setResendIn(0) }}>
         Use a different email
       </button>
     </div>
   </section>
+}
+
+function SignInSteps({ current }: { current: "email" | "code" }) {
+  return (
+    <ol className="auth-steps" aria-label="Sign-in steps">
+      <li {...(current === "email" ? { "aria-current": "step" as const } : {})}>Email</li>
+      <li {...(current === "code" ? { "aria-current": "step" as const } : {})}>Code</li>
+    </ol>
+  )
 }

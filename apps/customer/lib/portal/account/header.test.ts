@@ -17,6 +17,7 @@ vi.mock("@/lib/backend", () => ({
 }))
 
 import { displayedAccountName, isCustomerPortalPath, loadPortalHeaderName } from "./header"
+import { withAccountRequest } from "./request-scope"
 
 const token = "b".repeat(64)
 const other = "c".repeat(64)
@@ -52,6 +53,38 @@ describe("portal header name", () => {
     jar.set("pr-portal-dev", other)
     rpc.mockResolvedValue({ name: "Mina Cole", email: "mina@example.com", emailVerified: true, phoneVerified: false })
     await expect(loadPortalHeaderName()).resolves.toBe("Mina Cole")
+    expect(rpc).toHaveBeenLastCalledWith("customer_portal_account_v1", {
+      p_token_hash: createHash("sha256").update(other).digest("hex"),
+    })
+  })
+
+  it("reads the account projection once when a dashboard request renders the greeting", async () => {
+    headerPath.value = "/portal"
+    jar.set("pr-portal-dev", token)
+    rpc.mockResolvedValue({ name: "Aarshav Das", email: "aarshav@example.com", emailVerified: true, phoneVerified: false })
+
+    await loadPortalHeaderName()
+    await loadPortalHeaderName()
+    expect(rpc).toHaveBeenCalledTimes(2)
+
+    rpc.mockClear()
+    await withAccountRequest({ type: "request" }, async () => {
+      const [fromLayout, fromDashboard] = await Promise.all([loadPortalHeaderName(), loadPortalHeaderName()])
+      expect(fromLayout).toBe("Aarshav Das")
+      expect(fromDashboard).toBe("Aarshav Das")
+    })
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith("customer_portal_account_v1", {
+      p_token_hash: createHash("sha256").update(token).digest("hex"),
+    })
+
+    jar.set("pr-portal-dev", other)
+    rpc.mockClear()
+    rpc.mockResolvedValue({ name: "Mina Cole", email: "mina@example.com", emailVerified: true, phoneVerified: false })
+    await withAccountRequest({ type: "request" }, async () => {
+      await expect(loadPortalHeaderName()).resolves.toBe("Mina Cole")
+    })
+    expect(rpc).toHaveBeenCalledTimes(1)
     expect(rpc).toHaveBeenLastCalledWith("customer_portal_account_v1", {
       p_token_hash: createHash("sha256").update(other).digest("hex"),
     })

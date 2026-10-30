@@ -42,16 +42,24 @@ function paymentRequest(key: string) {
   return `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20, 32)}`
 }
 
+const identity = {
+  status: "success",
+  customerOrigin: teamOrigin,
+  fromAddress: "quotes@profilerelaunch.com",
+  replyTo: "cases@profilerelaunch.com",
+}
+
 function openLane() {
   vi.stubEnv("VERCEL_ENV", "preview")
   vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
   vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-customer-git-develop-clientcove.vercel.app")
   vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
-  vi.stubEnv("CUSTOMER_ORIGIN", teamOrigin)
-  vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
-  vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
-  vi.stubEnv("COMMUNICATIONS_REPLY_TO_EMAIL", "cases@profilerelaunch.com")
-  vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "monitored")
+  vi.stubEnv("CUSTOMER_ORIGIN", "")
+  vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "")
+  vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "")
+  vi.stubEnv("COMMUNICATIONS_REPLY_TO_EMAIL", "")
+  vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "")
+  vi.stubEnv("JOB_WORKER_ENABLED", "")
   vi.stubEnv("RESEND_API_KEY", "")
   vi.stubEnv("JOB_PROVIDER_MODE", "")
 }
@@ -79,7 +87,7 @@ describe("central payment dispatch", () => {
   })
 
   it("does not call Admin when the lane is closed or the token is missing", async () => {
-    vi.stubEnv("CUSTOMER_ORIGIN", "https://customer.profilerelaunch.com")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "main")
     expect(customerDispatchLaneOpen()).toBe(false)
     expect(await requestCentralDispatch({ requestId, fetchImpl: mocks.fetchImpl, oidcToken: "oidc-test-token" })).toBe("dispatch_not_configured")
     expect(await requestCentralDispatch({ requestId, fetchImpl: mocks.fetchImpl, oidcToken: null })).toBe("dispatch_not_configured")
@@ -96,14 +104,18 @@ describe("central payment dispatch", () => {
     expect(await requestCentralDispatch({ requestId, fetchImpl: mocks.fetchImpl, oidcToken: "oidc-test-token" })).toBe("provider_dead")
     mocks.fetchImpl.mockResolvedValueOnce(new Response(JSON.stringify({ status: "conflict" }), { status: 409 }))
     expect(await requestCentralDispatch({ requestId, fetchImpl: mocks.fetchImpl, oidcToken: "oidc-test-token" })).toBe("dispatch_conflict")
-    expect(mocks.fetchImpl).toHaveBeenCalledTimes(5)
+    mocks.fetchImpl.mockResolvedValueOnce(new Response(JSON.stringify({ status: "paid" }), { status: 409 }))
+    expect(await requestCentralDispatch({ requestId, fetchImpl: mocks.fetchImpl, oidcToken: "oidc-test-token" })).toBe("already_paid")
+    mocks.fetchImpl.mockResolvedValueOnce(new Response(JSON.stringify({ status: "held" }), { status: 200 }))
+    expect(await requestCentralDispatch({ requestId, fetchImpl: mocks.fetchImpl, oidcToken: "oidc-test-token" })).toBe("dispatch_held")
+    expect(mocks.fetchImpl).toHaveBeenCalledTimes(7)
   })
 
   it("queues both acceptance routes and asks Admin to dispatch the same request", async () => {
     const key = "33333333-3333-4333-8333-333333333333"
     vi.stubGlobal("fetch", mocks.fetchImpl)
-    mocks.fetchImpl.mockResolvedValue(new Response(JSON.stringify({ status: "held" }), { status: 200 }))
-    mocks.rpc.mockResolvedValueOnce({ status: "success" }).mockResolvedValueOnce({ status: "recorded" })
+    mocks.fetchImpl.mockImplementation(async () => new Response(JSON.stringify({ status: "accepted" }), { status: 200 }))
+    mocks.rpc.mockResolvedValueOnce(identity).mockResolvedValueOnce({ status: "success" }).mockResolvedValueOnce({ status: "recorded" })
     await queueAcceptedGuidedPayment({
       token: "a".repeat(64),
       acceptanceKey: key,
@@ -111,20 +123,26 @@ describe("central payment dispatch", () => {
       rpc: "customer_queue_guided_payment_request_v1",
     })
     expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "customer_guided_payment_mail_identity_v1",
       "customer_queue_guided_payment_request_v1",
       "customer_record_guided_payment_handover_v1",
     ])
-    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({
+    const queued = mocks.rpc.mock.calls[1][1] as { p_payload: Record<string, unknown> }
+    expect(queued.p_payload).not.toHaveProperty("fromAddress")
+    expect(queued.p_payload).not.toHaveProperty("replyTo")
+    expect(queued.p_payload).not.toHaveProperty("customerOrigin")
+    expect(queued.p_payload).not.toHaveProperty("sendEnabled")
+    expect(String(queued.p_payload.bodyText)).toContain(`${teamOrigin}/portal/cases/PR-26-ABCDEF/payments`)
+    expect(mocks.rpc.mock.calls[2][1]).toMatchObject({
       p_request: paymentRequest(key),
-      p_reason: "dispatch_held",
+      p_reason: "provider_accepted",
       p_service_order: orderId,
     })
     expect(JSON.parse(String((mocks.fetchImpl.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({
       requestId: paymentRequest(key),
     })
 
-    mocks.fetchImpl.mockResolvedValue(new Response(JSON.stringify({ status: "accepted" }), { status: 200 }))
-    mocks.rpc.mockResolvedValueOnce({ status: "success" }).mockResolvedValueOnce({ status: "recorded" })
+    mocks.rpc.mockResolvedValueOnce(identity).mockResolvedValueOnce({ status: "success" }).mockResolvedValueOnce({ status: "recorded" })
     await queueAcceptedGuidedPayment({
       token: "b".repeat(64),
       acceptanceKey: key,
@@ -133,9 +151,9 @@ describe("central payment dispatch", () => {
     })
     expect(mocks.rpc.mock.calls.at(-1)?.[1]).toMatchObject({ p_reason: "provider_accepted" })
 
-    vi.stubEnv("CUSTOMER_ORIGIN", "https://customer.profilerelaunch.com")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-customer-git-feature-clientcove.vercel.app")
     mocks.fetchImpl.mockClear()
-    mocks.rpc.mockResolvedValueOnce({ status: "success" }).mockResolvedValueOnce({ status: "recorded" })
+    mocks.rpc.mockResolvedValueOnce(identity).mockResolvedValueOnce({ status: "success" }).mockResolvedValueOnce({ status: "recorded" })
     await queueAcceptedGuidedPayment({
       token: "c".repeat(64),
       acceptanceKey: key,
@@ -145,7 +163,7 @@ describe("central payment dispatch", () => {
     expect(mocks.fetchImpl).not.toHaveBeenCalled()
     expect(mocks.rpc.mock.calls.at(-1)?.[1]).toMatchObject({ p_reason: "dispatch_not_configured" })
 
-    mocks.rpc.mockResolvedValueOnce({ status: "success" })
+    mocks.rpc.mockResolvedValueOnce(identity).mockResolvedValueOnce({ status: "success" })
     await queueAcceptedGuidedPayment({
       token: "d".repeat(64),
       acceptanceKey: key,
@@ -160,8 +178,8 @@ describe("central payment dispatch", () => {
     const dispatch = readSource(new URL("./central-dispatch.ts", import.meta.url), "utf8")
     const queue = readSource(new URL("./queue-accepted-guided-payment.ts", import.meta.url), "utf8")
     const pkg = readSource(new URL("../../package.json", import.meta.url), "utf8")
-    expect(dispatch).not.toMatch(/RESEND_API_KEY|JOB_PROVIDER_MODE|from \"resend\"/)
-    expect(queue).not.toMatch(/RESEND_API_KEY|JOB_PROVIDER_MODE|from \"resend\"/)
+    expect(dispatch).not.toMatch(/RESEND_API_KEY|JOB_PROVIDER_MODE|CUSTOMER_ORIGIN|from \"resend\"/)
+    expect(queue).not.toMatch(/RESEND_API_KEY|JOB_PROVIDER_MODE|CUSTOMER_ORIGIN|COMMUNICATIONS_|JOB_WORKER_ENABLED|from \"resend\"/)
     expect(pkg).not.toContain("\"resend\"")
     expect(pkg).toContain("\"@vercel/oidc\"")
   })

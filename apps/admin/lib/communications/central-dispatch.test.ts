@@ -118,6 +118,11 @@ describe("central mail dispatch", () => {
     const payload = await response.json()
     expect(payload).toEqual({ status: "accepted" })
     expect(mocks.send).toHaveBeenCalledTimes(1)
+    expect(mocks.verify.mock.calls[0][1]).toMatchObject({
+      projectId: "*",
+      environment: "preview",
+      ownerId: "team_test",
+    })
     expect(mocks.rpc.mock.calls[0]).toEqual(["dev_mail_dispatch_claim_request_v1", {
       p_request: requestId,
       p_customer_origin: portal,
@@ -153,6 +158,11 @@ describe("central mail dispatch", () => {
     const held = await centralDispatchCommand(post({ requestId }))
     expect(held.status).toBe(200)
     expect(await held.json()).toEqual({ status: "held" })
+
+    mocks.rpc.mockResolvedValueOnce({ status: "denied", reason: "already_paid" })
+    const paid = await centralDispatchCommand(post({ requestId }))
+    expect(paid.status).toBe(409)
+    expect(await paid.json()).toEqual({ status: "paid" })
     expect(mocks.send).not.toHaveBeenCalled()
   })
 

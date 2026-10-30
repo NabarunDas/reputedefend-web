@@ -1,18 +1,15 @@
 import { createHash } from "node:crypto"
 import { backend, tokenHash } from "@/lib/backend"
 import { renderPaymentRequest } from "../../../../lib/email/payment-request"
-import { confirmedReplyMailbox, validReplyMailbox } from "../../../../lib/email/reply-mailbox"
 import { customerDispatchLaneOpen, customerDispatchPreview, requestCentralDispatch } from "./central-dispatch"
 import type { PaymentHandoverReason } from "./handover"
 
 /**
  * Portal sessions and Secure Action sessions are different credentials.
- * The portal queue function holds dispatch for fifteen minutes so a payment
- * completed in that same portal visit can cancel the unsent email before the
- * provider is contacted. The action-session function does not set that hold:
- * quotation-email acceptance is not the portal payment visit, so the email is
- * eligible for immediate processing. Neither caller supplies the hold, the
- * actor, or a bearer link. A queue failure must not undo the acceptance.
+ * Both queue one payment email with no dispatch hold. The sender, the reply
+ * mailbox and the portal origin come from the quotation Admin already stored.
+ * This module does not read mail-provider settings. A queue or send failure
+ * does not undo the acceptance.
  */
 export type GuidedPaymentQueueRpc =
   | "customer_queue_guided_payment_request_v1"
@@ -28,18 +25,6 @@ export function paymentRequestId(acceptanceKey: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
-}
-
-function automaticPaymentMail(): { origin: string; from: string; replyTo: string | null } | null {
-  if (process.env.COMMUNICATIONS_SEND_ENABLED !== "true") return null
-  // Production customer requests enqueue only when a worker is enabled on that
-  // deployment. Other environments queue a durable outbox row for the shared
-  // mail worker. A skipped queue leaves the accepted unpaid order for Admin Step 7.
-  if (process.env.VERCEL_ENV === "production" && process.env.JOB_WORKER_ENABLED !== "true") return null
-  const from = validReplyMailbox(process.env.COMMUNICATIONS_FROM_EMAIL)
-  const origin = (process.env.CUSTOMER_ORIGIN ?? "").trim().replace(/\/$/, "")
-  if (!from || !/^https:\/\/[A-Za-z0-9.-]+$/.test(origin)) return null
-  return { origin, from, replyTo: confirmedReplyMailbox() }
 }
 
 async function recordHandover(input: {
@@ -61,6 +46,13 @@ async function recordHandover(input: {
   }
 }
 
+type MailIdentity = {
+  status?: string
+  customerOrigin?: string
+  fromAddress?: string
+  replyTo?: string
+}
+
 /** Queues one payment email after Guided acceptance. A queue or send failure does not undo the acceptance. */
 export async function queueAcceptedGuidedPayment(input: {
   token: string
@@ -79,22 +71,29 @@ export async function queueAcceptedGuidedPayment(input: {
   if (typeof snapshot?.amountMinor !== "number" || typeof snapshot.currency !== "string") return
   if (typeof quotation?.serviceName !== "string" || typeof quotation.caseReference !== "string") return
   const requestId = paymentRequestId(input.acceptanceKey)
-  const mail = automaticPaymentMail()
-  if (!mail) {
-    await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason: "mail_not_configured" })
+  let identity: MailIdentity | null = null
+  try {
+    identity = await backend().rpc<MailIdentity>("customer_guided_payment_mail_identity_v1", {
+      p_token_hash: tokenHash(input.token),
+      p_service_order: orderId,
+    })
+  } catch {
+    await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason: "queue_unavailable" })
     return
   }
-  const rendered = renderPaymentRequest({
-    serviceCode,
-    serviceName: quotation.serviceName,
-    orderRef: result.orderRef,
-    caseRef: quotation.caseReference,
-    amountMinor: snapshot.amountMinor,
-    currency: snapshot.currency,
-    origin: mail.origin,
-    replyTo: mail.replyTo,
-    businessName: typeof quotation.businessName === "string" ? quotation.businessName : null,
-  })
+  const rendered = identity?.status === "success"
+    ? renderPaymentRequest({
+      serviceCode,
+      serviceName: quotation.serviceName,
+      orderRef: result.orderRef,
+      caseRef: quotation.caseReference,
+      amountMinor: snapshot.amountMinor,
+      currency: snapshot.currency,
+      origin: identity.customerOrigin ?? "",
+      replyTo: identity.replyTo,
+      businessName: typeof quotation.businessName === "string" ? quotation.businessName : null,
+    })
+    : null
   if (!rendered) {
     await recordHandover({ token: input.token, requestId, serviceOrderId: orderId, reason: "queue_denied" })
     return
@@ -106,13 +105,9 @@ export async function queueAcceptedGuidedPayment(input: {
       p_request: requestId,
       p_payload: {
         serviceOrderId: orderId,
-        customerOrigin: mail.origin,
         subject: rendered.subject,
         bodyText: rendered.text,
         bodyHtml: rendered.html,
-        fromAddress: mail.from,
-        replyTo: mail.replyTo,
-        sendEnabled: true,
       },
     })
   } catch {

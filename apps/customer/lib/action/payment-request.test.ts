@@ -57,12 +57,11 @@ function paymentRequest() {
   return `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20, 32)}`
 }
 
-function enableMail() {
-  vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
-  vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
-  vi.stubEnv("COMMUNICATIONS_REPLY_TO_EMAIL", "cases@profilerelaunch.com")
-  vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "monitored")
-  vi.stubEnv("CUSTOMER_ORIGIN", origin)
+const identity = {
+  status: "success",
+  customerOrigin: origin,
+  fromAddress: "quotes@profilerelaunch.com",
+  replyTo: "cases@profilerelaunch.com",
 }
 
 beforeEach(() => {
@@ -77,26 +76,24 @@ afterEach(() => vi.unstubAllEnvs())
 
 describe("quotation acceptance payment request", () => {
   it("queues one immediate action-session payment email after Guided acceptance", async () => {
-    enableMail()
-    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "success", replay: false })
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce(identity).mockResolvedValueOnce({ status: "success", replay: false })
     const response = await command(req(accept))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ status: "ok", message: "This action is complete." })
-    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+    expect(mocks.rpc).toHaveBeenCalledTimes(3)
     expect(mocks.rpc.mock.calls[0][0]).toBe("customer_action_command_v1")
-    const queued = mocks.rpc.mock.calls[1]
+    expect(mocks.rpc.mock.calls[1][0]).toBe("customer_guided_payment_mail_identity_v1")
+    const queued = mocks.rpc.mock.calls[2]
     expect(queued[0]).toBe("customer_action_queue_guided_payment_request_v1")
     expect(queued[1]).toMatchObject({
       p_token_hash: `hash-${token.slice(0, 8)}`,
       p_request: paymentRequest(),
-      p_payload: {
-        serviceOrderId: orderId,
-        customerOrigin: origin,
-        fromAddress: "ops@example.com",
-        replyTo: "cases@profilerelaunch.com",
-        sendEnabled: true,
-      },
+      p_payload: { serviceOrderId: orderId },
     })
+    expect(queued[1].p_payload).not.toHaveProperty("customerOrigin")
+    expect(queued[1].p_payload).not.toHaveProperty("fromAddress")
+    expect(queued[1].p_payload).not.toHaveProperty("replyTo")
+    expect(queued[1].p_payload).not.toHaveProperty("sendEnabled")
     const payload = queued[1].p_payload as { subject: string; bodyText: string; bodyHtml: string }
     expect(payload.subject).toBe("Pay for your ProfileRelaunch Guided Relaunch — SO-26-ABCDEF")
     expect(payload.bodyText).toContain("Business: North Bakery")
@@ -110,10 +107,9 @@ describe("quotation acceptance payment request", () => {
   })
 
   it("reuses the same payment-request id when the acceptance command is replayed", async () => {
-    enableMail()
-    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "success" })
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce(identity).mockResolvedValueOnce({ status: "success" })
     expect((await command(req(accept))).status).toBe(200)
-    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "success", replay: true })
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce(identity).mockResolvedValueOnce({ status: "success", replay: true })
     expect((await command(req(accept))).status).toBe(200)
     const requests = mocks.rpc.mock.calls.filter(call => call[0] === "customer_action_queue_guided_payment_request_v1")
     expect(requests).toHaveLength(2)
@@ -122,7 +118,6 @@ describe("quotation acceptance payment request", () => {
   })
 
   it("does not queue a second email when acceptance has no snapshot, and leaves acceptance intact when queueing fails", async () => {
-    enableMail()
     mocks.rpc.mockResolvedValueOnce({ status: "success", orderId, orderRef: "SO-26-ABCDEF" })
     expect((await command(req(accept))).status).toBe(200)
     expect(mocks.rpc).toHaveBeenCalledTimes(1)
@@ -136,7 +131,7 @@ describe("quotation acceptance payment request", () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(1)
 
     mocks.rpc.mockReset()
-    mocks.rpc.mockResolvedValueOnce(accepted).mockRejectedValueOnce(new Error("relation communications does not exist"))
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce(identity).mockRejectedValueOnce(new Error("relation communications does not exist"))
     const failed = await command(req(accept))
     const body = await failed.json()
     expect(failed.status).toBe(200)
@@ -153,16 +148,33 @@ describe("quotation acceptance payment request", () => {
     expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["customer_action_command_v1"])
   })
 
-  it("does not queue when outgoing mail is not confirmed", async () => {
-    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "recorded" })
+  it("queues from the stored quotation when the Customer deployment has no mail settings", async () => {
+    vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "")
+    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "")
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_EMAIL", "")
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "")
+    vi.stubEnv("JOB_WORKER_ENABLED", "")
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce(identity).mockResolvedValueOnce({ status: "success" })
     const response = await command(req(accept))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ status: "ok", message: "This action is complete." })
     expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
       "customer_action_command_v1",
+      "customer_guided_payment_mail_identity_v1",
+      "customer_action_queue_guided_payment_request_v1",
+    ])
+    expect(JSON.stringify(mocks.rpc.mock.calls[2][1].p_payload)).not.toMatch(/COMMUNICATIONS_|fromAddress|sendEnabled/)
+
+    mocks.rpc.mockReset()
+    mocks.rpc.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ status: "denied", reason: "mail_identity" }).mockResolvedValueOnce({ status: "recorded" })
+    const missing = await command(req(accept))
+    expect(missing.status).toBe(200)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "customer_action_command_v1",
+      "customer_guided_payment_mail_identity_v1",
       "customer_record_guided_payment_handover_v1",
     ])
-    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_reason: "mail_not_configured", p_service_order: orderId })
-    expect(JSON.stringify(mocks.rpc.mock.calls[1][1])).not.toMatch(/@|SQL|relation /)
+    expect(mocks.rpc.mock.calls[2][1]).toMatchObject({ p_reason: "queue_denied", p_service_order: orderId })
+    expect(JSON.stringify(mocks.rpc.mock.calls[2][1])).not.toMatch(/@|SQL|relation /)
   })
 })

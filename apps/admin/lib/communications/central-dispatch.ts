@@ -19,6 +19,7 @@ export type CentralDispatchStatus =
   | "retry"
   | "unknown"
   | "dead"
+  | "paid"
   | "unavailable"
   | "disabled"
 
@@ -37,6 +38,9 @@ export async function customerPreviewCaller(token: string): Promise<boolean> {
   const ownerId = process.env.VERCEL_ORG_ID
   if (!ownerId || token.length < 20 || token.length > 16384) return false
   try {
+    // VERCEL_PROJECT_ID on this deployment is the Admin project. The Customer
+    // project id is not available here, so the signed subject must name
+    // profilerelaunch-customer. Trusted Sources remains a manual Admin setting.
     const verified = await verifyVercelOidcToken<VercelOidcPayload>(token, {
       projectId: "*",
       environment: "preview",
@@ -58,6 +62,7 @@ function claimStatus(claim: DevSendClaim): CentralDispatchStatus | null {
   if (claim.reason === "already_processed") return "accepted"
   if (claim.reason === "acceptance_unknown") return "unknown"
   if (claim.reason === "dead_letter") return "dead"
+  if (claim.reason === "already_paid") return "paid"
   if (claim.status !== "success" || claim.replay === true || !claim.leaseToken || claim.jobType !== "SEND_EMAIL") {
     return "unavailable"
   }
@@ -134,6 +139,6 @@ export async function centralDispatchCommand(request: NextRequest): Promise<Next
   const status = await dispatchQueuedMailRequest({ requestId })
   if (status === "disabled") return reply(status, 404)
   if (status === "unavailable") return reply(status, 503)
-  if (status === "conflict" || status === "unknown" || status === "dead") return reply(status, 409)
+  if (status === "conflict" || status === "unknown" || status === "dead" || status === "paid") return reply(status, 409)
   return reply(status, 200)
 }

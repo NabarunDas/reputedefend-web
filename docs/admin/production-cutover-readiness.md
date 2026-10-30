@@ -114,7 +114,7 @@ capability gate is expected to be missing.
 | `VERCEL_GIT_COMMIT_REF` | admin | NON_SECRET_CONFIGURATION | non-secret | PRESENT | The DEV Stripe one-shot refuses the request. No other Admin behaviour reads it. |
 | `VERCEL_ORG_ID` | admin | NON_SECRET_CONFIGURATION | non-secret | PRESENT | The customer mail event refuses the caller. Queued email stays queued. Production scheduled mail does not read it. |
 | `CRON_SECRET` | admin | PROVIDER_SECRET | secret | PRESENT | jobWorkerConfig() reports disabled and the cron entry point answers 503 rather than running work. |
-| `JOB_WORKER_ENABLED` | admin, customer | FEATURE_GATE | non-secret | ABSENT | The worker is disabled, no job is claimed, and both mail gates read false whatever else is set. A Production customer acceptance does not queue a payment email. |
+| `JOB_WORKER_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | The scheduled worker is disabled and no batch of jobs is claimed. Production outgoing mail stays closed. A customer acceptance can still queue a payment email. The develop DEV email runner does not use this flag. |
 | `JOB_PROVIDER_MODE` | admin | FEATURE_GATE | non-secret | ABSENT | Provider mode is "disabled" and no handler performs an external effect. |
 | `JOB_WORKER_CADENCE_SECONDS` | admin | NON_SECRET_CONFIGURATION | non-secret | OPTIONAL | Falls back to 86400 seconds, matching the unchanged 0 4 * * * schedule. |
 | `AWS_REGION` | admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Evidence and inbound storage config are null, so no upload can be presigned and no attachment fetched. |
@@ -128,9 +128,9 @@ capability gate is expected to be missing.
 | `AWS_ACCESS_KEY_ID` | admin, customer | PROVIDER_SECRET | secret | ABSENT | The intended state. Credentials come from Vercel OIDC role assumption instead. |
 | `AWS_SECRET_ACCESS_KEY` | admin, customer | PROVIDER_SECRET | secret | ABSENT | The intended state. |
 | `AWS_SESSION_TOKEN` | admin, customer | PROVIDER_SECRET | secret | ABSENT | The intended state. |
-| `COMMUNICATIONS_SEND_ENABLED` | admin, customer | FEATURE_GATE | non-secret | ABSENT | communicationsSendEnabled() is false, the queue command refuses and the worker sends nothing. A customer acceptance does not queue a payment email. |
+| `COMMUNICATIONS_SEND_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | communicationsSendEnabled() is false, the Admin queue command refuses and neither the scheduled worker nor the develop DEV runner sends. A customer acceptance can still queue a payment email from the stored quotation. |
 | `COMMUNICATIONS_INBOUND_ENABLED` | admin | FEATURE_GATE | non-secret | ABSENT | communicationsInboundEnabled() is false and the inbound webhook answers 503. |
-| `COMMUNICATIONS_FROM_EMAIL` | admin, customer | NON_SECRET_CONFIGURATION | non-secret | OPTIONAL | The outgoing gate reads false because it requires a parseable from-address. A customer acceptance does not queue a payment email. |
+| `COMMUNICATIONS_FROM_EMAIL` | admin | NON_SECRET_CONFIGURATION | non-secret | OPTIONAL | The outgoing gate reads false because it requires a parseable from-address. A customer acceptance can still queue a payment email from the stored quotation. |
 | `COMMUNICATIONS_LINK_SECRET` | admin | PROVIDER_SECRET | secret | ABSENT | linkSecret() is null, so an EVIDENCE_REQUEST communication cannot be drafted or sent. |
 | `COMMUNICATIONS_LINK_KEY_VERSION` | admin | NON_SECRET_CONFIGURATION | non-secret | OPTIONAL | Falls back to version 1. An unparseable or out-of-range value also falls back to 1 rather than failing. |
 | `RESEND_API_KEY` | marketing, admin | PROVIDER_SECRET | secret | OPTIONAL | Marketing enquiry config is not ready and both Admin mail gates read false. |

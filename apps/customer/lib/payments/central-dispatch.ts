@@ -13,6 +13,7 @@ export type CentralDispatchStatus =
   | "retry"
   | "unknown"
   | "dead"
+  | "paid"
   | "unavailable"
   | "disabled"
 
@@ -30,11 +31,10 @@ export function customerDispatchPreview(): boolean {
     && url === DEV_SUPABASE_URL
 }
 
-/** Develop customer Preview pinned to the DEV database. This does not send mail. */
+/** Develop customer Preview pinned to the DEV database. This does not send mail and does not read a mail setting. */
 export function customerDispatchLaneOpen(): boolean {
   const team = branchTeam(process.env.VERCEL_BRANCH_URL)
-  if (!team || !customerDispatchPreview()) return false
-  return process.env.CUSTOMER_ORIGIN === `https://profilerelaunch-customer-git-develop-${team}.vercel.app`
+  return !!team && customerDispatchPreview()
 }
 
 export function adminDevelopDispatchOrigin(): string | null {
@@ -50,6 +50,7 @@ function handoverForStatus(status: CentralDispatchStatus): PaymentHandoverReason
   if (status === "retry") return "provider_retryable"
   if (status === "unknown") return "acceptance_unknown"
   if (status === "dead") return "provider_dead"
+  if (status === "paid") return "already_paid"
   if (status === "disabled") return "dispatch_not_configured"
   return "queue_unavailable"
 }

@@ -9,4 +9,5 @@ export type PaymentHandoverReason =
   | "provider_retryable"
   | "provider_dead"
   | "acceptance_unknown"
+  | "already_paid"
   | "queued"

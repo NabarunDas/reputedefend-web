@@ -92,7 +92,7 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
     const paymentSql = readFileSync(new URL("20261030200000_guided_payment_request_after_acceptance_v1.sql", directory), "utf8")
-    expect(createHash("sha256").update(paymentSql).digest("hex")).toBe("8226924a30595dc6adf2d207d7defeb9659a57c6fb7543f88935aa8d3331e494")
+    expect(createHash("sha256").update(paymentSql).digest("hex")).toBe("32195da0c20f665e87cfeaa9f5e2b9600341f2c02502c140c403cf9ec2d40ca5")
     expect(paymentSql).toContain("SECURITY DEFINER")
     expect(paymentSql).toContain("SET search_path = ''")
     expect(paymentSql).toContain("REVOKE ALL ON FUNCTION public.dev_mail_dispatch_claim_request_v1(uuid, text)")

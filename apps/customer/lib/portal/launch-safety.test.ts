@@ -42,6 +42,7 @@ function allowedPortalHref(href: string) {
     /^\/portal\/messages\/\$\{[^}]+\}$/,
     /^\/portal\/account$/,
     /^\/api\/portal\/documents\/download\?reference=\$\{[^}]+\}\&selector=\$\{[^}]+\}$/,
+    /^\/api\/portal\/documents\/archive\?reference=\$\{[^}]+\}$/,
     /^\/api\/portal\/payments\/receipt\?selector=\$\{[^}]+\}$/,
     /^\/api\/portal\/payments\/invoice\?reference=\$\{[^}]+\}\&selector=\$\{[^}]+\}$/,
     /^\/api\/portal\/payments\/invoice-document\?reference=\$\{[^}]+\}\&selector=\$\{[^}]+\}$/,

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
 import { brandLogoDark, logoSize, marketingHomeLabel, marketingOrigin } from "@/lib/brand"
 
-export function CustomerHeader() {
+export function CustomerHeader({ accountName = null }: { accountName?: string | null }) {
   const pathname = usePathname()
   const portal = pathname === "/portal" || pathname.startsWith("/portal/")
   const [stuck, setStuck] = useState(false)
@@ -32,7 +32,9 @@ export function CustomerHeader() {
           />
         </a>
         {portal ? (
-          <p className="customer-header-context">Your account</p>
+          <p className="customer-header-context" title={accountName && accountName !== "My account" ? accountName : undefined}>
+            {accountName ?? "My account"}
+          </p>
         ) : (
           <a className="customer-header-return" href={marketingOrigin}>Back to ProfileRelaunch</a>
         )}

@@ -3,6 +3,7 @@ import { Inter, Manrope } from "next/font/google"
 import { CustomerFooter } from "@/components/customer-footer"
 import { CustomerHeader } from "@/components/customer-header"
 import { brandAppleIcon, brandIcon, brandName } from "@/lib/brand"
+import { loadPortalHeaderName } from "@/lib/portal/account/header"
 import "./globals.css"
 
 const bodyFont = Inter({ subsets: ["latin"], variable: "--font-body" })
@@ -21,12 +22,13 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const accountName = await loadPortalHeaderName()
   return (
     <html lang="en-GB">
       <body className={`${bodyFont.variable} ${displayFont.variable}`}>
         <a className="skip-link" href="#main-content">Skip to content</a>
-        <CustomerHeader />
+        <CustomerHeader accountName={accountName} />
         <main id="main-content" className="customer-main">{children}</main>
         <CustomerFooter />
       </body>

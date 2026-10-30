@@ -27,6 +27,7 @@ function storage(overrides: Partial<CustomerEvidenceStorage> = {}): CustomerEvid
     createUpload: vi.fn(),
     probeObject: vi.fn(async () => ({ exists: true, scan: "NO_THREATS_FOUND" as const })),
     createReadUrl: vi.fn(async () => signed),
+    openObject: vi.fn(async () => ({ body: null, contentLength: null })),
     ...overrides,
   }
 }

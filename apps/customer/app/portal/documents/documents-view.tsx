@@ -1,31 +1,5 @@
-import { caseTypeLabel, formatPortalDate, serviceLabel } from "@/lib/portal/cases/model"
-import { evidenceStateLabel, publishedFileDetail } from "@/lib/portal/documents/model"
-import type { CustomerDocuments, EvidenceNeed, EvidenceSubmission, PublishedDocument } from "@/lib/portal/documents/parse"
-
-function groupByReference<T extends { reference: string }>(items: T[]) {
-  const groups: { reference: string; items: T[] }[] = []
-  for (const item of items) {
-    const current = groups[groups.length - 1]
-    if (current && current.reference === item.reference) current.items.push(item)
-    else groups.push({ reference: item.reference, items: [item] })
-  }
-  return groups
-}
-
-function CaseLine({ item }: { item: EvidenceNeed | EvidenceSubmission | PublishedDocument }) {
-  const service = serviceLabel(item.serviceTrack)
-  return (
-    <p className="document-case">
-      <span className="case-ref">{item.reference}</span>
-      {" · "}
-      {caseTypeLabel(item.caseType)}
-      {" · "}
-      {item.businessName}
-      {item.locationName ? ` · ${item.locationName}` : ""}
-      {service ? ` · ${service}` : ""}
-    </p>
-  )
-}
+import { ActionNeeded, ReadyForYou, SubmittedEvidence, readyCases } from "./document-sections"
+import type { CustomerDocuments } from "@/lib/portal/documents/parse"
 
 export function DocumentsUnavailable() {
   return (
@@ -38,81 +12,14 @@ export function DocumentsUnavailable() {
 }
 
 export function DocumentsView({ documents }: { documents: CustomerDocuments }) {
-  const needs = groupByReference(documents.needs)
-  const submissions = groupByReference(documents.submissions)
-  const published = groupByReference(documents.documents)
+  const actionNeeded = documents.needs.length > 0
   return (
     <div className="documents-page">
       <h1>Documents</h1>
-      <p className="lead">What still needs you, what you have sent, and what is ready for you.</p>
-
-      <section aria-labelledby="needs-heading">
-        <h2 id="needs-heading">Action needed</h2>
-        {needs.length === 0 ? <p>Nothing is waiting for you to upload.</p> : (
-          <ul className="document-list">
-            {needs.map(group => (
-              <li key={group.reference} className="document-group">
-                <CaseLine item={group.items[0]} />
-                {group.items.map(item => (
-                  <article className="document-row" key={`${item.reference}-${item.selector}`}>
-                    <h3>{item.title}</h3>
-                    <p>{item.requestText}</p>
-                    {item.dueAt ? <p>Requested by {formatPortalDate(item.dueAt)}</p> : null}
-                    <p>{evidenceStateLabel(item.state)}{item.filename ? ` · ${item.filename}` : ""}</p>
-                    <p><a href={`/portal/cases/${item.reference}/documents`}>Upload evidence for {item.reference}</a></p>
-                  </article>
-                ))}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-labelledby="submitted-heading">
-        <h2 id="submitted-heading">Submitted</h2>
-        {submissions.length === 0 ? <p>You haven&apos;t submitted any evidence yet.</p> : (
-          <ul className="document-list">
-            {submissions.map(group => (
-              <li key={group.reference} className="document-group">
-                <CaseLine item={group.items[0]} />
-                {group.items.map(item => (
-                  <article className="document-row" key={`${item.reference}-${item.title}-${item.submittedAt}`}>
-                    <h3>{item.title}</h3>
-                    <p>{item.filename}</p>
-                    <p>Submitted {formatPortalDate(item.submittedAt)}</p>
-                    <p>{evidenceStateLabel(item.state)}</p>
-                  </article>
-                ))}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-labelledby="published-heading">
-        <h2 id="published-heading">Ready for you</h2>
-        {published.length === 0 ? <p>ProfileRelaunch hasn&apos;t published any documents for you yet.</p> : (
-          <ul className="document-list">
-            {published.map(group => (
-              <li key={group.reference} className="document-group">
-                <CaseLine item={group.items[0]} />
-                {group.items.map(item => (
-                  <article className="document-row" key={`${item.reference}-${item.selector}`}>
-                    <h3>{item.title}</h3>
-                    <p>{item.filename}</p>
-                    <p>{publishedFileDetail(item)}</p>
-                    <p>
-                      <a href={`/api/portal/documents/download?reference=${encodeURIComponent(item.reference)}&selector=${encodeURIComponent(item.selector)}`}>
-                        Download {item.filename}
-                      </a>
-                    </p>
-                  </article>
-                ))}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <p className="lead">What is ready for you, what still needs you, and the evidence you have sent.</p>
+      <ActionNeeded needs={documents.needs} />
+      <ReadyForYou cases={readyCases(documents.documents)} />
+      <SubmittedEvidence submissions={documents.submissions} expanded={actionNeeded} />
     </div>
   )
 }

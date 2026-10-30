@@ -54,6 +54,7 @@ function storage(overrides: Partial<CustomerEvidenceStorage> = {}): CustomerEvid
     })),
     probeObject: vi.fn(async () => ({ exists: true, scan: "PENDING" as const })),
     createReadUrl: vi.fn(async () => "https://s3.example/object?X-Amz-Expires=60"),
+    openObject: vi.fn(async () => ({ body: null, contentLength: null })),
     ...overrides,
   }
 }

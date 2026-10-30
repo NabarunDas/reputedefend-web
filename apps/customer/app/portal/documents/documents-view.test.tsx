@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import React from "react"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -8,6 +10,7 @@ import { CaseDocuments, CaseDocumentsUnavailable } from "../cases/[reference]/do
 import { DocumentsUnavailable, DocumentsView } from "./documents-view"
 import { EvidenceUploadForm } from "./upload-form"
 import type { CustomerCaseDocuments, CustomerDocuments } from "@/lib/portal/documents/parse"
+import { ARCHIVE_TOGETHER_LIMIT, MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES } from "@/lib/portal/documents/model"
 
 const nav = vi.hoisted(() => ({ pathname: "/portal/documents" }))
 const refresh = vi.hoisted(() => vi.fn())
@@ -117,13 +120,26 @@ describe("documents pages", () => {
     expect(screen.getByText("Being checked")).toBeTruthy()
     expect(screen.getByText("Under review")).toBeTruthy()
     expect(screen.getByText("Accepted")).toBeTruthy()
-    expect(screen.getByText("We need another document")).toBeTruthy()
+    expect(screen.getByText("Needs another document")).toBeTruthy()
     expect(screen.getAllByText("Submitted 4 October 2026").length).toBeGreaterThan(0)
-    expect(screen.getByRole("heading", { name: "Submitted" })).toBeTruthy()
-    expect(screen.getByRole("heading", { name: "Ready for you" })).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Download letter.pdf" })).toHaveAttribute(
+    const action = screen.getByRole("heading", { name: "Action needed" })
+    const ready = screen.getByRole("heading", { name: "Ready for you" })
+    const history = screen.getByText("Your submitted evidence (5)")
+    expect(action.compareDocumentPosition(ready) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(ready.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(history.closest("details")).toHaveAttribute("open")
+    expect(screen.getByText("Your submission pack is ready")).toBeTruthy()
+    expect(screen.getByText("You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you.")).toBeTruthy()
+    expect(screen.getByText("letter.pdf")).toBeTruthy()
+    expect(screen.getByText("PDF · 20 KB")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Download Prepared letter" })).toHaveAttribute(
       "href",
       "/api/portal/documents/download?reference=PR-26-ABCDEF&selector=pd-1",
+    )
+    expect(screen.getByRole("link", { name: "Download Prepared letter" })).toHaveTextContent("Download")
+    expect(screen.getByRole("link", { name: "Download all 1 file" })).toHaveAttribute(
+      "href",
+      "/api/portal/documents/archive?reference=PR-26-ABCDEF",
     )
     const current = screen.getByRole("navigation", { name: "Customer portal" }).querySelector("[aria-current='page']")
     expect(current).toHaveTextContent("Documents")
@@ -143,6 +159,72 @@ describe("documents pages", () => {
     expect(screen.getByText("Nothing is waiting for you to upload.")).toBeTruthy()
     expect(screen.getByText("You haven't submitted any evidence yet.")).toBeTruthy()
     expect(screen.getByText("ProfileRelaunch hasn't published any documents for you yet.")).toBeTruthy()
+  })
+
+  it("keeps submitted evidence collapsed until the customer opens it", () => {
+    const sharedTitle = "Google suspension or rejection notice; Address details; Council address details"
+    const submitted = ["notice.pdf", "address.png", "council.docx"].map(filename => ({
+      ...context,
+      title: sharedTitle,
+      filename,
+      submittedAt,
+      state: "ACCEPTED" as const,
+    }))
+    render(<DocumentsView documents={{ needs: [], submissions: submitted, documents: [] }} />)
+    const summary = screen.getByText("Your submitted evidence (3)")
+    const details = summary.closest("details")
+    expect(details?.tagName).toBe("DETAILS")
+    expect(details).not.toHaveAttribute("open")
+    expect(summary.tagName).toBe("SUMMARY")
+    fireEvent.click(summary)
+    expect(details).toHaveAttribute("open")
+    expect(screen.getByRole("heading", { name: "notice.pdf" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "address.png" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "council.docx" })).toBeTruthy()
+    expect(screen.getAllByText(sharedTitle)).toHaveLength(3)
+    expect(screen.queryByRole("heading", { name: sharedTitle })).toBeNull()
+  })
+
+  it("does not describe a managed publication as a Guided pack the customer must submit", () => {
+    render(<DocumentsView documents={{
+      needs: [],
+      submissions: [],
+      documents: [{ ...documents.documents[0], serviceTrack: "MANAGED" }],
+    }} />)
+    expect(screen.queryByText("Your submission pack is ready")).toBeNull()
+    expect(screen.getByRole("link", { name: "Download all 1 file" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Download Prepared letter" })).toBeTruthy()
+  })
+
+  it("uses the same download controls on a case page and keeps a closed case readable", () => {
+    const withPack: CustomerCaseDocuments = {
+      ...caseDocuments,
+      pack: {
+        title: "Guided Relaunch submission pack",
+        serviceName: "Guided Relaunch",
+        packNumber: 1,
+        instructions: "You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you.",
+        instructionSelectors: ["pd-1"],
+        customerSubmitted: false,
+        correctionRequested: false,
+      },
+    }
+    render(<CaseDocuments documents={withPack} />)
+    expect(screen.getByText("Your submission pack is ready")).toBeTruthy()
+    expect(screen.getByText("Customer submission instructions")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Request a correction" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "control.pdf" })).toBeTruthy()
+    const ready = screen.getByRole("heading", { name: "Ready for you" })
+    const history = screen.getByText("Your submitted evidence (1)")
+    expect(ready.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("keeps download rows compact on a narrow screen and focus visible", () => {
+    const css = readFileSync(join(process.cwd(), "app/globals.css"), "utf8")
+    expect(css).toMatch(/@media \(max-width: 640px\) \{[^}]*\.document-file \{ grid-template-columns: minmax\(0, 1fr\);/)
+    expect(css).toContain(".documents-page summary:focus-visible")
+    expect(css).toContain("text-overflow: ellipsis")
+    expect(css).toContain(".document-download { min-width: 7.5rem; }")
   })
 
   it("keeps a service failure distinct from an empty page", () => {
@@ -173,8 +255,58 @@ describe("documents pages", () => {
     render(<CaseDocuments documents={closed} />)
     expect(screen.queryByLabelText("Choose a file")).toBeNull()
     expect(screen.queryByRole("button", { name: "Upload evidence" })).toBeNull()
-    expect(screen.getByText("We need another document")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Download letter.pdf" })).toBeTruthy()
+    expect(screen.getAllByText("Needs another document").length).toBeGreaterThan(0)
+    expect(screen.getByRole("link", { name: "Download Prepared letter" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Download all 1 file" })).toBeTruthy()
+  })
+
+  it("offers one archive only when the published pack fits the shared limits", () => {
+    const published = documents.documents[0]
+    const below = Array.from({ length: 2 }, (_, index) => ({
+      ...published,
+      selector: `pd-${index + 1}`,
+      filename: `file-${index + 1}.pdf`,
+      sizeBytes: 1024,
+    }))
+    const { unmount } = render(<DocumentsView documents={{ needs: [], submissions: [], documents: below }} />)
+    expect(screen.getByRole("link", { name: "Download all 2 files" })).toBeTruthy()
+    expect(screen.queryByText(ARCHIVE_TOGETHER_LIMIT)).toBeNull()
+    unmount()
+
+    const exactSize = MAX_ARCHIVE_BYTES / MAX_ARCHIVE_FILES
+    const exact = Array.from({ length: MAX_ARCHIVE_FILES }, (_, index) => ({
+      ...published,
+      selector: `pd-${index + 1}`,
+      filename: `file-${index + 1}.pdf`,
+      sizeBytes: exactSize,
+    }))
+    const exactView = render(<DocumentsView documents={{ needs: [], submissions: [], documents: exact }} />)
+    expect(screen.getByRole("link", { name: "Download all 20 files" })).toBeTruthy()
+    expect(screen.getAllByRole("link", { name: "Download Prepared letter" })).toHaveLength(MAX_ARCHIVE_FILES)
+    expect(screen.queryByText(ARCHIVE_TOGETHER_LIMIT)).toBeNull()
+    exactView.unmount()
+
+    const tooMany = Array.from({ length: MAX_ARCHIVE_FILES + 1 }, (_, index) => ({
+      ...published,
+      selector: `pd-${index + 1}`,
+      filename: `file-${index + 1}.pdf`,
+      sizeBytes: 1024,
+    }))
+    const manyView = render(<DocumentsView documents={{ needs: [], submissions: [], documents: tooMany }} />)
+    expect(screen.queryByRole("link", { name: /Download all/ })).toBeNull()
+    expect(screen.getByText(ARCHIVE_TOGETHER_LIMIT)).toBeTruthy()
+    expect(screen.getAllByRole("link", { name: "Download Prepared letter" })).toHaveLength(MAX_ARCHIVE_FILES + 1)
+    manyView.unmount()
+
+    const tooLarge = render(<CaseDocuments documents={{
+      ...caseDocuments,
+      requests: [],
+      documents: [{ ...caseDocuments.documents[0], sizeBytes: MAX_ARCHIVE_BYTES + 1 }],
+    }} />)
+    expect(screen.queryByRole("link", { name: /Download all/ })).toBeNull()
+    expect(screen.getByText(ARCHIVE_TOGETHER_LIMIT)).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Download Prepared letter" })).toBeTruthy()
+    tooLarge.unmount()
   })
 
   it("keeps a case documents failure distinct from a missing case", () => {

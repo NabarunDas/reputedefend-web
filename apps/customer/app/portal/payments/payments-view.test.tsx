@@ -243,6 +243,8 @@ describe("payments screens", () => {
     const notes = screen.getByText("Payment notes").closest("details")
     expect(notes?.textContent).toContain("One-time payment")
     expect(notes?.textContent).toContain("The total includes any applicable taxes. ProfileRelaunch does not add a further fee.")
+    expect(screen.getByText(/An amount still due is shown separately/)).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/\bobligation\b/i)
     expect(screen.queryByText("The amount shown is the amount recorded for this order.")).toBeNull()
     expect(screen.queryByText("Amount")).toBeNull()
     expect(screen.queryByRole("button", { name: "Start a fresh secure checkout" })).toBeNull()

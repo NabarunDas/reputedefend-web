@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import React from "react"
 import { cleanup, render, screen } from "@testing-library/react"
+import { customerHeaderLogoSizes } from "@/lib/brand"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 
@@ -118,7 +119,11 @@ describe("customer layout", () => {
     const config = readFileSync(join(process.cwd(), "next.config.mjs"), "utf8")
     expect(header).not.toContain("unoptimized")
     expect(footer).not.toContain("unoptimized")
-    expect(header).toContain('sizes="(max-width: 767px) 160px, 200px"')
+    expect(header).toContain("customerHeaderLogoSizes")
+    expect(header).not.toContain("160px")
+    expect(customerHeaderLogoSizes).toBe("(max-width: 377px) 136px, (max-width: 577px) 36vw, 208px")
+    const css = readFileSync(join(process.cwd(), "app/globals.css"), "utf8")
+    expect(css).toMatch(/\.customer-header \.customer-logo \{[^}]*width:\s*clamp\(136px,\s*36vw,\s*208px\)/)
     expect(footer).toContain('sizes="180px"')
     expect(header).toContain("width={logoSize.width}")
     expect(header).toContain("height={logoSize.height}")

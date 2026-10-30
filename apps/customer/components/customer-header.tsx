@@ -3,7 +3,7 @@
 import Image from "next/image"
 import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
-import { brandLogoDark, logoSize, marketingHomeLabel, marketingOrigin } from "@/lib/brand"
+import { brandLogoDark, customerHeaderLogoSizes, logoSize, marketingHomeLabel, marketingOrigin } from "@/lib/brand"
 
 export function CustomerHeader({ accountName = null }: { accountName?: string | null }) {
   const pathname = usePathname()
@@ -26,7 +26,7 @@ export function CustomerHeader({ accountName = null }: { accountName?: string | 
             alt=""
             width={logoSize.width}
             height={logoSize.height}
-            sizes="(max-width: 767px) 160px, 200px"
+            sizes={customerHeaderLogoSizes}
             className="customer-logo"
             priority
           />

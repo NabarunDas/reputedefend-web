@@ -206,7 +206,7 @@ function GuardActionForm({
           <button type="submit" disabled={locked || agreed !== slot}>Accept Guard permission</button>
         </form>
         <form onSubmit={event => { event.preventDefault(); void submit(location, action, "decline_permission", {}) }}>
-          <button type="submit" disabled={locked}>Decline</button>
+          <button className="secondary" type="submit" disabled={locked}>Decline</button>
         </form>
       </div>
     )
@@ -228,7 +228,7 @@ function GuardActionForm({
           <button type="submit" disabled={locked || agreed !== slot}>Accept price change</button>
         </form>
         <form onSubmit={event => { event.preventDefault(); void submit(location, action, "decline_price", {}) }}>
-          <button type="submit" disabled={locked}>Decline</button>
+          <button className="secondary" type="submit" disabled={locked}>Decline</button>
         </form>
       </div>
     )
@@ -275,7 +275,7 @@ function SubscriptionAction({
       ) : null}
       {action.periodEndCancellation ? (
         <form onSubmit={event => { event.preventDefault(); void submit(location, action, "request_period_end_cancellation", {}) }}>
-          <button type="submit" disabled={locked}>Cancel at period end</button>
+          <button className="secondary" type="submit" disabled={locked}>Cancel at period end</button>
         </form>
       ) : null}
       {action.undoPeriodEndCancellation ? (
@@ -285,7 +285,7 @@ function SubscriptionAction({
       ) : null}
       {action.immediateCancellationReview ? (
         <form onSubmit={event => { event.preventDefault(); void submit(location, action, "request_immediate_cancellation", {}) }}>
-          <button type="submit" disabled={locked}>Request immediate cancellation review</button>
+          <button className="destructive" type="submit" disabled={locked}>Request immediate cancellation review</button>
         </form>
       ) : null}
       <p>Returning from Stripe does not start Guard billing. A confirmed invoice payment is required.</p>

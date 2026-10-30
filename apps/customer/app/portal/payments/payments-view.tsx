@@ -120,7 +120,7 @@ export function PaymentsView({
       <header className={styles.summary}>
         <p className={styles.kicker}>Billing</p>
         <h1>{title}</h1>
-        <p>The order total is the amount recorded for the order. Receipts show what has been paid. A due obligation shows the amount recorded on that obligation.</p>
+        <p>The order total is the amount recorded for the order. Receipts show what has been paid. An amount still due is shown separately, and only when that amount has been recorded.</p>
       </header>
       {notice ? <p className="payments-notice" role="alert">{notice}</p> : null}
       {cases.length === 0 ? <p className="state-panel">You don&apos;t have any payments yet.</p> : null}
@@ -154,14 +154,16 @@ function PaymentCaseSection({
   const track = trackLabel(item.serviceTrack)
   return (
     <section className="payments-case" aria-labelledby={`payments-${item.reference}`}>
-      {focused ? null : <h2 id={`payments-${item.reference}`}>{item.reference}</h2>}
-      {focused ? <p className="case-ref" id={`payments-${item.reference}`}>{item.reference}</p> : null}
-      <p className="case-business">{item.businessName}</p>
-      {item.locationName ? <p className="case-location">{item.locationName}</p> : null}
-      {track ? <p className="case-service">{track}</p> : null}
-      {focused ? null : (
-        <p className="case-documents-link"><a href={`/portal/cases/${item.reference}/payments`}>View payments for {item.reference}</a></p>
-      )}
+      <header className="payments-case-identity">
+        {focused ? null : <h2 id={`payments-${item.reference}`}>{item.reference}</h2>}
+        {focused ? <p className="case-ref" id={`payments-${item.reference}`}>{item.reference}</p> : null}
+        <p className="case-business">{item.businessName}</p>
+        {item.locationName ? <p className="case-location">{item.locationName}</p> : null}
+        {track ? <p className="case-service">{track}</p> : null}
+        {focused ? null : (
+          <p className="case-documents-link"><a href={`/portal/cases/${item.reference}/payments`}>View payments for {item.reference}</a></p>
+        )}
+      </header>
       {item.orders.length === 0 ? <p>There isn&apos;t a payment for this case yet.</p> : null}
       {item.orders.map(order => (
         <OrderSection

@@ -166,15 +166,20 @@ export function ActionClient({ actionId }: { actionId: string }) {
   const [message, setMessage] = useState("")
   const [maskedEmail, setMaskedEmail] = useState("")
   const [session, setSession] = useState<Session | null>(null)
-  const exchanged = useRef(false)
+  const secretRef = useRef<string | null>(null)
   const resendTimer = useRef<number | null>(null)
   useEffect(() => {
-    if (exchanged.current) return
-    exchanged.current = true
-    const hash = window.location.hash
-    const secret = hash.startsWith("#t=") ? hash.slice(3) : ""
-    history.replaceState(null, "", window.location.pathname + window.location.search)
+    let active = true
+    if (secretRef.current === null) {
+      const hash = window.location.hash
+      secretRef.current = hash.startsWith("#t=") ? hash.slice(3) : ""
+      history.replaceState(null, "", window.location.pathname + window.location.search)
+    }
+    const secret = secretRef.current
     const timer = window.setTimeout(() => {
+      // Development Strict Mode clears the first timer after the fragment has
+      // already been removed. Keep the secret and start the check again.
+      if (!active) return
       if (!secret) { setPhase("unavailable"); return }
       void fetch("/api/action/exchange", {
         method: "POST", headers: { "content-type": "application/json" },
@@ -186,7 +191,10 @@ export function ActionClient({ actionId }: { actionId: string }) {
         setPhase("otp")
       }).catch(() => setPhase("unavailable"))
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
   }, [actionId])
   useEffect(() => () => { if (resendTimer.current) window.clearTimeout(resendTimer.current) }, [])
 
@@ -280,12 +288,12 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <form onSubmit={sendOtp}><button type="submit">Send code</button></form>
     </>}
     {otpSent && <>
-      <p>We sent a eight-digit code to {maskedEmail}.</p>
+      <p>We sent an eight-digit code to {maskedEmail}.</p>
       <form onSubmit={verify}>
         <label>Eight-digit code<input name="code" inputMode="numeric" pattern={`[0-9]{${CUSTOMER_OTP_DIGITS}}`} maxLength={CUSTOMER_OTP_DIGITS} required autoComplete="one-time-code" onInput={event => { event.currentTarget.value = normalizeCustomerOtp(event.currentTarget.value) }} /></label>
         <button type="submit">Verify code</button>
       </form>
-      {resendReady && <form onSubmit={sendOtp}><button type="submit">Resend code</button></form>}
+      {resendReady && <form onSubmit={sendOtp}><button className="secondary" type="submit">Resend code</button></form>}
     </>}
     <p role="status">{message}</p>
   </section></ActionFrame>
@@ -303,7 +311,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <form onSubmit={event => { event.preventDefault(); void payment("start_checkout") }}>
         <button type="submit">Pay securely with Stripe</button>
       </form>
-      <p>The return page never marks this paid. ProfileRelaunch confirms collection from the signed Stripe webhook.</p>
+      <p>Opening the secure payment page does not mark this paid. We confirm the payment before it shows as received.</p>
       <p role="status">{message}</p>
     </section></ActionFrame>
   }
@@ -322,7 +330,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <h1>Pay this earned amount by invoice</h1>
       <p>{paymentDetails.orderRef} · {session.caseReference} · {session.businessName}</p>
       <p>Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}. {customerFacingTaxNote(paymentDetails.taxBehaviour)}</p>
-      <p>This is a TEST-MODE hosted invoice fallback for an already-earned unpaid obligation. Returning from the invoice page does not mark this paid.</p>
+      <p>This invoice is for an amount already earned and not yet paid. Opening the invoice page does not mark this paid.</p>
       {invoiceUrl
         ? <p><a href={invoiceUrl}>Open the secure Stripe hosted invoice</a></p>
         : <p>The hosted invoice link is not available yet.</p>}
@@ -332,7 +340,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
   if (session?.kind === "PAYMENT_RECOVERY" && paymentDetails) {
     return <ActionFrame><section>
       <h1>Complete this earned fee</h1>
-      <p>{paymentDetails.orderRef}. Outstanding {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}.</p>
+      <p>{paymentDetails.orderRef}. Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}.</p>
       <p>The previous off-session attempt needs additional authentication. This is not yet paid.</p>
       <form onSubmit={event => { event.preventDefault(); void payment("start_checkout") }}>
         <button type="submit">Continue securely with Stripe</button>
@@ -361,13 +369,13 @@ export function ActionClient({ actionId }: { actionId: string }) {
         <button type="submit">Update the payment method securely</button>
       </form>}
       {sub.consentId && !sub.cancelAtPeriodEnd && <form onSubmit={event => { event.preventDefault(); void subscription("request_period_end_cancellation") }}>
-        <button type="submit">Cancel at period end</button>
+        <button className="secondary" type="submit">Cancel at period end</button>
       </form>}
       {sub.consentId && sub.cancelAtPeriodEnd && <form onSubmit={event => { event.preventDefault(); void subscription("undo_period_end_cancellation") }}>
         <button type="submit">Keep this location subscription</button>
       </form>}
       {sub.consentId && <form onSubmit={event => { event.preventDefault(); void subscription("request_immediate_cancellation") }}>
-        <button type="submit">Request immediate cancellation review</button>
+        <button className="destructive" type="submit">Request immediate cancellation review</button>
       </form>}
       <p>Cancel at period end keeps already-paid service until paid-through. Immediate cancellation is a Finance review and does not promise a refund.</p>
       <p>The Stripe return page does not start Guard billing. A confirmed subscription invoice payment is required.</p>
@@ -390,7 +398,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
           <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />I accept this exact future price for this location only.</label>
           <button type="submit">Accept price change</button>
         </form>
-        <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
+        <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button className="secondary" type="submit">Decline</button></form>
       </div>
       <p role="status">{message}</p>
     </section></ActionFrame>
@@ -410,7 +418,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
           <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />I accept this exact permission text ({guard.permissionVersion}).</label>
           <button type="submit">Accept Guard permission</button>
         </form>
-        <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
+        <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button className="secondary" type="submit">Decline</button></form>
       </div>
       <p role="status">{message}</p>
     </section></ActionFrame>
@@ -470,7 +478,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
             <button type="submit">Accept quote</button>
           </form>
         ) : taxOpen ? <AgreementAcceptanceClosed /> : <p>This quote cannot be accepted while tax treatment is unconfirmed.</p>}
-        <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
+        <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button className="secondary" type="submit">Decline</button></form>
       </div>
       <p role="status">{message}</p>
     </section></ActionFrame>
@@ -488,12 +496,12 @@ export function ActionClient({ actionId }: { actionId: string }) {
           <label className="checkbox"><input type="checkbox" name="accepted" value="true" required />{permission ? PERMISSION_ACCEPTANCE : SERVICE_ACCEPTANCE}</label>
           <button type="submit">Accept</button>
         </form>
-        <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
+        <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button className="secondary" type="submit">Decline</button></form>
       </div>
     </>}
     {session?.kind === "AUTHORIZATION_REVOCATION" && session.authorization && <form onSubmit={event => { event.preventDefault(); void decide("revoke", { confirmed: true }) }}>
       <p>This will revoke the current {session.authorization.kind} authorisation. It does not refund a payment.</p>
-      <button type="submit">Revoke authorisation</button>
+      <button className="destructive" type="submit">Revoke authorisation</button>
     </form>}
     <p role="status">{message}</p>
   </section></ActionFrame>

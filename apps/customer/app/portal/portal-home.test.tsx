@@ -25,6 +25,7 @@ function renderPortal() {
 }
 
 beforeEach(() => {
+  nav.pathname = "/portal"
   vi.stubGlobal("fetch", fetchMock)
   fetchMock.mockReset()
   router.push.mockReset()
@@ -46,8 +47,8 @@ describe("portal shell", () => {
     expect(screen.getByText("When you start a ProfileRelaunch case, it will appear here.")).toBeTruthy()
 
     const navigation = screen.getByRole("navigation", { name: "Customer portal" })
-    const labels = [...navigation.querySelectorAll("li")].map(item => item.textContent?.replace("not available yet", "").trim())
-    expect(labels).toEqual(["Dashboard", "Cases", "Documents", "Payments", "Relaunch Guard", "Messages", "Account"])
+    const labels = [...navigation.querySelectorAll("a")].map(item => item.textContent?.trim())
+    expect(labels).toEqual(["Dashboard", "Cases", "Documents", "Messages", "Payments", "Relaunch Guard", "Account"])
     const dashboard = screen.getByRole("link", { name: "Dashboard" })
     expect(dashboard).toHaveAttribute("href", "/portal")
     expect(dashboard).toHaveAttribute("aria-current", "page")
@@ -70,13 +71,9 @@ describe("portal shell", () => {
     expect(account).toHaveAttribute("href", "/portal/account")
     expect(account).not.toHaveAttribute("aria-current")
     expect(navigation.querySelectorAll("a")).toHaveLength(7)
-    expect(dashboard.closest("li")).toHaveAttribute("data-priority", "primary")
-    expect(cases.closest("li")).toHaveAttribute("data-priority", "primary")
-    expect(documents.closest("li")).toHaveAttribute("data-priority", "primary")
-    expect(messages.closest("li")).toHaveAttribute("data-priority", "primary")
-    expect(payments.closest("li")).toHaveAttribute("data-priority", "secondary")
-    expect(guard.closest("li")).toHaveAttribute("data-priority", "secondary")
-    expect(account.closest("li")).toHaveAttribute("data-priority", "secondary")
+    const more = screen.getByRole("button", { name: "More" })
+    expect(more).toHaveAttribute("aria-expanded", "false")
+    expect(more.getAttribute("aria-controls")).toBeTruthy()
     expect(navigation.querySelector("[aria-disabled='true']")).toBeNull()
     expect(document.body.textContent).not.toMatch(/@|customerId|session token|£|sample case|coming soon|Get Help|Admin/i)
     expect(screen.getByRole("button", { name: "Sign out" })).toHaveClass("secondary")
@@ -99,6 +96,34 @@ describe("portal shell", () => {
     expect(existsSync(join(portalDir, "account", "page.tsx"))).toBe(true)
     expect(existsSync(join(portalDir, "relaunch-guard"))).toBe(false)
     expect(existsSync(join(portalDir, "relaunch-guard", "page.tsx"))).toBe(false)
+  })
+
+  it("opens the remaining destinations from More and restores focus", async () => {
+    renderPortal()
+    const more = screen.getByRole("button", { name: "More" })
+    fireEvent.click(more)
+    expect(more).toHaveAttribute("aria-expanded", "true")
+    expect(document.getElementById(more.getAttribute("aria-controls") || "")).toHaveClass("is-open")
+    await waitFor(() => expect(screen.getByRole("link", { name: "Messages" })).toHaveFocus())
+    fireEvent.keyDown(document, { key: "ArrowDown" })
+    expect(screen.getByRole("link", { name: "Payments" })).toHaveFocus()
+    fireEvent.keyDown(document, { key: "Escape" })
+    expect(more).toHaveAttribute("aria-expanded", "false")
+    expect(more).toHaveFocus()
+    fireEvent.click(more)
+    await waitFor(() => expect(screen.getByRole("link", { name: "Messages" })).toHaveFocus())
+    fireEvent.pointerDown(document.body)
+    expect(more).toHaveAttribute("aria-expanded", "false")
+  })
+
+  it("keeps the current destination visible when it lives in More", () => {
+    nav.pathname = "/portal/messages"
+    renderPortal()
+    expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute("aria-current", "page")
+    const more = screen.getByRole("button", { name: "More, Messages" })
+    expect(more).toHaveAttribute("aria-current", "true")
+    fireEvent.click(more)
+    expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute("aria-current", "page")
   })
 
   it("signs out through the portal endpoint and returns to login", async () => {

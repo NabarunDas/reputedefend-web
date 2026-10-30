@@ -7,12 +7,14 @@ export function OtpInput({
   id,
   value,
   describedBy,
+  invalid = false,
   onChange,
   inputRef,
 }: {
   id: string
   value: string
   describedBy?: string
+  invalid?: boolean
   onChange: (value: string) => void
   inputRef: RefObject<HTMLInputElement | null>
 }) {
@@ -21,6 +23,7 @@ export function OtpInput({
   return (
     <div
       className="otp-field"
+      data-invalid={invalid ? "true" : "false"}
       onMouseDown={event => {
         if (event.target === inputRef.current) return
         event.preventDefault()
@@ -40,6 +43,7 @@ export function OtpInput({
         spellCheck={false}
         pattern={`[0-9]{${CUSTOMER_OTP_DIGITS}}`}
         aria-label="Eight-digit code"
+        aria-invalid={invalid || undefined}
         value={value}
         onChange={event => onChange(normalizeCustomerOtp(event.target.value))}
         onFocus={() => setFocused(true)}

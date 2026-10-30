@@ -3,6 +3,7 @@ import { cookies } from "next/headers"
 import { backend, tokenHash, validToken } from "@/lib/backend"
 import { portalSessionCookieName } from "../config"
 import { parseAccount, type CustomerAccount } from "./parse"
+import { currentAccountRequest } from "./request-scope"
 
 export type AccountLoad =
   | { status: "ready"; account: CustomerAccount }
@@ -16,10 +17,14 @@ async function portalToken(): Promise<string | null> {
 }
 
 /**
- * The account RPC derives the customer from the portal session. This function
- * does not accept a customer id, an email, or an auth user id.
+ * The account projection derives the customer from the portal session. This
+ * function does not accept a customer id, an email, or an auth user id.
+ * Inside one request, the header and the dashboard share that read. A missing
+ * request scope does not remember the result.
  */
-export async function loadCustomerAccount(): Promise<AccountLoad> {
+const accountReads = new WeakMap<object, Promise<AccountLoad>>()
+
+async function readCustomerAccount(): Promise<AccountLoad> {
   const token = await portalToken()
   if (!token) return { status: "unauthenticated" }
   try {
@@ -33,4 +38,14 @@ export async function loadCustomerAccount(): Promise<AccountLoad> {
   } catch {
     return { status: "unavailable" }
   }
+}
+
+export function loadCustomerAccount(): Promise<AccountLoad> {
+  const scope = currentAccountRequest()
+  if (!scope) return readCustomerAccount()
+  const existing = accountReads.get(scope)
+  if (existing) return existing
+  const pending = readCustomerAccount()
+  accountReads.set(scope, pending)
+  return pending
 }

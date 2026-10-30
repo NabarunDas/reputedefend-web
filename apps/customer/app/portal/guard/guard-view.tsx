@@ -9,6 +9,7 @@ import { brandSiteUrl } from "../../../../../lib/brand"
 import { guardHeroDisclaimer, guardPrice } from "../../../../../lib/guard-offer"
 import { legalIdentity } from "../../../../../lib/legal"
 import { assignTrustedStripeCheckout } from "../../../../../lib/payments/stripe-url"
+import styles from "../payments/transaction.module.css"
 
 function slotKey(keys: { current: Record<string, string> }, slot: string) {
   keys.current[slot] ||= crypto.randomUUID()
@@ -66,20 +67,36 @@ export function GuardView({
   }
 
   return (
-    <div className="guard-page">
-      <h1>{focused ? "Relaunch Guard location" : "Relaunch Guard"}</h1>
-      {locations.length > 0 ? <p>Monitoring follows the arrangement recorded for each location.</p> : null}
+    <div className={`guard-page ${styles.page}`}>
+      <header className={styles.summary}>
+        <p className={styles.kicker}>Relaunch Guard</p>
+        <h1>{focused ? "Relaunch Guard location" : "Relaunch Guard"}</h1>
+        {locations.length > 0 ? <p>Monitoring follows the arrangement recorded for each location. Checks are scheduled. They are not continuous, and they do not change your Google profile.</p> : null}
+      </header>
       {notice ? <p className="guard-notice" role="alert">{notice}</p> : null}
-      {locations.length === 0 ? <GuardIntroduction /> : null}
+      {locations.length === 0 ? <GuardIntroduction /> : <p className={styles.kicker}>Covered locations</p>}
       <ul className="guard-list">
         {locations.map(location => (
-          <li key={location.selector} className="guard-location">
-            <h2>{location.businessName}</h2>
+          <li key={location.selector} className={`guard-location ${styles.location}`}>
+            <div className={styles.summaryHead}>
+              <h2>{location.businessName}</h2>
+              <p className={`${styles.status} ${location.monitoringActive ? styles.good : styles.pending}`}>{location.monitoringActive ? "Monitoring is active." : "Monitoring is not active."}</p>
+            </div>
             <p>{location.locationName}</p>
-            <p>{location.status}</p>
-            <p>{location.arrangement}</p>
-            <p>{location.permission}</p>
-            <p>{location.monitoringActive ? "Monitoring is active." : "Monitoring is not active."}</p>
+            <dl className={styles.facts}>
+              <div>
+                <dt>Status</dt>
+                <dd>{location.status}</dd>
+              </div>
+              <div>
+                <dt>Arrangement</dt>
+                <dd>{location.arrangement}</dd>
+              </div>
+              <div>
+                <dt>Permission</dt>
+                <dd>{location.permission}</dd>
+              </div>
+            </dl>
             {location.actions.length > 0 ? <p>Your response is needed.</p> : null}
             {!focused ? <p><a href={`/portal/guard/${location.selector}`}>Open this location</a></p> : null}
             {focused ? <GuardDetail location={location} busy={busy} agreed={agreed} setAgreed={setAgreed} submit={submit} /> : null}
@@ -94,8 +111,10 @@ export function GuardView({
               <li key={document.selector}>
                 <p>{document.kind === "credit_note" ? "Credit note" : "Receipt"} {document.reference}</p>
                 <p>{guardMoney(document.amountMinor, document.currency)} · {guardWhen(document.issuedAt)}</p>
-                <p><a href={`/portal/guard/document?selector=${document.selector}`}>View {document.reference}</a></p>
-                <p><a href={`/api/portal/guard/document?selector=${document.selector}`}>Download {document.reference} PDF</a></p>
+                <p className={`portal-actions ${styles.links}`}>
+                  <a className="portal-button" href={`/portal/guard/document?selector=${document.selector}`}>View {document.reference}</a>
+                  <a className="portal-button secondary" href={`/api/portal/guard/document?selector=${document.selector}`}>Download {document.reference} PDF</a>
+                </p>
               </li>
             ))}
           </ul>
@@ -109,7 +128,7 @@ export function GuardView({
 function GuardIntroduction() {
   const contactEmail = legalIdentity.contactEmail
   return (
-    <section className="guard-intro" aria-labelledby="guard-intro-title">
+    <section className={`guard-intro ${styles.panel}`} aria-labelledby="guard-intro-title">
       <h2 id="guard-intro-title">Protect your Google Business Profile with Relaunch Guard</h2>
       <p>We check your profile and reviews each morning and evening, UK time, including weekends and bank holidays. If we see a concerning change, we review it and email you with what we found and what to do next.</p>
       <ul className="guard-benefits">

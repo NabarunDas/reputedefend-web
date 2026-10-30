@@ -8,6 +8,7 @@ import { CustomerQuotation } from "@/lib/commercial/quotation"
 import { QUOTATION_ACCEPTANCE } from "../../../../../../../lib/commercial/quotation-presentation"
 import { agreementStatusText, paymentFollowUp, quoteStatusText, trackLabel } from "@/lib/portal/service/model"
 import type { CustomerCaseService, ServiceAction, ServiceAgreement, ServiceQuote } from "@/lib/portal/service/parse"
+import styles from "../../../payments/transaction.module.css"
 
 type Operation = "accept_quote" | "decline_quote" | "accept_agreement" | "decline_agreement" | "revoke_authorization"
 
@@ -99,7 +100,7 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
   const permissionRevoke = actionFor(service.actions, "revocation", "case_permission")
 
   return (
-    <div className="service-page">
+    <div className={`service-page ${styles.page}`}>
       <nav className="case-breadcrumb" aria-label="Breadcrumb">
         <ol>
           <li><a href="/portal/cases">Cases</a></li>
@@ -107,11 +108,31 @@ export function ServiceView({ service }: { service: CustomerCaseService }) {
           <li aria-current="page">Service and permissions</li>
         </ol>
       </nav>
-      <h1>Service and permissions</h1>
-      <p className="case-ref">{item.reference}</p>
-      <p className="case-business">{item.businessName}</p>
-      {item.locationName ? <p className="case-location">{item.locationName}</p> : null}
-      {track ? <p className="case-service">{track}</p> : null}
+      <header className={styles.summary}>
+        <div className={styles.summaryHead}>
+          <div>
+            <p className={styles.kicker}>Service</p>
+            <h1>Service and permissions</h1>
+          </div>
+          {track ? <p className={`${styles.status} ${styles.good}`}>{track}</p> : null}
+        </div>
+        <dl className={styles.facts}>
+          <div>
+            <dt>Case</dt>
+            <dd className="case-ref">{item.reference}</dd>
+          </div>
+          <div>
+            <dt>Business</dt>
+            <dd className="case-business">{item.businessName}</dd>
+          </div>
+          {item.locationName ? (
+            <div>
+              <dt>Location</dt>
+              <dd className="case-location">{item.locationName}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </header>
       {notice ? <p className="service-notice" role="alert">{notice}</p> : null}
 
       <QuoteSection
@@ -198,6 +219,7 @@ function QuoteSection({
       <h2 id="quote-heading">Your quotation</h2>
       {!quote ? <p>There isn&apos;t a quote for this case yet.</p> : (
         <>
+          <p className={`${styles.status} ${quoteTone(quote.status)}`}>{quoteBadge(quote.status)}</p>
           <p>{quoteStatusText(quote)}</p>
           <CustomerQuotation
             businessName={businessName}
@@ -225,10 +247,9 @@ function QuoteSection({
             sectionHeading="h3"
           />
           {quote.status === "offered" || quote.status === "accepted" ? (
-            <p>
-              <a href={`/portal/cases/${reference}/quotation`}>View quotation</a>
-              {" · "}
-              <a href={`/api/portal/service/quotation?reference=${reference}`}>Download quotation PDF</a>
+            <p className="portal-actions">
+              <a className="portal-button" href={`/portal/cases/${reference}/quotation`}>View quotation</a>
+              <a className="portal-button secondary" href={`/api/portal/service/quotation?reference=${reference}`}>Download quotation PDF</a>
             </p>
           ) : null}
           {agreementReady(quote) ? (
@@ -240,10 +261,16 @@ function QuoteSection({
             />
           ) : null}
           {quote.paymentNext ? (
-            <p>
+            <p className={styles.next}>
               {paymentFollowUp(quote.paymentNext)}{" "}
               <a href={`/portal/cases/${reference}/payments`}>Open payments for {reference}</a>
             </p>
+          ) : quote.status === "offered" ? (
+            <p className={styles.next}>Read the quotation and the agreement, then accept or decline. Accepting records your decision. It does not take a payment from this page.</p>
+          ) : quote.status === "declined" ? (
+            <p className={styles.next}>A declined quotation does not continue. ProfileRelaunch would need to send a new quotation if you want to go ahead.</p>
+          ) : quote.status === "expired" ? (
+            <p className={styles.next}>This quotation can no longer be accepted. Contact ProfileRelaunch if you still want to continue.</p>
           ) : null}
           {quote.canAccept && action && agreementReady(quote) ? (
             <div className="service-confirm">
@@ -341,10 +368,11 @@ function AgreementSection({
       <h2 id={headingId}>{heading}</h2>
       {!item ? <p>{empty}</p> : (
         <>
+          <p className={`${styles.status} ${agreementTone(item.status)}`}>{agreementBadge(kind, item.status)}</p>
           <p>{agreementStatusText(kind, item)}</p>
           <p className="service-version">Version {item.versionNumber}</p>
           <h3>{item.title}</h3>
-          <p className="service-prose">{item.body}</p>
+          <p className={`service-prose ${styles.prose}`}>{item.body}</p>
           <h3>Scope</h3>
           <p className="service-prose">{item.scope}</p>
           {item.canAccept && action ? (
@@ -405,6 +433,38 @@ function AgreementSection({
       )}
     </section>
   )
+}
+
+function quoteBadge(status: ServiceQuote["status"]): string {
+  if (status === "offered") return "Pending your decision"
+  if (status === "accepted") return "Accepted"
+  if (status === "declined") return "Declined"
+  if (status === "expired") return "Expired"
+  return "No longer available"
+}
+
+function quoteTone(status: ServiceQuote["status"]): string {
+  if (status === "accepted") return styles.good
+  if (status === "offered") return styles.pending
+  if (status === "declined" || status === "expired") return styles.problem
+  return styles.quiet
+}
+
+function agreementBadge(kind: "agreement" | "permission", status: ServiceAgreement["status"]): string {
+  const noun = kind === "agreement" ? "Agreement" : "Permission"
+  if (status === "review") return `${noun} pending`
+  if (status === "accepted") return `${noun} accepted`
+  if (status === "declined") return `${noun} declined`
+  if (status === "revoked") return `${noun} withdrawn`
+  if (status === "review_required") return "Needs review"
+  return "Not available"
+}
+
+function agreementTone(status: ServiceAgreement["status"]): string {
+  if (status === "accepted") return styles.good
+  if (status === "review" || status === "review_required") return styles.pending
+  if (status === "declined" || status === "revoked") return styles.problem
+  return styles.quiet
 }
 
 function agreementReady(quote: ServiceQuote): quote is ServiceQuote & {

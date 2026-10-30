@@ -235,7 +235,11 @@ describe("payments screens", () => {
     })]} />)
     expect(screen.getByRole("heading", { name: "Guided Relaunch" })).toBeTruthy()
     expect(screen.getByText("Order SO-26-ABCDEF")).toBeTruthy()
-    expect(screen.getAllByText("£99.00")).toHaveLength(1)
+    expect(screen.getAllByText("£99.00")).toHaveLength(2)
+    expect(document.querySelector(".payments-amount")?.textContent).toBe("£99.00")
+    expect(document.querySelector(".payments-amount")?.previousElementSibling?.textContent).toBe("Order total")
+    expect(document.querySelector(".payments-outstanding")?.textContent).toBe("£99.00")
+    expect(document.querySelector(".payments-outstanding")?.previousElementSibling?.textContent).toBe("Outstanding")
     const notes = screen.getByText("Payment notes").closest("details")
     expect(notes?.textContent).toContain("One-time payment")
     expect(notes?.textContent).toContain("The total includes any applicable taxes. ProfileRelaunch does not add a further fee.")
@@ -268,5 +272,158 @@ describe("payments screens", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).operation).toBe("start_checkout")
     expect(fetchMock.mock.calls[0][1].headers["idempotency-key"]).not.toBe(fetchMock.mock.calls[1][1].headers["idempotency-key"])
+  })
+})
+
+function obligation(overrides: Partial<PaymentOrder["obligations"][number]> = {}): PaymentOrder["obligations"][number] {
+  return { ...order().obligations[0], ...overrides }
+}
+
+function receipt(amountMinor: number, marker: string) {
+  return {
+    selector: `rc-${marker.repeat(32)}`,
+    amountMinor,
+    currency: "GBP",
+    taxBehaviour: "NOT_APPLICABLE" as const,
+    taxAmountMinor: 0,
+    paidAt: "2026-10-04T12:00:00.000Z",
+  }
+}
+
+function orderTotal(): HTMLElement {
+  const node = document.querySelector(".payments-amount")
+  if (!(node instanceof HTMLElement)) throw new Error("missing order total")
+  return node
+}
+
+describe("payment amount headings", () => {
+  it("keeps an unpaid upfront order total separate from the recorded amount due", () => {
+    render(<PaymentsView focused cases={[item()]} />)
+    expect(orderTotal().textContent).toBe("£99.00")
+    expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(document.querySelector(".payments-outstanding")?.textContent).toBe("£99.00")
+    expect(screen.getByRole("heading", { name: "Payment required" })).toBeTruthy()
+    expect(screen.getByText("No payment recorded yet.")).toBeTruthy()
+    expect(screen.queryByText("£0.00")).toBeNull()
+  })
+
+  it("shows a paid order total and the receipt amount, not an outstanding balance", () => {
+    render(<PaymentsView focused cases={[item({
+      orders: [order({
+        obligations: [obligation({ state: "PAID" })],
+        receipts: [receipt(9900, "ab")],
+      })],
+      actions: [],
+    })]} />)
+    expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(screen.getByText(/Paid £99\.00/)).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Paid" })).toBeTruthy()
+    expect(screen.queryByText("Outstanding")).toBeNull()
+    expect(screen.queryByText("No payment recorded yet.")).toBeNull()
+  })
+
+  it("uses the stored due obligation for a mixed order and does not subtract receipts", () => {
+    render(<PaymentsView focused cases={[item({
+      orders: [order({
+        obligations: [
+          obligation({ state: "PAID", amountMinor: 4000 }),
+          obligation({ state: "DUE", amountMinor: 9900 }),
+        ],
+        receipts: [receipt(4000, "cd")],
+      })],
+    })]} />)
+    expect(orderTotal().textContent).toBe("£99.00")
+    expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(screen.getByText(/Paid £40\.00/)).toBeTruthy()
+    expect(document.querySelector(".payments-outstanding")?.textContent).toBe("£99.00")
+    expect(document.querySelector(".payments-outstanding")?.previousElementSibling?.textContent).toBe("Outstanding")
+    expect(document.body.textContent).not.toContain("£59.00")
+    cleanup()
+
+    render(<PaymentsView focused cases={[item({
+      orders: [order({
+        obligations: [
+          obligation({ state: "PAID", amountMinor: 4000 }),
+          obligation({ state: "DUE", amountMinor: 5900 }),
+        ],
+        receipts: [receipt(4000, "ef")],
+      })],
+    })]} />)
+    expect(orderTotal().textContent).toBe("£99.00")
+    expect(document.querySelector(".payments-outstanding")?.textContent).toBe("£59.00")
+    expect(screen.getAllByText("Outstanding")).toHaveLength(1)
+  })
+
+  it("does not turn a failed or unconfirmed payment into an outstanding balance", () => {
+    render(<PaymentsView focused cases={[item({
+      orders: [order({ obligations: [obligation({ state: "FAILED" })] })],
+    })]} />)
+    expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(screen.getByRole("heading", { name: "Payment was not completed" })).toBeTruthy()
+    expect(screen.queryByText("Outstanding")).toBeNull()
+    expect(screen.getByText("No payment recorded yet.")).toBeTruthy()
+    cleanup()
+
+    render(<PaymentsView focused cases={[item({
+      orders: [order({ obligations: [obligation({ state: "COLLECTING" })] })],
+    })]} />)
+    expect(screen.getByRole("heading", { name: "Payment pending" })).toBeTruthy()
+    expect(screen.getByText("We're confirming this payment. It is not marked paid.")).toBeTruthy()
+    expect(screen.queryByText("Outstanding")).toBeNull()
+    expect(orderTotal().textContent).toBe("£99.00")
+  })
+
+  it("labels a void obligation as void and leaves the order total unchanged", () => {
+    render(<PaymentsView focused cases={[item({
+      orders: [order({ obligations: [obligation({ state: "VOID" })] })],
+      actions: [],
+    })]} />)
+    expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(screen.getByRole("heading", { name: "Void" })).toBeTruthy()
+    expect(screen.queryByText("Outstanding")).toBeNull()
+    expect(screen.getByText("No payment was recorded.")).toBeTruthy()
+  })
+
+  it("does not show an outstanding balance for a Managed success fee that has not been earned", () => {
+    render(<PaymentsView focused cases={[item({
+      serviceTrack: "MANAGED",
+      orders: [order({
+        paymentModel: "SUCCESS_FEE",
+        obligations: [],
+        receipts: [],
+      })],
+      actions: [],
+    })]} />)
+    expect(orderTotal().textContent).toBe("£99.00")
+    expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(screen.queryByText("Outstanding")).toBeNull()
+    expect(screen.getByText("No payment was recorded.")).toBeTruthy()
+    expect(screen.getByText(/invoiced only after documented success/)).toBeTruthy()
+  })
+
+  it("lists every receipt and does not replace them with one inferred balance", () => {
+    render(<PaymentsView focused cases={[item({
+      orders: [order({
+        obligations: [obligation({ state: "PAID" })],
+        receipts: [receipt(5000, "11"), receipt(4900, "22")],
+      })],
+      actions: [],
+    })]} />)
+    expect(screen.getByText(/Paid £50\.00/)).toBeTruthy()
+    expect(screen.getByText(/Paid £49\.00/)).toBeTruthy()
+    expect(screen.queryByText("Outstanding")).toBeNull()
+    expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(document.body.textContent).not.toContain("£1.00")
+  })
+
+  it("shows no outstanding figure when nothing is payable and nothing has been paid", () => {
+    render(<PaymentsView focused cases={[item({
+      orders: [order({ obligations: [], receipts: [] })],
+      actions: [],
+    })]} />)
+    expect(orderTotal().previousElementSibling?.textContent).toBe("Order total")
+    expect(screen.queryByText("Outstanding")).toBeNull()
+    expect(screen.queryByText(/Paid £/)).toBeNull()
+    expect(screen.getByText("No payment was recorded.")).toBeTruthy()
   })
 })

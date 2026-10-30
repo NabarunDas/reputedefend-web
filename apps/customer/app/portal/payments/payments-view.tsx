@@ -13,8 +13,27 @@ import {
 import type { PaymentAction, PaymentCase, PaymentObligation, PaymentOrder } from "@/lib/portal/payments/parse"
 import { formatPortalDate } from "@/lib/portal/cases/model"
 import { assignTrustedStripeCheckout } from "../../../../../lib/payments/stripe-url"
+import styles from "./transaction.module.css"
 
 type Operation = "confirm_consent" | "start_checkout" | "refresh_checkout"
+
+function openObligation(order: PaymentOrder): boolean {
+  return order.obligations.some(item => item.state === "DUE" || item.state === "COLLECTING" || item.state === "AUTHENTICATION_REQUIRED" || item.state === "FAILED")
+}
+
+/** A due obligation stores its own amount. That is not the order total, and it is not the order total minus receipts. */
+function recordedOutstanding(obligation: PaymentObligation): boolean {
+  if (obligation.state !== "DUE") return false
+  if (obligation.kind === "upfront") return true
+  return obligation.invoice?.status === "ISSUED"
+}
+
+function obligationTone(state: PaymentObligation["state"]): string {
+  if (state === "PAID") return styles.good
+  if (state === "DUE" || state === "COLLECTING" || state === "AUTHENTICATION_REQUIRED") return styles.pending
+  if (state === "FAILED") return styles.problem
+  return styles.quiet
+}
 
 function actionFor(actions: PaymentAction[], kind: PaymentAction["kind"], orderRef: string) {
   return actions.find(item => item.kind === kind && item.orderRef === orderRef) ?? null
@@ -88,7 +107,7 @@ export function PaymentsView({
   const title = focused && cases.length === 1 ? `Payments for ${cases[0].reference}` : "Payments"
 
   return (
-    <div className="payments-page">
+    <div className={`payments-page ${styles.page}`}>
       {focused && cases[0] ? (
         <nav className="case-breadcrumb" aria-label="Breadcrumb">
           <ol>
@@ -98,9 +117,13 @@ export function PaymentsView({
           </ol>
         </nav>
       ) : null}
-      <h1>{title}</h1>
+      <header className={styles.summary}>
+        <p className={styles.kicker}>Billing</p>
+        <h1>{title}</h1>
+        <p>The order total is the amount recorded for the order. Receipts show what has been paid. A due obligation shows the amount recorded on that obligation.</p>
+      </header>
       {notice ? <p className="payments-notice" role="alert">{notice}</p> : null}
-      {cases.length === 0 ? <p>You don&apos;t have any payments yet.</p> : null}
+      {cases.length === 0 ? <p className="state-panel">You don&apos;t have any payments yet.</p> : null}
       {cases.map(item => (
         <PaymentCaseSection
           key={item.reference}
@@ -175,6 +198,7 @@ function OrderSection({
     <article className="payments-order">
       <h3>{order.serviceName}</h3>
       <p className="payments-order-ref">Order {order.orderRef}</p>
+      <p className={styles.moneyCaption}>Order total</p>
       <p className="payments-amount">{moneyLabel(order.amountMinor, order.currency)}</p>
       <details className="portal-more">
         <summary>Payment notes</summary>
@@ -199,6 +223,7 @@ function OrderSection({
           onSubmit={onSubmit}
         />
       ))}
+      {order.receipts.length === 0 ? <p>{openObligation(order) ? "No payment recorded yet." : "No payment was recorded."}</p> : null}
       {order.receipts.length > 0 ? (
         <div className="payments-receipts">
           <h4>Receipts</h4>
@@ -206,7 +231,7 @@ function OrderSection({
             {order.receipts.map(receipt => (
               <li key={receipt.selector}>
                 <p className="payments-paid-line">Paid {moneyLabel(receipt.amountMinor, receipt.currency)} · {formatPortalDate(receipt.paidAt)}</p>
-                <p className="portal-actions">
+                <p className={`portal-actions ${styles.links}`}>
                   <a className="portal-button" href={`/portal/payments/receipt?selector=${receipt.selector}`}>View receipt for {order.orderRef}</a>
                   <a className="portal-button secondary" href={`/api/portal/payments/receipt?selector=${receipt.selector}`}>Download receipt for {order.orderRef}</a>
                 </p>
@@ -242,8 +267,15 @@ function ObligationBlock({
   const repeatAmount = obligation.amountMinor !== order.amountMinor || obligation.currency !== order.currency
   return (
     <div className="payments-obligation">
-      <h4>{obligationHeadline(obligation.kind, obligation.state)}</h4>
-      {repeatAmount ? <p>{moneyLabel(obligation.amountMinor, obligation.currency)}</p> : null}
+      <h4>
+        <span className={`${styles.status} ${obligationTone(obligation.state)}`}>{obligationHeadline(obligation.kind, obligation.state)}</span>
+      </h4>
+      {recordedOutstanding(obligation) ? (
+        <>
+          <p className={styles.moneyCaption}>Outstanding</p>
+          <p className="payments-outstanding">{moneyLabel(obligation.amountMinor, obligation.currency)}</p>
+        </>
+      ) : repeatAmount ? <p>{moneyLabel(obligation.amountMinor, obligation.currency)}</p> : null}
       {obligation.state === "DUE" ? null : <p>{obligationDetail(obligation.state)}</p>}
       {control ? (
         <form
@@ -277,16 +309,14 @@ function ObligationBlock({
           <p>{invoiceSentence(obligation.invoice.status, obligation.invoice.hostedAvailable)}</p>
           {obligation.invoice.status === "ISSUED" && invoiceAction ? (
             <>
-              <p>
-                <a href={`/portal/payments/invoice?reference=${item.reference}&selector=${invoiceAction.selector}`}>
-                  View payment request for {order.orderRef}
-                </a>
-              </p>
-              <p>
-                <a href={`/api/portal/payments/invoice-document?reference=${item.reference}&selector=${invoiceAction.selector}`}>
-                  Download invoice PDF for {order.orderRef}
-                </a>
-              </p>
+          <p className={`portal-actions ${styles.links}`}>
+            <a className="portal-button" href={`/portal/payments/invoice?reference=${item.reference}&selector=${invoiceAction.selector}`}>
+              View payment request for {order.orderRef}
+            </a>
+            <a className="portal-button secondary" href={`/api/portal/payments/invoice-document?reference=${item.reference}&selector=${invoiceAction.selector}`}>
+              Download invoice PDF for {order.orderRef}
+            </a>
+          </p>
             </>
           ) : null}
           {obligation.invoice.hostedAvailable && invoiceAction ? (

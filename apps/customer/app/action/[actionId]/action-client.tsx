@@ -8,6 +8,22 @@ import { CustomerQuotation } from "@/lib/commercial/quotation"
 import { assignTrustedStripeCheckout, trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
 import { QUOTATION_ACCEPTANCE } from "../../../../../lib/commercial/quotation-presentation"
 import { customerFacingTaxNote } from "../../../../../lib/pricing"
+import styles from "../../portal/payments/transaction.module.css"
+
+function ActionFrame({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={styles.action}>
+      <div className={`${styles.actionCard} ${styles.page} ${wide ? styles.wide : ""}`}>
+        <p className={styles.brandRow}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/profile-relaunch-logo.png" alt="ProfileRelaunch" />
+        </p>
+        <p className={styles.kicker}>Secure action</p>
+        {children}
+      </div>
+    </div>
+  )
+}
 
 const SERVICE_ACCEPTANCE = "I have read and agree to this service agreement and scope."
 const PERMISSION_ACCEPTANCE = "I authorise ProfileRelaunch to carry out the agreed case-management work described in this permission. This is not payment, Google Manager access, or permission to submit."
@@ -255,9 +271,9 @@ export function ActionClient({ actionId }: { actionId: string }) {
     setMessage(result.message || "Consent recorded. No fee is due today.")
   }
 
-  if (phase === "unavailable") return <section><h1>Secure action</h1><p>{ACTION_UNAVAILABLE}</p></section>
-  if (phase === "start") return <section><h1>Secure action</h1><p className="muted">Checking this link…</p></section>
-  if (phase === "otp") return <section>
+  if (phase === "unavailable") return <ActionFrame><section><h1>This link is not available</h1><p>{ACTION_UNAVAILABLE}</p><p className={styles.next}>Request a new link from ProfileRelaunch, or return to the page that sent you here. Do not reuse an expired code.</p></section></ActionFrame>
+  if (phase === "start") return <ActionFrame><section><h1>Secure action</h1><p className="muted">Checking this link…</p></section></ActionFrame>
+  if (phase === "otp") return <ActionFrame><section>
     <h1>Confirm it is you</h1>
     {!otpSent && <>
       <p>A one-time code will be sent to {maskedEmail || "the verified email for this action"}.</p>
@@ -272,14 +288,14 @@ export function ActionClient({ actionId }: { actionId: string }) {
       {resendReady && <form onSubmit={sendOtp}><button type="submit">Resend code</button></form>}
     </>}
     <p role="status">{message}</p>
-  </section>
-  if (phase === "done") return <section><h1>Secure action</h1><p>{message}</p></section>
+  </section></ActionFrame>
+  if (phase === "done") return <ActionFrame><section><h1>Secure action</h1><p>{message}</p><p className={styles.next}>You can close this page. If this step continues in the customer portal, sign in there to see the updated case.</p></section></ActionFrame>
   const agreement = session?.agreement
   const quote = session?.quote
   const paymentDetails = session?.payment
   const permission = agreement?.kind === "CASE_MANAGEMENT_PERMISSION"
   if (session?.kind === "GUIDED_PAYMENT" && paymentDetails) {
-    return <section>
+    return <ActionFrame><section>
       <h1>Pay this accepted order</h1>
       <p>{paymentDetails.orderRef} · {session.caseReference} · {session.businessName}</p>
       <p>Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}. {customerFacingTaxNote(paymentDetails.taxBehaviour)}</p>
@@ -289,20 +305,20 @@ export function ActionClient({ actionId }: { actionId: string }) {
       </form>
       <p>The return page never marks this paid. ProfileRelaunch confirms collection from the signed Stripe webhook.</p>
       <p role="status">{message}</p>
-    </section>
+    </section></ActionFrame>
   }
   if (session?.kind === "MANAGED_PAYMENT_SETUP") {
-    return <section>
+    return <ActionFrame><section>
       <h1>Managed payment</h1>
       <p>{paymentDetails?.orderRef ? `${paymentDetails.orderRef} · ` : ""}{session.caseReference} · {session.businessName}</p>
       {paymentDetails ? <p>Agreed success fee {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}.</p> : null}
       <p>The Managed success fee is invoiced only after documented success. Saving a card for an off-session charge is not available, and no card is charged automatically.</p>
       <p role="status">{message}</p>
-    </section>
+    </section></ActionFrame>
   }
   if (session?.kind === "INVOICE_PAYMENT" && paymentDetails) {
     const invoiceUrl = trustedStripeUrl(paymentDetails.hostedInvoiceUrl, "invoice")
-    return <section>
+    return <ActionFrame><section>
       <h1>Pay this earned amount by invoice</h1>
       <p>{paymentDetails.orderRef} · {session.caseReference} · {session.businessName}</p>
       <p>Amount due {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}. {customerFacingTaxNote(paymentDetails.taxBehaviour)}</p>
@@ -311,10 +327,10 @@ export function ActionClient({ actionId }: { actionId: string }) {
         ? <p><a href={invoiceUrl}>Open the secure Stripe hosted invoice</a></p>
         : <p>The hosted invoice link is not available yet.</p>}
       <p role="status">{message}</p>
-    </section>
+    </section></ActionFrame>
   }
   if (session?.kind === "PAYMENT_RECOVERY" && paymentDetails) {
-    return <section>
+    return <ActionFrame><section>
       <h1>Complete this earned fee</h1>
       <p>{paymentDetails.orderRef}. Outstanding {formatGbp(paymentDetails.amountMinor)} {paymentDetails.currency}.</p>
       <p>The previous off-session attempt needs additional authentication. This is not yet paid.</p>
@@ -322,11 +338,11 @@ export function ActionClient({ actionId }: { actionId: string }) {
         <button type="submit">Continue securely with Stripe</button>
       </form>
       <p role="status">{message}</p>
-    </section>
+    </section></ActionFrame>
   }
   if (session?.kind === "GUARD_SUBSCRIPTION_START" && session.subscription) {
     const sub = session.subscription
-    return <section>
+    return <ActionFrame><section>
       <h1>Start Relaunch Guard for this location</h1>
       <p>{session.businessName}{session.locationName ? ` · ${session.locationName}` : ""}</p>
       <p>Accepted monthly amount {formatGbp(sub.amountMinor)} {sub.currency}, billed {sub.frequency.toLowerCase()} for this exact location only.</p>
@@ -357,11 +373,11 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <p>The Stripe return page does not start Guard billing. A confirmed subscription invoice payment is required.</p>
       {sub.includedEndAt && <p>This is a paid continuation after included Guard. Included coverage does not automatically become a paid subscription.</p>}
       <p role="status">{message}</p>
-    </section>
+    </section></ActionFrame>
   }
   if (session?.kind === "GUARD_PRICE_CHANGE_ACCEPTANCE" && session.priceChange) {
     const offer = session.priceChange
-    return <section>
+    return <ActionFrame><section>
       <h1>Review this Guard price change</h1>
       <p>{session.businessName}{session.locationName ? ` · ${session.locationName}` : ""}</p>
       <p>Current monthly amount {formatGbp(offer.oldAmountMinor)} {offer.currency}.</p>
@@ -377,11 +393,11 @@ export function ActionClient({ actionId }: { actionId: string }) {
         <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
       </div>
       <p role="status">{message}</p>
-    </section>
+    </section></ActionFrame>
   }
   if (session?.kind === "GUARD_PERMISSION" && session.guard) {
     const guard = session.guard
-    return <section>
+    return <ActionFrame><section>
       <h1>Guard monitoring permission</h1>
       <p>{session.businessName}{session.locationName ? ` · ${session.locationName}` : ""}</p>
       {guard.coverageBasis === "INCLUDED" && <p>This also records your choice to take the included {guard.includedDays || 30}-day Relaunch Guard offer. The 30 days start only when Guard is activated, not when you accept this permission. No subscription exists by default and no automatic charge occurs at included expiry. Paid continuation requires a separate accepted Guard order and recurring consent.</p>}
@@ -397,7 +413,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
         <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
       </div>
       <p role="status">{message}</p>
-    </section>
+    </section></ActionFrame>
   }
   if (session?.kind === "QUOTE_ACCEPTANCE" && quote) {
     const taxOpen = quote.taxBehaviour !== "UNCONFIRMED"
@@ -408,7 +424,7 @@ export function ActionClient({ actionId }: { actionId: string }) {
       && quote.commercialAgreementBody.trim().length > 0
     const bound = Boolean(quote.commercialAgreementVersion && quote.commercialAgreementHash)
     const validUntilLabel = new Date(quote.validUntil).toLocaleString("en-GB", { timeZone: "Europe/London" })
-    return <section className="quotation-page">
+    return <ActionFrame wide><section className="quotation-page">
       <h1>Your quotation</h1>
       <CustomerQuotation
         businessName={session.businessName}
@@ -457,9 +473,9 @@ export function ActionClient({ actionId }: { actionId: string }) {
         <form onSubmit={event => { event.preventDefault(); void decide("decline", {}) }}><button type="submit">Decline</button></form>
       </div>
       <p role="status">{message}</p>
-    </section>
+    </section></ActionFrame>
   }
-  return <section>
+  return <ActionFrame><section>
     <h1>{agreement?.title || "Review this action"}</h1>
     <p>{session?.caseReference} · {session?.businessName}{session?.locationName ? ` · ${session.locationName}` : ""}</p>
     {agreement && <>
@@ -480,5 +496,5 @@ export function ActionClient({ actionId }: { actionId: string }) {
       <button type="submit">Revoke authorisation</button>
     </form>}
     <p role="status">{message}</p>
-  </section>
+  </section></ActionFrame>
 }

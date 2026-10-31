@@ -17,11 +17,13 @@ const FRIENDLY_TITLES: ReadonlyArray<readonly [RegExp, string]> = [
 ]
 
 /**
- * Production customer host, and the DEV develop customer preview.
- * A feature preview, a lookalike, or any other host is not linked.
+ * Exact customer hosts. A similarly named Vercel hostname is not approved.
+ * Production is customer.profilerelaunch.com. DEV develop is the clientcove preview.
  */
-const PRODUCTION_CUSTOMER_HOST = "customer.profilerelaunch.com"
-const DEV_CUSTOMER_HOST = /^profilerelaunch-customer-git-develop-[a-z0-9]+(?:-[a-z0-9]+)*\.vercel\.app$/
+const APPROVED_CUSTOMER_HOSTS = new Set([
+  "customer.profilerelaunch.com",
+  "profilerelaunch-customer-git-develop-clientcove.vercel.app",
+])
 const ACTION_PATH = /^\/action\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const PORTAL_PATH = /^\/portal\/cases\/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}(?:\/payments|\/documents)?$/
 const URL_TOKEN = /https:\/\/[^\s<>"'`]+/gi
@@ -58,7 +60,7 @@ export function messageParagraphs(body: string): string[] {
 }
 
 function approvedCustomerHost(hostname: string): boolean {
-  return hostname === PRODUCTION_CUSTOMER_HOST || DEV_CUSTOMER_HOST.test(hostname)
+  return APPROVED_CUSTOMER_HOSTS.has(hostname)
 }
 
 /** An exact Production or DEV customer action or portal URL. Anything else stays text. */

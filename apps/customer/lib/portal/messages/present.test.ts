@@ -66,6 +66,10 @@ describe("message presentation", () => {
     const subdomain = "https://evil.customer.profilerelaunch.com/portal/cases/PR-26-ABCDEF"
     const otherHost = "https://example.com/portal/cases/PR-26-ABCDEF/payments"
     const featurePreview = "https://profilerelaunch-customer-git-feature-clientcove.vercel.app/portal/cases/PR-26-ABCDEF"
+    const attacker = "https://profilerelaunch-customer-git-develop-attacker.vercel.app/action/550e8400-e29b-41d4-a716-446655440000"
+    const attackerPayments = "https://profilerelaunch-customer-git-develop-attacker.vercel.app/portal/cases/PR-26-ABCDEF/payments"
+    const attackerDocuments = "https://profilerelaunch-customer-git-develop-attacker.vercel.app/portal/cases/PR-26-ABCDEF/documents"
+    const nearTeam = "https://profilerelaunch-customer-git-develop-clientcove-attacker.vercel.app/portal/cases/PR-26-ABCDEF"
     const devSuffix = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app.evil.example/action/550e8400-e29b-41d4-a716-446655440000"
     const redirect = `${payments}?next=https://evil.example`
     const userinfo = "https://user:secret@customer.profilerelaunch.com/action/550e8400-e29b-41d4-a716-446655440000"
@@ -78,6 +82,7 @@ describe("message presentation", () => {
       "<script>alert(1)</script>",
       redirect,
       lookalike,
+      attacker,
       devAction,
     ].join("\n")
     const parts = messageTextParts(text)
@@ -89,10 +94,13 @@ describe("message presentation", () => {
     expect(plain).toContain("<script>alert(1)</script>")
     expect(plain).toContain(redirect)
     expect(plain).toContain(lookalike)
-    for (const href of [payments, documents, casePage, devPayments]) {
+    expect(plain).toContain(attacker)
+    const devDocuments = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app/portal/cases/RV-26-ZYXWVU/documents"
+    const devCase = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app/portal/cases/PR-26-ABCDEF"
+    for (const href of [payments, documents, casePage, devPayments, devDocuments, devCase]) {
       expect(messageTextParts(href)).toEqual([{ type: "link", href }])
     }
-    for (const href of [subdomain, otherHost, featurePreview, devSuffix, userinfo, atHost, malformed, http, "javascript:alert(1)", "https://", "https://customer.profilerelaunch.com/login"]) {
+    for (const href of [subdomain, otherHost, featurePreview, attacker, attackerPayments, attackerDocuments, nearTeam, devSuffix, userinfo, atHost, malformed, http, "javascript:alert(1)", "https://", "https://customer.profilerelaunch.com/login"]) {
       expect(messageTextParts(href)).toEqual([{ type: "text", value: href }])
     }
   })

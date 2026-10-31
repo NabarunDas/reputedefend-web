@@ -1,5 +1,6 @@
 import { customerPriceBoundary } from "../pricing"
 import { customerEmailSecurityNote, renderCustomerEmail, type CustomerEmailBlock } from "./customer-message"
+import { customerCaseSubject } from "./customer-reference"
 import { quoteMoneyLabel } from "./quotation-offer"
 import { validReplyMailbox } from "./reply-mailbox"
 
@@ -46,14 +47,14 @@ export function managedPortalPage(origin: string, caseRef: string, page: "case" 
 }
 
 function subjectFor(variant: ManagedNoticeVariant, serviceName: string, caseRef: string): string {
-  if (variant === "submitted") return `We have submitted your ${serviceName} case — ${caseRef}`
-  if (variant === "follow_up") return `We have sent Google a further update — ${caseRef}`
-  if (variant === "google_reply") return `Google has replied about your case — ${caseRef}`
-  if (variant === "unsuccessful_reply") return `No success fee is payable for this request — ${caseRef}`
-  if (variant === "invoice") return `Your success fee invoice is ready — ${caseRef}`
-  if (variant === "complete_paid") return `Your ${serviceName} case is complete — ${caseRef}`
-  if (variant === "withdrawn") return `Your ${serviceName} service has been withdrawn — ${caseRef}`
-  return `Your ${serviceName} case is closed — ${caseRef}`
+  if (variant === "submitted") return customerCaseSubject(`We have submitted your ${serviceName}`, caseRef)
+  if (variant === "follow_up") return customerCaseSubject("We have sent Google a further update", caseRef)
+  if (variant === "google_reply") return customerCaseSubject("Google has replied", caseRef)
+  if (variant === "unsuccessful_reply") return customerCaseSubject("No success fee is payable for this request", caseRef)
+  if (variant === "invoice") return customerCaseSubject("Your success fee invoice is ready", caseRef)
+  if (variant === "complete_paid") return customerCaseSubject(`Your ${serviceName} is complete`, caseRef)
+  if (variant === "withdrawn") return customerCaseSubject(`Your ${serviceName} service has been withdrawn`, caseRef)
+  return customerCaseSubject(`Your ${serviceName} is closed`, caseRef)
 }
 
 export function renderManagedNotice(input: {

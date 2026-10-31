@@ -6,7 +6,7 @@
 import { isMessageSelector, type CustomerMessageThread } from "./parse"
 
 const CASE_REF = /^(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/
-const TRAILING_REF = /\s+[—–-]\s+(?:Case\s+)?(?:(?:PR|RV|SO)-[0-9]{2}-[A-HJ-NP-Z2-9]{6})\b/g
+const TRAILING_REF = /\s+[—–-]\s+(?:(?:Case|Quotation number|Service order|Receipt number)\s+)?(?:(?:PR|RV|QT|SO|RC)-[0-9]{2}-[A-HJ-NP-Z2-9]{6})\b/g
 const FRIENDLY_TITLES: ReadonlyArray<readonly [RegExp, string]> = [
   [/^your\b.*\bsubmission pack is ready\b/i, "Your submission pack is ready"],
   [/^your\b.*\bpreparation is complete\b/i, "Your preparation is complete"],

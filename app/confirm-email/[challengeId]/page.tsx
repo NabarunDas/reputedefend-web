@@ -37,7 +37,7 @@ export default async function ConfirmEmailPage({ params }: { params: Promise<{ c
         <h1 id="confirm-heading">{heading}</h1>
         {view.publicRef && (
           <>
-            <p className={styles.kicker}>Your case reference</p>
+            <p className={styles.kicker}>Case reference</p>
             <p className={styles.reference}>{view.publicRef}</p>
           </>
         )}

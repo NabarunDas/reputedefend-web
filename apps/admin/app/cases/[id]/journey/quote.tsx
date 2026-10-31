@@ -77,7 +77,7 @@ export function QuotePanel({
     </ol>
     <dl className="quote-summary">
       {quote && <div><dt>Service</dt><dd>{quote.serviceName}</dd></div>}
-      {quote && <div><dt>Quote</dt><dd>{quote.publicRef}</dd></div>}
+      {quote && <div><dt>Quotation number</dt><dd>{quote.publicRef}</dd></div>}
       {price && <div><dt>Total customer price</dt><dd>{price}</dd></div>}
       {quote && <div><dt>Expiry</dt><dd>{quote.validUntilLabel}</dd></div>}
       <div><dt>Quotation status</dt><dd>{quotationStatus(panel, email)}</dd></div>

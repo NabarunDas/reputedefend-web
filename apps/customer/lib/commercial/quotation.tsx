@@ -34,7 +34,7 @@ export function CustomerQuotation({
           {businessName ? <div><dt>Business</dt><dd>{businessName}</dd></div> : null}
           {locationName ? <div><dt>Location</dt><dd>{locationName}</dd></div> : null}
           {caseReference ? <div><dt>Case reference</dt><dd>{caseReference}</dd></div> : null}
-          {quoteReference ? <div><dt>Quotation</dt><dd>{quoteReference}</dd></div> : null}
+          {quoteReference ? <div><dt>Quotation number</dt><dd>{quoteReference}</dd></div> : null}
           <div><dt>Service</dt><dd>{input.serviceName}</dd></div>
           {orderReference ? <div><dt>Service order</dt><dd>{orderReference}</dd></div> : null}
           <div><dt>Valid until</dt><dd>{validUntilIso ? <time dateTime={validUntilIso}>{validUntilLabel}</time> : validUntilLabel}</dd></div>

@@ -1216,6 +1216,22 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Guided customer outcome", probe: "public.customer_portal_guided_handover_v1" },
   },
+  {
+    // Future customer mail leads with the case reference. Quotation, service-order
+    // and receipt numbers stay labelled secondary records. Repository only.
+    // appliedToDev is false. Do not apply this file from the pull request.
+    // It does not rewrite stored communications, quotations, receipts or catalogue rows.
+    // It sorts after the applied DEV head so a clean rebuild keeps the Guided
+    // completion sentence together with the case-reference subject checks.
+    version: "20261031150000",
+    filename: "20261031150000_customer_case_reference_subjects_v1.sql",
+    step: "Customer mail leads with the case reference",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Customer case reference", probe: "admin_private.guided_payment_request_snapshot_reason_v1" },
+  },
 ]
 
 /**
@@ -1237,9 +1253,11 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty. The
- * repository chain is longer than the live ledger because it still records the
- * three foundation files that live DEV omits (issue #190).
+ * applied and must not be replayed. `pendingMigrations()` contains only
+ * unapplied `20261031150000_customer_case_reference_subjects_v1.sql`. Do not
+ * apply it without a separate approval, and do not apply it to Production.
+ * The repository chain is longer than the live ledger because it still records the
+ * three foundation files that live DEV omits (issue #190) and this unapplied file.
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

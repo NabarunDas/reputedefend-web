@@ -25,9 +25,12 @@ const relaunch = {
 
 describe("guided fulfilment email", () => {
   it("confirms a £99 payment with one receipt button and no card or token", () => {
-    const rendered = renderPaymentConfirmation({ ...relaunch, orderRef: "SO-26-FULF99" })
+    const rendered = renderPaymentConfirmation({ ...relaunch, orderRef: "SO-26-FULF99", receiptRef: "RC-26-FULF99" })
     expect(rendered).not.toBeNull()
-    expect(rendered!.subject).toBe("Payment received for your ProfileRelaunch Guided Relaunch — PR-26-FULF99 — SO-26-FULF99")
+    expect(rendered!.subject).toBe("Payment received — Case PR-26-FULF99")
+    expect(rendered!.text).toContain("Service order: SO-26-FULF99")
+    expect(rendered!.text).toContain("Receipt number: RC-26-FULF99")
+    expect(rendered!.subject).not.toContain("SO-26-FULF99")
     expect(rendered!.text).toContain("£99.00 GBP")
     expect(rendered!.text).toContain(customerPriceBoundary)
     expect(rendered!.text).toContain(customerEmailSecurityNote)
@@ -50,7 +53,7 @@ describe("guided fulfilment email", () => {
       replyTo: "cases@profilerelaunch.com",
     })
     expect(rendered).not.toBeNull()
-    expect(rendered!.subject).toBe("Your Guided Review submission pack is ready — PR-26-FULF59")
+    expect(rendered!.subject).toBe("Your document pack is ready — Case PR-26-FULF59")
     expect(rendered!.text).toContain("£59.00 GBP")
     expect(rendered!.text).toContain(guidedCustomerSubmitsSentence)
     expect(rendered!.text).toContain(customerPriceBoundary)
@@ -64,19 +67,19 @@ describe("guided fulfilment email", () => {
   })
 
   it("uses the accepted amount, including one that is not the catalogue list price", () => {
-    const rendered = renderPaymentConfirmation({ ...relaunch, orderRef: "SO-26-FULF99", amountMinor: 7920 })
+    const rendered = renderPaymentConfirmation({ ...relaunch, orderRef: "SO-26-FULF99", receiptRef: "RC-26-FULF99", amountMinor: 7920 })
     expect(rendered).not.toBeNull()
     expect(rendered!.text).toContain("£79.20 GBP")
     expect(rendered!.text).not.toContain("£99.00 GBP")
     expect(renderPackReady({ ...relaunch, amountMinor: 7920 })!.text).toContain("£79.20 GBP")
     expect(renderGuidedCompletion({ ...relaunch, amountMinor: 7920 })!.text).toContain("£79.20 GBP")
-    expect(renderPaymentConfirmation({ ...relaunch, orderRef: "SO-26-FULF99", amountMinor: 0 })).toBeNull()
+    expect(renderPaymentConfirmation({ ...relaunch, orderRef: "SO-26-FULF99", receiptRef: "RC-26-FULF99", amountMinor: 0 })).toBeNull()
   })
 
   it("summarises a completed £99 preparation with one pack button and optional Guard", () => {
     const rendered = renderGuidedCompletion(relaunch)
     expect(rendered).not.toBeNull()
-    expect(rendered!.subject).toBe("Your Guided Relaunch preparation is complete — PR-26-FULF99")
+    expect(rendered!.subject).toBe("Your case has been completed — Case PR-26-FULF99")
     expect(rendered!.text).toContain("£99.00 GBP")
     expect(rendered!.text).toContain(guidedCustomerSubmitsSentence)
     expect(rendered!.text).toContain(guidedCompletionGuardSentence)
@@ -97,6 +100,7 @@ describe("guided fulfilment email", () => {
     expect(renderPaymentConfirmation({
       ...relaunch,
       orderRef: "SO-26-FULF99",
+      receiptRef: "RC-26-FULF99",
       origin: "https://customer.example.test/pay?token=secret#t=1",
     })).toBeNull()
   })

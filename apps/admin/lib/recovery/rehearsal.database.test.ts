@@ -54,14 +54,14 @@ describe("rebuilding the whole schema from zero", () => {
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    // The DEV applied head is 20261031140000 guided_customer_outcome_v1.
-    // It was applied once and must not be replayed. 20261031120000 was applied
-    // once and must not be replayed. The case-reference file is repository-only.
+    // The DEV applied head is 20261031150000 customer_case_reference_subjects_v1.
+    // It was applied once and must not be replayed. 20261031140000 and
+    // 20261031120000 were applied once and must not be replayed.
     // Production stays at SEC-08.
     expect(migrationHead.filename).toBe("20261031150000_customer_case_reference_subjects_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.safeToReplay).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261031140000")
+    expect(appliedMigrationHead.version).toBe("20261031150000")
     expect(appliedMigrationHead.safeToReplay).toBe(false)
   })
 

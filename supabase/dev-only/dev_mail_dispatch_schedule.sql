@@ -22,25 +22,13 @@
 -- Also insert the single activation row only after the pending-email
 -- inventory has been read. Mail queued before active_from is not claimed.
 -- That includes the pack-ready message already queued for PR-26-GHNLB9.
+--
+-- Guided pack retries are not scheduled in this file. Their setup is
+-- supabase/dev-only/dev_mail_pack_retry_schedule.sql. Inspect them with
+-- supabase/dev-only/dev_mail_pack_retry_preflight.sql first.
 
 SELECT cron.schedule(
   'dev-mail-dispatch-recovery',
   '*/5 * * * *',
   $$SELECT public.dev_mail_dispatch_recovery_v1()$$
-);
-
--- Pack retries only. Do not run this statement from the pull request.
--- Do not set DEV_MAIL_DISPATCH_WORKER_ENABLED and do not insert an activation row.
--- When no Guided pack retry is due, dev_mail_pack_retry_recovery_v1 returns
--- before any HTTP call. Idle cost is one database count every five minutes:
--- no Admin invocation and no Resend call. A due retry wakes
--- /api/internal/jobs/dev-mail-pack-retry, which leases the existing job and
--- uses the existing Resend idempotency key. A succeeded or delivered job is
--- not selected. The first provider failure waits for the existing one-minute
--- backoff, then this schedule. Store dev_mail_pack_retry_url as the develop
--- Admin preview route above. Reuse the existing bearer and bypass secrets.
-SELECT cron.schedule(
-  'dev-mail-pack-retry-recovery',
-  '*/5 * * * *',
-  $$SELECT public.dev_mail_pack_retry_recovery_v1()$$
 );

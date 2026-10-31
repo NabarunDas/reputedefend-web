@@ -3,7 +3,7 @@
  * The stored subject is not rewritten. Full subjects stay on the message page.
  */
 
-import type { CustomerMessageThread } from "./parse"
+import { isMessageSelector, type CustomerMessageThread } from "./parse"
 
 const CASE_REF = /^(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/
 const TRAILING_REF = /\s+[—–-]\s+(?:Case\s+)?(?:(?:PR|RV|SO)-[0-9]{2}-[A-HJ-NP-Z2-9]{6})\b/g
@@ -16,14 +16,20 @@ const FRIENDLY_TITLES: ReadonlyArray<readonly [RegExp, string]> = [
   [/^supporting (?:documents|information)\b/i, "Supporting documents requested"],
 ]
 
-/** Action URLs and authenticated case pages. Query strings and fragments stay plain text. */
-const TRUSTED_LINK = /https:\/\/[A-Za-z0-9.-]+(?:\/action\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\/portal\/cases\/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}(?:\/payments|\/documents)?)(?![A-Za-z0-9/?#_-])/gi
+/**
+ * Production customer host, and the DEV develop customer preview.
+ * A feature preview, a lookalike, or any other host is not linked.
+ */
+const PRODUCTION_CUSTOMER_HOST = "customer.profilerelaunch.com"
+const DEV_CUSTOMER_HOST = /^profilerelaunch-customer-git-develop-[a-z0-9]+(?:-[a-z0-9]+)*\.vercel\.app$/
+const ACTION_PATH = /^\/action\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const PORTAL_PATH = /^\/portal\/cases\/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}(?:\/payments|\/documents)?$/
+const URL_TOKEN = /https:\/\/[^\s<>"'`]+/gi
+const PORTAL_CONTEXT = /^[a-f0-9]{32}$/
 
 const RETURN_SEARCH = /^\?before=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})&selector=(?:mc|mm)-[a-f0-9]{64}$/
 const RETURN_GROUP = /^(?:case-(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}|case-note-[0-9a-f]{1,8}|other-messages)$/
 const RETURN_HREF = /^\/portal\/messages(?:\?before=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})&selector=(?:mc|mm)-[a-f0-9]{64})?#(?:case-(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}|case-note-[0-9a-f]{1,8}|other-messages)$/
-
-export const MESSAGES_RETURN_KEY = "pr-messages-return"
 
 export type MessageTextPart = { type: "text"; value: string } | { type: "link"; href: string }
 
@@ -51,14 +57,37 @@ export function messageParagraphs(body: string): string[] {
   return blocks.length > 0 ? blocks : [body]
 }
 
+function approvedCustomerHost(hostname: string): boolean {
+  return hostname === PRODUCTION_CUSTOMER_HOST || DEV_CUSTOMER_HOST.test(hostname)
+}
+
+/** An exact Production or DEV customer action or portal URL. Anything else stays text. */
+export function approvedCustomerMessageUrl(token: string): string | null {
+  if (!token.startsWith("https://") || token.includes("\\") || /[\s<>"'`]/.test(token)) return null
+  let url: URL
+  try {
+    url = new URL(token)
+  } catch {
+    return null
+  }
+  if (url.protocol !== "https:" || url.username !== "" || url.password !== "") return null
+  if (url.port !== "" || url.search !== "" || url.hash !== "") return null
+  if (!approvedCustomerHost(url.hostname)) return null
+  if (!ACTION_PATH.test(url.pathname) && !PORTAL_PATH.test(url.pathname)) return null
+  const canonical = `https://${url.hostname}${url.pathname}`
+  return token === canonical ? canonical : null
+}
+
 export function messageTextParts(value: string): MessageTextPart[] {
   const parts: MessageTextPart[] = []
-  const pattern = new RegExp(TRUSTED_LINK.source, "gi")
+  const pattern = new RegExp(URL_TOKEN.source, "gi")
   let cursor = 0
   for (const match of value.matchAll(pattern)) {
     const index = match.index ?? 0
+    const href = approvedCustomerMessageUrl(match[0])
+    if (!href) continue
     if (index > cursor) parts.push({ type: "text", value: value.slice(cursor, index) })
-    parts.push({ type: "link", href: match[0] })
+    parts.push({ type: "link", href })
     cursor = index + match[0].length
   }
   if (cursor < value.length || parts.length === 0) parts.push({ type: "text", value: value.slice(cursor) })
@@ -121,4 +150,10 @@ export function messagesReturnHref(search: string, groupId: string): string | nu
 
 export function isMessagesReturnHref(value: string): boolean {
   return RETURN_HREF.test(value)
+}
+
+/** Storage for one message under one portal session. A direct link or another account does not match. */
+export function messagesReturnStorageKey(portalContext: string, selector: string): string | null {
+  if (!PORTAL_CONTEXT.test(portalContext) || !isMessageSelector(selector)) return null
+  return `pr-messages-return:${portalContext}:${selector}`
 }

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import PortalLayout from "../layout"
 import { MessagesUnavailable, MessagesView, MessageView } from "./messages-view"
-import { MESSAGES_RETURN_KEY } from "@/lib/portal/messages/present"
+import { messagesReturnStorageKey } from "@/lib/portal/messages/present"
 import type { CustomerMessageDetail, CustomerMessagePage, CustomerMessageThread } from "@/lib/portal/messages/parse"
 
 const nav = vi.hoisted(() => ({ pathname: "/portal/messages" }))
@@ -13,6 +13,8 @@ vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname, useRouter: 
 
 const selector = `mc-${"ab".repeat(32)}`
 const secondSelector = `mc-${"cd".repeat(32)}`
+const portalContext = "a".repeat(32)
+const otherContext = "b".repeat(32)
 const at = "2026-09-04T12:00:00Z"
 const longSubject = `Subject${"A".repeat(80)}`
 
@@ -39,11 +41,12 @@ afterEach(() => {
   nav.pathname = "/portal/messages"
   sessionStorage.clear()
   window.location.hash = ""
+  window.history.replaceState(null, "", "/portal/messages")
 })
 
 describe("messages page", () => {
   it("lists one expanded case without repeating the case on the message row", () => {
-    render(<PortalLayout><MessagesView page={page([thread()])} earlier={false} /></PortalLayout>)
+    render(<PortalLayout><MessagesView portalContext={portalContext} page={page([thread()])} earlier={false} /></PortalLayout>)
     expect(screen.getByRole("heading", { level: 1, name: "Messages" })).toBeTruthy()
     const group = screen.getByRole("button", { name: /Case PR-26-ABCDEF/ })
     expect(group).toHaveAttribute("aria-expanded", "true")
@@ -79,7 +82,7 @@ describe("messages page", () => {
   })
 
   it("opens the latest case and keeps another case collapsed until it is chosen", () => {
-    render(<MessagesView page={page([
+    render(<MessagesView portalContext={portalContext} page={page([
       thread({ activityAt: "2026-09-06T12:00:00Z", caseReference: "PR-26-ABCDEF", subject: "Latest update" }),
       thread({
         selector: secondSelector,
@@ -111,7 +114,7 @@ describe("messages page", () => {
 
   it("opens the case named in the return hash and leaves the latest case collapsed", () => {
     window.location.hash = "#case-RV-26-ZYXWVU"
-    render(<MessagesView page={page([
+    render(<MessagesView portalContext={portalContext} page={page([
       thread({ activityAt: "2026-09-06T12:00:00Z", subject: "Latest update" }),
       thread({
         selector: secondSelector,
@@ -128,7 +131,7 @@ describe("messages page", () => {
   })
 
   it("keeps messages without a case in a separate group and omits a missing business name", () => {
-    render(<MessagesView page={page([
+    render(<MessagesView portalContext={portalContext} page={page([
       thread({
         selector: `mm-${"ef".repeat(32)}`,
         activityAt: "2026-09-06T12:00:00Z",
@@ -147,17 +150,17 @@ describe("messages page", () => {
   })
 
   it("uses the empty state only when the read succeeded and there is nothing to show", () => {
-    render(<MessagesView page={page([])} earlier={false} />)
+    render(<MessagesView portalContext={portalContext} page={page([])} earlier={false} />)
     expect(screen.getByText("You don't have any messages yet.")).toBeTruthy()
     expect(screen.queryByText("We couldn't load your messages")).toBeNull()
   })
 
   it("says when an earlier page is empty and when the current page is not the whole history", () => {
-    const { rerender } = render(<MessagesView page={page([])} earlier />)
+    const { rerender } = render(<MessagesView portalContext={portalContext} page={page([])} earlier />)
     expect(screen.getByText("No earlier messages.")).toBeTruthy()
     expect(screen.getByRole("link", { name: "Back to messages" })).toHaveAttribute("href", "/portal/messages")
     const next = { activityAt: at, selector }
-    rerender(<MessagesView page={{ threads: [thread(), thread({ selector: secondSelector, subject: "Second update" })], complete: false, nextCursor: next }} earlier={false} />)
+    rerender(<MessagesView portalContext={portalContext} page={{ threads: [thread(), thread({ selector: secondSelector, subject: "Second update" })], complete: false, nextCursor: next }} earlier={false} />)
     expect(screen.getByRole("button", { name: /Case PR-26-ABCDEF/ })).toHaveTextContent("2 messages on this page")
     expect(screen.getByText("Older messages are not shown on this page.")).toBeTruthy()
     expect(screen.getByText("Counts are for the messages on this page.")).toBeTruthy()
@@ -171,11 +174,14 @@ describe("messages page", () => {
   })
 
   it("remembers the list page when a message row is opened", () => {
-    render(<MessagesView page={page([thread()])} earlier={false} />)
+    render(<MessagesView portalContext={portalContext} page={page([thread()])} earlier={false} />)
     const row = screen.getByRole("link", { name: new RegExp(longSubject) })
     row.addEventListener("click", event => event.preventDefault())
     fireEvent.click(row)
-    expect(sessionStorage.getItem(MESSAGES_RETURN_KEY)).toBe("/portal/messages#case-PR-26-ABCDEF")
+    const key = messagesReturnStorageKey(portalContext, selector)
+    expect(key).toBeTruthy()
+    expect(sessionStorage.getItem(key!)).toBe("/portal/messages#case-PR-26-ABCDEF")
+    expect(sessionStorage.getItem("pr-messages-return")).toBeNull()
   })
 
   it("renders message text as text, including markup, and does not claim the thread was read", () => {
@@ -199,7 +205,7 @@ describe("messages page", () => {
         },
       ],
     }
-    render(<MessageView thread={detail} />)
+    render(<MessageView portalContext={portalContext} thread={detail} />)
     expect(screen.getByRole("heading", { level: 1, name: longSubject })).toBeTruthy()
     expect(screen.getByRole("link", { name: "Back to messages" })).toHaveAttribute("href", "/portal/messages#case-PR-26-ABCDEF")
     expect(screen.getByText("Previous conversation")).toBeTruthy()
@@ -220,7 +226,7 @@ describe("messages page", () => {
     const stored = "Payment received for your ProfileRelaunch Guided Relaunch — PR-26-GHNLB9 — SO-26-GHHRGY"
     const requested = "Payment requested for your ProfileRelaunch Guided Relaunch — PR-26-GHNLB9 — SO-26-GHHRGY"
     const payments = "https://customer.profilerelaunch.com/portal/cases/PR-26-GHNLB9/payments"
-    render(<MessageView thread={{
+    render(<MessageView portalContext={portalContext} thread={{
       ...thread({ subject: stored, state: "Message from ProfileRelaunch" }),
       complete: true,
       entries: [{
@@ -240,7 +246,7 @@ describe("messages page", () => {
     expect(screen.getByText("4 Sept 2026, 13:00")).toBeTruthy()
     expect(screen.queryByRole("textbox")).toBeNull()
     cleanup()
-    render(<MessageView thread={{
+    render(<MessageView portalContext={portalContext} thread={{
       ...thread({ subject: requested, state: "Message from ProfileRelaunch" }),
       complete: true,
       entries: [{ role: "ProfileRelaunch", at, subject: requested, body: "A payment is requested.", delivery: null }],
@@ -254,13 +260,72 @@ describe("messages page", () => {
 
   it("returns to the list page that opened the message", () => {
     const stored = `/portal/messages?before=${at}&selector=${selector}#case-PR-26-ABCDEF`
-    sessionStorage.setItem(MESSAGES_RETURN_KEY, stored)
-    render(<MessageView thread={{
+    const key = messagesReturnStorageKey(portalContext, selector)
+    sessionStorage.setItem(key!, stored)
+    render(<MessageView portalContext={portalContext} thread={{
       ...thread(),
       complete: true,
       entries: [{ role: "ProfileRelaunch", at, subject: null, body: "Hello.", delivery: null }],
     }} />)
     expect(screen.getByRole("link", { name: "Back to messages" })).toHaveAttribute("href", stored)
+  })
+
+  it("keeps page two and the opened case, and does not reuse that destination for another message", () => {
+    window.history.replaceState(null, "", `/portal/messages?before=${at}&selector=${selector}`)
+    render(<MessagesView portalContext={portalContext} page={page([
+      thread({ activityAt: "2026-09-06T12:00:00Z", subject: "Latest update" }),
+      thread({
+        selector: secondSelector,
+        activityAt: "2026-09-01T12:00:00Z",
+        caseReference: "RV-26-ZYXWVU",
+        businessName: "North Cafe",
+        subject: "Older case update",
+      }),
+    ])} earlier />)
+    fireEvent.click(screen.getByRole("button", { name: /Case RV-26-ZYXWVU/ }))
+    const older = screen.getByRole("link", { name: /Older case update/ })
+    older.addEventListener("click", event => event.preventDefault())
+    fireEvent.click(older)
+    const stored = `/portal/messages?before=${at}&selector=${selector}#case-RV-26-ZYXWVU`
+    expect(sessionStorage.getItem(messagesReturnStorageKey(portalContext, secondSelector)!)).toBe(stored)
+    expect(sessionStorage.getItem(messagesReturnStorageKey(portalContext, selector)!)).toBeNull()
+    cleanup()
+    render(<MessageView portalContext={portalContext} thread={{
+      ...thread({ selector: secondSelector, caseReference: "RV-26-ZYXWVU", businessName: "North Cafe", subject: "Older case update" }),
+      complete: true,
+      entries: [{ role: "ProfileRelaunch", at, subject: null, body: "Opened from page two.", delivery: null }],
+    }} />)
+    expect(screen.getByRole("link", { name: "Back to messages" })).toHaveAttribute("href", stored)
+    cleanup()
+    render(<MessageView portalContext={portalContext} thread={{
+      ...thread({ subject: "Opened directly" }),
+      complete: true,
+      entries: [{ role: "ProfileRelaunch", at, subject: null, body: "Direct link.", delivery: null }],
+    }} />)
+    expect(screen.getByRole("link", { name: "Back to messages" })).toHaveAttribute("href", "/portal/messages#case-PR-26-ABCDEF")
+  })
+
+  it("does not restore another account's list page or a destination saved before the session ended", () => {
+    const stored = `/portal/messages?before=${at}&selector=${selector}#case-RV-26-ZYXWVU`
+    sessionStorage.setItem(messagesReturnStorageKey(otherContext, selector)!, stored)
+    sessionStorage.setItem("pr-messages-return", stored)
+    const detail = {
+      ...thread({ caseReference: "PR-26-ABCDEF", subject: "Direct message" }),
+      complete: true,
+      entries: [{ role: "ProfileRelaunch" as const, at, subject: null, body: "Hello.", delivery: null }],
+    }
+    render(<MessageView portalContext={portalContext} thread={detail} />)
+    expect(screen.getByRole("link", { name: "Back to messages" })).toHaveAttribute("href", "/portal/messages#case-PR-26-ABCDEF")
+    cleanup()
+    render(<MessageView portalContext="" thread={detail} />)
+    expect(screen.getByRole("link", { name: "Back to messages" })).toHaveAttribute("href", "/portal/messages#case-PR-26-ABCDEF")
+    cleanup()
+    render(<MessagesView portalContext="" page={page([thread({ subject: "Still signed out" })])} earlier={false} />)
+    const row = screen.getByRole("link", { name: /Still signed out/ })
+    row.addEventListener("click", event => event.preventDefault())
+    fireEvent.click(row)
+    expect(sessionStorage.getItem(messagesReturnStorageKey(portalContext, selector)!)).toBeNull()
+    expect(sessionStorage.length).toBe(2)
   })
 
   function messageThread(body: string, role: CustomerMessageDetail["entries"][number]["role"] = "ProfileRelaunch") {
@@ -272,7 +337,7 @@ describe("messages page", () => {
   }
 
   it("keeps a short message fully visible, including markup-like text", () => {
-    render(<MessageView thread={messageThread("Hello <strong>there</strong><script>alert(1)</script>")} />)
+    render(<MessageView portalContext={portalContext} thread={messageThread("Hello <strong>there</strong><script>alert(1)</script>")} />)
     expect(screen.getByText("Hello <strong>there</strong><script>alert(1)</script>")).toBeTruthy()
     expect(document.querySelector(".messages-page strong, .messages-page script")).toBeNull()
     expect(screen.queryByRole("button", { name: /expand message|collapse message/i })).toBeNull()
@@ -283,7 +348,7 @@ describe("messages page", () => {
     const first = `Alpha ${"word ".repeat(90)}`.trim()
     const second = `Beta ${"word ".repeat(90)}end.`.trim()
     const body = `${first}\n\n${second}\nStill in the second.`
-    render(<MessageView thread={messageThread(body)} />)
+    render(<MessageView portalContext={portalContext} thread={messageThread(body)} />)
     expect(screen.queryByRole("button", { name: /expand message|collapse message/i })).toBeNull()
     const text = document.querySelector(".message-body")?.textContent ?? ""
     expect(text).toContain(first)
@@ -297,7 +362,7 @@ describe("messages page", () => {
     const hostile = `<script>alert("xss")</script> ${"paragraph ".repeat(80)} <img src=x onerror=alert(1)>`
     const shortReply = "Thanks, this is my reply."
     const action = "https://customer.profilerelaunch.com/action/550e8400-e29b-41d4-a716-446655440000"
-    render(<MessageView thread={{
+    render(<MessageView portalContext={portalContext} thread={{
       ...thread({ subject: "A longer update", state: "Open conversation" }),
       complete: true,
       entries: [

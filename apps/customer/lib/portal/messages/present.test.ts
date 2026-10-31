@@ -8,6 +8,7 @@ import {
   messageTitle,
   messagesArePartial,
   messagesReturnHref,
+  messagesReturnStorageKey,
 } from "./present"
 
 const at = "2026-09-04T12:00:00Z"
@@ -54,16 +55,60 @@ describe("message presentation", () => {
     expect(messageParagraphs("Hello <strong>there</strong>")).toEqual(["Hello <strong>there</strong>"])
   })
 
-  it("links only a trusted action or case page", () => {
+  it("links only an approved Production or DEV customer action or portal URL", () => {
     const action = "https://customer.profilerelaunch.com/action/550e8400-e29b-41d4-a716-446655440000"
     const payments = "https://customer.profilerelaunch.com/portal/cases/PR-26-ABCDEF/payments"
-    const text = `Review and accept quotation\n\n${action}\n\n<script>alert(1)</script>\n${payments}?token=secret`
+    const documents = "https://customer.profilerelaunch.com/portal/cases/PR-26-ABCDEF/documents"
+    const casePage = "https://customer.profilerelaunch.com/portal/cases/RV-26-ZYXWVU"
+    const devAction = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app/action/550e8400-e29b-41d4-a716-446655440000"
+    const devPayments = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app/portal/cases/PR-26-ABCDEF/payments"
+    const lookalike = "https://customer.profilerelaunch.com.evil.example/action/550e8400-e29b-41d4-a716-446655440000"
+    const subdomain = "https://evil.customer.profilerelaunch.com/portal/cases/PR-26-ABCDEF"
+    const otherHost = "https://example.com/portal/cases/PR-26-ABCDEF/payments"
+    const featurePreview = "https://profilerelaunch-customer-git-feature-clientcove.vercel.app/portal/cases/PR-26-ABCDEF"
+    const devSuffix = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app.evil.example/action/550e8400-e29b-41d4-a716-446655440000"
+    const redirect = `${payments}?next=https://evil.example`
+    const userinfo = "https://user:secret@customer.profilerelaunch.com/action/550e8400-e29b-41d4-a716-446655440000"
+    const atHost = "https://customer.profilerelaunch.com@evil.example/action/550e8400-e29b-41d4-a716-446655440000"
+    const malformed = "https://customer.profilerelaunch.com/action/not-a-uuid"
+    const http = "http://customer.profilerelaunch.com/portal/cases/PR-26-ABCDEF"
+    const text = [
+      "Review and accept quotation",
+      action,
+      "<script>alert(1)</script>",
+      redirect,
+      lookalike,
+      devAction,
+    ].join("\n")
     const parts = messageTextParts(text)
-    expect(parts.filter(part => part.type === "link")).toEqual([{ type: "link", href: action }])
-    expect(parts.filter(part => part.type === "text").map(part => part.type === "text" ? part.value : "").join("")).toContain("<script>alert(1)</script>")
-    expect(parts.filter(part => part.type === "text").map(part => part.type === "text" ? part.value : "").join("")).toContain(`${payments}?token=secret`)
-    expect(messageTextParts(payments)).toEqual([{ type: "link", href: payments }])
-    expect(messageTextParts("javascript:alert(1)")).toEqual([{ type: "text", value: "javascript:alert(1)" }])
+    expect(parts.filter(part => part.type === "link")).toEqual([
+      { type: "link", href: action },
+      { type: "link", href: devAction },
+    ])
+    const plain = parts.filter(part => part.type === "text").map(part => part.type === "text" ? part.value : "").join("")
+    expect(plain).toContain("<script>alert(1)</script>")
+    expect(plain).toContain(redirect)
+    expect(plain).toContain(lookalike)
+    for (const href of [payments, documents, casePage, devPayments]) {
+      expect(messageTextParts(href)).toEqual([{ type: "link", href }])
+    }
+    for (const href of [subdomain, otherHost, featurePreview, devSuffix, userinfo, atHost, malformed, http, "javascript:alert(1)", "https://", "https://customer.profilerelaunch.com/login"]) {
+      expect(messageTextParts(href)).toEqual([{ type: "text", value: href }])
+    }
+  })
+
+  it("binds a return path to one message and one portal session", () => {
+    const context = "a".repeat(32)
+    const other = "b".repeat(32)
+    const group = "case-PR-26-ABCDEF"
+    const href = messagesReturnHref(`?before=${at}&selector=${selector}`, group)
+    expect(messagesReturnStorageKey(context, selector)).toBe(`pr-messages-return:${context}:${selector}`)
+    expect(messagesReturnStorageKey(context, selector)).not.toBe(messagesReturnStorageKey(other, selector))
+    expect(messagesReturnStorageKey(context, `mc-${"cd".repeat(32)}`)).not.toBe(messagesReturnStorageKey(context, selector))
+    expect(messagesReturnStorageKey("", selector)).toBeNull()
+    expect(messagesReturnStorageKey(context, "not-a-message")).toBeNull()
+    expect(messagesReturnStorageKey("A".repeat(32), selector)).toBeNull()
+    expect(href).toBe(`/portal/messages?before=${at}&selector=${selector}#${group}`)
   })
 
   it("groups by case, keeps other messages separate, and orders by latest activity", () => {

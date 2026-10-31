@@ -11,7 +11,7 @@ import {
   messageTitle,
   messagesArePartial,
   messagesReturnHref,
-  MESSAGES_RETURN_KEY,
+  messagesReturnStorageKey,
 } from "@/lib/portal/messages/present"
 import type { CustomerMessageDetail, CustomerMessagePage, CustomerMessageThread } from "@/lib/portal/messages/parse"
 
@@ -60,25 +60,28 @@ function context(thread: CustomerMessageThread) {
   return [where, thread.caseReference ? `Case ${thread.caseReference}` : null].filter(Boolean).join(" · ")
 }
 
-function rememberReturn(search: string, groupId: string) {
+function rememberReturn(portalContext: string, selector: string, search: string, groupId: string) {
+  const key = messagesReturnStorageKey(portalContext, selector)
   const href = messagesReturnHref(search, groupId)
-  if (!href) return
+  if (!key || !href) return
   try {
-    sessionStorage.setItem(MESSAGES_RETURN_KEY, href)
+    sessionStorage.setItem(key, href)
   } catch {
     // Private browsing can refuse storage. The case hash on the first page still works.
   }
 }
 
-function useMessagesReturn(fallback: string) {
+function useMessagesReturn(selector: string, portalContext: string, fallback: string) {
+  const key = messagesReturnStorageKey(portalContext, selector)
   return useSyncExternalStore(
     onStoreChange => {
       window.addEventListener("storage", onStoreChange)
       return () => window.removeEventListener("storage", onStoreChange)
     },
     () => {
+      if (!key) return fallback
       try {
-        const stored = sessionStorage.getItem(MESSAGES_RETURN_KEY)
+        const stored = sessionStorage.getItem(key)
         return stored && isMessagesReturnHref(stored) ? stored : fallback
       } catch {
         return fallback
@@ -99,7 +102,7 @@ function useMessageHash() {
   )
 }
 
-export function MessagesView({ page, earlier }: { page: CustomerMessagePage; earlier: boolean }) {
+export function MessagesView({ page, earlier, portalContext }: { page: CustomerMessagePage; earlier: boolean; portalContext: string }) {
   const groups = groupCustomerMessages(page.threads)
   const partial = messagesArePartial({ earlier, complete: page.complete })
   const hashId = useMessageHash()
@@ -167,7 +170,7 @@ export function MessagesView({ page, earlier }: { page: CustomerMessagePage; ear
                         <a
                           className="message-row"
                           href={`/portal/messages/${thread.selector}`}
-                          onClick={() => rememberReturn(window.location.search, group.id)}
+                          onClick={() => rememberReturn(portalContext, thread.selector, window.location.search, group.id)}
                         >
                           <span className="message-row-title">{title}</span>
                           <time dateTime={thread.activityAt}>{formatMessageTime(thread.activityAt)}</time>
@@ -201,11 +204,11 @@ export function MessagesView({ page, earlier }: { page: CustomerMessagePage; ear
   )
 }
 
-export function MessageView({ thread }: { thread: CustomerMessageDetail }) {
+export function MessageView({ thread, portalContext }: { thread: CustomerMessageDetail; portalContext: string }) {
   const title = messageTitle(thread.subject)
   const where = context(thread)
   const group = groupCustomerMessages([thread])[0]
-  const back = useMessagesReturn(group ? `/portal/messages#${group.id}` : "/portal/messages")
+  const back = useMessagesReturn(thread.selector, portalContext, group ? `/portal/messages#${group.id}` : "/portal/messages")
   return (
     <div className="messages-page">
       <p><a href={back}>Back to messages</a></p>

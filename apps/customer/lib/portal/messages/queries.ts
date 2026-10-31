@@ -1,4 +1,5 @@
 import "server-only"
+import { createHash } from "node:crypto"
 import { cookies } from "next/headers"
 import { backend, tokenHash, validToken } from "@/lib/backend"
 import { portalSessionCookieName } from "../config"
@@ -25,6 +26,21 @@ async function portalToken(): Promise<string | null> {
   const jar = await cookies()
   const token = jar.get(portalSessionCookieName())?.value
   return validToken(token) ? token : null
+}
+
+/**
+ * Binds a saved messages return path to this portal session.
+ * This is not the session credential and is not sent to the database.
+ */
+export function messagesPortalContext(token: string): string | null {
+  if (!validToken(token)) return null
+  return createHash("sha256").update(`pr-messages-return-context:${token}`).digest("hex").slice(0, 32)
+}
+
+export async function currentMessagesPortalContext(): Promise<string | null> {
+  const token = await portalToken()
+  if (!token) return null
+  return messagesPortalContext(token)
 }
 
 export async function loadCustomerMessages(query: MessagesQuery): Promise<MessagesLoad> {

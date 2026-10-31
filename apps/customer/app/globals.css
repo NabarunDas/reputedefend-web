@@ -2164,6 +2164,161 @@ main.customer-main > section .document-list a {
 .document-file-copy { display: grid; gap: 0.2rem; min-width: 0; }
 .document-download { min-width: 7.5rem; }
 
+.guided-next {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1.25rem;
+  min-width: 0;
+}
+
+.guided-next h3,
+.guided-next h4 { margin: 0; }
+
+.guided-action-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.guided-action-card,
+.guided-recorded,
+.guided-confirmation {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  min-width: 0;
+}
+
+.guided-action-card.is-open {
+  border-color: var(--green);
+  box-shadow: var(--shadow-card);
+}
+
+.guided-action-heading { margin: 0; font-size: 1rem; font-weight: 400; }
+
+button.guided-action-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.2rem 0.85rem;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 1rem 1.1rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  box-shadow: none;
+  transform: none;
+  cursor: pointer;
+}
+
+button.guided-action-toggle:hover:not(:disabled) {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.guided-action-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.guided-action-description {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.guided-action-chevron {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-right: 2px solid var(--green-dark);
+  border-bottom: 2px solid var(--green-dark);
+  transform: rotate(45deg);
+}
+
+.guided-action-card.is-open .guided-action-chevron { transform: rotate(225deg); }
+
+.guided-action-panel {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0 1.1rem 1.1rem;
+}
+
+.guided-action-panel[hidden] { display: none; }
+
+.guided-action-panel p,
+.guided-recorded p,
+.guided-confirmation p { margin: 0; max-width: 65ch; }
+
+.guided-action-panel label {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.guided-next select {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.guided-next select:focus {
+  border-color: var(--green);
+  outline: 3px solid var(--green);
+  outline-offset: 2px;
+}
+
+button.guided-submit { margin: 0.25rem 0 0; }
+
+.guided-recorded,
+.guided-confirmation {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem 1.1rem;
+}
+
+.guided-confirmation {
+  border-color: var(--green);
+  background: var(--lime);
+}
+
+.guided-confirmation-facts {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.2rem 0 0;
+}
+
+.guided-confirmation-facts div { display: grid; gap: 0.1rem; }
+.guided-confirmation-facts dt { color: var(--muted); font-size: 0.85rem; }
+.guided-confirmation-facts dd { margin: 0; overflow-wrap: anywhere; }
+
+.guided-status { margin: 0; max-width: 65ch; }
+
+.guided-next button:focus-visible,
+.guided-next input:focus-visible,
+.guided-next select:focus-visible,
+.guided-next textarea:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 3px;
+}
+
 @media (min-width: 768px) {
   .customer-header-context { max-width: 18rem; }
 }
@@ -2171,6 +2326,9 @@ main.customer-main > section .document-list a {
 @media (max-width: 640px) {
   .document-file { grid-template-columns: minmax(0, 1fr); }
   .document-file .portal-button { width: 100%; }
+  .guided-next { margin-top: 1rem; }
+  .guided-action-toggle,
+  .guided-next button.guided-submit { width: 100%; }
 }
 
 .account-help {

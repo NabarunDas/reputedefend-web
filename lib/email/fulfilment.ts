@@ -17,7 +17,11 @@ export const packReadyButton = "View your completed pack"
 export const guidedCustomerSubmitsSentence = "You submit this pack to Google yourself. ProfileRelaunch does not submit Guided work and does not sign in to Google for you."
 export const guidedCompletionGuardSentence = "Relaunch Guard is optional. This email does not enrol you."
 
-export function fulfilmentServiceName(serviceCode: string): string | null {
+export function guidedServiceCompleteSentence(serviceName: "Guided Relaunch" | "Guided Review"): string {
+  return `Your ${serviceName} service is complete. Your submission pack remains available in your account. You can tell us when you've submitted it to Google and update us when you hear back.`
+}
+
+export function fulfilmentServiceName(serviceCode: string): "Guided Relaunch" | "Guided Review" | null {
   if (serviceCode === "GUIDED_RELAUNCH") return "Guided Relaunch"
   if (serviceCode === "GUIDED_REVIEW") return "Guided Review"
   return null
@@ -36,7 +40,7 @@ function sharedReady(input: {
   amountMinor: number
   currency: string
   origin: string
-}): { serviceName: string; amountLabel: string; caseRef: string } | null {
+}): { serviceName: "Guided Relaunch" | "Guided Review"; amountLabel: string; caseRef: string } | null {
   const serviceName = fulfilmentServiceName(input.serviceCode)
   const amountLabel = quoteMoneyLabel(input.amountMinor, input.currency)
   const caseRef = input.caseRef.trim()
@@ -131,6 +135,7 @@ export function renderGuidedCompletion(input: {
     { type: "paragraph", text: `Amount paid: ${ready.amountLabel}` },
     { type: "paragraph", text: customerPriceBoundary },
     { type: "paragraph", text: guidedCustomerSubmitsSentence },
+    { type: "paragraph", text: guidedServiceCompleteSentence(ready.serviceName) },
     { type: "paragraph", text: "Google's later decision is separate from this completed preparation. You can tell us if you submit the pack, and you can ask for a correction from the pack page." },
     { type: "paragraph", text: `${guidedCompletionGuardSentence} It does not apply a discount or charge you.` },
     { type: "button", label: packReadyButton, url: pageUrl },
@@ -140,5 +145,6 @@ export function renderGuidedCompletion(input: {
   if (!rendered || rendered.text.includes("#t=") || rendered.html.includes("#t=") || rendered.text.includes("/action/") || rendered.html.includes("/action/")) return null
   if (!rendered.text.includes(pageUrl) || !rendered.html.includes(pageUrl)) return null
   if (!rendered.text.includes(packReadyButton) || !rendered.text.includes(guidedCustomerSubmitsSentence) || !rendered.text.includes(guidedCompletionGuardSentence)) return null
+  if (!rendered.text.includes(guidedServiceCompleteSentence(ready.serviceName))) return null
   return { subject, html: rendered.html, text: rendered.text, pageUrl }
 }

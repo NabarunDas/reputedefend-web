@@ -264,10 +264,21 @@ describe("customer case workspace", () => {
         { code: "CASE_RECEIVED", occurredAt: submittedAt },
       ],
     })
-    const { rerender } = render(<CaseWorkspace detail={published} packHref="/portal/cases/PR-26-ABCDEF/documents" packPublished />)
+    const { rerender } = render(<CaseWorkspace
+      detail={published}
+      packHref="/portal/cases/PR-26-ABCDEF/documents"
+      packPublished
+      handover={{ submitted: false, correctionRequested: false, outcomeReported: false, outcomeReviewed: false, evidenceOptions: [] }}
+    />)
     expect(screen.getByRole("heading", { name: "Pack ready for you" })).toBeTruthy()
     expect(screen.getByText("Download your documents. You choose if and when to send them to Google. We have not sent them.")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Download your pack" })).toHaveAttribute("href", "/portal/cases/PR-26-ABCDEF/documents")
+    expect(screen.getByText("ProfileRelaunch prepared this pack. You submit it to Google yourself.")).toBeTruthy()
+    expect(screen.getAllByRole("link", { name: "Download your completed pack" })).toHaveLength(2)
+    expect(screen.getByRole("button", { name: "I submitted this to Google" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Request a correction" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Update Google's decision" })).toBeNull()
+    expect(screen.getByText("Not reported")).toBeTruthy()
+    expect(screen.getByText("Awaiting")).toBeTruthy()
     const progress = screen.getByRole("heading", { name: "Progress" }).parentElement
     expect(progress?.querySelector("[aria-current='step']")).toHaveTextContent("Pack ready for you")
     expect(screen.getByText("Your pack was published for you to download.")).toBeTruthy()
@@ -277,7 +288,7 @@ describe("customer case workspace", () => {
     rerender(<CaseWorkspace detail={published} packHref={null} packPublished={false} />)
     expect(screen.getByRole("heading", { name: "We're preparing your pack" })).toBeTruthy()
     expect(screen.getByText("Nothing is needed from you right now. We'll let you know when your pack is ready.")).toBeTruthy()
-    expect(screen.queryByRole("link", { name: "Download your pack" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Download your completed pack" })).toBeNull()
     expect(screen.getByRole("heading", { name: "Progress" }).parentElement?.querySelector("[aria-current='step']")).toHaveTextContent("Preparing your pack")
   })
 
@@ -294,11 +305,22 @@ describe("customer case workspace", () => {
         { code: "CASE_RECEIVED", occurredAt: submittedAt },
       ],
     })
-    const { rerender } = render(<CaseWorkspace detail={closed} packHref="/portal/cases/PR-26-ABCDEF/documents" packPublished />)
+    const { rerender } = render(<CaseWorkspace
+      detail={closed}
+      packHref="/portal/cases/PR-26-ABCDEF/documents"
+      packPublished
+      handover={{ submitted: false, correctionRequested: false, outcomeReported: false, outcomeReviewed: false, evidenceOptions: [] }}
+    />)
     expect(screen.getByText("Preparation complete")).toBeTruthy()
-    expect(screen.getByRole("heading", { name: "Your Guided preparation is complete" })).toBeTruthy()
-    expect(screen.getByText("Your pack is ready for you. Sending it to Google is your choice, and a later Google decision is separate.")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Open your pack" })).toHaveAttribute("href", "/portal/cases/PR-26-ABCDEF/documents")
+    expect(screen.getByRole("heading", { name: "Your Guided Relaunch service is complete" })).toBeTruthy()
+    expect(screen.getByText("Your Guided Relaunch service is complete. Your submission pack remains available in your account. You can tell us when you've submitted it to Google and update us when you hear back.")).toBeTruthy()
+    expect(screen.getAllByRole("link", { name: "Download your completed pack" })).toHaveLength(2)
+    expect(screen.getByRole("button", { name: "I submitted this to Google" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Update Google's decision" })).toBeNull()
+    expect(screen.getByText("ProfileRelaunch service")).toBeTruthy()
+    expect(screen.getByText("Google submission")).toBeTruthy()
+    expect(screen.getByText("Not reported")).toBeTruthy()
+    expect(screen.getByText("Awaiting")).toBeTruthy()
     const progress = screen.getByRole("heading", { name: "Progress" }).parentElement
     expect(progress?.querySelector("[aria-current='step']")).toBeNull()
     expect(progress).toHaveTextContent("Pack ready for you")
@@ -308,8 +330,7 @@ describe("customer case workspace", () => {
     expect(screen.queryByText("Your profile was restored")).toBeNull()
 
     rerender(<CaseWorkspace detail={closed} packHref={null} packPublished={false} />)
-    expect(screen.queryByRole("link", { name: "Open your pack" })).toBeNull()
-    expect(screen.queryByRole("link", { name: "Download your pack" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Download your completed pack" })).toBeNull()
     expect(screen.getByText("Your preparation is complete. Sending anything to Google is your choice, and a later Google decision is separate.")).toBeTruthy()
     const withoutPack = screen.getByRole("heading", { name: "Progress" }).parentElement
     expect(withoutPack?.querySelector("[aria-current='step']")).toBeNull()
@@ -317,6 +338,56 @@ describe("customer case workspace", () => {
     expect(withoutPack).not.toHaveTextContent("Now")
     expect(screen.queryByText("Your profile was restored")).toBeNull()
     expect(screen.queryByText("Submitted to Google")).toBeNull()
+  })
+
+  it("keeps the pack actions on the case page and does not treat a customer outcome as a verified decision", () => {
+    const closed = detail({
+      attentionItems: [],
+      status: "CLOSED",
+      workStage: "FINISHED",
+      closedAt,
+    }, {
+      timeline: [
+        { code: "CUSTOMER_REPORTED_OUTCOME", occurredAt: "2026-10-09T09:00:00.000Z" },
+        { code: "CUSTOMER_REPORTED_SUBMISSION", occurredAt: "2026-10-08T09:00:00.000Z" },
+        { code: "CASE_COMPLETED", occurredAt: closedAt },
+      ],
+    })
+    const { rerender } = render(<CaseWorkspace
+      detail={closed}
+      packHref="/portal/cases/PR-26-ABCDEF/documents"
+      packPublished
+      handover={{
+        submitted: true,
+        correctionRequested: false,
+        outcomeReported: true,
+        outcomeReviewed: false,
+        evidenceOptions: [],
+      }}
+    />)
+    expect(screen.getAllByRole("link", { name: "Download your completed pack" }).length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "Request a correction" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "I submitted this to Google" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Update Google's decision" })).toBeTruthy()
+    expect(screen.getByText("This is your report. It is not an independently verified Google decision, and it does not change your completed ProfileRelaunch service or its payment.")).toBeTruthy()
+    expect(screen.getAllByText("Customer reported").length).toBeGreaterThan(0)
+    expect(screen.queryByText("Reviewed")).toBeNull()
+    expect(screen.queryByText("Your profile was restored")).toBeNull()
+    rerender(<CaseWorkspace
+      detail={closed}
+      packHref="/portal/cases/PR-26-ABCDEF/documents"
+      packPublished
+      handover={{
+        submitted: true,
+        correctionRequested: false,
+        outcomeReported: true,
+        outcomeReviewed: true,
+        evidenceOptions: [],
+      }}
+    />)
+    expect(screen.getByText("Reviewed")).toBeTruthy()
+    expect(screen.getAllByText("Completed").length).toBeGreaterThan(0)
+    expect(screen.queryByText("Your profile was restored")).toBeNull()
   })
 
   it("shows a recorded customer submission and a recorded Google decision", () => {

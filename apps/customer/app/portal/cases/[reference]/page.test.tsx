@@ -5,6 +5,7 @@ import "@testing-library/jest-dom/vitest"
 
 const load = vi.hoisted(() => vi.fn())
 const payments = vi.hoisted(() => vi.fn())
+const documents = vi.hoisted(() => vi.fn())
 const gate = vi.hoisted(() => vi.fn(() => true))
 
 vi.mock("next/navigation", () => ({
@@ -15,6 +16,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/portal/config", () => ({ portalAvailable: gate }))
 vi.mock("@/lib/portal/cases/queries", () => ({ loadCustomerCase: load }))
 vi.mock("@/lib/portal/payments/queries", () => ({ loadCustomerCasePayments: payments }))
+vi.mock("@/lib/portal/documents/queries", () => ({ loadCustomerCaseDocuments: documents }))
 
 const submittedAt = "2026-10-03T09:00:00.000Z"
 const ready = {
@@ -46,6 +48,8 @@ describe("customer case page", () => {
     load.mockReset()
     payments.mockReset()
     payments.mockResolvedValue({ status: "unavailable" })
+    documents.mockReset()
+    documents.mockResolvedValue({ status: "unavailable" })
     gate.mockReset()
     gate.mockReturnValue(true)
   })
@@ -75,10 +79,13 @@ describe("customer case page", () => {
     load.mockResolvedValueOnce({ status: "unavailable" })
     const failed = await CustomerCasePage({ params: Promise.resolve({ reference: "PR-26-ABCDEF" }) })
     expect(failed).toBeTruthy()
+    expect(documents).not.toHaveBeenCalled()
     load.mockResolvedValueOnce(ready)
     const shown = await CustomerCasePage({ params: Promise.resolve({ reference: "PR-26-ABCDEF" }) })
     expect(shown).toBeTruthy()
     expect(load).toHaveBeenLastCalledWith("PR-26-ABCDEF")
+    expect(documents).toHaveBeenCalledTimes(1)
+    expect(documents).toHaveBeenCalledWith("PR-26-ABCDEF")
   })
 
   it("shows the closed unsuccessful outcome returned by the case loader", async () => {
@@ -98,6 +105,7 @@ describe("customer case page", () => {
       },
     })
     render(await CustomerCasePage({ params: Promise.resolve({ reference: "PR-26-ABCDEF" }) }))
+    expect(documents).toHaveBeenCalledWith("PR-26-ABCDEF")
     expect(screen.getByRole("heading", { name: "Your profile was not restored" })).toBeTruthy()
     expect(screen.getByText("Your profile was not restored and the case was completed.")).toBeTruthy()
     expect(screen.queryByText("Your profile was restored")).toBeNull()

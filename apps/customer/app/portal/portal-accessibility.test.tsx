@@ -73,7 +73,7 @@ describe("assembled portal accessibility", () => {
     check("/portal/payments", "We couldn't load payments", <PaymentsUnavailable />)
     check("/portal/guard", "Relaunch Guard", <GuardView locations={[]} focused={false} />)
     check("/portal/guard", "We couldn't load Relaunch Guard", <GuardUnavailable />)
-    check("/portal/messages", "Messages", <MessagesView page={{ threads: [], complete: true, nextCursor: null }} earlier={false} />)
+    check("/portal/messages", "Messages", <MessagesView portalContext={"a".repeat(32)} page={{ threads: [], complete: true, nextCursor: null }} earlier={false} />)
     check("/portal/messages", "Messages", <MessagesUnavailable />)
     check("/portal/account", "Account", <AccountView account={{ name: "Alex Customer", email: `${"a".repeat(80)}@example.com`, phone: null, emailVerified: true, phoneVerified: false }} />)
     check("/portal/account", "Account", <AccountUnavailable />)

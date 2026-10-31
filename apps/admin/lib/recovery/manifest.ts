@@ -1129,7 +1129,7 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Develop mail dispatch", probe: "public.dev_mail_dispatch_claim_v1" },
   },
   {
-    // GUIDED-PACK-MAIL-AUTO-01. Observed DEV ledger head, applied once.
+    // GUIDED-PACK-MAIL-AUTO-01. Applied once.
     // The reviewer aligned generated ledger version 20261029150239 to canonical
     // 20261029010000 after verifying the 35,478-character source. Do not replay.
     // Not applied to Production. Payment confirmations remain on the
@@ -1159,7 +1159,7 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Guided pack stage", probe: "admin_private.advance_guided_published_pack_stage_v1" },
   },
   {
-    // Guided assessment basis. Observed DEV ledger head, applied once.
+    // Guided assessment basis. Applied once.
     // Do not replay it and do not apply it to Production. It does not rewrite
     // a stored assessment fingerprint, close a case, send mail, or move a case stage.
     version: "20261030130000",
@@ -1173,9 +1173,8 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Action-session Guided payment queue and the request-scoped mail claim.
-    // Repository only. appliedToDev is false. The observed DEV ledger head is
-    // 20261030130000. Do not apply this file from the pull request. The queue
-    // wrapper does not insert an action, queue an email, or mark a payment.
+    // Applied once on DEV. Do not replay it and do not apply it to Production.
+    // The queue wrapper does not insert an action, queue an email, or mark a payment.
     // The request claim does not take a communication id, does not call the provider,
     // and leases only a Guided payment request. The portal wrapper no longer sets a
     // dispatch hold. The sweep claim still requires the activation watermark.
@@ -1183,10 +1182,39 @@ export const migrationChain: readonly MigrationEntry[] = [
     filename: "20261030200000_guided_payment_request_after_acceptance_v1.sql",
     step: "Quotation-email acceptance can queue a Guided payment request",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Guided payment request after acceptance", probe: "public.customer_action_queue_guided_payment_request_v1" },
+  },
+  {
+    // Immediate claim for a published Guided pack and the same lease for the
+    // other Admin customer emails that were only queued. Applied once on DEV.
+    // Do not replay it and do not apply it to Production.
+    // It does not send mail, insert an activation row, or change stored case rows.
+    // The sweep claim still requires the activation watermark.
+    version: "20261031120000",
+    filename: "20261031120000_guided_pack_ready_dispatch_v1.sql",
+    step: "A published Guided pack claims its queued pack-ready email",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided pack-ready dispatch", probe: "public.dev_mail_dispatch_claim_pack_v1" },
+  },
+  {
+    // Customer Google-outcome reporting for a published Guided pack.
+    // This is the observed DEV head. Applied once. Do not replay it and do not
+    // apply it to Production. It does not send mail, close a case, change a
+    // payment, or edit a stored outcome.
+    version: "20261031140000",
+    filename: "20261031140000_guided_customer_outcome_v1.sql",
+    step: "Customers can report a Guided pack submission and a Google outcome",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided customer outcome", probe: "public.customer_portal_guided_handover_v1" },
   },
 ]
 
@@ -1199,15 +1227,19 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261030130000`. Guided assessment basis and Guided pack stage sync were
- * applied once to DEV and must not be replayed. They are not applied to
- * Production. The shared dispatcher `20261029010000` remains applied and must
- * not be replayed. Develop mail dispatch `20261029000000` remains applied and
- * must not be replayed. Context function volatility `20261028223000` and draft
- * document role `20261028200000` remain applied and must not be replayed.
- * `pendingMigrations()` contains unapplied
- * `20261030200000_guided_payment_request_after_acceptance_v1.sql`. Do not
- * apply it without a separate approval, and do not apply it to Production.
+ * `20261031140000`. The verified live DEV ledger contains 89 entries and ends
+ * there. Guided customer outcome and Guided pack-ready dispatch were applied
+ * once to DEV and must not be replayed. Do not replay `20261031140000` or
+ * `20261031120000`. They are not applied to Production. Guided payment request
+ * after acceptance, Guided assessment basis and Guided pack stage sync were
+ * applied once to DEV and must not be replayed. Do not replay `20261030200000`.
+ * They are not applied to Production. The shared dispatcher `20261029010000`
+ * remains applied and must not be replayed. Develop mail dispatch
+ * `20261029000000` remains applied and must not be replayed. Context function
+ * volatility `20261028223000` and draft document role `20261028200000` remain
+ * applied and must not be replayed. `pendingMigrations()` is empty. The
+ * repository chain is longer than the live ledger because it still records the
+ * three foundation files that live DEV omits (issue #190).
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

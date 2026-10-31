@@ -1904,6 +1904,39 @@ main.customer-main > section .document-list a {
   cursor: pointer;
 }
 
+button.message-group-toggle {
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: none;
+  transform: none;
+}
+
+button.message-group-toggle[aria-expanded="true"] {
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+button.message-group-toggle:hover:not(:disabled) {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: none;
+  transform: none;
+}
+
+button.message-group-toggle:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 3px;
+}
+
+button.message-group-toggle .message-group-title,
+button.message-group-toggle .message-group-business {
+  color: var(--ink);
+}
+
+button.message-group-toggle .message-group-meta {
+  color: var(--muted);
+}
+
 .message-group-chevron {
   width: 0.45rem;
   height: 0.45rem;

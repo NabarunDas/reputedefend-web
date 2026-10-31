@@ -173,7 +173,7 @@ describe("central mail dispatch", () => {
       if (name === "dev_mail_dispatch_claim_request_v1") return claim()
       if (name === "communication_load_send_v1") return loaded()
       if (name === "communication_begin_provider_attempt_v1") {
-        return { status: "success", providerCallPermitted: true, firstProviderAttemptAt: "2026-10-30T12:00:00.000Z" }
+        return { status: "success", providerCallPermitted: true, firstProviderAttemptAt: new Date().toISOString() }
       }
       if (name === "communication_mark_acceptance_unknown_v1" || name === "job_fail_v1") return { status: "success" }
       throw new Error(`unexpected ${name}`)

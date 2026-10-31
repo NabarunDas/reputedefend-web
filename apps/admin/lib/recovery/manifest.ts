@@ -1204,9 +1204,8 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Customer Google-outcome reporting for a published Guided pack.
-    // This is the observed DEV head. Applied once. Do not replay it and do not
-    // apply it to Production. It does not send mail, close a case, change a
-    // payment, or edit a stored outcome.
+    // Applied once. Do not replay it and do not apply it to Production.
+    // It does not send mail, close a case, change a payment, or edit a stored outcome.
     version: "20261031140000",
     filename: "20261031140000_guided_customer_outcome_v1.sql",
     step: "Customers can report a Guided pack submission and a Google outcome",
@@ -1217,17 +1216,16 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Guided customer outcome", probe: "public.customer_portal_guided_handover_v1" },
   },
   {
-    // Future customer mail leads with the case reference. Quotation, service-order
-    // and receipt numbers stay labelled secondary records. Repository only.
-    // appliedToDev is false. Do not apply this file from the pull request.
+    // Customer mail leads with the case reference. Quotation, service-order
+    // and receipt numbers stay labelled secondary records. This is the observed
+    // DEV head. Applied once. Do not replay it and do not apply it to Production.
     // It does not rewrite stored communications, quotations, receipts or catalogue rows.
-    // It sorts after the applied DEV head so a clean rebuild keeps the Guided
-    // completion sentence together with the case-reference subject checks.
+    // Repository file SHA-256 a500bb693b914745ff746904552253bf67e8bd635f3b2798f482650d1eb6c2b1.
     version: "20261031150000",
     filename: "20261031150000_customer_case_reference_subjects_v1.sql",
     step: "Customer mail leads with the case reference",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Customer case reference", probe: "admin_private.guided_payment_request_snapshot_reason_v1" },
@@ -1243,8 +1241,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261031140000`. The verified live DEV ledger contains 89 entries and ends
- * there. Guided customer outcome and Guided pack-ready dispatch were applied
+ * `20261031150000`. The verified live DEV ledger contains 90 entries and ends
+ * there. Customer case-reference subjects were applied once to DEV and must
+ * not be replayed. Do not replay `20261031150000`. It is not applied to
+ * Production. Guided customer outcome and Guided pack-ready dispatch were applied
  * once to DEV and must not be replayed. Do not replay `20261031140000` or
  * `20261031120000`. They are not applied to Production. Guided payment request
  * after acceptance, Guided assessment basis and Guided pack stage sync were
@@ -1253,11 +1253,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` contains only
- * unapplied `20261031150000_customer_case_reference_subjects_v1.sql`. Do not
- * apply it without a separate approval, and do not apply it to Production.
+ * applied and must not be replayed. `pendingMigrations()` is empty.
  * The repository chain is longer than the live ledger because it still records the
- * three foundation files that live DEV omits (issue #190) and this unapplied file.
+ * three foundation files that live DEV omits (issue #190).
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

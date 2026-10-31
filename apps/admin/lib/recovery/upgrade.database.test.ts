@@ -59,13 +59,14 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The repository tail is the unapplied case-reference migration.
-    // The DEV-applied Guided customer outcome and pack-ready dispatch stay
-    // before it and must not be replayed on the live database. Payment request
-    // 20261030200000 is applied on DEV and must not be replayed. This disposable
-    // rebuild is not a live apply. Production remains at SEC-08.
+    // The repository tail is the DEV-applied case-reference migration.
+    // It was applied once and must not be replayed on the live database.
+    // The Guided customer outcome and pack-ready dispatch stay before it and
+    // must not be replayed. Payment request 20261030200000 is applied on DEV
+    // and must not be replayed. This disposable rebuild is not a live apply.
+    // Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261031150000_customer_case_reference_subjects_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261031140000_guided_customer_outcome_v1.sql")
     expect(pending.at(-2)?.appliedToDev).toBe(true)

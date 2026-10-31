@@ -60,7 +60,7 @@ describe("rebuilding the whole schema from zero", () => {
     // Production stays at SEC-08.
     expect(migrationHead.filename).toBe("20261031120000_guided_pack_ready_dispatch_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261030130000")
+    expect(appliedMigrationHead.version).toBe("20261030200000")
   })
 
   it("rebuilds one independently constrained evidence slot per requested document", async () => {

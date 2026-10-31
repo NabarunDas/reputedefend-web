@@ -40,7 +40,7 @@ describe("DEV mail recovery target", () => {
     const proxy = readFileSync(new URL("../../proxy.ts", import.meta.url), "utf8")
     expect(route).toContain("export const GET = runDevMailDispatchRequest")
     expect(route).not.toMatch(/export const POST/)
-    expect(proxy).toContain('const devMailCronRead = request.method === "GET"\n    && pathname === "/api/internal/jobs/dev-mail-dispatch"')
+    expect(proxy).toContain('const devMailCronRead = request.method === "GET"\n    && (pathname === "/api/internal/jobs/dev-mail-dispatch" || pathname === "/api/internal/jobs/dev-mail-pack-retry")')
     expect(workflow).not.toMatch(/-X POST|--request POST/)
     const schedule = readFileSync(new URL("../../../../supabase/dev-only/dev_mail_dispatch_schedule.sql", import.meta.url), "utf8")
     expect(schedule).toContain("cron.schedule")

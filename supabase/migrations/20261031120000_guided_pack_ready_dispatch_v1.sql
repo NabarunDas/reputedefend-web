@@ -1,167 +1,74 @@
--- Immediate DEV dispatch for a published Guided pack and the same claim-and-lease
--- path for the other Admin customer emails that were only queued.
+-- Immediate DEV dispatch for a published Guided pack, and a retry wake for
+-- that same pack email when the first provider attempt fails.
 --
 -- Source only. Do not apply this file to DEV or Production from the pull request.
--- It does not send mail, take a payment, insert an activation row, enable a
--- worker, or change stored case rows. The sweep claim still requires the
--- activation watermark. These claims do not.
+-- It does not send mail, take a payment, insert an activation row, enable the
+-- general worker, or change stored case rows. The sweep claim still requires
+-- the activation watermark. These claims do not.
+--
+-- A case page does not call these functions. Publish calls the pack claim.
+-- A due RETRY is claimed by dev_mail_dispatch_claim_pack_retry_v1, which a
+-- database schedule may wake. When no pack retry is due, the recovery
+-- function returns before any HTTP call. Idle cost, once a reviewer installs
+-- the five-minute database schedule, is one count in the DEV database and
+-- no Admin or Resend call. This file does not install that schedule.
 
-CREATE OR REPLACE FUNCTION admin_private.dev_mail_link_reason_v1(
-  p_template text, p_text text, p_html text, p_origin text, p_case_ref text
-) RETURNS text
+-- Null when this pack may still send. Stale, unpublished, invalid and
+-- superseded packs return a reason and are not leased.
+CREATE FUNCTION admin_private.dev_mail_pack_send_reason_v1(p_pack uuid)
+RETURNS text
 LANGUAGE plpgsql
 STABLE
+SECURITY DEFINER
 SET search_path = ''
-AS $fn$
+AS $$
 DECLARE
-  body text := coalesce(p_text, '') || ' ' || coalesce(p_html, '');
-  url text;
-  action_id text;
-  text_action text;
-  html_action text;
-  text_actions integer;
-  html_actions integer;
-  ref text;
-  needs_portal boolean;
+  pack public.case_prepared_packs;
 BEGIN
-  IF position('#t=' in coalesce(p_text, '')) > 0 OR position('#t=' in coalesce(p_html, '')) > 0 THEN
-    RETURN 'origin';
+  SELECT * INTO pack FROM public.case_prepared_packs WHERE id = p_pack;
+  IF pack.id IS NULL THEN
+    RETURN 'not_queued';
   END IF;
-  FOR url IN
-    SELECT m[1] FROM regexp_matches(body, 'https?://[^[:space:]<>"]+', 'g') AS m
-  LOOP
-    IF position('?' in url) > 0 OR position('#' in url) > 0 OR left(url, 8) IS DISTINCT FROM 'https://' THEN
-      RETURN 'origin';
-    END IF;
-    -- Exact branding only. Not a path, subdomain, token, or action link.
-    IF url IN (
-      'https://profilerelaunch.com',
-      'https://profilerelaunch.com/',
-      'https://www.profilerelaunch.com',
-      'https://www.profilerelaunch.com/',
-      'https://profilerelaunch.com/brand/profile-relaunch-logo.png'
-    ) THEN
-      CONTINUE;
-    END IF;
-    IF p_origin IS NULL THEN
-      IF url !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app(/|$)' THEN
-        RETURN 'foreign_link';
-      END IF;
-    ELSIF NOT (url = p_origin OR left(url, length(p_origin) + 1) = p_origin || '/') THEN
-      RETURN 'foreign_link';
-    END IF;
-    IF position('/portal/cases/' IN url) > 0 THEN
-      IF p_case_ref IS NULL
-        OR (
-          position('/portal/cases/' || p_case_ref || '/' IN url) = 0
-          AND right(url, length('/portal/cases/' || p_case_ref)) IS DISTINCT FROM '/portal/cases/' || p_case_ref
-        )
-      THEN
-        RETURN 'origin';
-      END IF;
-    END IF;
-    IF position('/action/' IN url) > 0 THEN
-      IF p_template IN (
-        'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT',
-        'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION',
-        'MANAGED_PROGRESS', 'MANAGED_RESULT', 'MANAGED_INVOICE', 'MANAGED_COMPLETION'
-      ) THEN
-        RETURN 'origin';
-      END IF;
-      IF p_origin IS NULL THEN
-        IF url !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
-          RETURN 'origin';
-        END IF;
-      ELSE
-        IF left(url, length(p_origin) + 8) IS DISTINCT FROM p_origin || '/action/' THEN
-          RETURN 'origin';
-        END IF;
-        action_id := substring(url FROM length(p_origin) + 9);
-        IF action_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
-          RETURN 'origin';
-        END IF;
-      END IF;
-    END IF;
-  END LOOP;
-  IF p_template IN (
-    'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT',
-    'MANAGED_PROGRESS', 'MANAGED_RESULT', 'MANAGED_INVOICE', 'MANAGED_COMPLETION'
+  IF pack.status = 'STALE' THEN
+    RETURN 'stale';
+  END IF;
+  IF pack.status = 'SUPERSEDED' THEN
+    RETURN 'superseded';
+  END IF;
+  IF pack.status IS DISTINCT FROM 'APPROVED' THEN
+    RETURN 'invalid';
+  END IF;
+  IF pack.published_at IS NULL OR pack.unpublished_at IS NOT NULL THEN
+    RETURN 'unpublished';
+  END IF;
+  IF NOT admin_private.pack_publishable_v1(pack.id)
+    OR admin_private.guided_pack_materials_reason_v1(pack.id) IS NOT NULL
+  THEN
+    RETURN 'invalid';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM public.case_prepared_packs other
+    WHERE other.case_id = pack.case_id
+      AND other.id <> pack.id
+      AND other.status IS DISTINCT FROM 'SUPERSEDED'
+      AND other.pack_number > pack.pack_number
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.case_prepared_packs other
+    WHERE other.case_id = pack.case_id
+      AND other.id <> pack.id
+      AND other.published_at IS NOT NULL
+      AND other.unpublished_at IS NULL
   ) THEN
-    IF position('/action/' in body) > 0 THEN
-      RETURN 'origin';
-    END IF;
-    RETURN NULL;
-  END IF;
-  needs_portal := p_template IN (
-    'EVIDENCE_REQUEST', 'QUOTE_OFFER', 'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION'
-  );
-  IF NOT needs_portal THEN
-    RETURN 'origin';
-  END IF;
-  IF p_case_ref IS NOT NULL THEN
-    IF position(p_case_ref IN coalesce(p_text, '')) = 0 OR position(p_case_ref IN coalesce(p_html, '')) = 0 THEN
-      RETURN 'origin';
-    END IF;
-    FOR ref IN
-      SELECT m[1] FROM regexp_matches(body, '((?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6})', 'g') AS m
-    LOOP
-      IF ref IS DISTINCT FROM p_case_ref THEN
-        RETURN 'origin';
-      END IF;
-    END LOOP;
-  END IF;
-  IF p_origin IS NOT NULL AND position(p_origin IN coalesce(p_text, '')) = 0 THEN
-    RETURN 'origin';
-  END IF;
-  IF p_origin IS NULL AND position('https://profilerelaunch-customer-git-develop-' IN coalesce(p_text, '')) = 0 THEN
-    RETURN 'origin';
-  END IF;
-  IF p_origin IS NOT NULL AND position(p_origin IN coalesce(p_html, '')) = 0 THEN
-    RETURN 'origin';
-  END IF;
-  IF p_template IN ('EVIDENCE_REQUEST', 'QUOTE_OFFER') THEN
-    SELECT count(*) INTO text_actions
-    FROM regexp_matches(coalesce(p_text, ''), 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'g');
-    SELECT count(*) INTO html_actions
-    FROM regexp_matches(coalesce(p_html, ''), 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'g');
-    text_action := substring(coalesce(p_text, '') FROM 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
-    html_action := substring(coalesce(p_html, '') FROM 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
-    IF text_actions IS DISTINCT FROM 1 OR html_actions IS DISTINCT FROM 1 OR text_action IS DISTINCT FROM html_action THEN
-      RETURN 'origin';
-    END IF;
-  END IF;
-  IF p_template = 'GUIDED_PACK_READY'
-    AND (
-      admin_private.fulfilment_page_count_v1(p_text, 'documents') IS DISTINCT FROM 1
-      OR admin_private.fulfilment_page_count_v1(p_html, 'documents') IS DISTINCT FROM 1
-    )
-  THEN
-    RETURN 'origin';
-  END IF;
-  IF p_template = 'GUIDED_COMPLETION'
-    AND (
-      position('/portal/cases/' IN coalesce(p_text, '')) = 0
-      OR position('/documents' IN coalesce(p_text, '')) = 0
-      OR position('/portal/cases/' IN coalesce(p_html, '')) = 0
-      OR position('/documents' IN coalesce(p_html, '')) = 0
-    )
-  THEN
-    RETURN 'origin';
-  END IF;
-  IF p_template = 'GUIDED_PAYMENT_REQUEST'
-    AND (
-      position('/portal/cases/' IN coalesce(p_text, '')) = 0
-      OR position('/payments' IN coalesce(p_text, '')) = 0
-      OR position('/portal/cases/' IN coalesce(p_html, '')) = 0
-      OR position('/payments' IN coalesce(p_html, '')) = 0
-      OR position('/action/' IN body) > 0
-    )
-  THEN
-    RETURN 'origin';
+    RETURN 'superseded';
   END IF;
   RETURN NULL;
 END;
-$fn$;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.dev_mail_pack_send_reason_v1(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
 
 -- Promotes one existing SEND_EMAIL outbox row and leases its job.
 -- The caller has already chosen the communication. This does not insert a
@@ -412,7 +319,8 @@ REVOKE ALL ON FUNCTION admin_private.dev_mail_lease_queued_send_v1(uuid, text, b
 
 -- The caller names a pack, not a communication. Only the announcement already
 -- stored for the current published pack can be leased. A second call does not
--- insert another communication.
+-- insert another communication. A succeeded or delivered announcement is not
+-- leased again.
 CREATE FUNCTION public.dev_mail_dispatch_claim_pack_v1(
   p_pack uuid,
   p_customer_origin text
@@ -426,6 +334,7 @@ DECLARE
   cs public.cases;
   comm public.communications;
   v_comm uuid;
+  v_reason text;
 BEGIN
   IF p_pack IS NULL
     OR p_customer_origin IS NULL
@@ -443,39 +352,9 @@ BEGIN
     END IF;
     RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
   END IF;
-  IF pack.status = 'STALE' THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'stale');
-  END IF;
-  IF pack.status = 'SUPERSEDED' THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'superseded');
-  END IF;
-  IF pack.status IS DISTINCT FROM 'APPROVED' THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'invalid');
-  END IF;
-  IF pack.published_at IS NULL OR pack.unpublished_at IS NOT NULL THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'unpublished');
-  END IF;
-  IF NOT admin_private.pack_publishable_v1(pack.id)
-    OR admin_private.guided_pack_materials_reason_v1(pack.id) IS NOT NULL
-  THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'invalid');
-  END IF;
-  IF EXISTS (
-    SELECT 1
-    FROM public.case_prepared_packs other
-    WHERE other.case_id = pack.case_id
-      AND other.id <> pack.id
-      AND other.status IS DISTINCT FROM 'SUPERSEDED'
-      AND other.pack_number > pack.pack_number
-  ) OR EXISTS (
-    SELECT 1
-    FROM public.case_prepared_packs other
-    WHERE other.case_id = pack.case_id
-      AND other.id <> pack.id
-      AND other.published_at IS NOT NULL
-      AND other.unpublished_at IS NULL
-  ) THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'superseded');
+  v_reason := admin_private.dev_mail_pack_send_reason_v1(pack.id);
+  IF v_reason IS NOT NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', v_reason);
   END IF;
   SELECT communication_id INTO v_comm
   FROM public.guided_pack_announcements
@@ -502,153 +381,51 @@ REVOKE ALL ON FUNCTION public.dev_mail_dispatch_claim_pack_v1(uuid, text)
 GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_claim_pack_v1(uuid, text)
   TO service_role;
 
--- One queued Guided completion for a closed Guided case. It does not close the
--- case again and it does not insert a second completion email.
-CREATE FUNCTION public.dev_mail_dispatch_claim_completion_v1(
-  p_case uuid,
-  p_customer_origin text
-) RETURNS jsonb
-LANGUAGE plpgsql
+-- Due Guided pack retries only. An unattempted message, a succeeded job, a
+-- delivered message, and a message whose provider acceptance is unknown are
+-- not returned. The caller cannot name a communication.
+CREATE FUNCTION admin_private.dev_mail_pack_retry_due_v1()
+RETURNS TABLE(communication_id uuid, pack_id uuid)
+LANGUAGE sql
+STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-DECLARE
-  cs public.cases;
-  comm_id uuid;
-  queued_count integer;
-BEGIN
-  IF p_case IS NULL
-    OR p_customer_origin IS NULL
-    OR p_customer_origin !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app$'
-  THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'origin');
-  END IF;
-  SELECT * INTO cs
-  FROM public.cases
-  WHERE id = p_case
-  FOR UPDATE SKIP LOCKED;
-  IF NOT FOUND THEN
-    IF EXISTS (SELECT 1 FROM public.cases WHERE id = p_case) THEN
-      RETURN jsonb_build_object('status', 'conflict', 'reason', 'locked');
-    END IF;
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
-  END IF;
-  IF cs.service_track IS DISTINCT FROM 'GUIDED' THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_guided');
-  END IF;
-  IF cs.status IS DISTINCT FROM 'CLOSED' THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_closed');
-  END IF;
-  SELECT count(*)::int INTO queued_count
-  FROM public.communications
-  WHERE case_id = cs.id
-    AND template_key = 'GUIDED_COMPLETION'
-    AND lifecycle IS DISTINCT FROM 'CANCELLED';
-  IF queued_count IS DISTINCT FROM 1 THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
-  END IF;
-  SELECT id INTO comm_id
-  FROM public.communications
-  WHERE case_id = cs.id
-    AND template_key = 'GUIDED_COMPLETION'
-    AND lifecycle = 'QUEUED'
-    AND content_locked IS TRUE
-    AND customer_id = cs.customer_id;
-  IF comm_id IS NULL THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
-  END IF;
-  RETURN admin_private.dev_mail_lease_queued_send_v1(comm_id, p_customer_origin, false);
-END;
+  SELECT c.id, a.pack_id
+  FROM public.communications c
+  JOIN public.guided_pack_announcements a ON a.communication_id = c.id
+  JOIN public.cases cs ON cs.id = c.case_id
+  JOIN public.customers cu ON cu.id = cs.customer_id
+  JOIN admin_private.job_outbox o
+    ON o.event_key = 'send-email:' || c.id::text || ':v' || c.content_version::text
+   AND o.topic = 'SEND_EMAIL'
+   AND o.aggregate_id = c.id
+  JOIN admin_private.jobs j
+    ON j.outbox_id = o.id
+   AND j.job_type = 'SEND_EMAIL'
+   AND j.status = 'RETRY'
+   AND j.scheduled_at <= now()
+  WHERE c.template_key = 'GUIDED_PACK_READY'
+    AND c.lifecycle = 'QUEUED'
+    AND c.content_locked IS TRUE
+    AND c.first_provider_attempt_at IS NOT NULL
+    AND c.customer_id = cs.customer_id
+    AND coalesce(c.delivery_status, 'NONE') = 'NONE'
+    AND admin_private.normalize_email_v1(c.recipient) = admin_private.normalize_email_v1(cu.email)
+    AND admin_private.dev_mail_pack_send_reason_v1(a.pack_id) IS NULL
+    AND admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, NULL, cs.public_ref) IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM admin_private.email_suppressions s
+      WHERE s.address_normalized = admin_private.normalize_email_v1(c.recipient)
+    )
+  ORDER BY j.scheduled_at, c.id
+  LIMIT 5;
 $$;
 
-REVOKE ALL ON FUNCTION public.dev_mail_dispatch_claim_completion_v1(uuid, text)
+REVOKE ALL ON FUNCTION admin_private.dev_mail_pack_retry_due_v1()
   FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_claim_completion_v1(uuid, text)
-  TO service_role;
 
--- A communication the Admin command just queued. Pack, payment and completion
--- mail stay on their own claims. An unattempted message older than two hours
--- is left unpromoted.
-CREATE FUNCTION public.dev_mail_dispatch_claim_recent_v1(
-  p_communication uuid,
-  p_customer_origin text
-) RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-DECLARE
-  template text;
-BEGIN
-  IF p_communication IS NULL
-    OR p_customer_origin IS NULL
-    OR p_customer_origin !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app$'
-  THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'origin');
-  END IF;
-  SELECT template_key INTO template FROM public.communications WHERE id = p_communication;
-  IF template = 'PAYMENT_CONFIRMATION' THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'payment_worker_owned');
-  END IF;
-  IF template IS NULL OR template NOT IN (
-    'EVIDENCE_REQUEST', 'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT',
-    'MANAGED_PROGRESS', 'MANAGED_RESULT', 'MANAGED_INVOICE', 'MANAGED_COMPLETION'
-  ) THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_send_email');
-  END IF;
-  RETURN admin_private.dev_mail_lease_queued_send_v1(p_communication, p_customer_origin, true);
-END;
-$$;
-
-REVOKE ALL ON FUNCTION public.dev_mail_dispatch_claim_recent_v1(uuid, text)
-  FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_claim_recent_v1(uuid, text)
-  TO service_role;
-
--- The managed notice stored for this queue request. The caller cannot name a
--- communication or a recipient.
-CREATE FUNCTION public.dev_mail_dispatch_claim_notice_v1(
-  p_request uuid,
-  p_customer_origin text
-) RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-DECLARE
-  notice public.managed_customer_notices;
-  template text;
-BEGIN
-  IF p_request IS NULL
-    OR p_customer_origin IS NULL
-    OR p_customer_origin !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app$'
-  THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'origin');
-  END IF;
-  SELECT * INTO notice FROM public.managed_customer_notices WHERE request_id = p_request;
-  IF notice.id IS NULL THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
-  END IF;
-  SELECT template_key INTO template FROM public.communications WHERE id = notice.communication_id;
-  IF template IS NULL OR template NOT IN (
-    'MANAGED_PROGRESS', 'MANAGED_RESULT', 'MANAGED_INVOICE', 'MANAGED_COMPLETION'
-  ) THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_send_email');
-  END IF;
-  RETURN admin_private.dev_mail_lease_queued_send_v1(notice.communication_id, p_customer_origin, true);
-END;
-$$;
-
-REVOKE ALL ON FUNCTION public.dev_mail_dispatch_claim_notice_v1(uuid, text)
-  FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_claim_notice_v1(uuid, text)
-  TO service_role;
-
--- One due retry, or one unattempted message queued in the last two hours, for
--- this case. It does not promote older unattempted mail and it does not touch
--- a pack, payment or completion message.
-CREATE FUNCTION public.dev_mail_dispatch_claim_case_retry_v1(
-  p_case uuid,
+CREATE FUNCTION public.dev_mail_dispatch_claim_pack_retry_v1(
   p_customer_origin text
 ) RETURNS jsonb
 LANGUAGE plpgsql
@@ -657,54 +434,209 @@ SET search_path = ''
 AS $$
 DECLARE
   v_comm uuid;
+  v_pack uuid;
+  v_reason text;
 BEGIN
-  IF p_case IS NULL
-    OR p_customer_origin IS NULL
+  IF p_customer_origin IS NULL
     OR p_customer_origin !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app$'
   THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'origin');
   END IF;
-  SELECT picked.id INTO v_comm
-  FROM (
-    SELECT c.id
-    FROM public.communications c
-    WHERE c.case_id = p_case
-      AND c.lifecycle = 'QUEUED'
-      AND c.content_locked IS TRUE
-      AND c.template_key IN (
-        'EVIDENCE_REQUEST', 'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT',
-        'MANAGED_PROGRESS', 'MANAGED_RESULT', 'MANAGED_INVOICE', 'MANAGED_COMPLETION'
-      )
-      AND (
-        (
-          c.first_provider_attempt_at IS NULL
-          AND coalesce(c.delivery_status, 'NONE') = 'NONE'
-          AND coalesce(c.queued_at, c.created_at) >= now() - interval '2 hours'
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM admin_private.jobs j
-          JOIN admin_private.job_outbox ob ON ob.id = j.outbox_id
-          WHERE ob.event_key = 'send-email:' || c.id::text || ':v' || c.content_version::text
-            AND j.job_type = 'SEND_EMAIL'
-            AND j.status = 'RETRY'
-            AND j.scheduled_at <= now()
-        )
-      )
-    ORDER BY coalesce(c.queued_at, c.created_at), c.id
-    LIMIT 1
-    FOR UPDATE OF c SKIP LOCKED
-  ) picked;
+  SELECT due.communication_id, due.pack_id INTO v_comm, v_pack
+  FROM admin_private.dev_mail_pack_retry_due_v1() AS due
+  LIMIT 1;
   IF v_comm IS NULL THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
+  END IF;
+  PERFORM 1
+  FROM public.case_prepared_packs
+  WHERE id = v_pack
+  FOR UPDATE SKIP LOCKED;
+  IF NOT FOUND THEN
+    IF EXISTS (SELECT 1 FROM public.case_prepared_packs WHERE id = v_pack) THEN
+      RETURN jsonb_build_object('status', 'conflict', 'reason', 'locked');
+    END IF;
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
+  END IF;
+  v_reason := admin_private.dev_mail_pack_send_reason_v1(v_pack);
+  IF v_reason IS NOT NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', v_reason);
   END IF;
   RETURN admin_private.dev_mail_lease_queued_send_v1(v_comm, p_customer_origin, true);
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.dev_mail_dispatch_claim_case_retry_v1(uuid, text)
+REVOKE ALL ON FUNCTION public.dev_mail_dispatch_claim_pack_retry_v1(text)
   FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_claim_case_retry_v1(uuid, text)
+GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_claim_pack_retry_v1(text)
   TO service_role;
+
+CREATE FUNCTION admin_private.dev_mail_pack_retry_wake_credentials_v1(
+  p_url text, p_bearer text, p_bypass text
+) RETURNS jsonb
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = ''
+AS $$
+BEGIN
+  IF p_url IS NULL
+    OR p_url !~ '^https://profilerelaunch-admin-git-develop-[a-z0-9-]+\.vercel\.app/api/internal/jobs/dev-mail-pack-retry$'
+  THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_url');
+  END IF;
+  IF p_bearer IS NULL OR length(p_bearer) < 32 OR p_bearer ~ '[[:space:]]' OR position(p_bearer IN p_url) > 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_bearer');
+  END IF;
+  IF p_bypass IS NULL OR length(p_bypass) < 32 OR p_bypass ~ '[[:space:]]' OR position(p_bypass IN p_url) > 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_bypass');
+  END IF;
+  RETURN jsonb_build_object('ok', true);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.dev_mail_pack_retry_wake_credentials_v1(text, text, text)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- The last pg_net request id for a pack retry. A queued request is not
+-- provider acceptance. This row is not the general worker request.
+CREATE TABLE admin_private.dev_mail_pack_retry_http (
+  id smallint PRIMARY KEY CHECK (id = 1),
+  request_id bigint NOT NULL,
+  requested_at timestamptz NOT NULL
+);
+ALTER TABLE admin_private.dev_mail_pack_retry_http ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE admin_private.dev_mail_pack_retry_http FROM PUBLIC, anon, authenticated, service_role;
+
+-- Empty retry set returns before any network call. pg_net and Vault stay optional.
+-- A succeeded or delivered pack email is not eligible, so it is not woken.
+CREATE FUNCTION public.dev_mail_pack_retry_recovery_v1()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  n integer;
+  v_url text;
+  v_bearer text;
+  v_bypass text;
+  v_http integer;
+  v_timed boolean;
+  v_error text;
+  v_found boolean;
+  v_stored bigint;
+  v_request bigint;
+  v_requested timestamptz;
+  v_credentials jsonb;
+BEGIN
+  SELECT count(*) INTO n FROM admin_private.dev_mail_pack_retry_due_v1();
+  IF n = 0 THEN
+    RETURN jsonb_build_object('status', 'success', 'eligible', 0, 'wake', 'not_needed');
+  END IF;
+  IF NOT (
+      EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'pg_net')
+      OR EXISTS (
+        SELECT 1 FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace ns ON ns.oid = p.pronamespace
+        WHERE ns.nspname = 'net' AND p.proname = 'http_get'
+      )
+    )
+    OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'vault')
+  THEN
+    RETURN jsonb_build_object('status', 'success', 'eligible', n, 'wake', 'not_configured');
+  END IF;
+  EXECUTE 'SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = $1' INTO v_url USING 'dev_mail_pack_retry_url';
+  EXECUTE 'SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = $1' INTO v_bearer USING 'dev_mail_dispatch_bearer';
+  EXECUTE 'SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = $1' INTO v_bypass USING 'dev_mail_dispatch_bypass';
+  v_credentials := admin_private.dev_mail_pack_retry_wake_credentials_v1(v_url, v_bearer, v_bypass);
+  IF coalesce(v_credentials->>'ok', 'false') <> 'true' THEN
+    RETURN jsonb_build_object('status', 'success', 'eligible', n, 'wake', 'not_configured', 'reason', v_credentials->>'reason');
+  END IF;
+  SELECT h.request_id, h.requested_at INTO v_stored, v_requested
+  FROM admin_private.dev_mail_pack_retry_http h
+  WHERE h.id = 1;
+  IF v_stored IS NOT NULL AND EXISTS (
+    SELECT 1 FROM pg_catalog.pg_class c
+    JOIN pg_catalog.pg_namespace ns ON ns.oid = c.relnamespace
+    WHERE ns.nspname = 'net' AND c.relname = '_http_response'
+  ) THEN
+    v_found := false;
+    EXECUTE 'SELECT status_code, timed_out, error_msg, true FROM net._http_response WHERE id = $1'
+      INTO v_http, v_timed, v_error, v_found USING v_stored;
+    IF v_found IS NOT TRUE THEN
+      IF v_requested > now() - interval '2 minutes' THEN
+        RETURN jsonb_build_object('status', 'pending', 'eligible', n, 'wake', 'in_flight', 'requestId', v_stored);
+      END IF;
+      DELETE FROM admin_private.dev_mail_pack_retry_http WHERE id = 1;
+      RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'missing', 'requestId', v_stored);
+    END IF;
+    IF coalesce(v_timed, false) THEN
+      DELETE FROM admin_private.dev_mail_pack_retry_http WHERE id = 1;
+      RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'timed_out', 'requestId', v_stored);
+    END IF;
+    IF v_error IS NOT NULL OR v_http IS NULL OR v_http >= 400 OR v_http IN (301, 302, 303, 307, 308) THEN
+      DELETE FROM admin_private.dev_mail_pack_retry_http WHERE id = 1;
+      RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'blocked', 'httpStatus', v_http, 'requestId', v_stored);
+    END IF;
+    DELETE FROM admin_private.dev_mail_pack_retry_http WHERE id = 1;
+  END IF;
+  BEGIN
+    EXECUTE 'SELECT net.http_get(url := $1, headers := $2, timeout_milliseconds := $3)'
+      INTO v_request
+      USING v_url,
+        jsonb_build_object(
+          'Authorization', 'Bearer ' || v_bearer,
+          'Content-Type', 'application/json',
+          'x-vercel-protection-bypass', v_bypass
+        ),
+        5000;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'failed');
+  END;
+  IF v_request IS NULL THEN
+    RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'failed');
+  END IF;
+  INSERT INTO admin_private.dev_mail_pack_retry_http(id, request_id, requested_at)
+  VALUES (1, v_request, now())
+  ON CONFLICT (id) DO UPDATE
+    SET request_id = EXCLUDED.request_id, requested_at = EXCLUDED.requested_at;
+  RETURN jsonb_build_object('status', 'pending', 'eligible', n, 'wake', 'requested', 'requestId', v_request);
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('status', 'blocked', 'eligible', n, 'wake', 'failed');
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.dev_mail_pack_retry_recovery_v1()
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.dev_mail_pack_retry_recovery_v1()
+  TO service_role;
+
+-- The first failure schedules RETRY one minute later. This trigger does not
+-- send mail. While that retry is not yet due, recovery returns not_needed.
+CREATE FUNCTION admin_private.dev_mail_pack_retry_wake_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.job_type IS DISTINCT FROM 'SEND_EMAIL' OR NEW.status IS DISTINCT FROM 'RETRY' THEN
+    RETURN NEW;
+  END IF;
+  PERFORM public.dev_mail_pack_retry_recovery_v1();
+  RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.dev_mail_pack_retry_wake_v1()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER dev_mail_pack_retry_wake
+  AFTER UPDATE OF status ON admin_private.jobs
+  FOR EACH ROW
+  WHEN (NEW.status = 'RETRY' AND OLD.status IS DISTINCT FROM 'RETRY' AND NEW.job_type = 'SEND_EMAIL')
+  EXECUTE FUNCTION admin_private.dev_mail_pack_retry_wake_v1();
 
 NOTIFY pgrst, 'reload schema';

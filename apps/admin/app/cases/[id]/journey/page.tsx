@@ -40,7 +40,6 @@ import type { EvidenceCase } from "@/lib/evidence/model"
 import { getEvidenceCase } from "@/lib/evidence/queries"
 import { buildEvidenceWorkspaceModel } from "@/lib/evidence/workspace"
 import type { PreparedPackCase } from "@/lib/packs/model"
-import { recoverPublishedCustomerMail } from "@/lib/case-journey/immediate-mail"
 import { getPreparedPackCase } from "@/lib/packs/queries"
 import { getMembership, recordDetail } from "@/lib/records/queries"
 import { requireStaff } from "@/lib/require-staff"
@@ -68,9 +67,7 @@ export default async function CaseJourneyPage({
   const { id } = await params
   const query = await searchParams
   if (Array.isArray(query.step)) notFound()
-  const detail = await getCase(id)
-  await recoverPublishedCustomerMail(detail.id)
-  const [facts, assessment] = await Promise.all([loadCaseFlowFacts(id), loadCaseAssessment(id)])
+  const [detail, facts, assessment] = await Promise.all([getCase(id), loadCaseFlowFacts(id), loadCaseAssessment(id)])
   const [customer, business, location, membership, extension] = await Promise.all([
     recordDetail("client", detail.customerId),
     recordDetail("business", detail.businessId),

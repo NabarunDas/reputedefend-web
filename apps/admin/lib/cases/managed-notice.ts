@@ -6,7 +6,6 @@ import { authConfig, customerPortalOrigin, sessionCookie } from "../auth/config"
 import { adminCommandOriginError } from "../auth/command-origin"
 import { privateResponseHeaders } from "../access"
 import { confirmedReplyMailbox } from "../communications/brand-email"
-import { dispatchNoticeMail } from "../communications/central-dispatch"
 import { communicationsSendEnabled, outgoingFromAddress } from "../communications/gate"
 import { isUuid } from "../records/model"
 
@@ -86,15 +85,6 @@ export async function queueManagedNotice(input: {
       customerOrigin: origin,
     },
   })
-  if (queued.status === "success" || queued.replay) {
-    try {
-      const dispatched = await dispatchNoticeMail(input.requestId)
-      if (dispatched === "accepted") return " Provider accepted the customer email. That is not delivered."
-      if (dispatched !== "disabled") return " Email queued. The provider has not accepted it. Queued is not delivered."
-    } catch {
-      return " Email queued. The provider has not accepted it. Queued is not delivered."
-    }
-  }
   if (queued.replay) return clause("replay")
   return clause(queued.status)
 }

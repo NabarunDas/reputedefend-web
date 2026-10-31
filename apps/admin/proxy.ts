@@ -54,7 +54,7 @@ export async function proxy(request: NextRequest) {
     && pathname === "/api/internal/jobs/dev-payment-events"
     && developPreviewCron
   const devMailCronRead = request.method === "GET"
-    && pathname === "/api/internal/jobs/dev-mail-dispatch"
+    && (pathname === "/api/internal/jobs/dev-mail-dispatch" || pathname === "/api/internal/jobs/dev-mail-pack-retry")
     && developPreviewCron
   const devMailEventPost = request.method === "POST"
     && pathname === "/api/internal/mail/dispatch"

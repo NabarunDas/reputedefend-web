@@ -67,7 +67,7 @@ describe("upgrading a database that is already running", () => {
     expect(pending.at(-1)?.filename).toBe("20261031120000_guided_pack_ready_dispatch_v1.sql")
     expect(pending.at(-1)?.appliedToDev).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261030200000_guided_payment_request_after_acceptance_v1.sql")
-    expect(pending.at(-2)?.appliedToDev).toBe(false)
+    expect(pending.at(-2)?.appliedToDev).toBe(true)
     expect(pending.at(-3)?.filename).toBe("20261030130000_guided_assessment_pack_basis_v1.sql")
     expect(pending.at(-3)?.appliedToDev).toBe(true)
     expect(pending.at(-4)?.filename).toBe("20261030120000_guided_pack_stage_sync_v1.sql")

@@ -118,26 +118,6 @@ export function dispatchPublishedPackMail(packId: string, provider?: OutgoingMai
   return dispatchCentralClaim("dev_mail_dispatch_claim_pack_v1", { p_pack: packId }, provider)
 }
 
-/** The one queued Guided completion for this closed case. */
-export function dispatchCompletionMail(caseId: string, provider?: OutgoingMailProvider): Promise<CentralDispatchStatus> {
-  return dispatchCentralClaim("dev_mail_dispatch_claim_completion_v1", { p_case: caseId }, provider)
-}
-
-/** A communication this Admin command just queued. Pack and payment mail are refused by the claim. */
-export function dispatchRecentMail(communicationId: string, provider?: OutgoingMailProvider): Promise<CentralDispatchStatus> {
-  return dispatchCentralClaim("dev_mail_dispatch_claim_recent_v1", { p_communication: communicationId }, provider)
-}
-
-/** The managed notice stored for this queue request. */
-export function dispatchNoticeMail(requestId: string, provider?: OutgoingMailProvider): Promise<CentralDispatchStatus> {
-  return dispatchCentralClaim("dev_mail_dispatch_claim_notice_v1", { p_request: requestId }, provider)
-}
-
-/** One fresh unattempted message, or one due retry, for this case. Older unattempted mail stays queued. */
-export function dispatchCaseRetryMail(caseId: string, provider?: OutgoingMailProvider): Promise<CentralDispatchStatus> {
-  return dispatchCentralClaim("dev_mail_dispatch_claim_case_retry_v1", { p_case: caseId }, provider)
-}
-
 function requestIdFrom(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null
   const record = body as Record<string, unknown>

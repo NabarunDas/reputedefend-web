@@ -16,7 +16,8 @@ vi.mock("./mail", async () => {
   return { ...actual, resolveMailProvider: () => ({ send: mocks.send }) }
 })
 
-import { centralDispatchCommand, dispatchPublishedPackMail, dispatchQueuedMailRequest, dispatchRecentMail } from "./central-dispatch"
+import { readFileSync } from "node:fs"
+import { centralDispatchCommand, dispatchPublishedPackMail, dispatchQueuedMailRequest } from "./central-dispatch"
 
 const portal = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app"
 const requestId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -230,9 +231,11 @@ describe("central mail dispatch", () => {
     expect(mocks.send).not.toHaveBeenCalled()
     mocks.rpc.mockResolvedValue({ status: "conflict", reason: "leased" })
     expect(await dispatchPublishedPackMail(packId)).toBe("conflict")
-    mocks.rpc.mockResolvedValue({ status: "denied", reason: "not_send_email" })
-    expect(await dispatchRecentMail(communicationId)).toBe("unavailable")
     expect(process.env.DEV_MAIL_DISPATCH_WORKER_ENABLED).toBe("")
+    const page = readFileSync(new URL("../../app/cases/[id]/journey/page.tsx", import.meta.url), "utf8")
+    expect(page).not.toContain("recoverPublishedCustomerMail")
+    expect(page).not.toContain("dispatchPublishedPackMail")
+    expect(page).not.toContain("dev_mail_dispatch_claim")
   })
 
   it("keeps a failed pack send retryable and stays closed off the develop lane", async () => {

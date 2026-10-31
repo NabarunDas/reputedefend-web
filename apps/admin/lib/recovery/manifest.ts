@@ -1173,9 +1173,8 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Action-session Guided payment queue and the request-scoped mail claim.
-    // Repository only. appliedToDev is false. The observed DEV ledger head is
-    // 20261030130000. Do not apply this file from the pull request. The queue
-    // wrapper does not insert an action, queue an email, or mark a payment.
+    // Applied once on DEV. Do not replay it and do not apply it to Production.
+    // The queue wrapper does not insert an action, queue an email, or mark a payment.
     // The request claim does not take a communication id, does not call the provider,
     // and leases only a Guided payment request. The portal wrapper no longer sets a
     // dispatch hold. The sweep claim still requires the activation watermark.
@@ -1183,7 +1182,7 @@ export const migrationChain: readonly MigrationEntry[] = [
     filename: "20261030200000_guided_payment_request_after_acceptance_v1.sql",
     step: "Quotation-email acceptance can queue a Guided payment request",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Guided payment request after acceptance", probe: "public.customer_action_queue_guided_payment_request_v1" },
@@ -1214,16 +1213,16 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261030130000`. Guided assessment basis and Guided pack stage sync were
- * applied once to DEV and must not be replayed. They are not applied to
- * Production. The shared dispatcher `20261029010000` remains applied and must
- * not be replayed. Develop mail dispatch `20261029000000` remains applied and
- * must not be replayed. Context function volatility `20261028223000` and draft
+ * `20261030200000`. Guided payment request after acceptance, Guided assessment
+ * basis and Guided pack stage sync were applied once to DEV and must not be
+ * replayed. Do not replay `20261030200000`. They are not applied to Production.
+ * The shared dispatcher `20261029010000` remains applied and must not be
+ * replayed. Develop mail dispatch `20261029000000` remains applied and must
+ * not be replayed. Context function volatility `20261028223000` and draft
  * document role `20261028200000` remain applied and must not be replayed.
  * `pendingMigrations()` contains unapplied
- * `20261030200000_guided_payment_request_after_acceptance_v1.sql` and
- * `20261031120000_guided_pack_ready_dispatch_v1.sql`. Do not apply either
- * without a separate approval, and do not apply either to Production.
+ * `20261031120000_guided_pack_ready_dispatch_v1.sql`. Do not apply it without
+ * a separate approval, and do not apply it to Production.
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

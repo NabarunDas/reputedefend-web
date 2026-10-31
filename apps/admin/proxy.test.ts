@@ -266,6 +266,8 @@ describe("admin access boundary", () => {
       }
       expect((await proxy(new NextRequest("https://profilerelaunch-admin.vercel.app" + path))).status).toBe(401)
       expect((await proxy(new NextRequest(hostname + "/api/internal/jobs/dev-payment-events"))).headers.get("x-middleware-next")).toBe("1")
+      expect((await proxy(new NextRequest(hostname + "/api/internal/jobs/dev-mail-pack-retry"))).headers.get("x-middleware-next")).toBe("1")
+      expect((await proxy(new NextRequest(hostname + "/api/internal/jobs/dev-mail-pack-retry", { method: "POST" }))).status).toBe(401)
       process.env.VERCEL_GIT_COMMIT_REF = "main"
       expect((await proxy(new NextRequest(hostname + path))).status).toBe(401)
       process.env.VERCEL_GIT_COMMIT_REF = "develop"

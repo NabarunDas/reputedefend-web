@@ -85,6 +85,12 @@ export function guidedCompletionNotice(communications: CaseFlowFacts["communicat
   return `${status} This is not the document-ready email.`
 }
 
+/** Pack notification stays separate from the case-closure email. Queued is not notified. */
+export function guidedPackNotice(communications: CaseFlowFacts["communications"]): string {
+  const status = customerMailStatus(communications, "GUIDED_PACK_READY", "document-ready email")
+  return `${status} This is not the case-closure email.`
+}
+
 function outcomeLabel(value: string | null | undefined): string {
   if (!value) return "Not recorded"
   return value in outcomes ? outcomes[value as keyof typeof outcomes] : value
@@ -307,7 +313,10 @@ export function presentJourneyClosure(input: {
   const notices = [
     "Optional Guard is not required to close this case.",
   ]
-  if (facts.serviceTrack === "GUIDED") notices.push(completionStatus)
+  if (facts.serviceTrack === "GUIDED") {
+    notices.push(completionStatus)
+    notices.push(guidedPackNotice(facts.communications))
+  }
   if (facts.serviceTrack === "MANAGED" && (databaseClosed || managedClose)) {
     notices.push(customerMailStatus(facts.communications, "MANAGED_COMPLETION", "completion email"))
   }

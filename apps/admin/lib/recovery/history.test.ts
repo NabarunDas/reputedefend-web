@@ -7,7 +7,7 @@ const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // This validator fixture models the complete applied manifest, not a literal
 // copy of live DEV migration history. Live DEV is still missing the three
 // initial foundation entries tracked in issue #190. The synthetic chain ends
-// at the observed DEV ledger head 20261030130000.
+// at the observed DEV ledger head 20261030200000.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
@@ -30,25 +30,29 @@ describe("the migration history validator", () => {
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
     expect(pending.map(entry => entry.filename)).toEqual([
-      "20261030200000_guided_payment_request_after_acceptance_v1.sql",
+      "20261031120000_guided_pack_ready_dispatch_v1.sql",
     ])
     expect(healthyRemote.at(-1)).toEqual({
+      version: "20261030200000",
+      name: "guided_payment_request_after_acceptance_v1",
+    })
+    expect(healthyRemote.at(-2)).toEqual({
       version: "20261030130000",
       name: "guided_assessment_pack_basis_v1",
     })
-    expect(healthyRemote.at(-2)).toEqual({
+    expect(healthyRemote.at(-3)).toEqual({
       version: "20261030120000",
       name: "guided_pack_stage_sync_v1",
     })
-    expect(healthyRemote.at(-3)).toEqual({
+    expect(healthyRemote.at(-4)).toEqual({
       version: "20261029010000",
       name: "dev_mail_shared_dispatch_v1",
     })
-    expect(healthyRemote.at(-4)).toEqual({
+    expect(healthyRemote.at(-5)).toEqual({
       version: "20261029000000",
       name: "dev_mail_dispatch_v1",
     })
-    expect(healthyRemote.at(-5)).toEqual({
+    expect(healthyRemote.at(-6)).toEqual({
       version: "20261028223000",
       name: "admin_pack_mail_context_volatile_v1",
     })
@@ -98,6 +102,7 @@ describe("the migration history validator", () => {
       candidates: [
         "20261030120000_guided_pack_stage_sync_v1.sql",
         "20261030130000_guided_assessment_pack_basis_v1.sql",
+        "20261030200000_guided_payment_request_after_acceptance_v1.sql",
       ],
     })
     expect(codes(result)).toContain("replay_of_applied_migration")

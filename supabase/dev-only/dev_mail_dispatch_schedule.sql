@@ -22,6 +22,10 @@
 -- Also insert the single activation row only after the pending-email
 -- inventory has been read. Mail queued before active_from is not claimed.
 -- That includes the pack-ready message already queued for PR-26-GHNLB9.
+--
+-- Guided pack retries are not scheduled in this file. Their setup is
+-- supabase/dev-only/dev_mail_pack_retry_schedule.sql. Inspect them with
+-- supabase/dev-only/dev_mail_pack_retry_preflight.sql first.
 
 SELECT cron.schedule(
   'dev-mail-dispatch-recovery',

@@ -6,6 +6,7 @@ import { authConfig, customerPortalOrigin, sessionCookie } from "../auth/config"
 import { adminCommandOriginError } from "../auth/command-origin"
 import { privateResponseHeaders } from "../access"
 import { confirmedReplyMailbox } from "../communications/brand-email"
+import { dispatchPublishedPackMail } from "../communications/central-dispatch"
 import { communicationsSendEnabled, outgoingFromAddress } from "../communications/gate"
 import { isUuid } from "../records/model"
 import { packArgs, isPackApproveArgs, isPackEmailArgs, isPackItemArgs, isPackMoveArgs, isPackUnpublishArgs } from "./validation"
@@ -46,6 +47,25 @@ function commandMessage(operation: PackOperation, status: string | undefined, re
   if (status === "denied") return packDeniedMessage(operation, reason)
   if (status === "invalid") return "Check the fields before saving."
   return PACK_COMMAND_UNCERTAIN
+}
+
+async function packMailMessage(operation: PackOperation, packId: string, queued: string): Promise<string> {
+  try {
+    const dispatched = await dispatchPublishedPackMail(packId)
+    if (dispatched === "disabled") return queued
+    if (dispatched === "accepted") {
+      return operation === "publish"
+        ? "The approved pack is now available in the customer portal. Provider accepted the pack-ready email. That is not delivered. This does not submit anything to Google."
+        : "Provider accepted the pack-ready email. That is not delivered. Another copy was not sent."
+    }
+    return operation === "publish"
+      ? "The approved pack is now available in the customer portal. Email queued. The provider has not accepted it. This does not submit anything to Google."
+      : "Email queued. The provider has not accepted the pack-ready email. Queued is not delivered."
+  } catch {
+    return operation === "publish"
+      ? "The approved pack is now available in the customer portal. Email queued. The provider has not accepted it. This does not submit anything to Google."
+      : "Email queued. The provider has not accepted the pack-ready email. Queued is not delivered."
+  }
 }
 
 function safeErrorName(error: unknown): string {
@@ -155,9 +175,12 @@ export async function packCommand(request: NextRequest) {
       p_data: payload,
     })
     if (result.status !== "success") return reply(commandMessage(operation, result.status, result.reason), mapStatus(result.status))
-    const message = operation === "send_pack_email" && result.packEmail === "already_queued"
+    let message = operation === "send_pack_email" && result.packEmail === "already_queued"
       ? "The pack notification was already queued. Another copy was not sent."
       : successMessage[operation]
+    if ((operation === "publish" || operation === "send_pack_email") && result.id && (result.packEmail === "success" || result.packEmail === "already_queued")) {
+      message = await packMailMessage(operation, result.id, message)
+    }
     return reply(message, 200, {
       id: result.id, packNumber: result.packNumber, packStatus: result.packStatus, recordVersion: result.recordVersion, itemId: result.itemId,
     })

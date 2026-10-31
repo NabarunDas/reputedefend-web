@@ -75,4 +75,55 @@ describe("stripe webhook", () => {
     await expect(response.json()).resolves.toMatchObject({ status: "livemode_mismatch" })
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
+
+  it("drains the DEV payment queue after a signed settlement event is stored", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
+    vi.stubEnv("AWS_EVIDENCE_BUCKET", "profilerelaunch-evidence-dev-01")
+    vi.stubEnv("DEV_PAYMENT_EVENT_WORKER_ENABLED", "true")
+    vi.stubEnv("DEV_PAYMENT_EVENT_WORKER_SECRET", "d".repeat(32))
+    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "stripe_test")
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_placeholdernotarealkey")
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret_value")
+    vi.stubEnv("STRIPE_LIVE_ACTIVATION", "")
+    mocks.construct.mockReturnValue({
+      id: "evt_paid", type: "payment_intent.succeeded", livemode: false, data: { object: { id: "pi_paid" } },
+    })
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "payment_receive_stripe_event_v1") return { status: "success", duplicate: false }
+      if (name === "job_heartbeat_v1") return { status: "success" }
+      if (name === "dev_payment_event_candidates_v1") return { status: "success", events: [] }
+      throw new Error(name)
+    })
+    const response = await handleStripeWebhook(req("{\"id\":\"evt_paid\"}"), process.env)
+    expect(response.status).toBe(200)
+    const names = mocks.rpc.mock.calls.map(call => call[0])
+    expect(names[0]).toBe("payment_receive_stripe_event_v1")
+    expect(names).toContain("dev_payment_event_candidates_v1")
+    expect(names).not.toContain("job_promote_outbox_v1")
+  })
+
+  it("still accepts the webhook when the payment worker fails after the event is stored", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
+    vi.stubEnv("AWS_EVIDENCE_BUCKET", "profilerelaunch-evidence-dev-01")
+    vi.stubEnv("DEV_PAYMENT_EVENT_WORKER_ENABLED", "true")
+    vi.stubEnv("DEV_PAYMENT_EVENT_WORKER_SECRET", "d".repeat(32))
+    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "stripe_test")
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_placeholdernotarealkey")
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret_value")
+    mocks.construct.mockReturnValue({
+      id: "evt_paid", type: "checkout.session.completed", livemode: false, data: { object: { id: "cs_paid" } },
+    })
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "payment_receive_stripe_event_v1") return { status: "success", duplicate: true }
+      throw new Error(name)
+    })
+    const response = await handleStripeWebhook(req("{\"id\":\"evt_paid\"}"), process.env)
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ status: "success", duplicate: true })
+    expect(mocks.rpc).toHaveBeenCalledWith("payment_receive_stripe_event_v1", expect.anything())
+  })
 })

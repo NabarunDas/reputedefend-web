@@ -156,6 +156,7 @@ export function processStripeEventHandler(env: Record<string, string | undefined
             p_type: type,
             p_object_id: intent.id,
             p_payload: {
+              livemode: liveEvent,
               paymentIntentStatus: intent.status,
               chargeId: intent.chargeId,
               receiptUrl: intent.receiptUrl,

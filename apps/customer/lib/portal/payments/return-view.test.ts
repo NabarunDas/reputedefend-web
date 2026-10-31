@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { CustomerPayments, PaymentCase, PaymentOrder } from "./parse"
-import { paymentReturnUrl, paymentReturnView, requestedOrderRef } from "./return-view"
+import { paymentReturnResumeHref, paymentReturnUrl, paymentReturnView, requestedOrderRef } from "./return-view"
 
 const receipt = {
   selector: `rc-${"ab".repeat(32)}`,
@@ -132,9 +132,14 @@ describe("payment return view", () => {
     expect(requestedOrderRef({ order: ["SO-26-GHHRGY"] })).toBeNull()
     expect(paymentReturnUrl("https://customer.example", "SO-26-GHHRGY")).toBe("https://customer.example/pay/return?order=SO-26-GHHRGY")
     expect(paymentReturnUrl("https://customer.example", "pi_secret")).toBe("https://customer.example/pay/return")
+    expect(paymentReturnResumeHref("SO-26-GHHRGY")).toBe("/pay/return?order=SO-26-GHHRGY&resume=1")
+    expect(paymentReturnResumeHref("pi_secret")).toBe("/pay/return?resume=1")
+    expect(paymentReturnResumeHref(null)).not.toMatch(/token|session|pi_|cs_/)
     const view = paymentReturnView({ status: "ready", payments: payments(order()) }, "SO-26-OTHER1")
-    expect(view.tone).toBe("pending")
-    expect(view.paragraphs.join(" ")).toContain("SO-26-GHHRGY")
+    expect(view.tone).toBe("empty")
+    expect(view.paragraphs.join(" ")).not.toContain("SO-26-GHHRGY")
     expect(view.paragraphs.join(" ")).not.toContain("SO-26-OTHER1")
+    expect(view.paragraphs.join(" ")).not.toMatch(/£/)
+    expect(view.links).toEqual([{ href: "/portal", label: "Open your portal" }])
   })
 })

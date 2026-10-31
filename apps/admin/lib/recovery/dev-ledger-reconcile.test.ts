@@ -192,7 +192,7 @@ describe("the DEV ledger reconciliation script", () => {
   const pack = read(`supabase/migrations/${packName}`)
   const outcome = read(`supabase/migrations/${outcomeName}`)
 
-  it("embeds both repository files unchanged and does not register them as applied", () => {
+  it("embeds both repository files unchanged while the manifest records them as applied", () => {
     expect(createHash("sha256").update(pack).digest("hex")).toBe(packHash)
     expect(createHash("sha256").update(outcome).digest("hex")).toBe(outcomeHash)
     expect(script).toContain(packHash)
@@ -201,8 +201,8 @@ describe("the DEV ledger reconciliation script", () => {
     expect(between(script, "$pr_dev_ledger_outcome_source$", "$pr_dev_ledger_outcome_source$;")).toBe(outcome)
     expect(manifestFilenames()).not.toContain(scriptPath)
     expect(manifestFilenames()).not.toContain("dev_ledger_reconcile_guided_pack_and_outcome_v1.sql")
-    expect(findMigration(packName)).toMatchObject({ appliedToDev: false, safeToReplay: false })
-    expect(findMigration(outcomeName)).toMatchObject({ appliedToDev: false, safeToReplay: false })
+    expect(findMigration(packName)).toMatchObject({ appliedToDev: true, safeToReplay: false })
+    expect(findMigration(outcomeName)).toMatchObject({ appliedToDev: true, safeToReplay: false })
   })
 
   it("has no executable replay and writes only the two new history rows", () => {

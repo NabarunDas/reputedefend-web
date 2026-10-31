@@ -1188,6 +1188,21 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Guided payment request after acceptance", probe: "public.customer_action_queue_guided_payment_request_v1" },
   },
+  {
+    // Immediate claim for a published Guided pack and the same lease for the
+    // other Admin customer emails that were only queued. Repository only.
+    // appliedToDev is false. Do not apply this file from the pull request.
+    // It does not send mail, insert an activation row, or change stored case rows.
+    // The sweep claim still requires the activation watermark.
+    version: "20261031120000",
+    filename: "20261031120000_guided_pack_ready_dispatch_v1.sql",
+    step: "A published Guided pack claims its queued pack-ready email",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided pack-ready dispatch", probe: "public.dev_mail_dispatch_claim_pack_v1" },
+  },
 ]
 
 /**
@@ -1206,8 +1221,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * must not be replayed. Context function volatility `20261028223000` and draft
  * document role `20261028200000` remain applied and must not be replayed.
  * `pendingMigrations()` contains unapplied
- * `20261030200000_guided_payment_request_after_acceptance_v1.sql`. Do not
- * apply it without a separate approval, and do not apply it to Production.
+ * `20261030200000_guided_payment_request_after_acceptance_v1.sql` and
+ * `20261031120000_guided_pack_ready_dispatch_v1.sql`. Do not apply either
+ * without a separate approval, and do not apply either to Production.
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

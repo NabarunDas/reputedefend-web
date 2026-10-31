@@ -70,6 +70,38 @@ function claimStatus(claim: DevSendClaim): CentralDispatchStatus | null {
 }
 
 /**
+ * Claims one queued send and settles it with the existing Admin mail handler.
+ * A missing activation row does not block the claim, and the sweep worker stays closed.
+ */
+async function dispatchCentralClaim(
+  rpcName: string,
+  args: Record<string, unknown>,
+  provider?: OutgoingMailProvider,
+): Promise<CentralDispatchStatus> {
+  if (!centralDispatchLaneOpen()) return "disabled"
+  const origin = devCustomerPortalOrigin()
+  const mail = provider ?? resolveMailProvider()
+  if (!origin || mail === "disabled") return "disabled"
+  let claim: DevSendClaim
+  try {
+    claim = await backend().rpc<DevSendClaim>(rpcName, { ...args, p_customer_origin: origin })
+  } catch {
+    return "unavailable"
+  }
+  const refused = claimStatus(claim)
+  if (refused) return refused
+  try {
+    const settled = await settleDevSendEmailClaim({ rpc: backend(), claim, provider: mail })
+    if (settled === "succeeded") return "accepted"
+    if (settled === "retry") return "retry"
+    if (settled === "dead_letter") return "dead"
+    return "unavailable"
+  } catch {
+    return "unavailable"
+  }
+}
+
+/**
  * Claims the communication stored for this queue request and sends it with the
  * existing Admin mail handler. The request id is the only input. A missing
  * activation row does not block this request, and the sweep worker stays closed.
@@ -78,30 +110,32 @@ export async function dispatchQueuedMailRequest(input: {
   requestId: string
   provider?: OutgoingMailProvider
 }): Promise<CentralDispatchStatus> {
-  if (!centralDispatchLaneOpen()) return "disabled"
-  const origin = devCustomerPortalOrigin()
-  const provider = input.provider ?? resolveMailProvider()
-  if (!origin || provider === "disabled") return "disabled"
-  let claim: DevSendClaim
-  try {
-    claim = await backend().rpc<DevSendClaim>("dev_mail_dispatch_claim_request_v1", {
-      p_request: input.requestId,
-      p_customer_origin: origin,
-    })
-  } catch {
-    return "unavailable"
-  }
-  const refused = claimStatus(claim)
-  if (refused) return refused
-  try {
-    const settled = await settleDevSendEmailClaim({ rpc: backend(), claim, provider })
-    if (settled === "succeeded") return "accepted"
-    if (settled === "retry") return "retry"
-    if (settled === "dead_letter") return "dead"
-    return "unavailable"
-  } catch {
-    return "unavailable"
-  }
+  return dispatchCentralClaim("dev_mail_dispatch_claim_request_v1", { p_request: input.requestId }, input.provider)
+}
+
+/** The announcement already stored for this published pack. The pack id is the only input. */
+export function dispatchPublishedPackMail(packId: string, provider?: OutgoingMailProvider): Promise<CentralDispatchStatus> {
+  return dispatchCentralClaim("dev_mail_dispatch_claim_pack_v1", { p_pack: packId }, provider)
+}
+
+/** The one queued Guided completion for this closed case. */
+export function dispatchCompletionMail(caseId: string, provider?: OutgoingMailProvider): Promise<CentralDispatchStatus> {
+  return dispatchCentralClaim("dev_mail_dispatch_claim_completion_v1", { p_case: caseId }, provider)
+}
+
+/** A communication this Admin command just queued. Pack and payment mail are refused by the claim. */
+export function dispatchRecentMail(communicationId: string, provider?: OutgoingMailProvider): Promise<CentralDispatchStatus> {
+  return dispatchCentralClaim("dev_mail_dispatch_claim_recent_v1", { p_communication: communicationId }, provider)
+}
+
+/** The managed notice stored for this queue request. */
+export function dispatchNoticeMail(requestId: string, provider?: OutgoingMailProvider): Promise<CentralDispatchStatus> {
+  return dispatchCentralClaim("dev_mail_dispatch_claim_notice_v1", { p_request: requestId }, provider)
+}
+
+/** One fresh unattempted message, or one due retry, for this case. Older unattempted mail stays queued. */
+export function dispatchCaseRetryMail(caseId: string, provider?: OutgoingMailProvider): Promise<CentralDispatchStatus> {
+  return dispatchCentralClaim("dev_mail_dispatch_claim_case_retry_v1", { p_case: caseId }, provider)
 }
 
 function requestIdFrom(body: unknown): string | null {

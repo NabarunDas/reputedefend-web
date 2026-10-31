@@ -31,6 +31,7 @@ describe("the migration history validator", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
     expect(pending.map(entry => entry.filename)).toEqual([
       "20261030200000_guided_payment_request_after_acceptance_v1.sql",
+      "20261031120000_guided_pack_ready_dispatch_v1.sql",
     ])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261030130000",

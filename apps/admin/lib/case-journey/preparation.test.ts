@@ -396,19 +396,19 @@ describe("prepared pack panel", () => {
       recordsConflict: false,
     })
     expect(show("NONE").headline).toBe("Pack published")
-    expect(show("NONE").who).toBe("Queued for sending. Automatic sending is not active. Queued is not sent.")
-    expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/Automatic sending is not active/)
-    expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/Queued is not sent/)
-    expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).not.toMatch(/delivered|provider accepted/)
+    expect(show("NONE").who).toBe("Email queued. The provider has not accepted it. Queued is not delivered.")
+    expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/Email queued/)
+    expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/Queued is not delivered/)
+    expect(show("NONE").requirements.find(item => item.label === "Customer notification")?.detail).not.toMatch(/Delivered|Provider accepted/)
     expect(show("NONE").packNotificationRecovery).toBeNull()
     expect(show("SUPPRESSED").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/blocked/)
     expect(show("PROVIDER_ACCEPTED").headline).toBe("Pack published")
-    expect(show("PROVIDER_ACCEPTED").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/provider accepted/)
+    expect(show("PROVIDER_ACCEPTED").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/Provider accepted/)
     expect(show("PROVIDER_ACCEPTED").requirements.find(item => item.label === "Customer notification")?.state).toBe("Not met")
     expect(show("DELIVERED").headline).toBe("Pack published")
     expect(show("DELIVERED").who).toMatch(/not a download/)
     expect(show("BOUNCED").headline).toBe("Pack published")
-    expect(show("BOUNCED").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/failed/)
+    expect(show("BOUNCED").requirements.find(item => item.label === "Customer notification")?.detail).toMatch(/Failed/)
     expect(show("ACCEPTANCE_UNKNOWN").headline).toBe("Pack published")
     expect(show("ACCEPTANCE_UNKNOWN").who).toMatch(/another copy was not sent/)
     expect(packReadyNotification([]).headline).toBe("Pack published")
@@ -438,8 +438,8 @@ describe("prepared pack panel", () => {
     })
     expect(inactive.packNotificationRecovery).toEqual({ communicationId: "mail-1" })
     expect(inactive.packEmailRecovery).toBeNull()
-    expect(inactive.who).toBe("Queued for sending. Automatic sending is not active. Queued is not sent.")
-    expect(inactive.notices.join(" ")).toMatch(/Automatic sending is not active/)
+    expect(inactive.who).toBe("Email queued. The provider has not accepted it. Queued is not delivered.")
+    expect(inactive.notices.join(" ")).toMatch(/Email queued/)
     const moving = buildJourneyPreparationPanel({
       facts: factsWithMail,
       packs,
@@ -459,7 +459,7 @@ describe("prepared pack panel", () => {
       dispatch: { phase: "queued", communicationId: "mail-1", stalled: false, workerLate: false, workerSeen: true },
     })
     expect(healthy.packNotificationRecovery).toBeNull()
-    expect(healthy.who).toBe("Queued for sending. Queued is not sent.")
+    expect(healthy.who).toBe("Email queued. The provider has not accepted it. Queued is not delivered.")
     const stalled = buildJourneyPreparationPanel({
       facts: factsWithMail,
       packs,
@@ -469,7 +469,7 @@ describe("prepared pack panel", () => {
       dispatch: { phase: "queued", communicationId: "mail-1", stalled: true, workerLate: true, workerSeen: true },
     })
     expect(stalled.packNotificationRecovery).toEqual({ communicationId: "mail-1" })
-    expect(stalled.who).toBe("Delivery delayed. Automatic sending has not moved it. Queued is not sent.")
+    expect(stalled.who).toBe("Email queued. Delivery delayed. The provider has not accepted it. Queued is not delivered.")
   })
 })
 

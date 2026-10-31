@@ -311,6 +311,67 @@ describe("prepared pack commands", () => {
       "admin_prepared_pack_command_v1",
     ])
   })
+
+  it("claims the published pack on the develop lane and still returns after a provider failure", async () => {
+    const portal = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app"
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "develop")
+    vi.stubEnv("VERCEL_BRANCH_URL", "profilerelaunch-admin-git-develop-clientcove.vercel.app")
+    vi.stubEnv("SUPABASE_URL", "https://rmzozuiamjcclvtgutgd.supabase.co")
+    vi.stubEnv("AWS_EVIDENCE_BUCKET", "profilerelaunch-evidence-dev-01")
+    vi.stubEnv("CUSTOMER_ORIGIN", portal)
+    vi.stubEnv("COMMUNICATIONS_SEND_ENABLED", "true")
+    vi.stubEnv("JOB_PROVIDER_MODE", "production")
+    vi.stubEnv("RESEND_API_KEY", "re_test_key")
+    vi.stubEnv("COMMUNICATIONS_FROM_EMAIL", "ops@example.com")
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_EMAIL", "cases@profilerelaunch.com")
+    vi.stubEnv("COMMUNICATIONS_REPLY_TO_CONFIRMED", "monitored")
+    vi.stubEnv("DEV_MAIL_DISPATCH_WORKER_ENABLED", "")
+    const source = readFileSync(new URL("./command.ts", import.meta.url), "utf8")
+    expect(source).not.toContain("wakeDevMailDispatch")
+    expect(source).not.toContain("runDevMailDispatchWorker")
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_guided_pack_mail_context_v1") {
+        return {
+          status: "applicable",
+          caseRef: "PR-26-MALL2A",
+          amountMinor: 9900,
+          currency: "GBP",
+          serviceCode: "GUIDED_RELAUNCH",
+          serviceName: "Guided Relaunch",
+        }
+      }
+      if (name === "admin_prepared_pack_command_v1") {
+        return { status: "success", id: packId, packNumber: 1, packStatus: "APPROVED", recordVersion: 4, packEmail: "already_queued" }
+      }
+      if (name === "dev_mail_dispatch_claim_pack_v1") return { status: "denied", reason: "not_ready" }
+      return { status: "success" }
+    })
+    const adminOrigin = "https://profilerelaunch-admin-git-develop-clientcove.vercel.app"
+    const held = await packCommand(new NextRequest(`${adminOrigin}/api/packs/command`, {
+      method: "POST",
+      headers: {
+        origin: adminOrigin,
+        "content-type": "application/json",
+        "idempotency-key": key,
+        cookie: `${sessionCookie}=${"a".repeat(64)}`,
+      },
+      body: JSON.stringify({
+        operation: "publish", caseId, packId, recordVersion: 3, note: "Publish this pack for the customer case-access view.", confirmed: true,
+      }),
+    }))
+    expect(held.status).toBe(200)
+    expect(await held.json()).toMatchObject({
+      message: expect.stringMatching(/Email queued/),
+      packStatus: "APPROVED",
+    })
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual([
+      "admin_guided_pack_mail_context_v1",
+      "admin_prepared_pack_command_v1",
+      "dev_mail_dispatch_claim_pack_v1",
+    ])
+    expect(mocks.rpc.mock.calls[2][1]).toMatchObject({ p_pack: packId, p_customer_origin: portal })
+  })
 })
 
 function enableOutgoingMail() {

@@ -1805,4 +1805,160 @@ describe("guided fulfilment handover", () => {
       summary: "Google restored the profile after the appeal.",
     })).toMatchObject({ status: "denied" })
   })
+
+  it("leases one published pack email without an activation row and refuses a stale or suppressed pack", async () => {
+    const devOrigin = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app"
+    const signature = "public.dev_mail_dispatch_claim_pack_v1(uuid, text)"
+    expect((await db.query<{ ok: boolean }>("select has_function_privilege('anon', $1, 'EXECUTE') as ok", [signature])).rows[0].ok).toBe(false)
+    expect((await db.query<{ ok: boolean }>("select has_function_privilege('service_role', $1, 'EXECUTE') as ok", [signature])).rows[0].ok).toBe(true)
+    expect(await count("select count(*)::int as n from admin_private.dev_mail_dispatch_activation")).toBe(0)
+    const managedLink = await db.query<{ value: string | null }>(
+      "select admin_private.dev_mail_link_reason_v1($1, $2, $3, $4, $5) as value",
+      [
+        "MANAGED_PROGRESS",
+        `See ${devOrigin}/portal/cases/PR-26-PACK2A`,
+        `<p>See ${devOrigin}/portal/cases/PR-26-PACK2A</p>`,
+        devOrigin,
+        "PR-26-PACK2A",
+      ],
+    )
+    expect(managedLink.rows[0].value).toBeNull()
+    const actionLink = await db.query<{ value: string | null }>(
+      "select admin_private.dev_mail_link_reason_v1($1, $2, $3, $4, $5) as value",
+      ["MANAGED_PROGRESS", `${devOrigin}/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`, "<p>same</p>", devOrigin, "PR-26-PACK2A"],
+    )
+    expect(actionLink.rows[0].value).toBe("origin")
+
+    const reference = "PR-26-PACK2A"
+    const caseId = await insertCase(reference)
+    expect((await acceptQuote(caseId)).status).toBe("success")
+    await guidedToPaymentRequired(caseId)
+    const statement = await acceptedFile(caseId, "dispatch-statement.pdf")
+    const instructions = await acceptedFile(caseId, "dispatch-instructions.pdf")
+    const draft = await packCmd(caseId, "create", {})
+    const deliverable = await packCmd(caseId, "add_item", { versionId: statement.versionId, role: "DELIVERABLE" }, draft.id, draft.recordVersion)
+    const withInstructions = await packCmd(caseId, "add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" }, draft.id, deliverable.recordVersion)
+    const approved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, withInstructions.recordVersion)
+    expect(approved.status, JSON.stringify(approved)).toBe("success")
+    const payment = await settle(caseId, "pack2a", "evt_pack2a")
+    expect(payment.settled.status).toBe("success")
+    const order = await orderOf(caseId)
+    const rendered = renderPackReady({
+      serviceCode: "GUIDED_RELAUNCH",
+      serviceName: "Guided Relaunch",
+      caseRef: reference,
+      amountMinor: order.amount_minor,
+      currency: "GBP",
+      origin: devOrigin,
+      replyTo: "cases@profilerelaunch.com",
+    })
+    expect(rendered).not.toBeNull()
+    const published = await packCmd(caseId, "publish", {
+      note: packNote,
+      confirmed: true,
+      ...mailPayload(rendered!, "documents", { customerOrigin: devOrigin }),
+    }, draft.id, approved.recordVersion)
+    expect(published, JSON.stringify(published)).toMatchObject({ status: "success", packEmail: "success" })
+    const communicationId = (await rows<{ id: string }>(
+      "select communication_id as id from public.guided_pack_announcements where pack_id = $1",
+      [draft.id],
+    ))[0].id
+    const eventKey = `send-email:${communicationId}:v1`
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(1)
+    expect((await rows<{ promoted_at: string | null }>("select promoted_at from admin_private.job_outbox where event_key = $1", [eventKey]))[0].promoted_at).toBeNull()
+    expect(await count("select count(*)::int as n from admin_private.jobs j join admin_private.job_outbox o on o.id = j.outbox_id where o.event_key = $1", [eventKey])).toBe(0)
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [communicationId, devOrigin])).toMatchObject({ status: "denied", reason: "before_activation" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_recent_v1", [communicationId, devOrigin])).toMatchObject({ status: "denied", reason: "not_send_email" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_pack_v1", [draft.id, "https://customer.example.test"])).toMatchObject({ status: "denied", reason: "origin" })
+    expect(await count("select count(*)::int as n from admin_private.jobs j join admin_private.job_outbox o on o.id = j.outbox_id where o.event_key = $1", [eventKey])).toBe(0)
+
+    await db.query(
+      "insert into admin_private.email_suppressions(address_normalized, reason) values ('alex@example.com', 'SUPPRESSED')",
+    )
+    try {
+      expect(await rpc<Json>("dev_mail_dispatch_claim_pack_v1", [draft.id, devOrigin])).toMatchObject({ status: "denied", reason: "suppressed" })
+      expect(await count("select count(*)::int as n from admin_private.jobs j join admin_private.job_outbox o on o.id = j.outbox_id where o.event_key = $1", [eventKey])).toBe(0)
+    } finally {
+      await db.query("delete from admin_private.email_suppressions where address_normalized = 'alex@example.com'")
+    }
+
+    const claimed = await rpc<DevSendClaim>("dev_mail_dispatch_claim_pack_v1", [draft.id, devOrigin])
+    expect(claimed.status, JSON.stringify(claimed)).toBe("success")
+    expect(claimed.replay).toBe(false)
+    expect(claimed.payload).toEqual({ communicationId, contentVersion: 1 })
+    expect((await rows<{ promoted_at: string | null }>("select promoted_at from admin_private.job_outbox where event_key = $1", [eventKey]))[0].promoted_at).not.toBeNull()
+    expect(await count("select count(*)::int as n from admin_private.jobs j join admin_private.job_outbox o on o.id = j.outbox_id where o.event_key = $1", [eventKey])).toBe(1)
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(1)
+    expect(await rpc<Json>("dev_mail_dispatch_claim_pack_v1", [draft.id, devOrigin])).toMatchObject({ status: "conflict", reason: "leased" })
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(1)
+
+    const failing = { async send() { return { ok: false as const, retryable: true, error: "temporary" } } }
+    expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: claimed, provider: failing })).toBe("retry")
+    await db.query("update admin_private.jobs set scheduled_at = now() - interval '1 second' where id = $1 and status = 'RETRY'", [claimed.jobId])
+    const retried = await rpc<DevSendClaim>("dev_mail_dispatch_claim_pack_v1", [draft.id, devOrigin])
+    expect(retried.status, JSON.stringify(retried)).toBe("success")
+    expect(retried.jobId).toBe(claimed.jobId)
+    const provider = createIdempotentMailProvider()
+    expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: retried, provider })).toBe("succeeded")
+    expect(provider.effects).toBe(1)
+    expect((await rows<{ delivery_status: string }>("select delivery_status from public.communications where id = $1", [communicationId]))[0].delivery_status).toBe("PROVIDER_ACCEPTED")
+    expect(await rpc<Json>("dev_mail_dispatch_claim_pack_v1", [draft.id, devOrigin])).toMatchObject({ status: "denied", reason: "already_processed" })
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [caseId])).toBe(1)
+    expect(await count("select count(*)::int as n from admin_private.jobs j join admin_private.job_outbox o on o.id = j.outbox_id where o.event_key = $1", [eventKey])).toBe(1)
+    expect(await count("select count(*)::int as n from admin_private.dev_mail_dispatch_activation")).toBe(0)
+    expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [communicationId, devOrigin])).toMatchObject({ status: "denied", reason: "before_activation" })
+
+    const withdrawn = await packCmd(caseId, "unpublish", { confirmed: true, reason: packNote }, draft.id, published.recordVersion)
+    expect(withdrawn.status, JSON.stringify(withdrawn)).toBe("success")
+    expect(await rpc<Json>("dev_mail_dispatch_claim_pack_v1", [draft.id, devOrigin])).toMatchObject({ status: "denied", reason: "unpublished" })
+
+    const staleReference = "PR-26-PKSTLE"
+    const staleCase = await insertCase(staleReference)
+    expect((await acceptQuote(staleCase)).status).toBe("success")
+    await guidedToPaymentRequired(staleCase)
+    const staleStatement = await acceptedFile(staleCase, "stale-statement.pdf")
+    const staleInstructions = await acceptedFile(staleCase, "stale-instructions.pdf")
+    const staleDraft = await packCmd(staleCase, "create", {})
+    const staleDeliverable = await packCmd(staleCase, "add_item", { versionId: staleStatement.versionId, role: "DELIVERABLE" }, staleDraft.id, staleDraft.recordVersion)
+    const staleWithInstructions = await packCmd(staleCase, "add_item", { versionId: staleInstructions.versionId, role: "INSTRUCTIONS" }, staleDraft.id, staleDeliverable.recordVersion)
+    const staleApproved = await packCmd(staleCase, "approve", { note: packNote, confirmed: true }, staleDraft.id, staleWithInstructions.recordVersion)
+    expect(staleApproved.status, JSON.stringify(staleApproved)).toBe("success")
+    await settle(staleCase, "pkstle", "evt_pkstle")
+    const staleOrder = await orderOf(staleCase)
+    const staleRendered = renderPackReady({
+      serviceCode: "GUIDED_RELAUNCH",
+      serviceName: "Guided Relaunch",
+      caseRef: staleReference,
+      amountMinor: staleOrder.amount_minor,
+      currency: "GBP",
+      origin: devOrigin,
+      replyTo: "cases@profilerelaunch.com",
+    })
+    const stalePublished = await packCmd(staleCase, "publish", {
+      note: packNote,
+      confirmed: true,
+      ...mailPayload(staleRendered!, "documents", { customerOrigin: devOrigin }),
+    }, staleDraft.id, staleApproved.recordVersion)
+    expect(stalePublished, JSON.stringify(stalePublished)).toMatchObject({ status: "success", packEmail: "success" })
+    const staleMail = (await rows<{ id: string }>(
+      "select communication_id as id from public.guided_pack_announcements where pack_id = $1",
+      [staleDraft.id],
+    ))[0].id
+    const staleKey = `send-email:${staleMail}:v1`
+    await db.exec(`begin; set local session_replication_role = replica; update public.case_prepared_packs set status = 'STALE', unpublished_at = now(), unpublished_by = '${admin}', unpublished_reason = 'Included evidence changed after the pack was approved.' where id = '${staleDraft.id}'; commit;`)
+    expect(await rpc<Json>("dev_mail_dispatch_claim_pack_v1", [staleDraft.id, devOrigin])).toMatchObject({ status: "denied", reason: "stale" })
+    expect(await count("select count(*)::int as n from admin_private.jobs j join admin_private.job_outbox o on o.id = j.outbox_id where o.event_key = $1", [staleKey])).toBe(0)
+    await db.exec(`begin; set local session_replication_role = replica; update public.case_prepared_packs set status = 'APPROVED', unpublished_at = null where id = '${staleDraft.id}'; commit;`)
+    const recovered = await rpc<DevSendClaim>("dev_mail_dispatch_claim_pack_v1", [staleDraft.id, devOrigin])
+    expect(recovered.status, JSON.stringify(recovered)).toBe("success")
+    expect(await count("select count(*)::int as n from public.communications where case_id = $1 and template_key = 'GUIDED_PACK_READY'", [staleCase])).toBe(1)
+    expect(await rpc<Json>("dev_mail_dispatch_claim_pack_v1", [staleDraft.id, devOrigin])).toMatchObject({ status: "conflict", reason: "leased" })
+    const recoveredProvider = createIdempotentMailProvider()
+    expect(await settleDevSendEmailClaim({ rpc: namedRpc(), claim: recovered, provider: recoveredProvider })).toBe("succeeded")
+    expect(recoveredProvider.effects).toBe(1)
+    expect(await rpc<Json>("dev_mail_dispatch_claim_pack_v1", [staleDraft.id, devOrigin])).toMatchObject({ status: "denied", reason: "already_processed" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_completion_v1", [caseId, devOrigin])).toMatchObject({ status: "denied", reason: "not_closed" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_case_retry_v1", [caseId, devOrigin])).toMatchObject({ status: "denied", reason: "not_queued" })
+    expect(await rpc<Json>("dev_mail_dispatch_claim_notice_v1", [key(), devOrigin])).toMatchObject({ status: "denied", reason: "not_queued" })
+  })
 })

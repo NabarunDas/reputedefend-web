@@ -6,11 +6,22 @@ import { authConfig, customerPortalOrigin, sessionCookie } from "../auth/config"
 import { adminCommandOriginError } from "../auth/command-origin"
 import { privateResponseHeaders } from "../access"
 import { confirmedReplyMailbox } from "../communications/brand-email"
+import { dispatchCompletionMail } from "../communications/central-dispatch"
 import { communicationsSendEnabled, outgoingFromAddress } from "../communications/gate"
 import { isUuid } from "../records/model"
 
 const reply = (message: string, status: number) =>
   NextResponse.json({ message }, { status, headers: privateResponseHeaders })
+
+async function completionMailSentence(caseId: string): Promise<"accepted" | "queued" | "disabled"> {
+  try {
+    const dispatched = await dispatchCompletionMail(caseId)
+    if (dispatched === "disabled") return "disabled"
+    return dispatched === "accepted" ? "accepted" : "queued"
+  } catch {
+    return "queued"
+  }
+}
 
 function textField(value: unknown, min: number, max: number): string | null {
   if (typeof value !== "string") return null
@@ -97,7 +108,16 @@ export async function guidedFulfilmentClose(request: NextRequest) {
       p_data: { note, summary, ...email },
     })
     if (result.status === "success") {
+      const mailed = result.completionEmail === "success" || result.completionEmail === "already_queued"
+        ? await completionMailSentence(fields.id)
+        : null
       if (result.recovered) {
+        if (mailed === "accepted") {
+          return reply("Provider accepted the completion update. That is not delivered. Another copy was not sent. The case stays closed.", 200)
+        }
+        if (mailed === "queued") {
+          return reply("Email queued. The provider has not accepted the completion update. The case stays closed. This does not record a Google decision and it does not enrol Relaunch Guard.", 200)
+        }
         if (result.completionEmail === "already_queued") {
           return reply("The completion update was already queued. Another copy was not sent. The case stays closed.", 200)
         }
@@ -106,11 +126,15 @@ export async function guidedFulfilmentClose(request: NextRequest) {
         }
         return reply("The completion update was not sent. The case stays closed. This does not record a Google decision and it does not enrol Relaunch Guard.", 200)
       }
-      const queued = result.completionEmail === "success"
-        ? "The completion email is queued. Queued is not delivered."
-        : result.completionEmail === "already_queued"
-          ? "The completion email was already queued. Another copy was not sent."
-          : "The completion email was not sent, so the notification is pending."
+      const queued = mailed === "accepted"
+        ? "Provider accepted the completion email. That is not delivered."
+        : mailed === "queued"
+          ? "Email queued. The provider has not accepted the completion email. Queued is not delivered."
+          : result.completionEmail === "success"
+            ? "The completion email is queued. Queued is not delivered."
+            : result.completionEmail === "already_queued"
+              ? "The completion email was already queued. Another copy was not sent."
+              : "The completion email was not sent, so the notification is pending."
       return reply(`The Guided preparation is closed. ${queued} This does not record a Google decision and it does not enrol Relaunch Guard.`, 200)
     }
     if (result.status === "unauthorized") return reply("Your session has ended. Please sign in again.", 401)

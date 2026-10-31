@@ -16,7 +16,7 @@ vi.mock("./mail", async () => {
   return { ...actual, resolveMailProvider: () => ({ send: mocks.send }) }
 })
 
-import { centralDispatchCommand, dispatchQueuedMailRequest } from "./central-dispatch"
+import { centralDispatchCommand, dispatchPublishedPackMail, dispatchQueuedMailRequest, dispatchRecentMail } from "./central-dispatch"
 
 const portal = "https://profilerelaunch-customer-git-develop-clientcove.vercel.app"
 const requestId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -204,6 +204,53 @@ describe("central mail dispatch", () => {
     }
     expect(mocks.rpc).not.toHaveBeenCalled()
     expect(mocks.send).not.toHaveBeenCalled()
+  })
+
+  it("leases one published pack and does not send a second copy", async () => {
+    const packId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "dev_mail_dispatch_claim_pack_v1") return claim()
+      if (name === "communication_load_send_v1") return loaded()
+      if (name === "communication_begin_provider_attempt_v1") {
+        return { status: "success", providerCallPermitted: true, firstProviderAttemptAt: "2026-10-30T12:00:00.000Z" }
+      }
+      if (name === "communication_mark_provider_accepted_v1" || name === "job_complete_v1") return { status: "success" }
+      throw new Error(`unexpected ${name}`)
+    })
+    expect(await dispatchPublishedPackMail(packId)).toBe("accepted")
+    expect(mocks.rpc.mock.calls[0]).toEqual(["dev_mail_dispatch_claim_pack_v1", {
+      p_pack: packId,
+      p_customer_origin: portal,
+    }])
+    expect(mocks.send).toHaveBeenCalledTimes(1)
+    mocks.send.mockClear()
+    mocks.rpc.mockReset()
+    mocks.rpc.mockResolvedValue({ status: "denied", reason: "already_processed" })
+    expect(await dispatchPublishedPackMail(packId)).toBe("accepted")
+    expect(mocks.send).not.toHaveBeenCalled()
+    mocks.rpc.mockResolvedValue({ status: "conflict", reason: "leased" })
+    expect(await dispatchPublishedPackMail(packId)).toBe("conflict")
+    mocks.rpc.mockResolvedValue({ status: "denied", reason: "not_send_email" })
+    expect(await dispatchRecentMail(communicationId)).toBe("unavailable")
+    expect(process.env.DEV_MAIL_DISPATCH_WORKER_ENABLED).toBe("")
+  })
+
+  it("keeps a failed pack send retryable and stays closed off the develop lane", async () => {
+    const packId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    mocks.send.mockResolvedValue({ ok: false, retryable: true, error: "temporary" })
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "dev_mail_dispatch_claim_pack_v1") return claim()
+      if (name === "communication_load_send_v1") return loaded()
+      if (name === "communication_begin_provider_attempt_v1") {
+        return { status: "success", providerCallPermitted: true, firstProviderAttemptAt: "2026-10-30T12:00:00.000Z" }
+      }
+      if (name === "communication_mark_provider_rejected_v1" || name === "job_fail_v1") return { status: "success" }
+      throw new Error(`unexpected ${name}`)
+    })
+    expect(await dispatchPublishedPackMail(packId)).toBe("retry")
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toContain("job_fail_v1")
+    vi.stubEnv("VERCEL_ENV", "production")
+    expect(await dispatchPublishedPackMail(packId)).toBe("disabled")
   })
 
   it("accepts only a Customer preview token and stays closed off the develop lane", async () => {

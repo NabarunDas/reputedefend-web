@@ -355,7 +355,10 @@ describe("guided closure", () => {
     expect(panel.guard.offered).toBe(false)
     expect(panel.completionRecovery).toBe(false)
     expect(panel.notices.join(" ")).toMatch(/No case-closure email/)
-    expect(panel.notices.join(" ")).toMatch(/document-ready email/)
+    expect(panel.notices.join(" ")).toMatch(/This is not the document-ready email/)
+    expect(panel.notices.join(" ")).toMatch(/No document-ready email has been queued/)
+    expect(panel.notices.join(" ")).toMatch(/This is not the case-closure email/)
+    expect(panel.notices.join(" ")).not.toMatch(/The provider reported delivery of the document-ready email/)
   })
 
   it("offers one completion update when a closed Guided case has no completion email", () => {

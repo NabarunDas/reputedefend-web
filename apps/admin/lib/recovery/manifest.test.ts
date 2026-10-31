@@ -20,7 +20,7 @@ describe("the migration chain manifest", () => {
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
     expect(appliedMigrationHead.filename).toBe("20261030130000_guided_assessment_pack_basis_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.filename).toBe("20261030200000_guided_payment_request_after_acceptance_v1.sql")
+    expect(migrationHead.filename).toBe("20261031120000_guided_pack_ready_dispatch_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
@@ -36,6 +36,7 @@ describe("the migration chain manifest", () => {
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261030200000_guided_payment_request_after_acceptance_v1.sql",
+      "20261031120000_guided_pack_ready_dispatch_v1.sql",
     ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
@@ -103,6 +104,19 @@ describe("the migration chain manifest", () => {
     expect(paymentSql).not.toContain("GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_claim_request_v1(uuid, text)\n  TO anon")
     expect(paymentSql).not.toContain("PR-26-GHNLB9")
     expect(paymentSql).not.toContain("PR-26-MEVY5P")
+    const packDispatchSql = readFileSync(new URL("20261031120000_guided_pack_ready_dispatch_v1.sql", directory), "utf8")
+    expect(packDispatchSql).toContain("CREATE FUNCTION public.dev_mail_dispatch_claim_pack_v1(")
+    expect(packDispatchSql).toContain("REVOKE ALL ON FUNCTION public.dev_mail_dispatch_claim_pack_v1(uuid, text)")
+    expect(packDispatchSql).toContain("GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_claim_pack_v1(uuid, text)\n  TO service_role;")
+    expect(packDispatchSql).not.toContain("dev_mail_dispatch_activation")
+    expect(packDispatchSql).not.toContain("DEV_MAIL_DISPATCH_WORKER_ENABLED")
+    expect(packDispatchSql).not.toContain("PR-26-MEVY5P")
+    expect(packDispatchSql).not.toContain("7907f187-ee65-4353-9931-60ade0fefed6")
+    expect(findMigration("20261031120000_guided_pack_ready_dispatch_v1.sql")).toMatchObject({
+      appliedToDev: false,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
     expect(findMigration("20261030120000_guided_pack_stage_sync_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261030130000_guided_assessment_pack_basis_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261030120000_guided_pack_stage_sync_v1.sql")?.safeToReplay).toBe(false)

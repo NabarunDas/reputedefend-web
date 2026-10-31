@@ -154,9 +154,10 @@ describe("readiness model", () => {
   it("agrees with the recovery manifest about the applied and repository heads", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261030200000_guided_payment_request_after_acceptance_v1.sql",
+      "20261031120000_guided_pack_ready_dispatch_v1.sql",
     ])
     expect(appliedMigrationHead.version).toBe("20261030130000")
-    expect(migrationHead.filename).toBe("20261030200000_guided_payment_request_after_acceptance_v1.sql")
+    expect(migrationHead.filename).toBe("20261031120000_guided_pack_ready_dispatch_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -165,6 +166,8 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("Observed DEV ledger head is 20261030130000")
     expect(supabase?.requirement).toContain("20261030120000 guided_pack_stage_sync_v1 and 20261030130000 guided_assessment_pack_basis_v1 are already applied on DEV")
     expect(supabase?.requirement).toContain("unapplied 20261030200000 guided_payment_request_after_acceptance_v1")
+    expect(supabase?.requirement).toContain("unapplied 20261031120000 guided_pack_ready_dispatch_v1")
+    expect(supabase?.requirement).toContain("It does not send mail or change stored case rows by itself.")
     expect(supabase?.requirement).toContain("The repository applied-file head remains 20261030130000")
     expect(supabase?.requirement).not.toContain("unapplied 20261030120000")
     expect(supabase?.requirement).not.toContain("unapplied 20261030130000")

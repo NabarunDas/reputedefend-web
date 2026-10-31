@@ -9,6 +9,7 @@ import {
 } from "@/lib/brand"
 import { caseTypeLabel, type CaseType } from "@/lib/cases/domain"
 import { caseServiceLabel, type EnquiryInput } from "@/lib/enquiry"
+import { customerCaseSubject } from "@/lib/email/customer-reference"
 import { escapeHtml } from "@/lib/enquiry-email"
 import type { EnquiryEmailMessage } from "@/lib/enquiry-provider"
 import {
@@ -68,7 +69,7 @@ function customerReceiptCopy(
     heading: `We've received your ${serviceName} assessment`,
     greeting: `Hi ${data.fullName},`,
     intro: `Thank you for telling us about ${data.businessName}. We have received your ${serviceName} assessment and saved the details you shared.`,
-    caseRefLabel: "Your case reference",
+    caseRefLabel: "Case reference",
     publicRef,
     caseRefNote:
       "Please keep this reference. We'll use it in future correspondence about this case.",
@@ -89,8 +90,8 @@ function customerReceiptCopy(
   }
 }
 
-export function caseReceivedCustomerSubject(caseType: CaseType, publicRef: string) {
-  return brandedSubject(`We've received your ${caseTypeLabel(caseType)} case — ${publicRef}`)
+export function caseReceivedCustomerSubject(_caseType: CaseType, publicRef: string) {
+  return brandedSubject(customerCaseSubject("Your enquiry has been received", publicRef))
 }
 
 export function caseReceivedCustomerText(

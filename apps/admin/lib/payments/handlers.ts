@@ -31,6 +31,7 @@ async function queueGuidedPaymentConfirmation(
     alreadyQueued?: boolean
     caseRef?: string
     orderRef?: string
+    receiptRef?: string
     amountMinor?: number
     currency?: string
     serviceCode?: string
@@ -41,7 +42,7 @@ async function queueGuidedPaymentConfirmation(
   const from = outgoingFromAddress(env)
   const replyTo = confirmedReplyMailbox(env)
   if (!replyTo) return null
-  if (!origin || !from || !context.caseRef || !context.orderRef || !context.serviceCode || !context.serviceName || context.amountMinor == null || !context.currency) {
+  if (!origin || !from || !context.caseRef || !context.orderRef || !context.receiptRef || !context.serviceCode || !context.serviceName || context.amountMinor == null || !context.currency) {
     return { ok: false, retryable: true, error: "Payment confirmation email is not ready." }
   }
   const rendered = renderPaymentConfirmation({
@@ -49,6 +50,7 @@ async function queueGuidedPaymentConfirmation(
     serviceName: context.serviceName,
     orderRef: context.orderRef,
     caseRef: context.caseRef,
+    receiptRef: context.receiptRef,
     amountMinor: context.amountMinor,
     currency: context.currency,
     origin,

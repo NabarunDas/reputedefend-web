@@ -16,7 +16,7 @@ const validUntil = "2026-11-03T12:00:00.000Z"
 function offer(overrides: Partial<Parameters<typeof renderQuotationOffer>[0]> = {}) {
   return renderQuotationOffer({
     publicRef: "QT-26-ABCDEF",
-    caseRef: "PR-26-CASE01",
+    caseRef: "PR-26-CASEAA",
     serviceName: "Guided Relaunch",
     amountMinor: 9900,
     currency: "GBP",
@@ -33,7 +33,9 @@ describe("quotation offer email", () => {
   it("renders the service amount, scope, button and security wording without a bearer", () => {
     const rendered = offer()
     expect(rendered).not.toBeNull()
-    expect(rendered!.subject).toBe("Your ProfileRelaunch quotation QT-26-ABCDEF — Case PR-26-CASE01")
+    expect(rendered!.subject).toBe("Your quotation is ready — Case PR-26-CASEAA")
+    expect(rendered!.text).toContain("Quotation number: QT-26-ABCDEF")
+    expect(rendered!.subject).not.toContain("QT-26-ABCDEF")
     expect(rendered!.text).toContain("Amount: £99.00 GBP")
     expect(rendered!.text).toContain("Payment: Upfront")
     expect(rendered!.text).toContain("Service: Guided Relaunch")
@@ -81,7 +83,7 @@ describe("quotation offer email", () => {
     expect(rendered!.text.match(/inclusive of any applicable taxes/g)).toHaveLength(1)
     expect(rendered!.text.match(/No additional taxes or mandatory fees charged by ProfileRelaunch\./g)).toHaveLength(1)
     expect(rendered!.text).not.toContain("Standard wording version")
-    expect(rendered!.subject).toContain("Case PR-26-CASE01")
+    expect(rendered!.subject).toContain("Case PR-26-CASEAA")
     expect(rendered!.text).toContain("Acceptance does not charge your card.")
     expect(canonical.scope).toContain("We prepare it. You submit it.")
   })

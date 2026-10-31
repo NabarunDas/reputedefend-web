@@ -438,8 +438,8 @@ describe("persistGetHelpCase", () => {
     const customer = send.mock.calls[0]?.[0]
     const internal = send.mock.calls[1]?.[0]
     expect(customer?.to).toBe("original@example.com")
-    expect(customer?.subject).toContain("Profile Recovery")
-    expect(customer?.subject).toContain("PR-26-7K4M2Q")
+    expect(customer?.subject).toContain("Your enquiry has been received — Case PR-26-7K4M2Q")
+    expect(customer?.text).toContain("Profile Recovery")
     expect(customer?.text).toContain("Alpha Ltd")
     expect(customer?.text).not.toContain("Beta Ltd")
     expect(customer?.text).not.toMatch(/Review Protection/)

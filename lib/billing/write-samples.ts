@@ -83,7 +83,7 @@ writeFileSync(new URL("../../docs/billing/samples/international-buyer.pdf", impo
   taxBehaviour: "NOT_APPLICABLE",
   taxMinor: 0,
   totalMinor: 9900,
-  details: [{ label: "Receipt reference", value: "RC-26-INTL01" }],
+  details: [{ label: "Receipt number", value: "RC-26-INTL01" }],
 }), logo))
 writeFileSync(new URL("../../docs/billing/samples/long-invoice.pdf", import.meta.url), buildBillingPdf(buildBillingDocument({
   kind: "invoice",

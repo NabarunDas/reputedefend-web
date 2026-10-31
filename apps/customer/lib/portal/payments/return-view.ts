@@ -140,7 +140,8 @@ function paidView(item: Owned): PaymentReturnView {
   const when = receipt ? paidAtLabel(receipt.paidAt) : ""
   const oneTime = item.order.paymentModel === "UPFRONT"
   const paragraphs = [
-    `${item.order.serviceName} for order ${item.order.orderRef} is recorded on your account.`,
+    `Case reference: ${item.case.reference}`,
+    `${item.order.serviceName} is recorded on your account. Service order: ${item.order.orderRef}.`,
     amount ? `Amount received: ${amount}.` : "The amount received is on your receipt.",
     when ? `Paid ${when}.` : "",
     oneTime ? "This is a one-time payment. This is a receipt for the amount received. It is not a VAT invoice." : "This is a receipt for the amount received. It is not a VAT invoice.",
@@ -156,7 +157,8 @@ function pendingView(item: Owned): PaymentReturnView {
     tone: "pending",
     heading: "Payment is being confirmed",
     paragraphs: [
-      `We are confirming your ${item.order.serviceName} payment for order ${item.order.orderRef}. You do not need to pay again while we finish this.`,
+      `Case reference: ${item.case.reference}`,
+      `We are confirming your ${item.order.serviceName} payment. Service order: ${item.order.orderRef}. You do not need to pay again while we finish this.`,
       "This usually finishes within a few minutes. You can open your case and come back. You will not be charged again for a payment that has already succeeded.",
     ],
     links: caseLinks(item.case),
@@ -170,8 +172,9 @@ function failedView(item: Owned): PaymentReturnView {
     tone: "failed",
     heading: "This payment was not collected",
     paragraphs: [
-      `The payment for order ${item.order.orderRef} was not collected. You have not been charged for this attempt.`,
-      retry ? "You can review the payment from your case when you are ready to try again." : "A payment for this order is already being confirmed, so this page does not start another one.",
+      `Case reference: ${item.case.reference}`,
+      `The payment was not collected. Service order: ${item.order.orderRef}. You have not been charged for this attempt.`,
+      retry ? "You can review the payment from your case when you are ready to try again." : "A payment for this service order is already being confirmed, so this page does not start another one.",
     ],
     links: retry
       ? [{ href: `/portal/cases/${item.case.reference}/payments`, label: "Review this payment" }, { href: `/portal/cases/${item.case.reference}`, label: "Open your case" }]

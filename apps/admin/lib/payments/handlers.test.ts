@@ -462,6 +462,7 @@ describe("payment job handlers", () => {
       alreadyQueued: false,
       caseRef: "PR-26-FULF99",
       orderRef: "SO-26-FULF99",
+      receiptRef: "RC-26-FULF99",
       amountMinor: 9900,
       currency: "GBP",
       serviceCode: "GUIDED_RELAUNCH",
@@ -510,8 +511,10 @@ describe("payment job handlers", () => {
         },
       })
       const payload = (queuedCall?.[1] as { p_payload: { subject: string; bodyText: string; bodyHtml: string } }).p_payload
-      expect(payload.subject).toContain("PR-26-FULF99")
-      expect(payload.subject).toContain("SO-26-FULF99")
+      expect(payload.subject).toBe("Payment received — Case PR-26-FULF99")
+      expect(payload.subject).not.toContain("SO-26-FULF99")
+      expect(payload.bodyText).toContain("Service order: SO-26-FULF99")
+      expect(payload.bodyText).toContain("Receipt number: RC-26-FULF99")
       expect(payload.bodyText).toContain("£99.00 GBP")
       expect(payload.bodyText.match(/\/portal\/cases\//g)).toHaveLength(1)
       expect(payload.bodyHtml.match(/\/portal\/cases\//g)).toHaveLength(1)

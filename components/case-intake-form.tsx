@@ -67,7 +67,7 @@ export const SUCCESS_COPY = {
 
 export const PERSISTED_SUCCESS_COPY = {
   title: "Thank you — we have received your assessment.",
-  referenceLabel: "Your case reference",
+  referenceLabel: "Case reference",
   review: "Your request is safely recorded. Our team will review the details and get in touch if we need anything else.",
   keep: "Please keep this reference handy so we can find your case quickly if you contact us.",
   emailSent: "A confirmation email is on its way. Please check your inbox and, if needed, your spam folder.",

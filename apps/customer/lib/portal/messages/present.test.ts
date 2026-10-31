@@ -32,6 +32,10 @@ describe("message presentation", () => {
   it("uses a customer title and leaves an unmatched subject readable", () => {
     expect(messageTitle("Payment received for your ProfileRelaunch Guided Relaunch — PR-26-GHNLB9 — SO-26-GHHRGY"))
       .toBe("Payment received")
+    expect(messageTitle("Payment received — Case PR-26-GHNLB9")).toBe("Payment received")
+    expect(messageTitle("Your quotation is ready — Case RV-26-REVW2K")).toBe("Your quotation is ready")
+    expect(messageTitle("Relaunch Guard update for High Street — Service order SO-26-GHHRGY"))
+      .toBe("Relaunch Guard update for High Street")
     expect(messageTitle("Payment requested for your ProfileRelaunch Guided Relaunch — PR-26-GHNLB9 — SO-26-GHHRGY"))
       .toBe("Your payment link")
     expect(messageTitle("Pay for your ProfileRelaunch Guided Relaunch — SO-26-GHHRGY"))

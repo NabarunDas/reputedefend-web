@@ -5,8 +5,6 @@ import {
   paymentRequestOpeningSentence,
   renderPaymentRequest,
 } from "../../../../lib/email/payment-request"
-import { brandName } from "../../../../lib/brand"
-
 const origin = "https://customer.example"
 const guided = {
   serviceCode: "GUIDED_RELAUNCH",
@@ -25,7 +23,9 @@ describe("guided payment-request email", () => {
     const rendered = renderPaymentRequest(guided)
     expect(rendered?.buttonLabel).toBe("Pay £99.00 securely")
     expect(rendered?.paymentsUrl).toBe(`${origin}/portal/cases/PR-26-GHNLB9/payments`)
-    expect(rendered?.subject).toBe(`Pay for your ${brandName} Guided Relaunch — SO-26-GHHRGY`)
+    expect(rendered?.subject).toBe("Your secure payment link — Case PR-26-GHNLB9")
+    expect(rendered?.text).toContain("Service order: SO-26-GHHRGY")
+    expect(rendered?.subject).not.toContain("SO-26-GHHRGY")
     expect(rendered?.text).toContain("Business: North Bakery")
     expect(rendered?.text).toContain("Case reference: PR-26-GHNLB9")
     expect(rendered?.text).toContain("Guided Relaunch")

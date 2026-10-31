@@ -7,6 +7,7 @@ import {
   trustedActionUrl,
   type CustomerEmailBlock,
 } from "./customer-message"
+import { customerCaseSubject, quotationNumberLine, strictCaseReference } from "./customer-reference"
 import { validReplyMailbox } from "./reply-mailbox"
 
 export const quotationButtonLabel = "Review and accept quotation"
@@ -133,11 +134,16 @@ export function renderQuotationOffer(input: {
   const replyTo = validReplyMailbox(input.replyTo)
   const caseRef = input.caseRef?.trim() || ""
   if (caseRef && (caseRef.length > 40 || unsafeCopy(caseRef))) return null
-  const subject = (input.subject?.trim() || `Your ${brandName} quotation ${publicRef}${caseRef ? ` — Case ${caseRef}` : ""}`).trim()
-  if (subject.length > 200 || !subject.includes(publicRef) || unsafeCopy(subject)) return null
+  const subject = (input.subject?.trim() || (caseRef
+    ? customerCaseSubject("Your quotation is ready", caseRef)
+    : `Your quotation is ready — Quotation number ${publicRef}`)).trim()
+  if (subject.length > 200 || unsafeCopy(subject)) return null
+  if (caseRef && strictCaseReference(caseRef) && !subject.includes(`Case ${caseRef}`)) return null
+  if (caseRef && !strictCaseReference(caseRef) && !subject.includes(caseRef)) return null
+  if (!caseRef && !subject.includes(publicRef)) return null
   const blocks: CustomerEmailBlock[] = [
     ...introduction.split(/\n{2,}/).map(text => ({ type: "paragraph" as const, text })),
-    { type: "paragraph", text: `Quotation: ${publicRef}` },
+    { type: "paragraph", text: quotationNumberLine(publicRef) },
     { type: "paragraph", text: `Service: ${serviceName}` },
     { type: "paragraph", text: conciseGuided ? `Amount: ${amountLabel} — inclusive of any applicable taxes.` : `Amount: ${amountLabel}` },
     ...(conciseGuided ? [{ type: "paragraph" as const, text: customerPriceBoundary }] : []),

@@ -4,6 +4,7 @@ import { constructStripeEvent } from "../../../../lib/payments/stripe"
 import { expectedLivemode, paymentsEnabled, stripeWebhookSecret } from "../../../../lib/payments/config"
 import { backend } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
+import { devPaymentEventWorkerBlock, runDevPaymentEventWorker } from "../jobs/dev-payment-events"
 
 const reply = (body: Record<string, unknown>, status = 200) =>
   NextResponse.json(body, { status, headers: privateResponseHeaders })
@@ -35,5 +36,17 @@ export async function handleStripeWebhook(request: NextRequest, env: Record<stri
     p_event_id: event.id, p_type: event.type, p_object_id: objectId, p_livemode: event.livemode === true,
   })
   if (result.status !== "success") return reply({ status: "invalid" }, 400)
+  // The receipt is already stored. Apply it through the existing DEV worker
+  // before answering Stripe, so a paid Checkout does not wait for the delayed
+  // schedule. A closed gate, or a worker failure, leaves the outbox for the
+  // next run. This does not mark an obligation paid by itself.
+  const settlement = event.type.startsWith("checkout.session.") || event.type.startsWith("payment_intent.")
+  if (settlement && !devPaymentEventWorkerBlock(env)) {
+    try {
+      await runDevPaymentEventWorker({ rpc: backend() })
+    } catch {
+      // The signed event stays queued. A later worker run can apply it once.
+    }
+  }
   return reply({ status: "success", duplicate: result.duplicate === true })
 }

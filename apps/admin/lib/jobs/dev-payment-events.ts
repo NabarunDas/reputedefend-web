@@ -112,6 +112,17 @@ type ClaimResult = {
 
 type Candidate = { eventId?: string; eventType?: string; objectId?: string }
 
+/** Checkout must link the PaymentIntent before settlement, or an intent with no metadata is ignored. */
+export function orderDevPaymentCandidates(events: Candidate[]): Candidate[] {
+  const rank = (event: Candidate) => {
+    const type = event.eventType || ""
+    if (type.startsWith("checkout.session.")) return 0
+    if (type.startsWith("payment_intent.")) return 1
+    return 2
+  }
+  return [...events].sort((left, right) => rank(left) - rank(right))
+}
+
 export type DevPaymentRunCounts = {
   claimed: number
   succeeded: number
@@ -233,7 +244,7 @@ export async function runDevPaymentEventWorker(options: {
     const listed = await options.rpc.rpc<{ status?: string; events?: Candidate[] }>("dev_payment_event_candidates_v1", {
       p_limit: 20,
     })
-    const events = listed.events ?? []
+    const events = orderDevPaymentCandidates(listed.events ?? [])
     let provider: PaymentProvider | null = null
     for (const event of events) {
       if (counts.claimed >= MAX_CLAIMS_PER_RUN) break
@@ -274,7 +285,7 @@ export async function runDevPaymentEventWorker(options: {
         rpc: options.rpc,
         claim,
         handler,
-        abandonAfterHandler: options.abandonAfterHandler === true && counts.claimed === 1,
+        abandonAfterHandler: options.abandonAfterHandler === true && eventType.startsWith("payment_intent."),
       })
       if (outcome === "succeeded") counts.succeeded += 1
       else if (outcome === "retry") counts.retried += 1

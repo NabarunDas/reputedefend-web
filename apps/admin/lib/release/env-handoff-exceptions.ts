@@ -274,6 +274,11 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
     files: ["apps/admin/lib/payments/webhook.ts", "lib/payments/config.ts"],
     reason: "Reads STRIPE_WEBHOOK_SECRET in a handler whose environment is injected so the signature path can be tested.",
   },
+  {
+    helper: "devPaymentEventWorkerBlock",
+    files: ["apps/admin/lib/payments/webhook.ts"],
+    reason: "The Stripe webhook drains the DEV payment worker only when the injected webhook environment passes the same preview, develop and DEV-project gate. Synthetic webhook tests drive that gate; the worker reads the classified variables itself.",
+  },
 
   // Guard.
   {

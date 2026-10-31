@@ -36,6 +36,23 @@ export function requestedOrderRef(query: Record<string, string | string[] | unde
   return raw
 }
 
+/**
+ * One same-origin hop after a cross-site Stripe redirect.
+ * The flag is not a credential. The order reference is the one already
+ * present on the Checkout return URL, and only when it matches the public
+ * order format.
+ */
+export function paymentReturnResumeHref(orderRef: string | null): string {
+  const params = new URLSearchParams()
+  if (orderRef && ORDER_REF.test(orderRef)) params.set("order", orderRef)
+  params.set("resume", "1")
+  return `/pay/return?${params.toString()}`
+}
+
+export function paymentReturnResumed(query: Record<string, string | string[] | undefined>): boolean {
+  return query.resume === "1"
+}
+
 function paidAtLabel(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return ""
@@ -80,8 +97,7 @@ function ownedOrders(payments: CustomerPayments): Owned[] {
 function selectOwned(payments: CustomerPayments, orderRef: string | null): Owned | null {
   const owned = ownedOrders(payments)
   if (orderRef) {
-    const match = owned.find(item => item.order.orderRef === orderRef)
-    if (match) return match
+    return owned.find(item => item.order.orderRef === orderRef) ?? null
   }
   const paid = owned
     .filter(item => isPaid(item.order))

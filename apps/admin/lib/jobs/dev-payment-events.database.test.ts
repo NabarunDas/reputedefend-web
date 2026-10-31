@@ -630,4 +630,23 @@ describe("DEV payment event worker", () => {
     )).toBe(3)
     expect(await count("select count(*)::int as n from admin_private.jobs where idempotency_key like '%evt_wkrguard%' or idempotency_key like '%evt_wkrbill%' or idempotency_key like '%evt_wkrliveobj%'")).toBe(0)
   })
+
+  it("settles a PaymentIntent that arrives with no metadata once checkout has linked it", async () => {
+    const opened = await openGuided("PR-26-WKRLNK")
+    pin(opened, "cs_wkrord", "pi_wkrord")
+    stripeState.intent.pi_wkrord = { ...stripeState.intent.pi_wkrord, metadata: {} }
+    expect(await rpc("payment_record_provider_refs_v1", [opened.providerOperationId, "cs_wkrord", "checkout.session"])).toMatchObject({ status: "success" })
+    expect(await receive("evt_wkrordcs", "checkout.session.completed", "cs_wkrord")).toMatchObject({ status: "success" })
+    expect(await receive("evt_wkrordpi", "payment_intent.succeeded", "pi_wkrord")).toMatchObject({ status: "success" })
+    const settled = await runWorker()
+    expect(settled.result).toMatchObject({ status: "success", counts: { claimed: 2, succeeded: 2, retried: 0, deadLettered: 0 } })
+    expect(await obligationState(opened.obligationId)).toBe("PAID")
+    expect(await receiptCount(opened.orderId)).toBe(1)
+    expect(await confirmationCount(opened.caseId)).toBe(1)
+    expect(await rows<{ work_stage: string }>("select work_stage from public.cases where id = $1", [opened.caseId])).toEqual([{ work_stage: "PREPARATION" }])
+    const replay = await runWorker()
+    expect(replay.result.counts.claimed).toBe(0)
+    expect(await receiptCount(opened.orderId)).toBe(1)
+    expect(sentMail).toHaveLength(1)
+  })
 })

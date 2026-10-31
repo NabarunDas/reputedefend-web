@@ -9,6 +9,7 @@ import {
   checkoutSessionIsGuard,
   devPaymentEventWorkerBlock,
   fenceDevPaymentRpc,
+  orderDevPaymentCandidates,
   parseDevPaymentCadenceSeconds,
   runDevPaymentEventRequest,
 } from "./dev-payment-events"
@@ -138,5 +139,12 @@ describe("DEV payment event route", () => {
     expect(names).not.toContain("job_promote_outbox_v1")
     expect(names).not.toContain("job_claim_batch_v1")
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain(secret)
+  })
+
+  it("applies checkout completion before the PaymentIntent", () => {
+    expect(orderDevPaymentCandidates([
+      { eventId: "evt_pi", eventType: "payment_intent.succeeded", objectId: "pi_1" },
+      { eventId: "evt_cs", eventType: "checkout.session.completed", objectId: "cs_1" },
+    ]).map(event => event.eventId)).toEqual(["evt_cs", "evt_pi"])
   })
 })

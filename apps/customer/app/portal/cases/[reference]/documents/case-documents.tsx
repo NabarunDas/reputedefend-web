@@ -34,6 +34,12 @@ export function CaseDocuments({ documents }: { documents: CustomerCaseDocuments 
         reference={item.reference}
         submitted={documents.pack.customerSubmitted}
         correctionRequested={documents.pack.correctionRequested}
+        outcomeReported={documents.pack.outcomeReported}
+        outcomeReviewed={documents.pack.outcomeReviewed}
+        evidenceOptions={documents.requests.filter(request => request.filename).map(request => ({
+          selector: request.selector,
+          label: request.filename ?? request.title,
+        }))}
       />
     ) : null,
   }] : []

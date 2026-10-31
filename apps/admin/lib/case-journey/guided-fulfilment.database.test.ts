@@ -1778,6 +1778,192 @@ describe("guided fulfilment handover", () => {
     expect((await rows<{ outcome: string | null }>("select outcome from public.cases where id = $1", [caseId]))[0].outcome).toBeNull()
   })
 
+  it("records a customer Google report without closing the service or changing payment", async () => {
+    const reference = "PR-26-GHAND2"
+    const caseId = await insertCase(reference)
+    expect((await acceptQuote(caseId)).status).toBe("success")
+    await guidedToPaymentRequired(caseId)
+    const statement = await acceptedFile(caseId, "handover-statement.pdf")
+    const instructions = await acceptedFile(caseId, "handover-instructions.pdf")
+    const draft = await packCmd(caseId, "create", {})
+    const added = await packCmd(caseId, "add_item", { versionId: statement.versionId, role: "DELIVERABLE" }, draft.id, draft.recordVersion)
+    const withInstructions = await packCmd(caseId, "add_item", { versionId: instructions.versionId, role: "INSTRUCTIONS" }, draft.id, added.recordVersion)
+    const approved = await packCmd(caseId, "approve", { note: packNote, confirmed: true }, draft.id, withInstructions.recordVersion)
+    const payment = await settle(caseId, "ghand1", "evt_ghand1")
+    expect(payment.settled.status).toBe("success")
+    const receipts = await count("select count(*)::int as n from public.payment_receipts where service_order_id = $1", [payment.order.id])
+    const renderedPack = renderPackReady({
+      serviceCode: "GUIDED_RELAUNCH",
+      serviceName: "Guided Relaunch",
+      caseRef: reference,
+      amountMinor: payment.order.amount_minor,
+      currency: "GBP",
+      origin,
+      replyTo: "cases@profilerelaunch.com",
+    })
+    const published = await packCmd(caseId, "publish", {
+      note: packNote, confirmed: true, ...mailPayload(renderedPack!, "documents"),
+    }, draft.id, approved.recordVersion)
+    expect(published.status, JSON.stringify(published)).toBe("success")
+    const before = await rpc<{ timeline: { code: string }[] }>("customer_portal_case_v1", [alexSession, reference])
+    expect(before.timeline.map(event => event.code)).toContain("PACK_PUBLISHED")
+    expect(before.timeline.map(event => event.code)).not.toContain("SUBMITTED_TO_GOOGLE")
+    expect(before.timeline.map(event => event.code)).not.toContain("CUSTOMER_REPORTED_SUBMISSION")
+    expect((await rows<{ status: string; outcome: string | null }>("select status, outcome from public.cases where id = $1", [caseId]))[0]).toEqual({ status: "UNDER_REVIEW", outcome: null })
+
+    expect(await rpc<Json>("customer_portal_guided_handover_v1", [
+      samSession, key(), reference, "report_submission", {
+        note: "I sent this pack through the Google appeals form.",
+        submittedOn: "2026-10-21",
+      },
+    ])).toMatchObject({ status: "unavailable" })
+    const reported = await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, key(), reference, "report_submission", {
+        note: "I sent this pack through the Google appeals form.",
+        submittedOn: "2026-10-21",
+        googleReference: "GOOGLE-GHAND-1",
+      },
+    ])
+    expect(reported).toMatchObject({ status: "success", kind: "GOOGLE_SUBMISSION" })
+    expect(await count("select count(*)::int as n from public.case_submissions where case_id = $1", [caseId])).toBe(0)
+    expect(await count("select count(*)::int as n from public.case_tasks where case_id = $1 and status = 'OPEN' and title = 'Review the customer''s Google submission report'", [caseId])).toBe(1)
+    const submittedTimeline = await rpc<{ timeline: { code: string }[] }>("customer_portal_case_v1", [alexSession, reference])
+    expect(submittedTimeline.timeline.map(event => event.code)).toContain("CUSTOMER_REPORTED_SUBMISSION")
+    expect(submittedTimeline.timeline.map(event => event.code)).not.toContain("SUBMITTED_TO_GOOGLE")
+    expect((await rows<{ status: string; outcome: string | null }>("select status, outcome from public.cases where id = $1", [caseId]))[0]).toEqual({ status: "UNDER_REVIEW", outcome: null })
+    expect(await count("select count(*)::int as n from public.payment_receipts where service_order_id = $1", [payment.order.id])).toBe(receipts)
+
+    const reinstated = await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, key(), reference, "report_outcome", {
+        note: "Google said the profile is visible again.",
+        outcome: "REINSTATED",
+        decidedOn: "2026-10-22",
+        googleReference: "GOOGLE-GHAND-2",
+      },
+    ])
+    expect(reinstated).toMatchObject({ status: "success", kind: "GOOGLE_OUTCOME", outcome: "REINSTATED" })
+    expect(await count("select count(*)::int as n from public.case_submissions where case_id = $1", [caseId])).toBe(0)
+    expect(await count(
+      "select count(*)::int as n from public.case_submission_results result join public.case_submissions submission on submission.id = result.submission_id where submission.case_id = $1",
+      [caseId],
+    )).toBe(0)
+    const reinstatedTimeline = await rpc<{ timeline: { code: string }[] }>("customer_portal_case_v1", [alexSession, reference])
+    expect(reinstatedTimeline.timeline.map(event => event.code)).toContain("CUSTOMER_REPORTED_OUTCOME")
+    expect(reinstatedTimeline.timeline.map(event => event.code)).not.toContain("GOOGLE_DECISION_RECORDED")
+    expect((await rows<{ status: string; outcome: string | null }>("select status, outcome from public.cases where id = $1", [caseId]))[0]).toEqual({ status: "UNDER_REVIEW", outcome: null })
+
+    const failedRequest = key()
+    const failed = await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, failedRequest, reference, "report_outcome", {
+        note: "Google said the profile stays suspended.",
+        outcome: "NOT_REINSTATED",
+        decidedOn: "2026-10-23",
+      },
+    ])
+    expect(failed).toMatchObject({ status: "success", outcome: "NOT_REINSTATED" })
+    expect(await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, failedRequest, reference, "report_outcome", {
+        note: "Google said the profile stays suspended.",
+        outcome: "NOT_REINSTATED",
+        decidedOn: "2026-10-23",
+      },
+    ])).toEqual(failed)
+    expect(await count("select count(*)::int as n from public.guided_customer_reports where case_id = $1 and kind = 'GOOGLE_OUTCOME'", [caseId])).toBe(2)
+    expect(await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, key(), reference, "report_outcome", {
+        note: "A file that is not on this case.",
+        outcome: "OTHER",
+        decidedOn: "2026-10-23",
+        evidenceSelector: "er-9",
+      },
+    ])).toMatchObject({ status: "invalid" })
+    expect((await rows<{ status: string; outcome: string | null }>("select status, outcome from public.cases where id = $1", [caseId]))[0]).toEqual({ status: "UNDER_REVIEW", outcome: null })
+    expect(await count("select count(*)::int as n from public.payment_receipts where service_order_id = $1", [payment.order.id])).toBe(receipts)
+
+    expect(await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, key(), reference, "request_correction", { note: "Please correct the opening sentence before I rely on it." },
+    ])).toMatchObject({ status: "success", kind: "CORRECTION" })
+    const note = "Closed after the completed pack was available. The Google report stays separate."
+    const summary = "Your Guided Relaunch pack is complete. You submit it to Google yourself."
+    expect(await rpc<Json>("admin_guided_fulfilment_close_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), { note, summary },
+    ])).toMatchObject({ status: "open_work" })
+    const correction = await rows<{ id: string }>(
+      "select id from public.case_tasks where case_id = $1 and status = 'OPEN' and title = 'Review a correction to the Guided pack'",
+      [caseId],
+    )
+    expect(correction).toHaveLength(1)
+    expect((await caseCmd(caseId, "resolve_task", { taskId: correction[0].id, status: "DONE" })).status).toBe("success")
+    expect(await count("select count(*)::int as n from public.case_tasks where case_id = $1 and status = 'OPEN'", [caseId])).toBeGreaterThan(0)
+    const completion = renderGuidedCompletion({
+      serviceCode: "GUIDED_RELAUNCH",
+      serviceName: "Guided Relaunch",
+      caseRef: reference,
+      amountMinor: payment.order.amount_minor,
+      currency: "GBP",
+      origin,
+      replyTo: "cases@profilerelaunch.com",
+    })
+    const closed = await rpc<Json>("admin_guided_fulfilment_close_v1", [
+      adminToken, key(), caseId, await caseVersion(caseId), { note, summary, ...mailPayload(completion!, "documents") },
+    ])
+    expect(closed, JSON.stringify(closed)).toMatchObject({ status: "success" })
+    expect((await rows<{ status: string; outcome: string | null; work_stage: string }>(
+      "select status, outcome, work_stage from public.cases where id = $1",
+      [caseId],
+    ))[0]).toEqual({ status: "CLOSED", outcome: null, work_stage: "FINISHED" })
+    const completionBody = await rows<{ body_text: string }>(
+      "select body_text from public.communications where case_id = $1 and template_key = 'GUIDED_COMPLETION'",
+      [caseId],
+    )
+    expect(completionBody[0].body_text).toContain("Your Guided Relaunch service is complete. Your submission pack remains available in your account. You can tell us when you've submitted it to Google and update us when you hear back.")
+    expect(completionBody[0].body_text).toContain(guidedCustomerSubmitsSentence)
+    expect(completionBody[0].body_text).not.toMatch(/reinstated|ProfileRelaunch submitted/i)
+    expect(await count("select count(*)::int as n from public.payment_receipts where service_order_id = $1", [payment.order.id])).toBe(receipts)
+
+    expect(await rpc<Json>("customer_portal_guided_handover_v1", [
+      alexSession, key(), reference, "report_outcome", {
+        note: "I am still waiting for Google to reply.",
+        outcome: "STILL_WAITING",
+        decidedOn: "2026-10-24",
+      },
+    ])).toMatchObject({ status: "success", outcome: "STILL_WAITING" })
+    expect((await rows<{ status: string; outcome: string | null }>("select status, outcome from public.cases where id = $1", [caseId]))[0]).toEqual({ status: "CLOSED", outcome: null })
+    const outcomeTask = await rows<{ id: string }>(
+      "select id from public.case_tasks where case_id = $1 and status = 'OPEN' and title = 'Review the customer''s Google outcome report'",
+      [caseId],
+    )
+    expect(outcomeTask).toHaveLength(1)
+    expect((await caseCmd(caseId, "resolve_task", { taskId: outcomeTask[0].id, status: "DONE" })).status).toBe("denied")
+    const reviewRequest = key()
+    const reviewVersion = await caseVersion(caseId)
+    const review = await rpc<Json>("admin_guided_report_review_v1", [
+      adminToken, reviewRequest, caseId, reviewVersion, {
+        note: "Reviewed the customer's report. It is not a verified Google decision.",
+        taskId: outcomeTask[0].id,
+        status: "DONE",
+      },
+    ])
+    expect(review).toMatchObject({ status: "success", id: caseId })
+    expect(await rpc<Json>("admin_guided_report_review_v1", [
+      adminToken, reviewRequest, caseId, reviewVersion, {
+        note: "Reviewed the customer's report. It is not a verified Google decision.",
+        taskId: outcomeTask[0].id,
+        status: "DONE",
+      },
+    ])).toEqual(review)
+    expect((await rows<{ status: string; outcome: string | null }>("select status, outcome from public.cases where id = $1", [caseId]))[0]).toEqual({ status: "CLOSED", outcome: null })
+    expect(await count("select count(*)::int as n from public.case_tasks where id = $1 and status = 'DONE'", [outcomeTask[0].id])).toBe(1)
+    expect(await count("select count(*)::int as n from public.case_work_events where case_id = $1 and event = 'review_guided_report'", [caseId])).toBe(1)
+    expect(await count("select count(*)::int as n from public.case_submissions where case_id = $1", [caseId])).toBe(0)
+    expect(await count("select count(*)::int as n from public.payment_receipts where service_order_id = $1", [payment.order.id])).toBe(receipts)
+    const documents = await rpc<{ pack: { customerSubmitted: boolean; outcomeReported: boolean; outcomeReviewed: boolean } | null }>(
+      "customer_portal_case_documents_v1",
+      [alexSession, reference],
+    )
+    expect(documents.pack).toMatchObject({ customerSubmitted: true, outcomeReported: true, outcomeReviewed: true })
+  })
+
   it("leaves Managed publication and closure on the existing rules", async () => {
     const caseId = await insertCase("PR-26-MANPKG", "MANAGED")
     await db.query("update public.cases set work_stage = 'PREPARATION', status = 'UNDER_REVIEW' where id = $1", [caseId])

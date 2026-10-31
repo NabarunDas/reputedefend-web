@@ -154,9 +154,10 @@ describe("readiness model", () => {
   it("agrees with the recovery manifest about the applied and repository heads", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261031120000_guided_pack_ready_dispatch_v1.sql",
+      "20261031140000_guided_customer_outcome_v1.sql",
     ])
     expect(appliedMigrationHead.version).toBe("20261030200000")
-    expect(migrationHead.filename).toBe("20261031120000_guided_pack_ready_dispatch_v1.sql")
+    expect(migrationHead.filename).toBe("20261031140000_guided_customer_outcome_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -167,6 +168,8 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("Do not replay 20261030200000")
     expect(supabase?.requirement).toContain("unapplied 20261031120000 guided_pack_ready_dispatch_v1")
     expect(supabase?.requirement).toContain("It does not send mail or change stored case rows by itself.")
+    expect(supabase?.requirement).toContain("unapplied 20261031140000 guided_customer_outcome_v1")
+    expect(supabase?.requirement).toContain("It does not send mail, close a case, change a payment, or edit a stored outcome.")
     expect(supabase?.requirement).toContain("The repository applied-file head remains 20261030200000")
     expect(supabase?.requirement).not.toContain("unapplied 20261030200000")
     expect(supabase?.requirement).not.toContain("unapplied 20261030120000")

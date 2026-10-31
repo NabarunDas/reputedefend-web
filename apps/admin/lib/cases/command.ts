@@ -24,9 +24,12 @@ export async function caseCommand(request:NextRequest) {
   try {body=JSON.parse(raw)}catch{return reply("Please check the form and try again.",400)}
   const args=caseArgs(body)
   if(!args) return reply("Check the fields, follow-up date and supporting note before saving.",400)
-  const result=await backend().rpc<{status:string;id?:string}>("admin_case_command_v1",{...args,p_token:tokenHash(token),p_request:key})
+  const result=args.p_operation==="review_guided_report"
+   ? await backend().rpc<{status:string;id?:string}>("admin_guided_report_review_v1",{p_token:tokenHash(token),p_request:key,p_case:args.p_case,p_version:args.p_version,p_data:args.p_data})
+   : await backend().rpc<{status:string;id?:string}>("admin_case_command_v1",{...args,p_token:tokenHash(token),p_request:key})
   switch(result.status){
    case "success":{
+    if(args.p_operation==="review_guided_report") return reply("Saved. The follow-up is closed. A completed Guided service stays closed, and its payment is unchanged.",200,result.id)
     const kind=args.p_operation==="submission"?"submission":args.p_operation==="resolve_submission"?"result":args.p_operation==="close"?"completion":null
     const notice=kind?await queueManagedNotice({token,requestId:key,caseId:args.p_case,kind}):""
     return reply(`Saved. The case history has been updated.${notice}`,200,result.id)

@@ -1202,6 +1202,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Guided pack-ready dispatch", probe: "public.dev_mail_dispatch_claim_pack_v1" },
   },
+  {
+    // Customer Google-outcome reporting for a published Guided pack.
+    // Repository only. appliedToDev is false. Do not apply this file from the
+    // pull request, and do not apply it to Production. It does not send mail,
+    // close a case, change a payment, or edit a stored outcome.
+    version: "20261031140000",
+    filename: "20261031140000_guided_customer_outcome_v1.sql",
+    step: "Customers can report a Guided pack submission and a Google outcome",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Guided customer outcome", probe: "public.customer_portal_guided_handover_v1" },
+  },
 ]
 
 /**
@@ -1221,8 +1235,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * not be replayed. Context function volatility `20261028223000` and draft
  * document role `20261028200000` remain applied and must not be replayed.
  * `pendingMigrations()` contains unapplied
- * `20261031120000_guided_pack_ready_dispatch_v1.sql`. Do not apply it without
- * a separate approval, and do not apply it to Production.
+ * `20261031120000_guided_pack_ready_dispatch_v1.sql` and
+ * `20261031140000_guided_customer_outcome_v1.sql`. Do not apply either without
+ * a separate approval, and do not apply either to Production.
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

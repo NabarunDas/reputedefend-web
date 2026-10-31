@@ -7,6 +7,7 @@
  *
  * It is not Admin CaseFlow. It does not expose phases, blockers, or actions.
  */
+import { guidedServiceCompleteSentence } from "../../../../../lib/email/fulfilment"
 import { caseTypeLabel, customerCaseState, formatPortalDate, formatPortalDateTime, portalDayKey, presentAttention, serviceLabel, statusLabel } from "./model"
 import type { CaseStatus, CaseType, CustomerCaseDetail, CustomerTimelineCode, OutcomeCode, WorkStage } from "./parse"
 
@@ -97,8 +98,16 @@ const TIMELINE_MESSAGES: Record<CustomerTimelineCode, string> = {
   NOTIFICATION_DELIVERED: "We emailed you to let you know your pack is ready.",
   SUBMITTED_TO_GOOGLE: "Your case was submitted to Google.",
   GOOGLE_DECISION_RECORDED: "A Google decision was recorded for your case.",
+  CUSTOMER_REPORTED_SUBMISSION: "You reported that you submitted this pack to Google. ProfileRelaunch did not submit it.",
+  CUSTOMER_REPORTED_OUTCOME: "You reported a Google outcome. This is your report, not an independently verified Google decision.",
   CASE_COMPLETED: "This ProfileRelaunch case was completed.",
   CASE_CANCELLED: "This ProfileRelaunch case was cancelled.",
+}
+
+export type GuidedSeparation = {
+  service: "Completed" | "In progress"
+  submission: "Not reported" | "Customer reported"
+  outcome: "Awaiting" | "Customer reported" | "Reviewed"
 }
 
 const GOOGLE_OUTCOMES = new Set<OutcomeCode>([
@@ -109,6 +118,34 @@ const GOOGLE_OUTCOMES = new Set<OutcomeCode>([
   "NOT_REMOVED",
   "RESPONSE_RECOMMENDED",
 ])
+
+function guidedServiceName(caseType: CaseType | undefined): "Guided Relaunch" | "Guided Review" {
+  return caseType === "REVIEW_PROTECTION" ? "Guided Review" : "Guided Relaunch"
+}
+
+/** Service completion, the customer's own submission report, and a Google outcome stay separate. */
+export function presentGuidedSeparation(input: {
+  status: CaseStatus
+  serviceTrack?: string
+  caseType?: CaseType
+  outcomeCode?: OutcomeCode | null
+  timeline?: readonly { code: CustomerTimelineCode }[]
+  packPublished?: boolean
+  customerSubmitted?: boolean
+  outcomeReported?: boolean
+  outcomeReviewed?: boolean
+}): GuidedSeparation | null {
+  if (input.serviceTrack !== "GUIDED" || input.packPublished !== true) return null
+  const codes = new Set(input.timeline?.map(event => event.code) ?? [])
+  const verified = codes.has("GOOGLE_DECISION_RECORDED") || (input.outcomeCode != null && GOOGLE_OUTCOMES.has(input.outcomeCode))
+  const customerSubmission = input.customerSubmitted === true || codes.has("CUSTOMER_REPORTED_SUBMISSION")
+  const customerOutcome = input.outcomeReported === true || codes.has("CUSTOMER_REPORTED_OUTCOME")
+  return {
+    service: input.status === "CLOSED" ? "Completed" : "In progress",
+    submission: customerSubmission ? "Customer reported" : "Not reported",
+    outcome: verified || input.outcomeReviewed === true ? "Reviewed" : customerOutcome ? "Customer reported" : "Awaiting",
+  }
+}
 
 const SUBMISSION_STAGES = new Set<WorkStage>(["SUBMITTED", "WAITING_GOOGLE", "OWNER_ACTION", "FURTHER_REVIEW"])
 
@@ -366,7 +403,7 @@ export function presentNextStep(input: {
       timing: null,
       support: null,
       href: packHref,
-      actionLabel: packHref ? "Download your pack" : null,
+      actionLabel: packHref ? "Download your completed pack" : null,
       alsoWaiting: null,
       remaining: [],
     }
@@ -462,15 +499,16 @@ export function presentNextStep(input: {
       }
     }
     const packHref = input.packHref ?? null
+    const serviceName = guidedServiceName(input.caseType)
     return {
-      title: "Your Guided preparation is complete",
+      title: `Your ${serviceName} service is complete`,
       body: packHref
-        ? "Your pack is ready for you. Sending it to Google is your choice, and a later Google decision is separate."
+        ? guidedServiceCompleteSentence(serviceName)
         : "Your preparation is complete. Sending anything to Google is your choice, and a later Google decision is separate.",
       timing: null,
       support: null,
       href: packHref,
-      actionLabel: packHref ? "Open your pack" : null,
+      actionLabel: packHref ? "Download your completed pack" : null,
       alsoWaiting: null,
       remaining: [],
     }

@@ -23,6 +23,8 @@ const found = {
     instructionSelectors: ["pd-2"],
     customerSubmitted: false,
     correctionRequested: false,
+    outcomeReported: false,
+    outcomeReviewed: false,
   },
 }
 
@@ -42,5 +44,11 @@ describe("guided pack handover parser", () => {
       ...found,
       pack: { ...found.pack, instructions: "ProfileRelaunch will submit this pack to Google." },
     })).toBeNull()
+    const { outcomeReported: _reported, outcomeReviewed: _reviewed, ...legacyPack } = found.pack
+    const legacy = parseCaseDocuments({ ...found, pack: legacyPack })
+    expect(legacy !== "not_found" && legacy ? legacy.pack : null).toMatchObject({
+      outcomeReported: false,
+      outcomeReviewed: false,
+    })
   })
 })

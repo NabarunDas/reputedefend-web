@@ -96,6 +96,8 @@ export type GuidedPackHandover = {
   instructionSelectors: string[]
   customerSubmitted: boolean
   correctionRequested: boolean
+  outcomeReported: boolean
+  outcomeReviewed: boolean
 }
 
 export type CustomerCaseDocuments = {
@@ -287,19 +289,35 @@ export const GUIDED_PACK_INSTRUCTIONS = "You submit this pack to Google yourself
 function parseGuidedPack(value: unknown): GuidedPackHandover | null | undefined {
   if (value === null) return null
   const row = record(value)
-  if (!row || !sameKeys(row, ["title", "serviceName", "packNumber", "instructions", "instructionSelectors", "customerSubmitted", "correctionRequested"])) return undefined
+  if (!row) return undefined
+  const legacyPack = sameKeys(row, ["title", "serviceName", "packNumber", "instructions", "instructionSelectors", "customerSubmitted", "correctionRequested"])
+  const reportedPack = sameKeys(row, ["title", "serviceName", "packNumber", "instructions", "instructionSelectors", "customerSubmitted", "correctionRequested", "outcomeReported", "outcomeReviewed"])
+  if (!legacyPack && !reportedPack) return undefined
   const title = text(row.title, 80)
   const serviceName = row.serviceName === "Guided Relaunch" || row.serviceName === "Guided Review" ? row.serviceName : null
   const packNumber = typeof row.packNumber === "number" && Number.isSafeInteger(row.packNumber) && row.packNumber >= 1 && row.packNumber <= 99 ? row.packNumber : null
   const selectors = arrayOf(row.instructionSelectors, 20)
   if (!title || !serviceName || !packNumber || row.instructions !== GUIDED_PACK_INSTRUCTIONS || !selectors) return undefined
   if (typeof row.customerSubmitted !== "boolean" || typeof row.correctionRequested !== "boolean") return undefined
+  const outcomeReported = reportedPack ? row.outcomeReported : false
+  const outcomeReviewed = reportedPack ? row.outcomeReviewed : false
+  if (typeof outcomeReported !== "boolean" || typeof outcomeReviewed !== "boolean") return undefined
   const instructionSelectors: string[] = []
   for (const selector of selectors) {
     if (typeof selector !== "string" || !DOCUMENT_SELECTOR.test(selector)) return undefined
     instructionSelectors.push(selector)
   }
-  return { title, serviceName, packNumber, instructions: GUIDED_PACK_INSTRUCTIONS, instructionSelectors, customerSubmitted: row.customerSubmitted, correctionRequested: row.correctionRequested }
+  return {
+    title,
+    serviceName,
+    packNumber,
+    instructions: GUIDED_PACK_INSTRUCTIONS,
+    instructionSelectors,
+    customerSubmitted: row.customerSubmitted,
+    correctionRequested: row.correctionRequested,
+    outcomeReported,
+    outcomeReviewed,
+  }
 }
 
 function parseCaseRequest(value: unknown): CaseEvidenceRequest | null {

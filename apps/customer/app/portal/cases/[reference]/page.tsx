@@ -6,6 +6,7 @@ import { loadCustomerCaseDocuments } from "@/lib/portal/documents/queries"
 import { presentCaseCommerce } from "@/lib/portal/payments/model"
 import { loadCustomerCasePayments } from "@/lib/portal/payments/queries"
 import { CaseUnavailable, CaseWorkspace } from "./case-workspace"
+import type { GuidedHandoverState } from "./documents/handover-form"
 
 export const metadata = { title: "Case" }
 
@@ -21,15 +22,26 @@ export default async function CustomerCasePage({ params }: { params: Promise<{ r
   if (payments.status === "unauthenticated") redirect("/login")
   const commerce = payments.status === "ready" ? presentCaseCommerce(payments.payments.case) : null
   const item = loaded.detail.case
-  const handover = item.serviceTrack === "GUIDED" && (
-    item.workStage === "READY_TO_SUBMIT" ||
-    (item.status === "CLOSED" && item.workStage === "FINISHED" && !item.outcomeCode)
-  )
+  const guidedCase = item.serviceTrack === "GUIDED" && item.status !== "CANCELLED"
   let packHref: string | null = null
-  if (handover) {
+  let packHandover: GuidedHandoverState | null = null
+  if (guidedCase) {
     const documents = await loadCustomerCaseDocuments(reference)
     if (documents.status === "unauthenticated") redirect("/login")
-    if (documents.status === "ready" && documents.documents.pack) packHref = `/portal/cases/${reference}/documents`
+    if (documents.status === "ready" && documents.documents.pack) {
+      packHref = `/portal/cases/${reference}/documents`
+      const pack = documents.documents.pack
+      packHandover = {
+        submitted: pack.customerSubmitted,
+        correctionRequested: pack.correctionRequested,
+        outcomeReported: pack.outcomeReported,
+        outcomeReviewed: pack.outcomeReviewed,
+        evidenceOptions: documents.documents.requests.filter(request => request.filename).map(request => ({
+          selector: request.selector,
+          label: request.filename ?? request.title,
+        })),
+      }
+    }
   }
-  return <CaseWorkspace detail={loaded.detail} commerce={commerce} packHref={packHref} packPublished={handover ? packHref !== null : undefined} />
+  return <CaseWorkspace detail={loaded.detail} commerce={commerce} packHref={packHref} packPublished={guidedCase ? packHref !== null : undefined} handover={packHandover} />
 }

@@ -216,6 +216,8 @@ describe("documents pages", () => {
         instructionSelectors: ["pd-1"],
         customerSubmitted: false,
         correctionRequested: false,
+        outcomeReported: false,
+        outcomeReviewed: false,
       },
     }
     render(<CaseDocuments documents={withPack} />)

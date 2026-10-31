@@ -1,6 +1,7 @@
 import { caseTypeLabel, customerCaseState, serviceLabel, statusLabel } from "@/lib/portal/cases/model"
-import { presentDetailRows, presentNextStep, presentProgress, presentTimeline, progressContext, type CaseCommerce, type PresentedProgressStep, type PresentedTimelineEntry } from "@/lib/portal/cases/workspace"
+import { presentDetailRows, presentGuidedSeparation, presentNextStep, presentProgress, presentTimeline, progressContext, type CaseCommerce, type PresentedProgressStep, type PresentedTimelineEntry } from "@/lib/portal/cases/workspace"
 import type { CustomerCaseDetail } from "@/lib/portal/cases/parse"
+import { GuidedHandoverForm, type GuidedHandoverState } from "./documents/handover-form"
 
 const STATE_CLASS = {
   ACTION_NEEDED: "status-action-needed",
@@ -29,11 +30,13 @@ export function CaseWorkspace({
   commerce = null,
   packHref = null,
   packPublished,
+  handover = null,
 }: {
   detail: CustomerCaseDetail
   commerce?: CaseCommerce | null
   packHref?: string | null
   packPublished?: boolean
+  handover?: GuidedHandoverState | null
 }) {
   const item = detail.case
   const state = customerCaseState(item.status, item.workStage, item.attentionItems.length)
@@ -52,6 +55,17 @@ export function CaseWorkspace({
   const preparationComplete = progress != null && progress.length > 0 && progress.every(step => step.position === "earlier")
   const service = serviceLabel(item.serviceTrack)
   const context = progressContext(item.serviceTrack)
+  const separation = presentGuidedSeparation({
+    status: item.status,
+    serviceTrack: item.serviceTrack,
+    caseType: item.caseType,
+    outcomeCode: item.outcomeCode,
+    timeline: detail.timeline,
+    packPublished,
+    customerSubmitted: handover?.submitted,
+    outcomeReported: handover?.outcomeReported,
+    outcomeReviewed: handover?.outcomeReviewed,
+  })
   return (
     <div className="case-workspace">
       <nav className="case-breadcrumb" aria-label="Breadcrumb">
@@ -76,6 +90,15 @@ export function CaseWorkspace({
           </div>
         </div>
       </header>
+
+      {packHref && handover ? (
+        <section className="guided-pack-actions" aria-labelledby="pack-actions-heading">
+          <h2 id="pack-actions-heading">Your completed pack</h2>
+          <p>ProfileRelaunch prepared this pack. You submit it to Google yourself.</p>
+          <p className="attention-action"><a className="portal-button" href={packHref}>Download your completed pack</a></p>
+          <GuidedHandoverForm reference={item.reference} {...handover} />
+        </section>
+      ) : null}
 
       <section className="case-details-section" aria-labelledby="details-heading">
         <h2 id="details-heading">Case details</h2>
@@ -115,6 +138,22 @@ export function CaseWorkspace({
         <section className="case-progress-section" aria-labelledby="progress-heading">
           <h2 id="progress-heading">Progress</h2>
           {context ? <p className="case-progress-note">{context}</p> : null}
+          {separation ? (
+            <dl className="case-details">
+              <div>
+                <dt>ProfileRelaunch service</dt>
+                <dd>{separation.service}</dd>
+              </div>
+              <div>
+                <dt>Google submission</dt>
+                <dd>{separation.submission}</dd>
+              </div>
+              <div>
+                <dt>Google outcome</dt>
+                <dd>{separation.outcome}</dd>
+              </div>
+            </dl>
+          ) : null}
           <ol className="case-progress">
             {progress.map((step, index) => (
               <ProgressStep

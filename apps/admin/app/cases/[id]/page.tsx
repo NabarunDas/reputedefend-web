@@ -23,6 +23,16 @@ import { loadIntakeMailRetryOffer } from "@/lib/case-intake-mail/load"
 import { IntakeMailRetryPanel } from "./communications/intake-mail-retry"
 import { requireStaff } from "@/lib/require-staff"
 
+const GUIDED_REPORT_TITLES = new Set([
+  "Review a correction to the Guided pack",
+  "Review the customer's Google submission report",
+  "Review the customer's Google outcome report",
+])
+
+function guidedCustomerReport(title: string) {
+  return GUIDED_REPORT_TITLES.has(title)
+}
+
 export const metadata = { title: "Case" }
 
 /**
@@ -135,7 +145,7 @@ export default async function CasePage({ params, searchParams }: { params: Promi
           <p>{t.owner === "ADMIN" ? "Admin" : "Customer"} · {ukDate(t.due)} · {t.kind}</p>
           <p>Deadline source: {t.source} · Original timezone: {t.timezone}</p>
           {t.resolution && <p>{t.resolution}</p>}
-          {!closed && <details><summary>Resolve this task<span className="sr-only">: {t.title}</span></summary><ResolveTask key={c.version} c={c} t={t} /></details>}
+          {(!closed || guidedCustomerReport(t.title)) && <details><summary>Resolve this task<span className="sr-only">: {t.title}</span></summary><ResolveTask key={c.version} c={c} t={t} guidedReport={closed && guidedCustomerReport(t.title)} /></details>}
         </li>)}</ul>}
         {!!settledTasks.length && <details>
           <summary>Completed and cancelled tasks ({settledTasks.length})</summary>

@@ -205,7 +205,7 @@ describe("what happens next", () => {
       title: "Pack ready for you",
       body: "Download your documents. You choose if and when to send them to Google. We have not sent them.",
       href: "/portal/cases/PR-26-ABCDEF/documents",
-      actionLabel: "Download your pack",
+      actionLabel: "Download your completed pack",
     })
     expect(presentNextStep({ ...base, status: "UNDER_REVIEW", workStage: "SUBMITTED" })).toMatchObject({
       title: "Your case has been submitted",
@@ -279,7 +279,7 @@ describe("what happens next", () => {
       body: "No further action is currently needed for this case.",
     })
     expect(presentNextStep({ ...base, status: "CLOSED", workStage: "FINISHED", serviceTrack: "GUIDED" })).toMatchObject({
-      title: "Your Guided preparation is complete",
+      title: "Your Guided Relaunch service is complete",
       body: "Your preparation is complete. Sending anything to Google is your choice, and a later Google decision is separate.",
       href: null,
     })
@@ -290,10 +290,10 @@ describe("what happens next", () => {
       serviceTrack: "GUIDED",
       packHref: "/portal/cases/PR-26-ABCDEF/documents",
     })).toMatchObject({
-      title: "Your Guided preparation is complete",
-      body: "Your pack is ready for you. Sending it to Google is your choice, and a later Google decision is separate.",
+      title: "Your Guided Relaunch service is complete",
+      body: "Your Guided Relaunch service is complete. Your submission pack remains available in your account. You can tell us when you've submitted it to Google and update us when you hear back.",
       href: "/portal/cases/PR-26-ABCDEF/documents",
-      actionLabel: "Open your pack",
+      actionLabel: "Download your completed pack",
     })
     expect(presentNextStep({
       ...base,
@@ -349,6 +349,8 @@ describe("timeline wording", () => {
     expect(timelineMessage("NOTIFICATION_DELIVERED", null)).toBe("We emailed you to let you know your pack is ready.")
     expect(timelineMessage("SUBMITTED_TO_GOOGLE", null)).toBe("Your case was submitted to Google.")
     expect(timelineMessage("GOOGLE_DECISION_RECORDED", null)).toBe("A Google decision was recorded for your case.")
+    expect(timelineMessage("CUSTOMER_REPORTED_SUBMISSION", null)).toBe("You reported that you submitted this pack to Google. ProfileRelaunch did not submit it.")
+    expect(timelineMessage("CUSTOMER_REPORTED_OUTCOME", null)).toBe("You reported a Google outcome. This is your report, not an independently verified Google decision.")
     expect(timelineMessage("CASE_COMPLETED", null)).toBe("This ProfileRelaunch case was completed.")
     expect(timelineMessage("CASE_COMPLETED", "RESTORED")).toBe("Your profile was restored and the case was completed.")
     expect(timelineMessage("CASE_COMPLETED", "PARTIALLY_RESTORED")).toBe("Your profile was partly restored. The profile was not fully restored, and the case was completed.")

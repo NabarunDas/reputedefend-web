@@ -5,6 +5,7 @@ import {
   packReadyButton,
   paymentConfirmationButton,
   guidedCompletionGuardSentence,
+  guidedServiceCompleteSentence,
   renderGuidedCompletion,
   renderPackReady,
   renderPaymentConfirmation,
@@ -79,6 +80,8 @@ describe("guided fulfilment email", () => {
     expect(rendered!.text).toContain("£99.00 GBP")
     expect(rendered!.text).toContain(guidedCustomerSubmitsSentence)
     expect(rendered!.text).toContain(guidedCompletionGuardSentence)
+    expect(rendered!.text).toContain(guidedServiceCompleteSentence("Guided Relaunch"))
+    expect(rendered!.text).not.toMatch(/reinstated|ProfileRelaunch submitted/i)
     expect(rendered!.text).toContain("Reply to this email if you need a correction")
     expect(rendered!.text).not.toContain("contact us through the ProfileRelaunch website")
     expect(rendered!.text).toContain("Google's later decision is separate")

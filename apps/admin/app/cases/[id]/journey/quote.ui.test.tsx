@@ -397,7 +397,7 @@ describe("guided quote acceptance", () => {
     const labels = [...document.querySelectorAll(".quote-summary dt")].map(node => node.textContent)
     expect(labels).toEqual([
       "Service",
-      "Quote",
+      "Quotation number",
       "Total customer price",
       "Expiry",
       "Quotation status",
@@ -417,7 +417,7 @@ describe("guided quote acceptance", () => {
     const exclusions = details?.querySelectorAll("p.preserve-lines")[1]
     expect(scope).toHaveClass("preserve-lines")
     expect(exclusions).toHaveClass("preserve-lines")
-    const quoteRow = [...document.querySelectorAll(".quote-summary > div")].find(node => node.querySelector("dt")?.textContent === "Quote")
+    const quoteRow = [...document.querySelectorAll(".quote-summary > div")].find(node => node.querySelector("dt")?.textContent === "Quotation number")
     expect(quoteRow).not.toHaveClass("quote-summary-block")
     expect(quoteRow?.parentElement).toHaveClass("quote-summary")
     const css = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8")
@@ -527,7 +527,7 @@ describe("guided quote acceptance", () => {
     expect(frame?.getAttribute("srcdoc")).not.toContain("https://customer.example/action/")
     expect(screen.queryByRole("button", { name: "Review and accept quotation" })).toBeNull()
     expect(screen.getByText("More Options")).toBeTruthy()
-    expect(screen.getByText("Your ProfileRelaunch quotation Q-100 — Case PR-1")).toBeTruthy()
+    expect(screen.getByText("Your quotation is ready — Case PR-1")).toBeTruthy()
     expect(screen.getAllByText(/£99\.00/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Recover the suspended profile/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/No Google submission from this quote/).length).toBeGreaterThan(0)

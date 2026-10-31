@@ -109,7 +109,7 @@ export function GuardView({
           <ul className="document-list">
             {documents.map(document => (
               <li key={document.selector}>
-                <p>{document.kind === "credit_note" ? "Credit note" : "Receipt"} {document.reference}</p>
+                <p>{document.kind === "credit_note" ? "Credit note" : "Receipt number:"} {document.reference}</p>
                 <p>{guardMoney(document.amountMinor, document.currency)} · {guardWhen(document.issuedAt)}</p>
                 <p className={`portal-actions ${styles.links}`}>
                   <a className="portal-button" href={`/portal/guard/document?selector=${document.selector}`}>View {document.reference}</a>

@@ -518,7 +518,7 @@ function summaryRows(
   const version = detail.currentVersion
   const rows: Array<{ label: string; value: string }> = [
     { label: "Service", value: version.serviceName || serviceLabel(version.serviceCode) },
-    { label: "Quote", value: `${detail.publicRef} · version ${version.versionNumber}` },
+    { label: "Quotation number", value: `${detail.publicRef} · version ${version.versionNumber}` },
     { label: "Standard amount", value: formatGbp(version.standardAmountMinor) },
     { label: "Discount", value: formatGbp(version.discountAmountMinor) },
     { label: "Quoted amount", value: `${formatGbp(version.totalAmountMinor)} ${version.currency}` },

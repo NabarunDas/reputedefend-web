@@ -28,7 +28,7 @@ const vagueTitles = new Set([
 
 const actionUrlInText = /https:\/\/[A-Za-z0-9.-]+\/action\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
 
-export const evidenceRequestSubject = "Supporting documents for your ProfileRelaunch enquiry — {case_ref}"
+export const evidenceRequestSubject = "Documents needed — Case {case_ref}"
 
 export function evidenceDocumentItems(title: string): string[] | null {
   const items = title.split("; ").map(item => item.trim()).filter(Boolean)

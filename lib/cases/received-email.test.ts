@@ -71,10 +71,10 @@ function expectCustomerReceiptContent(
 describe("case received customer email", () => {
   it("keeps the searchable subject format", () => {
     expect(caseReceivedCustomerSubject("PROFILE_RECOVERY", "PR-26-7K4M2Q")).toBe(
-      "[ProfileRelaunch] We've received your Profile Recovery case — PR-26-7K4M2Q",
+      "[ProfileRelaunch] Your enquiry has been received — Case PR-26-7K4M2Q",
     )
     expect(caseReceivedCustomerSubject("REVIEW_PROTECTION", "RV-26-X8P3LM")).toBe(
-      "[ProfileRelaunch] We've received your Review Protection case — RV-26-X8P3LM",
+      "[ProfileRelaunch] Your enquiry has been received — Case RV-26-X8P3LM",
     )
   })
 
@@ -115,7 +115,7 @@ describe("case received customer email", () => {
       undefined,
       url,
     )
-    expect(message.subject).toBe("[ProfileRelaunch] We've received your Profile Recovery case — PR-26-7K4M2Q")
+    expect(message.subject).toBe("[ProfileRelaunch] Your enquiry has been received — Case PR-26-7K4M2Q")
     for (const body of [message.text, message.html]) {
       expect(body.match(new RegExp(EMAIL_CONFIRM_BUTTON, "g"))).toHaveLength(1)
       expect(body).toContain(EMAIL_CONFIRM_HEADING)
@@ -159,7 +159,7 @@ describe("case received customer email", () => {
       "enquiries@reputedefend.com",
     )
     expect(message.subject).toBe(
-      "[ProfileRelaunch] We've received your Review Protection case — RV-26-X8P3LM",
+      "[ProfileRelaunch] Your enquiry has been received — Case RV-26-X8P3LM",
     )
     expectCustomerReceiptContent(
       message.text,
@@ -198,7 +198,7 @@ describe("case received customer email", () => {
     )
     expect(message.text).toContain("Hi Nabarun,")
     expect(message.text).toContain("telling us about abc")
-    expect(message.text).toMatch(/Your case reference\n\nPR-26-EQMVKZ\n\n/)
+    expect(message.text).toMatch(/Case reference\n\nPR-26-EQMVKZ\n\n/)
     expect(message.html).toContain("PR-26-EQMVKZ")
     expect(message.html).not.toContain("pr-26-eqmvkz")
   })

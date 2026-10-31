@@ -28,7 +28,7 @@ describe("managed customer email", () => {
   it("records a submission without saying Google has decided", () => {
     const rendered = renderManagedNotice({ ...shared, variant: "submitted" })
     expect(rendered).not.toBeNull()
-    expect(rendered!.subject).toBe("We have submitted your Managed Profile Recovery case — PR-26-MANAGE")
+    expect(rendered!.subject).toBe("We have submitted your Managed Profile Recovery — Case PR-26-MANAGE")
     expect(rendered!.text).toContain(managedSubmittedSentence)
     expect(rendered!.text).toContain(managedOpenCaseSentence)
     expect(rendered!.text).toContain(managedCaseButton)
@@ -44,7 +44,7 @@ describe("managed customer email", () => {
   it("describes a later submission as a further update without claiming Google asked for it", () => {
     const rendered = renderManagedNotice({ ...shared, variant: "follow_up" })
     expect(rendered).not.toBeNull()
-    expect(rendered!.subject).toBe("We have sent Google a further update — PR-26-MANAGE")
+    expect(rendered!.subject).toBe("We have sent Google a further update — Case PR-26-MANAGE")
     expect(rendered!.text).toContain(managedFollowUpSentence)
     expect(rendered!.text).not.toMatch(/they asked|requested more information/i)
     expect(rendered!.text).toContain(managedOpenCaseSentence)

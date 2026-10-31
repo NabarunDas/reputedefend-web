@@ -95,7 +95,8 @@ describe("quotation acceptance payment request", () => {
     expect(queued[1].p_payload).not.toHaveProperty("replyTo")
     expect(queued[1].p_payload).not.toHaveProperty("sendEnabled")
     const payload = queued[1].p_payload as { subject: string; bodyText: string; bodyHtml: string }
-    expect(payload.subject).toBe("Pay for your ProfileRelaunch Guided Relaunch — SO-26-ABCDEF")
+    expect(payload.subject).toBe("Your secure payment link — Case PR-26-ABCDEF")
+    expect(payload.bodyText).toContain("Service order: SO-26-ABCDEF")
     expect(payload.bodyText).toContain("Business: North Bakery")
     expect(payload.bodyText).toContain("Case reference: PR-26-ABCDEF")
     expect(payload.bodyText).toContain("Amount: £99.00 GBP")

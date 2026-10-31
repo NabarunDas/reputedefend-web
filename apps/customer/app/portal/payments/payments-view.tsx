@@ -257,7 +257,7 @@ function OrderSection({
           </div>
           {support ? <p className="payments-support">{support}</p> : null}
           {!grouped && item.locationName ? <p className="payments-support">{item.locationName}</p> : null}
-          {grouped ? <p className="payments-order-ref">Order {order.orderRef}</p> : null}
+          {grouped ? <p className="payments-order-ref">Service order: {order.orderRef}</p> : null}
         </div>
         <div className="payments-figure">
           <p className={styles.moneyCaption}>{figure.caption}</p>
@@ -303,7 +303,7 @@ function OrderSection({
       {receiptAbsence(order) ? <p className="payments-support">{receiptAbsence(order)}</p> : null}
       <details className="portal-more">
         <summary>Payment details</summary>
-        <p>Order {order.orderRef}</p>
+        <p>Service order: {order.orderRef}</p>
         {figure.kind !== "total" && !orderTotalVisible ? <p>Order total {moneyLabel(order.amountMinor, order.currency)}</p> : null}
         {order.paymentModel === "UPFRONT" ? <p>One-time payment</p> : null}
         <p>{priceNote}</p>

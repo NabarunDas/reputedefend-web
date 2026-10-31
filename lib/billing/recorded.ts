@@ -131,9 +131,9 @@ export function paymentReceiptDocument(input: {
     ])
     const priced = priceLines(input.serviceName, detail, input.amountMinor, input.taxBehaviour, input.taxAmountMinor, input.price ?? undefined)
     const details: BillingDetailInput[] = [
-      { label: "Receipt", value: input.reference },
-      { label: "Order", value: input.orderReference ?? "" },
-      { label: "Case", value: input.caseReference ?? "" },
+      { label: "Receipt number", value: input.reference },
+      { label: "Service order", value: input.orderReference ?? "" },
+      { label: "Case reference", value: input.caseReference ?? "" },
       { label: input.paymentSettled === false ? "Recorded" : "Payment date", value: billingDateTimeLabel(input.issuedOn) },
       { label: "Payment method", value: input.paymentMethod ?? "" },
       { label: "Billing period", value: period ?? "" },
@@ -198,9 +198,9 @@ export function quotationDocument(input: {
     taxBehaviour: input.taxBehaviour,
     totalMinor: input.totalMinor,
     details: [
-      { label: "Quotation", value: input.reference },
-      { label: "Case", value: input.caseReference ?? "" },
-      { label: "Order", value: input.orderReference ?? "" },
+      { label: "Quotation number", value: input.reference },
+      { label: "Case reference", value: input.caseReference ?? "" },
+      { label: "Service order", value: input.orderReference ?? "" },
       { label: "Valid until", value: input.validUntil ? billingDateTimeLabel(input.validUntil) : "" },
     ],
   })
@@ -236,9 +236,9 @@ export function invoiceDocument(input: {
     taxBehaviour: priced.taxMinor > 0 ? input.taxBehaviour : "NOT_APPLICABLE",
     totalMinor: input.amountMinor,
     details: [
-      { label: "Invoice", value: input.reference },
-      { label: "Order", value: input.orderReference ?? "" },
-      { label: "Case", value: input.caseReference ?? "" },
+      { label: "Invoice number", value: input.reference },
+      { label: "Service order", value: input.orderReference ?? "" },
+      { label: "Case reference", value: input.caseReference ?? "" },
     ],
   })
 }
@@ -278,9 +278,9 @@ export function creditNoteDocument(input: {
     totalMinor: input.amountMinor,
     details: [
       { label: "Credit note", value: input.reference },
-      { label: "Original receipt", value: customerSafeReference(input.originalReference) ?? "" },
-      { label: "Order", value: input.orderReference ?? "" },
-      { label: "Case", value: input.caseReference ?? "" },
+      { label: "Original receipt number", value: customerSafeReference(input.originalReference) ?? "" },
+      { label: "Service order", value: input.orderReference ?? "" },
+      { label: "Case reference", value: input.caseReference ?? "" },
       { label: "Credit date", value: billingDateTimeLabel(input.issuedOn) },
       { label: "Billing period", value: period ?? "" },
     ],

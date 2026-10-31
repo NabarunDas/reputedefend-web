@@ -1,16 +1,18 @@
-import { brandName } from "../brand"
 import { customerPriceBoundary } from "../pricing"
 import {
   customerEmailSecurityNote,
   renderCustomerEmail,
   type CustomerEmailBlock,
 } from "./customer-message"
+import { customerCaseSubject, receiptNumberLine, serviceOrderLine } from "./customer-reference"
 import { quoteMoneyLabel } from "./quotation-offer"
 import { validReplyMailbox } from "./reply-mailbox"
 
 const caseRefPattern = /^(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/
 const orderRefPattern = /^SO-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/
+const receiptRefPattern = /^RC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/
 const originPattern = /^https:\/\/[A-Za-z0-9.-]+$/
+const paymentConfirmationReply = "If you have a question about this payment, reply to this email and keep the case reference in the subject."
 
 export const paymentConfirmationButton = "View your receipt"
 export const packReadyButton = "View your completed pack"
@@ -55,6 +57,7 @@ export function renderPaymentConfirmation(input: {
   serviceName: string
   orderRef: string
   caseRef: string
+  receiptRef: string
   amountMinor: number
   currency: string
   origin: string
@@ -62,19 +65,22 @@ export function renderPaymentConfirmation(input: {
 }): { subject: string; html: string; text: string; pageUrl: string } | null {
   const ready = sharedReady(input)
   const orderRef = input.orderRef.trim()
+  const receiptRef = input.receiptRef.trim()
   const pageUrl = portalCasePage(input.origin, input.caseRef, "payments")
   const replyTo = validReplyMailbox(input.replyTo)
-  if (!ready || !pageUrl || !orderRefPattern.test(orderRef) || !replyTo) return null
-  const subject = `Payment received for your ${brandName} ${ready.serviceName} — ${ready.caseRef} — ${orderRef}`
+  if (!ready || !pageUrl || !orderRefPattern.test(orderRef) || !receiptRefPattern.test(receiptRef) || !replyTo) return null
+  const subject = customerCaseSubject("Payment received", ready.caseRef)
   const blocks: CustomerEmailBlock[] = [
     { type: "paragraph", text: "Hello," },
-    { type: "paragraph", text: `We have received payment for ${ready.serviceName} order ${orderRef}.` },
+    { type: "paragraph", text: `We have received payment for your ${ready.serviceName} service.` },
+    { type: "paragraph", text: serviceOrderLine(orderRef) },
+    { type: "paragraph", text: receiptNumberLine(receiptRef) },
     { type: "paragraph", text: `Amount received: ${ready.amountLabel}` },
     { type: "paragraph", text: customerPriceBoundary },
     { type: "paragraph", text: "Your receipt is on the secure payments page. Sign in there to view it. This email does not contain card details." },
     { type: "button", label: paymentConfirmationButton, url: pageUrl },
     { type: "paragraph", text: "ProfileRelaunch will now prepare your submission materials. You submit the finished pack to Google yourself." },
-    { type: "paragraph", text: "If you have a question about this payment, reply to this email and keep the order reference in the subject." },
+    { type: "paragraph", text: paymentConfirmationReply },
   ]
   const rendered = renderCustomerEmail({ title: "Payment received", blocks, caseRef: ready.caseRef })
   if (!rendered || rendered.text.includes("#t=") || rendered.html.includes("#t=") || rendered.text.includes("/action/") || rendered.html.includes("/action/")) return null
@@ -96,7 +102,7 @@ export function renderPackReady(input: {
   const pageUrl = portalCasePage(input.origin, input.caseRef, "documents")
   const replyTo = validReplyMailbox(input.replyTo)
   if (!ready || !pageUrl || !replyTo) return null
-  const subject = `Your ${ready.serviceName} submission pack is ready — ${ready.caseRef}`
+  const subject = customerCaseSubject("Your document pack is ready", ready.caseRef)
   const blocks: CustomerEmailBlock[] = [
     { type: "paragraph", text: "Hello," },
     { type: "paragraph", text: `Your ${ready.serviceName} submission pack for case ${ready.caseRef} is ready in the Customer Portal.` },
@@ -128,7 +134,7 @@ export function renderGuidedCompletion(input: {
   const pageUrl = portalCasePage(input.origin, input.caseRef, "documents")
   const replyTo = validReplyMailbox(input.replyTo)
   if (!ready || !pageUrl || !replyTo) return null
-  const subject = `Your ${ready.serviceName} preparation is complete — ${ready.caseRef}`
+  const subject = customerCaseSubject("Your case has been completed", ready.caseRef)
   const blocks: CustomerEmailBlock[] = [
     { type: "paragraph", text: "Hello," },
     { type: "paragraph", text: `Your ${ready.serviceName} preparation for case ${ready.caseRef} is complete. The completed statement, supporting evidence and submission instructions are in the Customer Portal.` },

@@ -1,15 +1,15 @@
-import { brandName } from "../brand"
 import { customerPriceBoundary } from "../pricing"
 import {
   customerEmailSecurityNote,
   renderCustomerEmail,
   type CustomerEmailBlock,
 } from "./customer-message"
+import { customerCaseSubject, serviceOrderLine } from "./customer-reference"
 import { quoteMoneyLabel } from "./quotation-offer"
 import { validReplyMailbox } from "./reply-mailbox"
 
 export const paymentRequestOpeningSentence = "Opening this email does not start a card payment."
-export const paymentRequestReplySentence = "If you have a question about this payment, simply reply to this email and keep the order reference in the subject."
+export const paymentRequestReplySentence = "If you have a question about this payment, simply reply to this email and keep the case reference in the subject."
 
 const caseRefPattern = /^(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/
 const orderRefPattern = /^SO-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/
@@ -66,11 +66,12 @@ export function renderPaymentRequest(input: {
   if (!serviceName || input.serviceName.trim() !== serviceName || !buttonLabel || !amountLabel || !paymentsUrl || !replyTo) return null
   if (!orderRefPattern.test(orderRef) || !caseRefPattern.test(caseRef)) return null
   if (input.currency !== "GBP") return null
-  const subject = `Pay for your ${brandName} ${serviceName} — ${orderRef}`
+  const subject = customerCaseSubject("Your secure payment link", caseRef)
   const businessLine = paymentRequestBusinessLine(input.businessName)
   const blocks: CustomerEmailBlock[] = [
     { type: "paragraph", text: "Hello," },
-    { type: "paragraph", text: `Your ${serviceName} order ${orderRef} is accepted.` },
+    { type: "paragraph", text: `Your ${serviceName} service is accepted.` },
+    { type: "paragraph", text: serviceOrderLine(orderRef) },
     ...(businessLine ? [{ type: "paragraph" as const, text: businessLine }] : []),
     { type: "paragraph", text: `Amount: ${amountLabel}` },
     { type: "paragraph", text: customerPriceBoundary },

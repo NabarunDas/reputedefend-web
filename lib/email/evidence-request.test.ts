@@ -33,7 +33,7 @@ describe("evidence request email", () => {
       documents: ["Shop licence", "Proof of operating location"],
       uploadUrl: upload,
     })
-    expect(one?.subject).toBe("Supporting documents for your ProfileRelaunch enquiry — PR-1042")
+    expect(one?.subject).toBe("Documents needed — Case PR-1042")
     for (const message of [one, several]) {
       expect(message?.html).toContain("<ul")
       expect(message?.html).toContain(customerEmailLogoUrl)
@@ -157,7 +157,8 @@ describe("evidence request email", () => {
   it("matches the unapplied version 3 draft and does not edit version 2", () => {
     const sql = readFileSync(proposalPath, "utf8")
     expect(proposalPath.pathname).not.toContain("/supabase/migrations/")
-    expect(sql).toContain(evidenceRequestSubject)
+    expect(sql).toContain("Supporting documents for your ProfileRelaunch enquiry — {case_ref}")
+    expect(evidenceRequestSubject).toBe("Documents needed — Case {case_ref}")
     const templateBody = sqlBodies(sql).find(body => body.includes("{specific_document}"))
     expect(templateBody).toContain("{upload_url}")
     expect(templateBody).toContain("{case_ref}")

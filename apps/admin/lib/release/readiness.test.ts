@@ -152,11 +152,13 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations()).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261031150000_customer_case_reference_subjects_v1.sql",
+    ])
     expect(appliedMigrationHead.version).toBe("20261031140000")
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261031140000_guided_customer_outcome_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261031150000_customer_case_reference_subjects_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -171,6 +173,8 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("20261030120000 guided_pack_stage_sync_v1, 20261030130000 guided_assessment_pack_basis_v1 and 20261030200000 guided_payment_request_after_acceptance_v1 are already applied on DEV")
     expect(supabase?.requirement).toContain("Do not replay 20261030200000")
     expect(supabase?.requirement).toContain("The repository applied-file head is 20261031140000")
+    expect(supabase?.requirement).toContain("unapplied 20261031150000 customer_case_reference_subjects_v1")
+    expect(supabase?.requirement).toContain("Do not apply it without a separate approval, and do not apply it to Production.")
     expect(supabase?.requirement).not.toContain("unapplied 20261031120000")
     expect(supabase?.requirement).not.toContain("unapplied 20261031140000")
     expect(supabase?.requirement).not.toContain("unapplied 20261030200000")

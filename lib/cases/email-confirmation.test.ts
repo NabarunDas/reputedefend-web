@@ -116,7 +116,7 @@ describe("case receipt email confirmation", () => {
       caseType: "PROFILE_RECOVERY",
       url,
     })
-    expect(content?.subject).toBe("[ProfileRelaunch] Confirm your email for your Profile Recovery case — PR-26-7K4M2Q")
+    expect(content?.subject).toBe("[ProfileRelaunch] Confirm your email — Case PR-26-7K4M2Q")
     expect(content?.text.match(/Confirm my email address/g)).toHaveLength(1)
     expect(content?.html.match(/Confirm my email address/g)).toHaveLength(1)
     expect(content?.text).toContain("Your assessment is already saved.")

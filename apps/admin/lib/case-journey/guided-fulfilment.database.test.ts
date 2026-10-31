@@ -418,11 +418,13 @@ describe("guided fulfilment handover", () => {
     expect(await count("select count(*)::int as n from public.payment_receipts")).toBe(before + 1)
     expect(await count("select count(*)::int as n from public.payment_receipts where obligation_id = $1", [payment.obligationId])).toBe(1)
     const context = await rpc<Json>("payment_confirmation_context_v1", ["pi_fulf99"])
+    const receiptRef = (await rows<{ public_ref: string }>("select public_ref from public.payment_receipts where obligation_id = $1", [payment.obligationId]))[0].public_ref
     expect(context).toMatchObject({
       status: "applicable",
       alreadyQueued: false,
       caseRef: reference,
       orderRef: payment.order.public_ref,
+      receiptRef,
       amountMinor: 9900,
       currency: "GBP",
       serviceCode: "GUIDED_RELAUNCH",
@@ -433,6 +435,7 @@ describe("guided fulfilment handover", () => {
       serviceName: "Guided Relaunch",
       orderRef: payment.order.public_ref,
       caseRef: reference,
+      receiptRef,
       amountMinor: 9900,
       currency: "GBP",
       origin,
@@ -894,11 +897,13 @@ describe("guided fulfilment handover", () => {
     expect((await rows<{ reason: string | null }>("select admin_private.guided_settlement_reason_v1($1) as reason", [caseId]))[0].reason).toBeNull()
     expect((await rows<{ amount_minor: number }>("select amount_minor from public.service_orders where id = $1", [order.id]))[0].amount_minor).toBe(9900)
 
+    const confirmationReceipt = (await rows<{ public_ref: string }>("select public_ref from public.payment_receipts where obligation_id = $1", [payment.obligationId]))[0].public_ref
     const confirmation = renderPaymentConfirmation({
       serviceCode: "GUIDED_RELAUNCH",
       serviceName: "Guided Relaunch",
       orderRef: order.public_ref,
       caseRef: reference,
+      receiptRef: confirmationReceipt,
       amountMinor: 9900,
       currency: "GBP",
       origin,

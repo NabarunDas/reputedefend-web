@@ -359,11 +359,12 @@ export function emailConfirmationResendContent(input: {
   const url = usableConfirmationUrl(input.url)
   const service = serviceLabel(input.caseType)
   if (!url || !service || !input.publicRef) return null
-  const subject = `[ProfileRelaunch] Confirm your email for your ${service} case — ${input.publicRef}`
+  const subject = `[ProfileRelaunch] Confirm your email — Case ${input.publicRef}`
   const text = [
     EMAIL_CONFIRM_HEADING,
     EMAIL_CONFIRM_BODY,
-    `Your case reference\n\n${input.publicRef}`,
+    `This confirmation is for your ${service} case.`,
+    `Case reference\n\n${input.publicRef}`,
     `${EMAIL_CONFIRM_BUTTON}\n${url}`,
     EMAIL_CONFIRM_SAVED,
     "Security reminder\n\nProfileRelaunch will never ask you for your Google password, one-time password, verification code or security answers.",
@@ -376,7 +377,8 @@ export function emailConfirmationResendContent(input: {
     <tr><td style="padding:28px 24px;font-size:16px;line-height:1.6;">
       <h1 style="margin:0 0 12px;font-size:22px;line-height:1.35;">${escapeHtml(EMAIL_CONFIRM_HEADING)}</h1>
       <p style="margin:0 0 16px;">${escapeHtml(EMAIL_CONFIRM_BODY)}</p>
-      <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#0a6e3c;">Your case reference</p>
+      <p style="margin:0 0 16px;">This confirmation is for your ${escapeHtml(service)} case.</p>
+      <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#0a6e3c;">Case reference</p>
       <p style="margin:0 0 20px;font-size:22px;font-weight:700;letter-spacing:0.06em;">${escapeHtml(input.publicRef)}</p>
       <p style="margin:0 0 20px;"><a href="${escapeHtml(url)}" style="display:inline-block;background:#0a6e3c;color:#ffffff;text-decoration:none;font-weight:700;font-size:16px;line-height:1.2;padding:14px 22px;border-radius:6px;">${escapeHtml(EMAIL_CONFIRM_BUTTON)}</a></p>
       <p style="margin:0 0 16px;">${escapeHtml(EMAIL_CONFIRM_SAVED)}</p>

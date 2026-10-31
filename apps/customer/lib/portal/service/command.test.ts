@@ -202,7 +202,8 @@ describe("portal service command", () => {
     expect(queued[1].p_payload).not.toHaveProperty("sendEnabled")
     const payload = queued[1].p_payload as { subject: string; bodyText: string; bodyHtml: string }
     const paymentsUrl = `${origin}/portal/cases/PR-26-ABCDEF/payments`
-    expect(payload.subject).toContain("Pay for your ProfileRelaunch Guided Relaunch — SO-26-ABCDEF")
+    expect(payload.subject).toBe("Your secure payment link — Case PR-26-ABCDEF")
+    expect(payload.bodyText).toContain("Service order: SO-26-ABCDEF")
     expect(payload.bodyText).toContain("Business: North Bakery")
     expect(payload.bodyText).toContain("Pay £99.00 securely")
     expect(payload.bodyText).toContain("£99.00 GBP")

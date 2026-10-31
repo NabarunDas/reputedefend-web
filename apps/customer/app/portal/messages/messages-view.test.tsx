@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import React from "react"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
@@ -45,6 +47,27 @@ afterEach(() => {
 })
 
 describe("messages page", () => {
+  it("gives the case accordion a neutral hover without restyling primary buttons", () => {
+    const css = readFileSync(join(process.cwd(), "app/globals.css"), "utf8")
+    expect(css).toMatch(/button:hover:not\(:disabled\) \{\s*background: var\(--green-dark\);\s*transform: translateY\(-1px\);\s*box-shadow: var\(--shadow-button\);\s*\}/)
+    const rest = css.match(/button\.message-group-toggle \{[^}]+\}/)?.[0] ?? ""
+    expect(rest).toContain("background: var(--surface)")
+    expect(rest).toContain("color: var(--ink)")
+    expect(rest).toContain("border-radius: var(--radius-md)")
+    expect(rest).toContain("box-shadow: none")
+    expect(rest).toContain("transform: none")
+    const hover = css.match(/button\.message-group-toggle:hover:not\(:disabled\) \{[^}]+\}/)?.[0] ?? ""
+    expect(hover).toContain("background: var(--paper)")
+    expect(hover).toContain("color: var(--ink)")
+    expect(hover).toContain("box-shadow: none")
+    expect(hover).toContain("transform: none")
+    expect(hover).not.toMatch(/green|translateY|shadow-button/)
+    expect(css).toContain("button.message-group-toggle:focus-visible")
+    expect(css).toContain("button.message-group-toggle .message-group-title")
+    expect(css).toContain("button.message-group-toggle .message-group-business")
+    expect(css).toContain("button.message-group-toggle .message-group-meta")
+  })
+
   it("lists one expanded case without repeating the case on the message row", () => {
     render(<PortalLayout><MessagesView portalContext={portalContext} page={page([thread()])} earlier={false} /></PortalLayout>)
     expect(screen.getByRole("heading", { level: 1, name: "Messages" })).toBeTruthy()

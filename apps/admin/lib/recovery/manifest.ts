@@ -1284,15 +1284,21 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Commercial onboarding", probe: "public.admin_commercial_command_v1" },
   },
   {
-    // Invited Customer Portal mailbox proof. Not applied to DEV.
-    // Do not apply it to Production and do not send an invitation from this file.
-    // Existing verification rows stay ADMIN_RECORDED. containsDataChange stays
-    // false. safeToReplay stays false. send_count stays 0.
+    // Invited Customer Portal mailbox proof. Verified DEV ledger head.
+    // Applied once to profilerelaunch-dev (rmzozuiamjcclvtgutgd) from merged
+    // commit 4c251f9de7c73b8bd8334ddfd3a1c14da7cef982. Do not replay it and do
+    // not apply it to Production. Schema only: containsDataChange stays false.
+    // Existing contact verifications remain 4, all ADMIN_RECORDED. MAILBOX_OTP
+    // records are 0. Invitations are 0. Commercial subscriptions are 0. The
+    // five new public invited OTP functions are service-role-only.
+    // safeToReplay stays false. send_count stays 0. The ledger statement is
+    // one statement of 33,172 characters. SHA-256
+    // 807ab187aa5044a9d4cf0e9c64b1bf1ea0b669f57ffb763e73eb40ad273ead67.
     version: "20261101190000",
     filename: "20261101190000_customer_invited_mailbox_otp_v1.sql",
     step: "Invited Customer Portal mailbox proof",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Invited mailbox proof", probe: "public.customer_portal_finish_invited_otp_v1" },
@@ -1308,9 +1314,17 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261101180000`. The verified live DEV ledger contains 93 entries and ends
- * there. The onboarding file is schema only, so containsDataChange stays
- * false. Do not replay `20261101180000`. It is not applied to Production.
+ * `20261101190000`. The verified live DEV ledger contains 94 entries and ends
+ * there. The invited mailbox file is schema only, so containsDataChange stays
+ * false. Do not replay `20261101190000`. It is not applied to Production.
+ * Existing contact verifications remain 4, all ADMIN_RECORDED. MAILBOX_OTP
+ * records are 0. Invitations are 0. Commercial subscriptions are 0. The five
+ * new public invited OTP functions are service-role-only. The ledger statement
+ * is one statement of 33,172 characters. SHA-256
+ * 807ab187aa5044a9d4cf0e9c64b1bf1ea0b669f57ffb763e73eb40ad273ead67.
+ * The previous head `20261101180000` remains applied. The onboarding file is
+ * schema only, so containsDataChange stays false. Do not replay
+ * `20261101180000`. It is not applied to Production.
  * No customer, invitation, subscription, or payment rows were created. Both
  * new onboarding history tables have RLS enabled. The new Admin commands are
  * service-role-only. The ledger statement is one statement of 45,724
@@ -1337,9 +1351,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` returns
- * `20261101190000_customer_invited_mailbox_otp_v1.sql` only. That file must
- * not be applied to Production.
+ * applied and must not be replayed. `pendingMigrations()` is empty.
+ * `20261101190000` must not be replayed or applied to Production.
  * The repository chain is longer than the live ledger because it still records the
  * three foundation files that live DEV omits (issue #190).
  * Production remains on its own historical migration head `20261014170000`.

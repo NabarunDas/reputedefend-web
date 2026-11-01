@@ -1283,6 +1283,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Commercial onboarding", probe: "public.admin_commercial_command_v1" },
   },
+  {
+    // Invited Customer Portal mailbox proof. Not applied to DEV.
+    // Do not apply it to Production and do not send an invitation from this file.
+    // Existing verification rows stay ADMIN_RECORDED. containsDataChange stays
+    // false. safeToReplay stays false. send_count stays 0.
+    version: "20261101190000",
+    filename: "20261101190000_customer_invited_mailbox_otp_v1.sql",
+    step: "Invited Customer Portal mailbox proof",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Invited mailbox proof", probe: "public.customer_portal_finish_invited_otp_v1" },
+  },
 ]
 
 /**
@@ -1323,7 +1337,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` returns
+ * `20261101190000_customer_invited_mailbox_otp_v1.sql` only. That file must
+ * not be applied to Production.
  * The repository chain is longer than the live ledger because it still records the
  * three foundation files that live DEV omits (issue #190).
  * Production remains on its own historical migration head `20261014170000`.

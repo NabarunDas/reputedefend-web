@@ -37,6 +37,7 @@ function routePath(file: string, root: string) {
 
 function sample(path: string) {
   return path
+    .replace("[token]", "cd".repeat(32))
     .replace("[reference]", "PR-26-AAAAAA")
     .replace("[selector]", path.includes("/guard/") ? `gd-${"ab".repeat(32)}` : `mc-${"ab".repeat(32)}`)
 }
@@ -64,9 +65,9 @@ describe("customer portal route inventory", () => {
     const root = customerRoot.pathname
     const pages = files(new URL("app/portal/", customerRoot), "page.tsx").map(file => routePath(file, root))
     const apis = files(new URL("app/api/portal/", customerRoot), "route.ts").map(file => routePath(file, root))
-    const login = routePath(`${root}app/login/page.tsx`, root)
+    const loginPages = files(new URL("app/login/", customerRoot), "page.tsx").map(file => routePath(file, root))
     expect(pages).not.toContain("/portal/relaunch-guard")
-    expect([...pages, ...apis, login].sort()).toEqual(PORTAL_ROUTES.map(route => route.path).sort())
+    expect([...pages, ...apis, ...loginPages].sort()).toEqual(PORTAL_ROUTES.map(route => route.path).sort())
     expect(new Set(PORTAL_ROUTES.map(route => route.path)).size).toBe(PORTAL_ROUTES.length)
     for (const route of PORTAL_ROUTES) {
       expect(readFileSync(new URL(route.file, customerRoot), "utf8").length).toBeGreaterThan(0)
@@ -146,6 +147,19 @@ async function proxyOutcome(route: PortalRoute, path: string, portalCookie: stri
   const next = async (method: string, cookie = "") => (await ask(path, method, cookie)).headers.get("x-middleware-next") === "1"
   const status = async (method: string, cookie = "") => (await ask(path, method, cookie)).status
   const location = async (method: string, cookie = "") => (await ask(path, method, cookie)).headers.get("location")
+  if (route.proxyClass === "invited-login") {
+    expect(await status("GET")).toBe(303)
+    expect(await location("GET")).toBe(`${origin}/`)
+    vi.stubEnv("CUSTOMER_INVITED_LOGIN_ENABLED", "true")
+    expect(await next("GET")).toBe(true)
+    expect(await next("HEAD")).toBe(true)
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "")
+    expect(await status("GET")).toBe(303)
+    expect(await location("GET")).toBe(`${origin}/`)
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "true")
+    vi.stubEnv("CUSTOMER_INVITED_LOGIN_ENABLED", "")
+    return true
+  }
   if (route.proxyClass === "login") {
     expect(await next("GET")).toBe(true)
     expect(await next("HEAD")).toBe(true)

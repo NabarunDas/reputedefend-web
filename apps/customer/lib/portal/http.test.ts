@@ -38,7 +38,7 @@ import { POST as commandPost } from "@/app/api/action/command/route"
 import { POST as exchangePost } from "@/app/api/action/exchange/route"
 import { pendingCookie, sessionCookie } from "@/lib/config"
 import { PORTAL_LOGIN_MESSAGE, PORTAL_VERIFY_ERROR } from "@/lib/portal/email"
-import { portalPendingCookieName, portalSessionCookieName } from "@/lib/portal/config"
+import { portalInviteCookieName, portalPendingCookieName, portalSessionCookieName } from "@/lib/portal/config"
 
 const origin = "https://customer.profilerelaunch.com"
 const customerId = "22222222-2222-4222-8222-222222222222"
@@ -176,6 +176,7 @@ describe("portal login start", () => {
       expect(cookie).not.toMatch(/Domain=/i)
       expect(cookie).not.toContain("alex@example.com")
       expect(response.cookies.get(portalPendingCookieName())?.value).toMatch(/^[a-f0-9]{64}$/)
+      expect(response.cookies.get(portalInviteCookieName())?.value).toBe("")
     }
   })
 })
@@ -374,6 +375,7 @@ describe("portal sign-out", () => {
     for (const response of [first, second]) {
       expect(response.cookies.get(portalSessionCookieName())?.value).toBe("")
       expect(response.cookies.get(portalPendingCookieName())?.value).toBe("")
+      expect(response.cookies.get(portalInviteCookieName())?.value).toBe("")
     }
   })
 

@@ -9,6 +9,7 @@ const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // initial foundation entries tracked in issue #190. The synthetic chain ends
 // at the observed DEV ledger head 20261101180000. The verified live ledger
 // has 93 entries. This synthetic chain includes the three foundation files.
+// The repository tail 20261101190000 is unapplied and is not part of this remote.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
@@ -30,7 +31,8 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending).toEqual([])
+    expect(pending.map(entry => entry.filename)).toEqual(["20261101190000_customer_invited_mailbox_otp_v1.sql"])
+    expect(pending.every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261101180000",
       name: "admin_commercial_onboarding_v1",

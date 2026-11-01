@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { customerBackendConfig, customerConfig } from "@/lib/config"
-import { portalAvailable, portalCookieOptions, portalPendingCookieName, portalSessionCookieName } from "./config"
+import { invitedLoginAvailable, portalAvailable, portalCookieOptions, portalInviteCookieName, portalPendingCookieName, portalSessionCookieName } from "./config"
 import { productsHubEnabled } from "./products-hub"
 
 const origin = "https://customer.profilerelaunch.com"
@@ -80,10 +80,12 @@ describe("portal feature gate", () => {
   it("uses host-only production cookie names and development names otherwise", () => {
     expect(portalSessionCookieName()).toBe("pr-portal-dev")
     expect(portalPendingCookieName()).toBe("pr-portal-pending-dev")
+    expect(portalInviteCookieName()).toBe("pr-portal-invite-dev")
     expect(portalCookieOptions()).toEqual({ httpOnly: true, secure: false, sameSite: "strict", path: "/" })
     vi.stubEnv("NODE_ENV", "production")
     expect(portalSessionCookieName()).toBe("__Host-pr-portal")
     expect(portalPendingCookieName()).toBe("__Host-pr-portal-pending")
+    expect(portalInviteCookieName()).toBe("__Host-pr-portal-invite")
     expect(portalCookieOptions()).toEqual({ httpOnly: true, secure: true, sameSite: "strict", path: "/" })
     expect(portalCookieOptions()).not.toHaveProperty("domain")
   })
@@ -94,6 +96,7 @@ describe("portal feature gate", () => {
       "lib/portal/session.ts",
       "lib/portal/config.ts",
       "app/login/login-client.tsx",
+      "app/login/invite/[token]/invited-login-client.tsx",
       "app/portal/page.tsx",
     ]
     const source = files.map(file => readFileSync(new URL(`../../${file}`, import.meta.url), "utf8")).join("\n")
@@ -104,6 +107,22 @@ describe("portal feature gate", () => {
     expect(proxy).toContain("portalSessionFromToken")
     expect(proxy).toContain("actionSessionFromToken")
     expect(proxy).not.toMatch(/getSession\(|localStorage|@supabase\/ssr/)
+  })
+
+  it("keeps invited login closed unless its own flag is exactly true", () => {
+    customerEnv()
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "true")
+    expect(invitedLoginAvailable()).toBe(false)
+    for (const value of ["", "false", "1", "yes", "on", "TRUE", "true "]) {
+      vi.stubEnv("CUSTOMER_INVITED_LOGIN_ENABLED", value)
+      expect(invitedLoginAvailable()).toBe(false)
+      expect(portalAvailable()).toBe(true)
+    }
+    vi.stubEnv("CUSTOMER_INVITED_LOGIN_ENABLED", "true")
+    expect(invitedLoginAvailable()).toBe(true)
+    vi.stubEnv("CUSTOMER_PORTAL_ENABLED", "")
+    expect(portalAvailable()).toBe(false)
+    expect(invitedLoginAvailable()).toBe(false)
   })
 
   it("keeps My Products closed unless its own flag is exactly true", () => {

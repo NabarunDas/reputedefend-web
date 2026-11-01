@@ -13,12 +13,24 @@ export function portalAvailable() {
   return process.env.CUSTOMER_PORTAL_ENABLED === "true" && customerBackendConfig() !== null
 }
 
+/**
+ * First-time invitation login. Independent of ordinary sign-in and default
+ * off. A true value still requires the Customer Portal gate.
+ */
+export function invitedLoginAvailable() {
+  return portalAvailable() && process.env.CUSTOMER_INVITED_LOGIN_ENABLED === "true"
+}
+
 export function portalSessionCookieName() {
   return process.env.NODE_ENV === "production" ? "__Host-pr-portal" : "pr-portal-dev"
 }
 
 export function portalPendingCookieName() {
   return process.env.NODE_ENV === "production" ? "__Host-pr-portal-pending" : "pr-portal-pending-dev"
+}
+
+export function portalInviteCookieName() {
+  return process.env.NODE_ENV === "production" ? "__Host-pr-portal-invite" : "pr-portal-invite-dev"
 }
 
 export function portalCookieOptions() {

@@ -32,13 +32,13 @@
   margin-bottom: 15px;
 }
 
-/* Immersive opening, painted with a continuous edge-to-edge photographic
-   horizon. The scene and the heading are independent accessible layers. */
+/* Immersive opening. Reserve a dark, readable skyline for the real headline
+   and CTAs before the panoramic console begins; keep the two layers separate. */
 .hero {
   position: relative;
   isolation: isolate;
-  height: min(1000px, max(770px, 100svh));
-  min-height: 770px;
+  height: min(1000px, max(850px, 100svh));
+  min-height: 850px;
   background:
     radial-gradient(ellipse 49% 22% at 50% 18%, rgba(5, 72, 42, .55), transparent 100%),
     radial-gradient(ellipse 40% 45% at 2% 47%, rgba(42, 127, 81, .27), transparent 100%),
@@ -68,8 +68,8 @@
 .worldLandscape {
   position: absolute;
   inset-inline: -3%;
-  top: 36%;
-  height: 69%;
+  top: 45%;
+  height: 59%;
   overflow: hidden;
   /* No border / padding / radius: the entire landscape bleeds off-screen. */
   mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 78%, rgba(0,0,0,.93) 88%, transparent 100%);
@@ -87,7 +87,7 @@
   z-index: 2;
   width: min(970px, calc(100% - 36px));
   margin-inline: auto;
-  padding-top: clamp(125px, 17vh, 174px);
+  padding-top: clamp(112px, 12vh, 136px);
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -102,14 +102,14 @@
   font-size: .68rem;
   letter-spacing: .21em;
   font-weight: 800;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .eyebrowDot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #b9ff70; box-shadow: 0 0 14px #9bfd78; }
 .heroTitle {
   font-family: Georgia, "Times New Roman", serif;
   color: #fffdf6;
   font-weight: 400;
-  font-size: clamp(3.15rem, 5.6vw, 6.7rem);
+  font-size: clamp(3.15rem, 4.65vw, 5.2rem);
   letter-spacing: -.058em;
   line-height: .99;
   text-shadow: 0 4px 40px rgba(0,0,0,.48);
@@ -118,11 +118,11 @@
 .heroTitle span, .heroTitle em { display: block; }
 .heroTitle em { font-weight: 400; color: #c4f38e; line-height: 1.05; }
 .heroSubtitle {
-  max-width: 640px;
+  max-width: 810px;
   color: rgba(244,248,239,.84);
-  font-size: clamp(1rem, 1.35vw, 1.2rem);
-  line-height: 1.65;
-  margin: 17px 0 21px;
+  font-size: clamp(1rem, 1.17vw, 1.15rem);
+  line-height: 1.48;
+  margin: 14px 0 18px;
   text-shadow: 0 1px 15px #001c16;
 }
 .heroActions { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; }
@@ -264,13 +264,13 @@
 @media (max-width:1100px){
   .challenge{grid-template-columns:.93fr 1.15fr;gap:30px;} .callBeacon{display:none;}
   .industryGrid{grid-template-columns:repeat(3,1fr);} .benefitGrid{grid-template-columns:repeat(2,1fr);}
-  .hero {height:850px;min-height:760px;} .worldLandscape{top:40%;height:64%;}
+  .hero {height:860px;min-height:820px;} .worldLandscape{top:49%;height:55%;}
 }
 @media (max-width:760px){
   .page{--home-wrap:calc(100% - 38px);} .hero{height:790px;min-height:730px;}
-  .heroCopy{padding-top:143px;} .heroTitle{font-size:clamp(2.8rem,7.6vw,4.7rem);}
+  .heroCopy{padding-top:119px;} .heroTitle{font-size:clamp(2.8rem,7.3vw,4.5rem);}
   .heroSubtitle{max-width:540px;}
-  .worldLandscape{inset-inline:-20%;top:42%;height:62%;}
+  .worldLandscape{inset-inline:-20%;top:55%;height:49%;}
   .worldImage{object-position:center 52%;}
   .previewNote{bottom:36px;right:22px;} .heroScroll{display:none;}
   .valueRibbon{grid-template-columns:repeat(2,1fr);gap:0;padding:10px 15px;} .valueRibbon>div{border:0!important;justify-content:flex-start;padding:12px;}
@@ -281,14 +281,14 @@
   .faq{grid-template-columns:1fr;gap:18px;}.finalCta{flex-direction:column;align-items:flex-start;}
 }
 @media (max-width:520px){
-  .hero{height:770px;min-height:700px;}
-  .heroCopy{padding-top:127px;width:calc(100% - 32px);}
+  .hero{height:890px;min-height:850px;}
+  .heroCopy{padding-top:114px;width:calc(100% - 32px);}
   .heroEyebrow{font-size:.57rem;letter-spacing:.14em;}
-  .heroTitle{font-size:clamp(2.5rem,10.4vw,3.5rem);letter-spacing:-.055em;}
-  .heroSubtitle{font-size:.91rem;line-height:1.5;margin-top:19px;margin-bottom:22px;max-width:330px;}
+  .heroTitle{font-size:clamp(2.35rem,9vw,3rem);letter-spacing:-.055em;}
+  .heroSubtitle{font-size:.91rem;line-height:1.5;margin-top:14px;margin-bottom:18px;max-width:335px;}
   .heroActions{flex-direction:column;align-items:center;gap:10px;width:min(320px,100%);}
   .primaryCta,.glassCta{width:100%;min-height:49px;padding:12px 18px;font-size:.88rem;}
-  .worldLandscape{top:45%;height:60%;inset-inline:-16%;}
+  .worldLandscape{top:64%;height:40%;inset-inline:-16%;}
   .worldImage{object-position:center 53%;}
   .previewNote{font-size:10px;max-width:220px;text-align:right;bottom:25px;}
   .valueRibbon{grid-template-columns:1fr;margin-top:0;padding:11px 17px;border-radius:18px;}

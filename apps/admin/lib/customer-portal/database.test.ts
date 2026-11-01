@@ -141,7 +141,7 @@ describe("customer portal authentication migration", () => {
     for (const column of columns) byTable.set(column.table_name, [...(byTable.get(column.table_name) ?? []), column.column_name])
     expect(byTable.get("customer_portal_login_rate")).toEqual(["customer_id", "window_started_at", "send_count", "last_requested_at", "updated_at"])
     expect(byTable.get("customer_portal_login_challenges")).toEqual([
-      "pending_hash", "customer_id", "expected_email_snapshot", "requested_at", "sent_at", "attempts", "expires_at", "consumed_at",
+      "pending_hash", "customer_id", "expected_email_snapshot", "requested_at", "sent_at", "attempts", "expires_at", "consumed_at", "invitation_hash",
     ])
     expect(byTable.get("customer_portal_sessions")).toEqual([
       "token_hash", "customer_id", "auth_user_id", "email_snapshot", "authenticated_at", "created_at", "expires_at", "revoked_at", "revocation_reason", "last_activity_at",

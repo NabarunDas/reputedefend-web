@@ -26,3 +26,7 @@ export const PORTAL_VERIFY_ERROR =
 export const PORTAL_UNAVAILABLE = "Customer portal sign-in is unavailable."
 
 export const PORTAL_EMAIL_INVALID = "Enter a valid email address."
+
+export const INVITED_LOGIN_MESSAGE = "We've emailed an eight-digit sign-in code. Enter it below."
+
+export const INVITED_LOGIN_UNAVAILABLE = "This invitation can't be used. Request a new one from ProfileRelaunch if you still need access."

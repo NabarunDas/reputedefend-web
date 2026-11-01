@@ -6,7 +6,7 @@
  * route cannot ship until someone records what it is allowed to do.
  */
 
-export type PortalProxyClass = "login" | "portal-page" | "pre-auth" | "sign-out" | "session-mutation" | "session-read"
+export type PortalProxyClass = "login" | "invited-login" | "portal-page" | "pre-auth" | "sign-out" | "session-mutation" | "session-read"
 
 export type PortalRoute = {
   path: string
@@ -39,6 +39,36 @@ export const PORTAL_ROUTES: readonly PortalRoute[] = [
     authority: "No customer record. The page renders the sign-in form only when portalAvailable() is true.",
     unauthenticated: "With the gate on, the sign-in form is shown. With the gate off, the proxy redirects to / and the page itself does not render the form.",
     proxyClass: "login",
+  },
+  {
+    path: "/login/invite/[token]",
+    file: "app/login/invite/[token]/page.tsx",
+    kind: "page",
+    methods: ["GET", "HEAD"],
+    audience: "public",
+    gate: "CUSTOMER_PORTAL_ENABLED",
+    session: "none",
+    origin: "none",
+    contentType: "none",
+    effect: "read",
+    authority: "No customer record is read on GET. The form renders only when portalAvailable() and invitedLoginAvailable() are both true. The token is not shown, and neither is an email or a business. The response sends Referrer-Policy: no-referrer.",
+    unauthenticated: "Both gates on: a 64-hex invitation URL reaches the form and does not create a session. Either gate off: the proxy redirects to / and the page does not render the form.",
+    proxyClass: "invited-login",
+  },
+  {
+    path: "/login/invite/continue",
+    file: "app/login/invite/continue/page.tsx",
+    kind: "page",
+    methods: ["GET", "HEAD"],
+    audience: "public",
+    gate: "CUSTOMER_PORTAL_ENABLED",
+    session: "none",
+    origin: "none",
+    contentType: "none",
+    effect: "read",
+    authority: "No customer record is read on GET. After the code is sent, the browser drops the invitation secret from the address. This page renders the code step only when both gates are on and the httpOnly pending and invitation cookies are present. It does not show those cookies, an email, or a business.",
+    unauthenticated: "Both gates on and both cookies present: the code step is shown and does not create a session. Either gate off: the proxy redirects to /. Missing cookies: the page shows the generic unavailable message.",
+    proxyClass: "invited-login",
   },
   ...[
     ["/", "app/portal/page.tsx", "loadCustomerDashboard"],
@@ -88,6 +118,21 @@ export const PORTAL_ROUTES: readonly PortalRoute[] = [
     effect: "mutation",
     authority: "lib/portal/http.ts checks the gate, origin, and content type, then calls the existing portal login RPCs. It does not create a portal session until verify succeeds.",
     unauthenticated: "The proxy allows POST through so the handler can refuse. The handler returns 404 when the gate is off and does not call a provider.",
+    proxyClass: "pre-auth",
+  })),
+  ...["start", "resend", "verify"].map((name): PortalRoute => ({
+    path: `/api/portal/auth/invite/${name}`,
+    file: `app/api/portal/auth/invite/${name}/route.ts`,
+    kind: "api",
+    methods: ["POST"],
+    audience: "public",
+    gate: "CUSTOMER_PORTAL_ENABLED",
+    session: "none",
+    origin: "matching-origin-and-json",
+    contentType: "application/json",
+    effect: "mutation",
+    authority: "lib/portal/http.ts checks invitedLoginAvailable(), origin, and content type, then calls the invited portal OTP RPCs. A portal session is created only after invited verify succeeds. The response does not include an email, customer, or business.",
+    unauthenticated: "The proxy allows POST through so the handler can refuse. The handler returns 404 when the invited gate is off and does not call a provider.",
     proxyClass: "pre-auth",
   })),
   {

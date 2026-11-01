@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { ACTION_UNAVAILABLE, isPublicRead, privateResponseHeaders } from "./lib/access"
 import { actionSessionFromToken } from "./lib/backend"
 import { sessionCookie } from "./lib/config"
-import { portalAvailable, portalSessionCookieName } from "./lib/portal/config"
+import { invitedLoginAvailable, portalAvailable, portalSessionCookieName } from "./lib/portal/config"
 import { portalSessionFromToken } from "./lib/portal/session"
 
 function withPrivate(response: NextResponse) {
@@ -10,9 +10,14 @@ function withPrivate(response: NextResponse) {
   return response
 }
 
+/** Invitation secrets stay out of the internal path header and later logs. */
+export function customerFacingPath(pathname: string) {
+  return /^\/login\/invite\/[a-f0-9]{64}$/i.test(pathname) ? "/login/invite/[token]" : pathname
+}
+
 function proceed(request: NextRequest) {
   const headers = new Headers(request.headers)
-  headers.set("x-customer-pathname", request.nextUrl.pathname)
+  headers.set("x-customer-pathname", customerFacingPath(request.nextUrl.pathname))
   return NextResponse.next({ request: { headers } })
 }
 
@@ -33,6 +38,9 @@ export async function proxy(request: NextRequest) {
   const portalOn = portalAvailable()
   const actionPost = method === "POST" && /^\/api\/action\/(exchange|otp|verify|command)$/.test(pathname)
   const portalPreAuth = method === "POST" && /^\/api\/portal\/auth\/(start|resend|verify)$/.test(pathname)
+  const invitedPreAuth = method === "POST" && /^\/api\/portal\/auth\/invite\/(start|resend|verify)$/.test(pathname)
+  const invitedRead = (pathname === "/login/invite/continue" || /^\/login\/invite\/[a-f0-9]{64}$/.test(pathname)) && (method === "GET" || method === "HEAD")
+  const invitedSurface = pathname === "/login/invite/continue" || /^\/login\/invite\/[a-f0-9]{64}$/i.test(pathname) || pathname.startsWith("/api/portal/auth/invite/")
   const portalSignOut = method === "POST" && pathname === "/api/portal/auth/sign-out"
   const portalMutation = method === "POST" && (
     pathname === "/api/portal/auth/activity"
@@ -57,7 +65,9 @@ export async function proxy(request: NextRequest) {
   const portalApi = pathname === "/api/portal" || pathname.startsWith("/api/portal/")
 
   let response: NextResponse
-  if (isPublicRead(pathname, method) || loginRead || actionPost || portalPreAuth || portalSignOut) {
+  if (invitedRead) {
+    response = invitedLoginAvailable() ? proceed(request) : redirectTo(request, "/")
+  } else if (isPublicRead(pathname, method) || loginRead || actionPost || portalPreAuth || portalSignOut || invitedPreAuth) {
     response = proceed(request)
   } else if (portalPage) {
     const portalToken = request.cookies.get(portalSessionCookieName())?.value
@@ -79,6 +89,7 @@ export async function proxy(request: NextRequest) {
   } else {
     response = redirectTo(request, "/")
   }
+  if (invitedSurface) response.headers.set("Referrer-Policy", "no-referrer")
   return withPrivate(response)
 }
 export const config = { matcher: "/:path*" }

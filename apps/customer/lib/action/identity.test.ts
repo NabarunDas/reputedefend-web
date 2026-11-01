@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity, type CustomerAuthAdmin } from "./identity"
+import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity, ensureInvitedAuthIdentity, type CustomerAuthAdmin } from "./identity"
 
 const email = "alex@example.com"
 const userId = "66666666-6666-4666-8666-666666666666"
@@ -127,5 +127,54 @@ describe("ensureCustomerAuthIdentity", () => {
         error: null,
       }),
     }), email)).resolves.toBeNull()
+  })
+})
+
+describe("ensureInvitedAuthIdentity", () => {
+  it("creates an unconfirmed identity and does not admin-confirm it", async () => {
+    const api = admin({
+      createUser: vi.fn().mockResolvedValue({
+        data: { user: { id: userId, email, email_confirmed_at: null } },
+        error: null,
+      }),
+    })
+    await expect(ensureInvitedAuthIdentity(api, email)).resolves.toBe(userId)
+    expect(api.createUser).toHaveBeenCalledWith({ email, email_confirm: false })
+    expect(api.updateUserById).not.toHaveBeenCalled()
+  })
+
+  it("refuses a create response that is already confirmed", async () => {
+    const api = admin({
+      createUser: vi.fn().mockResolvedValue({
+        data: { user: { id: userId, email, email_confirmed_at: "2026-09-28T12:00:00.000Z" } },
+        error: null,
+      }),
+    })
+    await expect(ensureInvitedAuthIdentity(api, email)).resolves.toBeNull()
+    expect(api.updateUserById).not.toHaveBeenCalled()
+  })
+
+  it("reuses an existing unconfirmed identity without confirming it", async () => {
+    const api = admin({
+      createUser: vi.fn().mockResolvedValue({ data: { user: null }, error: { message: "User already registered" } }),
+      listUsers: vi.fn().mockResolvedValue({
+        data: { users: [{ id: userId, email, email_confirmed_at: null }] },
+        error: null,
+      }),
+    })
+    await expect(ensureInvitedAuthIdentity(api, email)).resolves.toBe(userId)
+    expect(api.updateUserById).not.toHaveBeenCalled()
+  })
+
+  it("reuses an existing confirmed identity without calling the confirm API", async () => {
+    const api = admin({
+      createUser: vi.fn().mockResolvedValue({ data: { user: null }, error: { message: "already exists" } }),
+      listUsers: vi.fn().mockResolvedValue({
+        data: { users: [{ id: userId, email, email_confirmed_at: "2026-09-18T12:00:00.000Z" }] },
+        error: null,
+      }),
+    })
+    await expect(ensureInvitedAuthIdentity(api, email)).resolves.toBe(userId)
+    expect(api.updateUserById).not.toHaveBeenCalled()
   })
 })

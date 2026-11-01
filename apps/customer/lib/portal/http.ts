@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { privateResponseHeaders } from "@/lib/access"
 import { backend, newToken, tokenHash, validToken } from "@/lib/backend"
-import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity } from "@/lib/action/identity"
+import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity, ensureInvitedAuthIdentity } from "@/lib/action/identity"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { validCustomerOtp } from "@/lib/otp"
 import {
+  INVITED_LOGIN_MESSAGE,
+  INVITED_LOGIN_UNAVAILABLE,
   PORTAL_EMAIL_INVALID,
   PORTAL_LOGIN_MESSAGE,
   PORTAL_UNAVAILABLE,
@@ -15,8 +17,10 @@ import {
   PORTAL_IDLE_SECONDS,
   PORTAL_PENDING_SECONDS,
   PORTAL_SESSION_SECONDS,
+  invitedLoginAvailable,
   portalAvailable,
   portalCookieOptions,
+  portalInviteCookieName,
   portalPendingCookieName,
   portalSessionCookieName,
 } from "./config"
@@ -84,7 +88,9 @@ function exactKeys(body: Record<string, unknown>, allowed: string[]) {
 }
 
 function withPending(response: NextResponse, pending: string) {
-  response.cookies.set(portalPendingCookieName(), pending, { ...portalCookieOptions(), maxAge: PORTAL_PENDING_SECONDS })
+  const options = portalCookieOptions()
+  response.cookies.set(portalPendingCookieName(), pending, { ...options, maxAge: PORTAL_PENDING_SECONDS })
+  response.cookies.set(portalInviteCookieName(), "", { ...options, maxAge: 0 })
   return response
 }
 
@@ -92,18 +98,39 @@ function clearPortalCookies(response: NextResponse) {
   const options = portalCookieOptions()
   response.cookies.set(portalSessionCookieName(), "", { ...options, maxAge: 0 })
   response.cookies.set(portalPendingCookieName(), "", { ...options, maxAge: 0 })
+  response.cookies.set(portalInviteCookieName(), "", { ...options, maxAge: 0 })
   return response
 }
 
 type LoginStart = { status?: string; email?: string; customerId?: string }
 
-async function sendTrustedOtp(email: string, pendingHash: string) {
-  if (!email || email.toLowerCase() === CUSTOMER_ADMIN_EMAIL) return
+const invitedResponseHeaders = {
+  ...privateResponseHeaders,
+  "Referrer-Policy": "no-referrer",
+} as const
+
+const invitedJson = (body: unknown, status: number) =>
+  NextResponse.json(body, { status, headers: invitedResponseHeaders })
+
+async function sendTrustedOtp(email: string, pendingHash: string, confirmRpc = "customer_portal_confirm_otp_sent_v1", invitationHash = "") {
+  if (!email || email.toLowerCase() === CUSTOMER_ADMIN_EMAIL) return false
   const service = backend()
-  if (!await ensureCustomerAuthIdentity(service.database.auth.admin, email)) return
+  const invited = confirmRpc !== "customer_portal_confirm_otp_sent_v1"
+  const identity = invited
+    ? await ensureInvitedAuthIdentity(service.database.auth.admin, email)
+    : await ensureCustomerAuthIdentity(service.database.auth.admin, email)
+  if (!identity) return false
   const { error } = await service.identity.auth.signInWithOtp({ email, options: { shouldCreateUser: false } })
-  if (error) return
-  await service.rpc("customer_portal_confirm_otp_sent_v1", { p_pending_hash: pendingHash })
+  if (error) return false
+  if (confirmRpc === "customer_portal_confirm_otp_sent_v1") {
+    await service.rpc(confirmRpc, { p_pending_hash: pendingHash })
+    return true
+  }
+  const confirmed = await service.rpc<{ status?: string }>(confirmRpc, {
+    p_pending_hash: pendingHash,
+    p_invitation_hash: invitationHash,
+  })
+  return confirmed?.status === "ok"
 }
 
 export async function startLogin(request: NextRequest) {
@@ -179,6 +206,112 @@ export async function verifyLogin(request: NextRequest) {
     response.cookies.set(portalPendingCookieName(), "", { ...portalCookieOptions(), maxAge: 0 })
     return response
   } catch { return verifyDenied() }
+}
+
+const invitedUnavailable = () => invitedJson({ message: INVITED_LOGIN_UNAVAILABLE }, 401)
+
+const invitedAccepted = () => invitedJson({ message: INVITED_LOGIN_MESSAGE }, 200)
+
+const invitedClosed = (http = 401) => invitedJson({ message: PORTAL_UNAVAILABLE }, http)
+
+const invitedVerifyDenied = () => invitedJson({ message: PORTAL_VERIFY_ERROR }, 401)
+
+function withInvite(response: NextResponse, pending: string, invitationHash: string) {
+  const options = portalCookieOptions()
+  response.cookies.set(portalPendingCookieName(), pending, { ...options, maxAge: PORTAL_PENDING_SECONDS })
+  response.cookies.set(portalInviteCookieName(), invitationHash, { ...options, maxAge: PORTAL_PENDING_SECONDS })
+  return response
+}
+
+function invitedCookies(request: NextRequest) {
+  const pending = request.cookies.get(portalPendingCookieName())?.value
+  const invitationHash = request.cookies.get(portalInviteCookieName())?.value
+  if (!validToken(pending) || !validToken(invitationHash)) return null
+  return { pending, invitationHash }
+}
+
+/** Invitation entrance. The response never includes an email, customer, or business. */
+export async function startInvitedLogin(request: NextRequest) {
+  if (!invitedLoginAvailable()) return invitedClosed(404)
+  if (!originOk(request) || !jsonRequest(request)) return invitedClosed()
+  const body = await readJson(request, 2048)
+  const token = typeof body?.token === "string" ? body.token : undefined
+  if (!body || !exactKeys(body, ["token"]) || !validToken(token)) return invitedUnavailable()
+  const pending = newToken()
+  const invitationHash = tokenHash(token)
+  if (pending === token) return invitedUnavailable()
+  try {
+    const started = await backend().rpc<LoginStart>("customer_portal_begin_invited_login_v1", {
+      p_invitation_hash: invitationHash,
+      p_pending_hash: tokenHash(pending),
+    })
+    if (started.status !== "ok" || !started.email) return invitedUnavailable()
+    const sent = await sendTrustedOtp(started.email, tokenHash(pending), "customer_portal_confirm_invited_otp_sent_v1", invitationHash)
+    if (!sent) return invitedUnavailable()
+  } catch {
+    return invitedUnavailable()
+  }
+  return withInvite(invitedAccepted(), pending, invitationHash)
+}
+
+export async function resendInvitedLogin(request: NextRequest) {
+  if (!invitedLoginAvailable()) return invitedClosed(404)
+  if (!originOk(request) || !jsonRequest(request)) return invitedClosed()
+  const body = await readJson(request, 256)
+  const cookies = invitedCookies(request)
+  if (!body || !exactKeys(body, []) || !cookies) return invitedUnavailable()
+  try {
+    const started = await backend().rpc<LoginStart>("customer_portal_begin_invited_resend_v1", {
+      p_pending_hash: tokenHash(cookies.pending),
+      p_invitation_hash: cookies.invitationHash,
+    })
+    if (started.status === "ok" && started.email) {
+      await sendTrustedOtp(started.email, tokenHash(cookies.pending), "customer_portal_confirm_invited_otp_sent_v1", cookies.invitationHash)
+    }
+  } catch { /* The browser message stays the same. */ }
+  return invitedAccepted()
+}
+
+export async function verifyInvitedLogin(request: NextRequest) {
+  if (!invitedLoginAvailable()) return invitedClosed(404)
+  if (!originOk(request) || !jsonRequest(request)) return invitedClosed()
+  const cookies = invitedCookies(request)
+  const body = await readJson(request, 1024)
+  if (!cookies || !body || !exactKeys(body, ["code"]) || !validCustomerOtp(body.code)) return invitedVerifyDenied()
+  try {
+    const allowed = await backend().rpc<LoginStart>("customer_portal_attempt_invited_otp_v1", {
+      p_pending_hash: tokenHash(cookies.pending),
+      p_invitation_hash: cookies.invitationHash,
+    })
+    if (allowed.status !== "ok" || !allowed.email || allowed.email.toLowerCase() === CUSTOMER_ADMIN_EMAIL) return invitedVerifyDenied()
+    const service = backend()
+    const { data, error } = await service.identity.auth.verifyOtp({ email: allowed.email, token: body.code, type: "email" })
+    const accessToken = data?.session?.access_token
+    if (typeof accessToken !== "string" || !accessToken) return invitedVerifyDenied()
+    const revoked = await service.revokeProviderSession(accessToken)
+    if (!revoked || revoked.error) return invitedVerifyDenied()
+    const user = data?.user
+    const authEmail = user?.email
+    if (error || !user?.id || !authEmail || authEmail.toLowerCase() !== allowed.email || !user.email_confirmed_at) return invitedVerifyDenied()
+    const token = newToken()
+    if (token === cookies.pending) return invitedVerifyDenied()
+    const finished = await service.rpc<{ status?: string }>("customer_portal_finish_invited_otp_v1", {
+      p_pending_hash: tokenHash(cookies.pending),
+      p_session_hash: tokenHash(token),
+      p_auth_user: user.id,
+      p_email: authEmail.toLowerCase(),
+      p_invitation_hash: cookies.invitationHash,
+    })
+    if (finished.status !== "ok") return invitedVerifyDenied()
+    const session = await service.rpc<Record<string, unknown> | null>("customer_portal_session_v1", { p_token_hash: tokenHash(token) })
+    if (!session) return invitedVerifyDenied()
+    const response = invitedJson({ status: "ok" }, 200)
+    const options = portalCookieOptions()
+    response.cookies.set(portalSessionCookieName(), token, { ...options, maxAge: PORTAL_SESSION_SECONDS })
+    response.cookies.set(portalPendingCookieName(), "", { ...options, maxAge: 0 })
+    response.cookies.set(portalInviteCookieName(), "", { ...options, maxAge: 0 })
+    return response
+  } catch { return invitedVerifyDenied() }
 }
 
 export async function signOutPortal(request: NextRequest) {

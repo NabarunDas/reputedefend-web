@@ -184,6 +184,7 @@ button, input, textarea, select { font: inherit; }
 
 .menu-toggle { display: inline-flex; }
 .desktop-nav { display: none; gap: 18px; }
+.desktop-nav .nav-link { white-space: nowrap; }
 
 .services-disclosure { position: relative; }
 
@@ -254,6 +255,11 @@ button, input, textarea, select { font: inherit; }
 @media (min-width: 1024px) {
   .menu-toggle { display: none; }
   .desktop-nav { display: flex; }
+}
+
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .site-header .site-logo { width: 168px; }
+  .desktop-nav { gap: 14px; }
 }
 
 @media (max-width: 1023px) {
@@ -372,6 +378,55 @@ button.footer-link:focus-visible {
 .button-primary:hover .button-arrow,
 .button-secondary:hover .button-arrow { transform: translateX(4px); }
 .button-secondary:hover { background: var(--surface); border-color: var(--green); transform: translateY(-1px); }
+
+.customer-login {
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-size: .78rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: background-color 200ms ease-out, border-color 200ms ease-out, color 200ms ease-out;
+}
+
+.customer-login-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.customer-login:hover {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--ink) 16%, var(--line));
+  color: var(--ink);
+}
+
+.customer-login:active { background: var(--warm); }
+
+.mobile-nav a.customer-login {
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.mobile-nav a.customer-login:hover,
+.mobile-nav a.customer-login:focus-visible {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--ink) 16%, var(--line));
+  color: var(--ink);
+}
 
 @media (max-width: 640px) {
   .container,

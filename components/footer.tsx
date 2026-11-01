@@ -1,12 +1,15 @@
 import Link from "next/link"
+import { Fragment } from "react"
 import { ArrowRight } from "lucide-react"
 import { BrandLogo } from "@/components/logo"
 import { brandDescriptor, brandHomeLabel, brandTagline } from "@/lib/brand"
+import { isCustomerPortalHref } from "@/lib/customer-portal-href"
 import { hasLegalValue, legalIdentity, publicLegalDisclosure } from "@/lib/legal"
 import { CookieSettingsButton } from "@/components/analytics-consent"
 import { footerExploreExtra, informationNav, primaryNav, serviceNav } from "@/lib/site-nav"
 
-export function Footer() {
+export function Footer({ portalHref = null }: { portalHref?: string | null }) {
+  const customerPortalHref = isCustomerPortalHref(portalHref) ? portalHref : null
   const contactEmail = hasLegalValue(legalIdentity.contactEmail) ? legalIdentity.contactEmail : undefined
   const disclosure = publicLegalDisclosure()
 
@@ -43,7 +46,14 @@ export function Footer() {
           <p className="mb-5 text-[.68rem] font-bold uppercase tracking-[.16em] text-[#C9D5CE]">Information</p>
           <div className="flex flex-col gap-1 text-sm">
             {informationNav.map(({ label, href }) => (
-              <Link key={href} className="footer-link" href={href}>{label}</Link>
+              <Fragment key={href}>
+                <Link className="footer-link" href={href}>{label}</Link>
+                {href === "/contact" && customerPortalHref ? (
+                  <a className="footer-link" href={customerPortalHref} rel="noopener noreferrer">
+                    Customer portal
+                  </a>
+                ) : null}
+              </Fragment>
             ))}
             <CookieSettingsButton />
             {contactEmail ? (

@@ -3,14 +3,25 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useId, useRef, useState, type FocusEvent } from "react"
-import { ArrowUpRight, ChevronDown, Menu, X } from "lucide-react"
+import { ArrowUpRight, ChevronDown, Menu, User, X } from "lucide-react"
 import { BrandLogo } from "@/components/logo"
 import { brandHomeLabel } from "@/lib/brand"
+import { isCustomerPortalHref } from "@/lib/customer-portal-href"
 import { primaryNav, serviceNav } from "@/lib/site-nav"
 
 const DESKTOP_NAV_QUERY = "(min-width: 1024px)"
 
-export function Header() {
+function CustomerLoginLink({ href, className, onClick }: { href: string; className: string; onClick?: () => void }) {
+  return (
+    <a href={href} className={className} rel="noopener noreferrer" onClick={onClick}>
+      <User className="customer-login-icon" aria-hidden="true" />
+      Customer login
+    </a>
+  )
+}
+
+export function Header({ portalHref = null }: { portalHref?: string | null }) {
+  const customerPortalHref = isCustomerPortalHref(portalHref) ? portalHref : null
   const pathname = usePathname()
   const menuId = useId()
   const servicesPanelId = useId()
@@ -140,10 +151,13 @@ export function Header() {
             </Link>
           ))}
         </nav>
-        <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+        <div className="flex shrink-0 items-center gap-2 xl:gap-3">
+          {customerPortalHref ? (
+            <CustomerLoginLink href={customerPortalHref} className="customer-login hidden lg:inline-flex" />
+          ) : null}
           <Link
             href="/get-help"
-            className="button-primary group inline-flex items-center gap-1.5 rounded-full bg-[var(--green)] px-3 py-2.5 text-[.78rem] font-bold text-white sm:gap-2 sm:px-5 sm:py-3 sm:text-sm"
+            className="button-primary group inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--green)] px-3 py-2.5 text-[.78rem] font-bold text-white sm:gap-2 sm:px-5 sm:py-3 sm:text-sm"
             aria-current={pathname === "/get-help" ? "page" : undefined}
           >
             Get Help <ArrowUpRight data-icon="inline-end" className="button-arrow" aria-hidden="true" />
@@ -200,6 +214,16 @@ export function Header() {
             >
               Contact
             </Link>
+            {customerPortalHref ? (
+              <>
+                <hr className="mobile-nav-separator" />
+                <CustomerLoginLink
+                  href={customerPortalHref}
+                  className="customer-login"
+                  onClick={() => setMenuOpen(false)}
+                />
+              </>
+            ) : null}
             <Link
               href="/get-help"
               className="mobile-nav-cta"

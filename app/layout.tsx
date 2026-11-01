@@ -14,6 +14,7 @@ import {
   titleTemplate,
 } from "@/lib/brand"
 import { googleSiteVerification } from "@/lib/site-verification"
+import { marketingCustomerPortalHref } from "@/lib/customer-portal-href.server"
 import { isSitePublic } from "@/lib/site-visibility"
 import { socialTwitter } from "@/lib/social-metadata"
 
@@ -52,14 +53,15 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { themeColor: brandColors.paper, width: "device-width", initialScale: 1 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const portalHref = marketingCustomerPortalHref()
   return (
     <html lang="en-GB" data-scroll-behavior="smooth">
       <body className={`${bodyFont.variable} ${displayFont.variable}`}>
         <OrganizationStructuredData />
         <a className="skip-link" href="#main-content">Skip to content</a>
-        <Header />
+        <Header portalHref={portalHref} />
         <main id="main-content">{children}</main>
-        <Footer />
+        <Footer portalHref={portalHref} />
         <AnalyticsRoot />
       </body>
     </html>

@@ -24,64 +24,78 @@ export const metadata: Metadata = {
 }
 
 function CinematicConsole() {
-  return (
-    <div className={styles.consoleVisual}>
-      <div className={styles.consoleWrapper}>
-        <picture>
-          <source 
-            media="(min-width: 768px)" 
-            srcSet="/brand/telloya-cinematic-console.webp"
-          />
-          <Image
-            src="/brand/telloya-cinematic-console-mobile.webp"
-            alt="AI receptionist call handling dashboard interface"
-            width={1672}
-            height={604}
-            priority
-            className={styles.consoleImage}
-            sizes="(min-width: 768px) 1200px, 100vw"
-          />
-        </picture>
-      </div>
-    </div>
-  )
+  return null
 }
 
 export default function Home() {
   return (
     <div className={styles.page}>
-      {/* Hero */}
-      <section className={styles.heroBand} aria-labelledby="home-title">
-        <div className={styles.hero}>
-          <div className={styles.heroLogo}>
-            <Image
-              src="/brand/telloya-mark-approved.webp"
-              alt="Telloya"
-              width={56}
-              height={56}
-              priority
-              className={styles.logoMark}
-            />
+      {/* Immersive Cinematic Hero */}
+      <section className={styles.cinematicHero} aria-labelledby="home-title">
+        {/* Atmospheric Background Layers */}
+        <div className={styles.atmosphericLayer1}></div>
+        <div className={styles.atmosphericLayer2}></div>
+        <div className={styles.atmosphericLayer3}></div>
+        <div className={styles.atmosphericGlow}></div>
+        
+        {/* Hero Content Container */}
+        <div className={styles.heroContainer}>
+          {/* Integrated Logo */}
+          <div className={styles.heroLogoArea}>
+            <div className={styles.heroLogoMark}>
+              <Image
+                src="/brand/telloya-mark-approved.webp"
+                alt=""
+                width={48}
+                height={48}
+                priority
+                className={styles.logoIcon}
+              />
+            </div>
+            <span className={styles.heroLogoText}>Telloya</span>
           </div>
+
+          {/* Centered Hero Content */}
           <div className={styles.heroContent}>
-            <p className={styles.eyebrow}>AI Receptionist for Tradespeople</p>
-            <h1 id="home-title">
-              <span className={styles.titleMain}>You focus on the job.</span>{" "}
-              <span className={styles.titleHighlight}>Telloya helps answer your missed calls.</span>
+            <h1 id="home-title" className={styles.heroTitle}>
+              <span className={styles.heroTitleLine1}>Your AI Receptionist</span>
+              <span className={styles.heroTitleLine2}>Never Misses a Call</span>
             </h1>
-            <p className={styles.lead}>{hero.supporting}</p>
-            <div className={styles.actions}>
-              <Link className={styles.primaryButton} href={hero.primaryHref}>
+            <p className={styles.heroSubtitle}>{hero.supporting}</p>
+            <div className={styles.heroActions}>
+              <Link className={styles.heroPrimaryButton} href={hero.primaryHref}>
                 {hero.primaryCta}
                 <ArrowUpRight aria-hidden="true" size={18} />
               </Link>
-              <Link className={styles.secondaryButton} href={hero.secondaryHref}>
+              <Link className={styles.heroSecondaryButton} href={hero.secondaryHref}>
                 {hero.secondaryCta}
                 <ArrowRight aria-hidden="true" size={18} />
               </Link>
             </div>
           </div>
-          <CinematicConsole />
+
+          {/* Integrated Console Artwork */}
+          <div className={styles.consoleScene}>
+            <div className={styles.consoleGlowRing}></div>
+            <div className={styles.consoleArtwork}>
+              <picture>
+                <source 
+                  media="(min-width: 768px)" 
+                  srcSet="/brand/telloya-cinematic-console.webp"
+                />
+                <Image
+                  src="/brand/telloya-cinematic-console-mobile.webp"
+                  alt="AI receptionist dashboard interface"
+                  width={1672}
+                  height={604}
+                  priority
+                  className={styles.consoleImage}
+                  sizes="(min-width: 768px) 1400px, 100vw"
+                />
+              </picture>
+            </div>
+            <div className={styles.consoleBloom}></div>
+          </div>
         </div>
       </section>
 

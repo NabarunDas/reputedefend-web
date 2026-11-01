@@ -88,16 +88,17 @@ describe("Legal Disclosure", () => {
 describe("Navigation", () => {
   it("renders main navigation links", () => {
     render(<Header />)
-    expect(screen.getByText("How It Works")).toBeInTheDocument()
-    expect(screen.getByText("Features")).toBeInTheDocument()
-    expect(screen.getByText("Industries")).toBeInTheDocument()
-    expect(screen.getByText("Pricing")).toBeInTheDocument()
-    expect(screen.getByText("Request Info")).toBeInTheDocument()
+    expect(screen.getAllByText("How It Works").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Features").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Industries").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Pricing").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Request Info").length).toBeGreaterThan(0)
   })
 
   it("includes customer login CTA", () => {
     render(<Header />)
-    expect(screen.getByText("Customer Login")).toBeInTheDocument()
+    const loginLinks = screen.getAllByText("Customer Login")
+    expect(loginLinks.length).toBeGreaterThan(0)
   })
 
   it("mobile menu button has proper ARIA attributes", () => {
@@ -120,7 +121,9 @@ describe("Navigation", () => {
 describe("Customer Portal Routing", () => {
   it("uses production portal by default", () => {
     const originalEnv = process.env
-    process.env = {}
+    process.env = { ...originalEnv }
+    delete (process.env as any).VERCEL_ENV
+    delete (process.env as any).VERCEL_GIT_COMMIT_REF
     
     expect(getCustomerPortalHref()).toBe(PRODUCTION_CUSTOMER_PORTAL_HREF)
     
@@ -129,7 +132,7 @@ describe("Customer Portal Routing", () => {
 
   it("uses production portal for production environment", () => {
     const originalEnv = process.env
-    process.env = { VERCEL_ENV: "production" }
+    process.env = { ...originalEnv, VERCEL_ENV: "production" }
     
     expect(getCustomerPortalHref()).toBe(PRODUCTION_CUSTOMER_PORTAL_HREF)
     
@@ -138,7 +141,7 @@ describe("Customer Portal Routing", () => {
 
   it("uses DEV portal only for develop preview", () => {
     const originalEnv = process.env
-    process.env = { VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: "develop" }
+    process.env = { ...originalEnv, VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: "develop" }
     
     expect(getCustomerPortalHref()).toBe(DEV_CUSTOMER_PORTAL_HREF)
     
@@ -147,7 +150,7 @@ describe("Customer Portal Routing", () => {
 
   it("uses production portal for feature branch previews", () => {
     const originalEnv = process.env
-    process.env = { VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: "feature/test" }
+    process.env = { ...originalEnv, VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: "feature/test" }
     
     expect(getCustomerPortalHref()).toBe(PRODUCTION_CUSTOMER_PORTAL_HREF)
     

@@ -44,7 +44,7 @@ export default function Pricing() {
               notes={plan.notes}
               cta={plan.cta}
               href={plan.href}
-              highlight={"highlight" in plan ? plan.highlight : false}
+              highlight={plan.name === "Complete" ? false : undefined}
             />
           ))}
         </div>

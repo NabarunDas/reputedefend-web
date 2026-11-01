@@ -137,7 +137,7 @@ export function Header() {
           role="dialog"
           aria-modal="true"
           aria-label="Mobile navigation"
-          inert={mobileMenuOpen ? undefined : ""}
+          {...(!mobileMenuOpen && { inert: "" as any })}
         >
           <button
             ref={closeButtonRef}

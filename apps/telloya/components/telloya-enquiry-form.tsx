@@ -347,8 +347,8 @@ Contact Preference: ${values.contactPreference || "Not specified"}`,
         )}
 
         {step === 4 && (
-          <div className={styles.review}>
-            <p className={styles.reviewIntro}>Check the details below before submitting your enquiry. You can go back and change anything that doesn't look right.</p>
+          <div className={styles.reviewIntro}>
+            <p className={styles.reviewIntro}>Check the details below before submitting your enquiry. You can go back and change anything that doesn&apos;t look right.</p>
             <ReviewBlock title="Product interest" onEdit={() => goToStep(1)}>
               <ReviewItem label="Product" value={values.product ? PRODUCT_OPTIONS.find(p => p.value === values.product)?.label || values.product : "Not selected"} />
             </ReviewBlock>

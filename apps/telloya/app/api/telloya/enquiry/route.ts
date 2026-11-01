@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server"
-import { readBoundedJson } from "@/lib/public-body"
-import { normalizeEnquiryText } from "@/lib/enquiry"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
@@ -25,6 +23,23 @@ type TelloyaEnquiryInput = {
   privacyAccepted: boolean
 }
 
+function normalizeText(value: string) {
+  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim()
+}
+
+async function readJsonBody(request: Request): Promise<{ ok: boolean; value?: unknown; status: number }> {
+  try {
+    const text = await request.text()
+    if (text.length > 100000) {
+      return { ok: false, status: 413 }
+    }
+    const value = JSON.parse(text)
+    return { ok: true, value, status: 200 }
+  } catch {
+    return { ok: false, status: 400 }
+  }
+}
+
 function validateTelloyaEnquiry(raw: unknown): { valid: boolean; data?: TelloyaEnquiryInput; errors?: Record<string, string> } {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
     return { valid: false, errors: { _error: "Invalid request format" } }
@@ -33,47 +48,47 @@ function validateTelloyaEnquiry(raw: unknown): { valid: boolean; data?: TelloyaE
   const input = raw as Record<string, unknown>
   const errors: Record<string, string> = {}
 
-  const product = normalizeEnquiryText(String(input.product || ""))
+  const product = normalizeText(String(input.product || ""))
   if (!product || (product !== "telloya" && product !== "complete")) {
     errors.product = "Please select a product option."
   }
 
-  const businessName = normalizeEnquiryText(String(input.businessName || ""))
+  const businessName = normalizeText(String(input.businessName || ""))
   if (!businessName) {
     errors.businessName = "Please enter your business name."
   } else if (businessName.length > 160) {
     errors.businessName = "Business name is too long."
   }
 
-  const country = normalizeEnquiryText(String(input.country || ""))
+  const country = normalizeText(String(input.country || ""))
   if (!country) {
     errors.country = "Please enter your country."
   } else if (country.length > 80) {
     errors.country = "Country is too long."
   }
 
-  const trade = normalizeEnquiryText(String(input.trade || ""))
+  const trade = normalizeText(String(input.trade || ""))
   if (!trade) {
     errors.trade = "Please describe your trade or service."
   } else if (trade.length > 100) {
     errors.trade = "Trade description is too long."
   }
 
-  const email = normalizeEnquiryText(String(input.email || ""))
+  const email = normalizeText(String(input.email || ""))
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     errors.email = "Please enter a valid email address."
   } else if (email.length > 254) {
     errors.email = "Email address is too long."
   }
 
-  const phone = normalizeEnquiryText(String(input.phone || ""))
+  const phone = normalizeText(String(input.phone || ""))
   if (!phone || !/^[+]?[\d\s().-]{7,}$/.test(phone)) {
     errors.phone = "Please enter a valid phone number."
   } else if (phone.length > 40) {
     errors.phone = "Phone number is too long."
   }
 
-  const fullName = normalizeEnquiryText(String(input.fullName || ""))
+  const fullName = normalizeText(String(input.fullName || ""))
   if (!fullName) {
     errors.fullName = "Please enter your name."
   } else if (fullName.length > 100) {
@@ -95,21 +110,21 @@ function validateTelloyaEnquiry(raw: unknown): { valid: boolean; data?: TelloyaE
       businessName,
       country,
       trade,
-      locations: normalizeEnquiryText(String(input.locations || "")),
-      websiteUrl: normalizeEnquiryText(String(input.websiteUrl || "")),
+      locations: normalizeText(String(input.locations || "")),
+      websiteUrl: normalizeText(String(input.websiteUrl || "")),
       fullName,
       email,
       phone,
-      missedCallProblem: normalizeEnquiryText(String(input.missedCallProblem || "")),
-      phoneSetup: normalizeEnquiryText(String(input.phoneSetup || "")),
-      contactPreference: normalizeEnquiryText(String(input.contactPreference || "")),
+      missedCallProblem: normalizeText(String(input.missedCallProblem || "")),
+      phoneSetup: normalizeText(String(input.phoneSetup || "")),
+      contactPreference: normalizeText(String(input.contactPreference || "")),
       privacyAccepted: true,
     },
   }
 }
 
 export async function POST(request: Request) {
-  const body = await readBoundedJson(request)
+  const body = await readJsonBody(request)
   if (!body.ok) {
     const message = body.status === 413
       ? "Please keep your message within the form limits."

@@ -92,7 +92,7 @@ describe("Navigation", () => {
     expect(screen.getAllByText("Features").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Industries").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Pricing").length).toBeGreaterThan(0)
-    expect(screen.getAllByText("Request Info").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Enquire").length).toBeGreaterThan(0)
   })
 
   it("includes customer login CTA", () => {
@@ -342,7 +342,7 @@ describe("Page Structure and Accessibility", () => {
     expect(hrefs).toContain('/features')
     expect(hrefs).toContain('/industries')
     expect(hrefs).toContain('/pricing')
-    expect(hrefs).toContain('/demo')
+    expect(hrefs).toContain('/enquire')
   })
 
   it("customer login CTA points to valid portal href", () => {

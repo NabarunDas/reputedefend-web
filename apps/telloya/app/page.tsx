@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowRight, ArrowUpRight, Check, Phone } from "lucide-react"
+import { ArrowRight, ArrowUpRight, Check } from "lucide-react"
 import { pageTitle } from "@/lib/brand"
 import { homepageContent } from "@/lib/content"
 import styles from "./homepage.module.css"
@@ -32,8 +32,8 @@ function EnquiryFlowVisual() {
       <div className={`${styles.flowStage} ${styles.stageCall}`}>
         <p className={styles.stageLabel}>Customer calls</p>
         <ul>
-          <li>You're on a job</li>
-          <li>Can't pick up</li>
+          <li>You&apos;re on a job</li>
+          <li>Can&apos;t pick up</li>
           <li>Call forwarded</li>
         </ul>
       </div>

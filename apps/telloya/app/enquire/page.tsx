@@ -34,7 +34,7 @@ export default function EnquirePage() {
             <span>for your business</span>
           </h1>
           <p className={styles.lead}>
-            Tell us a bit about your business and requirements. We'll review your enquiry and get in touch to discuss how Telloya can help.
+            Tell us a bit about your business and requirements. We&apos;ll review your enquiry and get in touch to discuss how Telloya can help.
           </p>
           <p className={styles.heroNote}>No payment is taken at this stage. This is a no-obligation enquiry.</p>
         </div>
@@ -77,7 +77,7 @@ export default function EnquirePage() {
           </section>
           <section className={styles.info} aria-labelledby="info-title">
             <h2 id="info-title">Important to know</h2>
-            <p>Telloya is not currently available for self-service purchase. We're finalising pricing and packaging before public launch.</p>
+            <p>Telloya is not currently available for self-service purchase. We&apos;re finalising pricing and packaging before public launch.</p>
             <p>This enquiry helps us understand your requirements and determine if Telloya is a good fit for your business setup.</p>
           </section>
         </aside>

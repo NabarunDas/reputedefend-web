@@ -5,6 +5,7 @@ import { backend, tokenHash } from "../auth/backend"
 import { sessionCookie } from "../auth/config"
 import { requireStaff } from "../require-staff"
 import { isUuid } from "../records/model"
+import type { OnboardingView } from "../commercial/onboarding"
 import type { EnquiryDetail, EnquiryFilters, EnquiryRow } from "./model"
 async function read<T>(name: string, args: Record<string,unknown>): Promise<T> {
   await requireStaff()
@@ -17,6 +18,12 @@ export function listEnquiries(f: EnquiryFilters) { return read<EnquiryRow[]>("ad
 export async function getEnquiry(id: string): Promise<EnquiryDetail> {
   if(!isUuid(id)) notFound()
   const result=await read<EnquiryDetail | {missing:true}>("admin_enquiry_detail_v1",{p_id:id})
+  if("missing" in result) notFound()
+  return result
+}
+export async function getOnboarding(id: string): Promise<OnboardingView> {
+  if(!isUuid(id)) notFound()
+  const result = await read<OnboardingView | { missing: true }>("admin_commercial_onboarding_v1", { p_enquiry: id })
   if("missing" in result) notFound()
   return result
 }

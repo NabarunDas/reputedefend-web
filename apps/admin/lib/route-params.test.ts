@@ -16,7 +16,7 @@ vi.mock("../auth/backend", () => ({ tokenHash: (token: string) => `hash:${token}
 
 import { getCase } from "./cases/queries"
 import { getCaseAuthorization } from "./authorization/queries"
-import { getEnquiry } from "./enquiries/queries"
+import { getEnquiry, getOnboarding } from "./enquiries/queries"
 import { getEvidenceCase } from "./evidence/queries"
 import { getPreparedPackCase } from "./packs/queries"
 import { loadGuardAlert } from "./guard/alerts-queries"
@@ -35,6 +35,7 @@ const loaders: Array<[string, (value: string) => Promise<unknown>]> = [
   ["case detail", id => getCase(id)],
   ["case authorization", id => getCaseAuthorization(id)],
   ["enquiry detail", id => getEnquiry(id)],
+  ["enquiry onboarding", id => getOnboarding(id)],
   ["evidence workspace", id => getEvidenceCase(id)],
   ["prepared pack workspace", id => getPreparedPackCase(id)],
   ["record detail", id => recordDetail("client", id)],

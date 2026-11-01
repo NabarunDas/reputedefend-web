@@ -9,6 +9,18 @@
 -- This version is the next repository file. appliedToDev stays false.
 -- Do not apply it to DEV or Production from this change.
 --
+-- Fail closed until later reviewed phases:
+--   Paid evidence and billable ACTIVE wait for a writer that can bind one
+--   invoice to this subscription, customer, period, and amount.
+--   Open Telloya entitlements and open Guard allocations cannot exceed the
+--   purchased item quantity. quantity_limit_snapshot stays the plan maximum.
+--   Accepted subscription items, and components of approved or retired plans,
+--   cannot be inserted, updated, or deleted.
+--   Telloya LIVE is rejected. One non-ended provision occupies a location.
+--   A coverage-derived Guard entitlement cannot be stored.
+--   An approved plan with a null amount is a pilot contract. It can admit a
+--   time-limited non-billable pilot and cannot be offered as billable.
+--
 -- Dependency order:
 --   1. public.locations (id, business_id) unique index, so composite foreign
 --      keys can prove a location belongs to the named business.
@@ -76,6 +88,10 @@ CREATE TABLE public.plan_versions (
   CONSTRAINT plan_versions_tax_amount_shape CHECK (
     tax_behaviour IS NULL OR tax_behaviour IN ('INCLUSIVE', 'EXCLUSIVE', 'NOT_APPLICABLE')
   ),
+  CONSTRAINT plan_versions_priced_shape CHECK (
+    (amount_minor IS NULL AND tax_behaviour IS NULL)
+    OR (amount_minor IS NOT NULL AND tax_behaviour IS NOT NULL)
+  ),
   CONSTRAINT plan_versions_status_actor CHECK (
     (status = 'DRAFT' AND approved_at IS NULL AND approved_by IS NULL AND retired_at IS NULL AND retired_by IS NULL)
     OR (
@@ -84,8 +100,6 @@ CREATE TABLE public.plan_versions (
       AND approved_by IS NOT NULL
       AND retired_at IS NULL
       AND retired_by IS NULL
-      AND amount_minor IS NOT NULL
-      AND tax_behaviour IS NOT NULL
       AND terms_ref IS NOT NULL
       AND char_length(btrim(terms_ref)) > 0
     )
@@ -95,9 +109,8 @@ CREATE TABLE public.plan_versions (
       AND approved_by IS NOT NULL
       AND retired_at IS NOT NULL
       AND retired_by IS NOT NULL
-      AND amount_minor IS NOT NULL
-      AND tax_behaviour IS NOT NULL
       AND terms_ref IS NOT NULL
+      AND char_length(btrim(terms_ref)) > 0
     )
   )
 );
@@ -219,7 +232,10 @@ CREATE TABLE public.product_entitlements (
   business_id uuid NOT NULL REFERENCES public.businesses (id) ON DELETE RESTRICT,
   location_id uuid NOT NULL,
   component_code text NOT NULL CHECK (component_code IN ('TELLOYA', 'GUARD')),
-  source_kind text NOT NULL CHECK (source_kind IN ('COMMERCIAL_SUBSCRIPTION', 'GUARD_COVERAGE', 'NON_BILLABLE_PILOT')),
+  -- A coverage-derived source is intentionally not a value here. A later
+  -- migration may add it only together with a guard_coverages foreign key for
+  -- the same business and location. This phase cannot claim that eligibility.
+  source_kind text NOT NULL CHECK (source_kind IN ('COMMERCIAL_SUBSCRIPTION', 'NON_BILLABLE_PILOT')),
   commercial_subscription_id uuid REFERENCES public.commercial_subscriptions (id) ON DELETE RESTRICT,
   guard_coverage_id uuid,
   state text NOT NULL CHECK (state IN ('PENDING', 'ELIGIBLE', 'REVOKED', 'EXPIRED')),
@@ -235,18 +251,9 @@ CREATE TABLE public.product_entitlements (
     FOREIGN KEY (location_id, business_id) REFERENCES public.locations (id, business_id) ON DELETE RESTRICT,
   CONSTRAINT product_entitlements_coverage_absent CHECK (guard_coverage_id IS NULL),
   CONSTRAINT product_entitlements_source_shape CHECK (
-    (
-      component_code = 'TELLOYA'
-      AND source_kind IN ('COMMERCIAL_SUBSCRIPTION', 'NON_BILLABLE_PILOT')
-      AND commercial_subscription_id IS NOT NULL
-    )
-    OR (
-      component_code = 'GUARD'
-      AND (
-        (source_kind = 'GUARD_COVERAGE' AND commercial_subscription_id IS NULL)
-        OR (source_kind IN ('COMMERCIAL_SUBSCRIPTION', 'NON_BILLABLE_PILOT') AND commercial_subscription_id IS NOT NULL)
-      )
-    )
+    source_kind IN ('COMMERCIAL_SUBSCRIPTION', 'NON_BILLABLE_PILOT')
+    AND commercial_subscription_id IS NOT NULL
+    AND guard_coverage_id IS NULL
   ),
   CONSTRAINT product_entitlements_revocation CHECK (
     (state = 'REVOKED' AND revoked_at IS NOT NULL AND revoked_by IS NOT NULL AND revocation_reason IS NOT NULL AND char_length(btrim(revocation_reason)) BETWEEN 10 AND 2000)
@@ -285,21 +292,9 @@ CREATE TABLE public.service_provisions (
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT service_provisions_location_business_fk
     FOREIGN KEY (location_id, business_id) REFERENCES public.locations (id, business_id) ON DELETE RESTRICT,
-  CONSTRAINT service_provisions_live_evidence CHECK (
-    state <> 'LIVE'
-    OR (
-      provider_binding_ref IS NOT NULL
-      AND provider_test_call_ref IS NOT NULL
-      AND provider_test_outcome = 'PASSED'
-      AND live_at IS NOT NULL
-      AND customer_confirmed_at IS NOT NULL
-      AND profile_ready_at IS NOT NULL
-      AND agent_configured_at IS NOT NULL
-      AND number_allocated_at IS NOT NULL
-      AND forwarding_instructed_at IS NOT NULL
-      AND agent_test_passed_at IS NOT NULL
-    )
-  ),
+  -- Provider fields stay available for a later verified command. No row in
+  -- this phase may be LIVE, including a row that already carries those fields.
+  CONSTRAINT service_provisions_live_closed CHECK (state <> 'LIVE'),
   CONSTRAINT service_provisions_suspension CHECK (
     (state = 'SUSPENDED' AND suspended_at IS NOT NULL AND suspension_reason IS NOT NULL AND char_length(btrim(suspension_reason)) BETWEEN 10 AND 2000)
     OR (state <> 'SUSPENDED' AND suspended_at IS NULL AND suspension_reason IS NULL)
@@ -314,9 +309,9 @@ CREATE UNIQUE INDEX service_provisions_test_call_idx
   ON public.service_provisions (provider_test_call_ref)
   WHERE provider_test_call_ref IS NOT NULL;
 
-CREATE UNIQUE INDEX service_provisions_one_active_location_idx
+CREATE UNIQUE INDEX service_provisions_one_non_ended_location_idx
   ON public.service_provisions (location_id)
-  WHERE state NOT IN ('SUSPENDED', 'ENDED');
+  WHERE state <> 'ENDED';
 
 CREATE TABLE public.bundle_guard_allocations (
   id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
@@ -547,8 +542,8 @@ BEGIN
     IF product = 'BUNDLE' AND (telloya_count <> 1 OR guard_count <> 1 OR component_count <> 2) THEN
       RAISE EXCEPTION 'approved Complete plan requires Telloya and Guard location components';
     END IF;
-    IF NEW.amount_minor IS NULL OR NEW.tax_behaviour IS NULL THEN
-      RAISE EXCEPTION 'null-price plan cannot be approved';
+    IF NEW.terms_ref IS NULL OR char_length(btrim(NEW.terms_ref)) = 0 THEN
+      RAISE EXCEPTION 'approved plan requires terms';
     END IF;
   END IF;
 
@@ -577,14 +572,14 @@ DECLARE
 BEGIN
   IF TG_OP = 'DELETE' THEN
     SELECT status INTO plan_status FROM public.plan_versions WHERE id = OLD.plan_version_id;
-    IF plan_status = 'APPROVED' THEN
-      RAISE EXCEPTION 'approved plan components cannot be removed';
+    IF plan_status IN ('APPROVED', 'RETIRED') THEN
+      RAISE EXCEPTION 'approved or retired plan components cannot be changed';
     END IF;
     RETURN OLD;
   END IF;
   SELECT status INTO plan_status FROM public.plan_versions WHERE id = NEW.plan_version_id;
-  IF plan_status = 'APPROVED' THEN
-    RAISE EXCEPTION 'approved plan components are immutable';
+  IF plan_status IN ('APPROVED', 'RETIRED') THEN
+    RAISE EXCEPTION 'approved or retired plan components cannot be changed';
   END IF;
   RETURN NEW;
 END;
@@ -630,8 +625,8 @@ BEGIN
     TG_OP = 'INSERT'
     OR (TG_OP = 'UPDATE' AND (OLD.state = 'DRAFT' OR NEW.plan_version_id IS DISTINCT FROM OLD.plan_version_id))
   ) THEN
-    IF plan.status <> 'APPROVED' OR plan.amount_minor IS NULL OR plan.tax_behaviour IS NULL THEN
-      RAISE EXCEPTION 'unapproved or null-price plan cannot be offered';
+    IF plan.status <> 'APPROVED' OR plan.terms_ref IS NULL OR char_length(btrim(plan.terms_ref)) = 0 THEN
+      RAISE EXCEPTION 'unapproved plan cannot be offered';
     END IF;
     IF NEW.currency IS DISTINCT FROM plan.currency
       OR NEW.cadence_snapshot IS DISTINCT FROM plan.billing_cadence
@@ -639,14 +634,32 @@ BEGIN
     THEN
       RAISE EXCEPTION 'commercial snapshot must match the approved plan';
     END IF;
+    IF NEW.grant_kind = 'BILLABLE' AND (plan.amount_minor IS NULL OR plan.tax_behaviour IS NULL) THEN
+      RAISE EXCEPTION 'unpriced plan cannot be offered as billable';
+    END IF;
     IF NEW.grant_kind = 'BILLABLE' AND (
       NEW.amount_minor IS DISTINCT FROM plan.amount_minor
       OR NEW.tax_behaviour IS DISTINCT FROM plan.tax_behaviour
     ) THEN
       RAISE EXCEPTION 'billable snapshot must match the approved plan';
     END IF;
-    IF NEW.grant_kind = 'BILLABLE' AND NEW.tax_behaviour IS NULL THEN
-      RAISE EXCEPTION 'billable offer requires tax behaviour';
+    IF NEW.grant_kind = 'NON_BILLABLE_PILOT' AND (
+      NEW.amount_minor IS NOT NULL
+      OR NEW.tax_behaviour IS NOT NULL
+      OR NEW.tax_amount_minor IS NOT NULL
+    ) THEN
+      RAISE EXCEPTION 'non-billable pilot cannot carry a price';
+    END IF;
+  END IF;
+
+  IF NEW.grant_kind = 'NON_BILLABLE_PILOT'
+    AND NEW.state NOT IN ('DRAFT', 'CANCELED', 'ENDED')
+    AND (NEW.pilot_ends_at IS NULL OR NEW.pilot_ends_at <= pg_catalog.now())
+  THEN
+    IF TG_OP = 'INSERT' THEN
+      RAISE EXCEPTION 'non-billable pilot requires a future end';
+    ELSIF OLD.state IS DISTINCT FROM NEW.state OR OLD.pilot_ends_at IS DISTINCT FROM NEW.pilot_ends_at THEN
+      RAISE EXCEPTION 'non-billable pilot requires a future end';
     END IF;
   END IF;
 
@@ -703,16 +716,8 @@ BEGIN
     RAISE EXCEPTION 'commercial stripe subscription must not reuse a Guard subscription';
   END IF;
 
-  IF NEW.grant_kind = 'BILLABLE' AND NEW.state = 'ACTIVE' AND NOT EXISTS (
-    SELECT 1
-    FROM public.commercial_payment_evidence evidence
-    WHERE evidence.subscription_id = NEW.id
-      AND evidence.period_start IS NOT DISTINCT FROM NEW.current_period_start
-      AND evidence.period_end IS NOT DISTINCT FROM NEW.current_period_end
-      AND evidence.amount_minor = NEW.amount_minor
-      AND evidence.currency = NEW.currency
-  ) THEN
-    RAISE EXCEPTION 'billable subscription cannot be active without payment evidence';
+  IF NEW.grant_kind = 'BILLABLE' AND NEW.state = 'ACTIVE' THEN
+    RAISE EXCEPTION 'billable subscription cannot become active until trusted payment evidence exists';
   END IF;
 
   RETURN NEW;
@@ -727,8 +732,60 @@ AS $$
 DECLARE
   parent public.commercial_subscriptions;
   plan_limit integer;
+  open_entitlements integer;
+  open_allocations integer;
+  row_subscription uuid;
+  row_component text;
 BEGIN
-  SELECT * INTO parent FROM public.commercial_subscriptions WHERE id = NEW.subscription_id;
+  IF TG_OP = 'DELETE' THEN
+    row_subscription := OLD.subscription_id;
+    row_component := OLD.component_code;
+  ELSE
+    row_subscription := NEW.subscription_id;
+    row_component := NEW.component_code;
+  END IF;
+
+  SELECT * INTO parent
+  FROM public.commercial_subscriptions
+  WHERE id = row_subscription
+  FOR UPDATE;
+
+  IF TG_OP = 'DELETE' THEN
+    IF parent.id IS NULL OR parent.state IS DISTINCT FROM 'DRAFT' THEN
+      RAISE EXCEPTION 'accepted commercial subscription items cannot be removed';
+    END IF;
+    IF EXISTS (
+      SELECT 1
+      FROM public.product_entitlements entitlement
+      WHERE entitlement.commercial_subscription_id = row_subscription
+        AND entitlement.component_code = row_component
+        AND entitlement.state IN ('PENDING', 'ELIGIBLE')
+    ) OR (
+      row_component = 'GUARD' AND EXISTS (
+        SELECT 1
+        FROM public.bundle_guard_allocations allocation
+        WHERE allocation.subscription_id = row_subscription
+          AND allocation.state IN ('RESERVED', 'PREVIEW')
+      )
+    ) THEN
+      RAISE EXCEPTION 'subscription item cannot be removed while locations are open';
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF parent.state IS DISTINCT FROM 'DRAFT' AND TG_OP = 'INSERT' THEN
+    RAISE EXCEPTION 'accepted commercial subscription items cannot be added';
+  END IF;
+  IF parent.state IS DISTINCT FROM 'DRAFT' AND TG_OP = 'UPDATE' AND (
+    NEW.quantity IS DISTINCT FROM OLD.quantity
+    OR NEW.quantity_limit_snapshot IS DISTINCT FROM OLD.quantity_limit_snapshot
+    OR NEW.component_code IS DISTINCT FROM OLD.component_code
+    OR NEW.subscription_id IS DISTINCT FROM OLD.subscription_id
+    OR NEW.stripe_subscription_item_id IS DISTINCT FROM OLD.stripe_subscription_item_id
+  ) THEN
+    RAISE EXCEPTION 'accepted commercial snapshots are immutable';
+  END IF;
+
   SELECT component.quantity_limit INTO plan_limit
   FROM public.plan_components component
   WHERE component.plan_version_id = parent.plan_version_id
@@ -739,21 +796,27 @@ BEGIN
   IF NEW.quantity_limit_snapshot IS DISTINCT FROM plan_limit THEN
     RAISE EXCEPTION 'quantity limit snapshot must match the pinned plan';
   END IF;
-  IF parent.grant_kind = 'BILLABLE' AND NEW.component_code = 'GUARD' AND parent.plan_version_id IS NOT NULL THEN
-    IF NOT EXISTS (
-      SELECT 1 FROM public.plan_versions plan
-      JOIN public.product_catalogue catalogue ON catalogue.code = plan.product_code
-      WHERE plan.id = parent.plan_version_id AND catalogue.code = 'COMPLETE'
-    ) THEN
-      RAISE EXCEPTION 'Guard item belongs on a Complete plan';
-    END IF;
-  END IF;
-  IF TG_OP = 'UPDATE' AND parent.state <> 'DRAFT' AND (
-    NEW.quantity IS DISTINCT FROM OLD.quantity
-    OR NEW.quantity_limit_snapshot IS DISTINCT FROM OLD.quantity_limit_snapshot
-    OR NEW.component_code IS DISTINCT FROM OLD.component_code
+  IF NEW.component_code = 'GUARD' AND NOT EXISTS (
+    SELECT 1 FROM public.plan_versions plan
+    JOIN public.product_catalogue catalogue ON catalogue.code = plan.product_code
+    WHERE plan.id = parent.plan_version_id AND catalogue.code = 'COMPLETE'
   ) THEN
-    RAISE EXCEPTION 'accepted commercial snapshots are immutable';
+    RAISE EXCEPTION 'Guard item belongs on a Complete plan';
+  END IF;
+  IF TG_OP = 'UPDATE' AND NEW.quantity IS DISTINCT FROM OLD.quantity THEN
+    SELECT count(*) INTO open_entitlements
+    FROM public.product_entitlements entitlement
+    WHERE entitlement.commercial_subscription_id = NEW.subscription_id
+      AND entitlement.component_code = NEW.component_code
+      AND entitlement.state IN ('PENDING', 'ELIGIBLE');
+    SELECT count(*) INTO open_allocations
+    FROM public.bundle_guard_allocations allocation
+    WHERE allocation.subscription_id = NEW.subscription_id
+      AND allocation.component_code = NEW.component_code
+      AND allocation.state IN ('RESERVED', 'PREVIEW');
+    IF open_entitlements > NEW.quantity OR open_allocations > NEW.quantity THEN
+      RAISE EXCEPTION 'purchased quantity cannot drop below open locations';
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -766,7 +829,6 @@ SET search_path = ''
 AS $$
 DECLARE
   parent public.commercial_subscriptions;
-  receipt admin_private.stripe_event_receipts;
 BEGIN
   IF TG_OP <> 'INSERT' THEN
     RAISE EXCEPTION 'payment evidence is immutable';
@@ -778,19 +840,12 @@ BEGIN
   IF NEW.amount_minor IS DISTINCT FROM parent.amount_minor OR NEW.currency IS DISTINCT FROM parent.currency THEN
     RAISE EXCEPTION 'payment evidence must match the commercial snapshot';
   END IF;
-  SELECT * INTO receipt
-  FROM admin_private.stripe_event_receipts
-  WHERE provider_event_id = NEW.provider_event_id;
-  IF receipt.provider_event_id IS NULL OR receipt.processed IS DISTINCT FROM true OR receipt.event_type IS DISTINCT FROM 'invoice.paid' THEN
-    RAISE EXCEPTION 'payment evidence requires a processed paid invoice';
-  END IF;
-  IF receipt.provider_object_id IS NOT NULL AND EXISTS (
-    SELECT 1 FROM public.guard_subscription_invoices invoice
-    WHERE invoice.stripe_invoice_id = receipt.provider_object_id
-  ) THEN
-    RAISE EXCEPTION 'payment evidence must not reuse a Guard invoice';
-  END IF;
-  RETURN NEW;
+  -- admin_private.stripe_event_receipts records provider_event_id, event_type,
+  -- provider_object_id, and processed. It does not identify the commercial
+  -- subscription, Stripe customer, business, or paid period. Any processed
+  -- invoice can therefore be unrelated. Creation stays disabled until a later
+  -- reviewed writer proves invoice, subscription, customer, period, and amount.
+  RAISE EXCEPTION 'paid commercial evidence is disabled until a trusted invoice binding exists';
 END;
 $$;
 
@@ -839,6 +894,9 @@ DECLARE
   entitlement public.product_entitlements;
 BEGIN
   NEW.updated_at := pg_catalog.now();
+  IF NEW.state = 'LIVE' THEN
+    RAISE EXCEPTION 'Telloya LIVE requires a future provider-verified command';
+  END IF;
   IF TG_OP = 'UPDATE' THEN
     NEW.record_version := OLD.record_version + 1;
     IF NEW.entitlement_id IS DISTINCT FROM OLD.entitlement_id
@@ -908,29 +966,52 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION admin_private.enforce_allocation_quantity_v1()
+CREATE FUNCTION admin_private.enforce_purchased_location_quantity_v1()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = ''
 AS $$
 DECLARE
-  cap integer;
+  subscription uuid;
+  component text;
+  purchased integer;
   open_count integer;
 BEGIN
+  IF TG_TABLE_NAME = 'bundle_guard_allocations' THEN
+    subscription := NEW.subscription_id;
+    component := 'GUARD';
+  ELSE
+    subscription := NEW.commercial_subscription_id;
+    component := NEW.component_code;
+  END IF;
+  IF subscription IS NULL THEN
+    RAISE EXCEPTION 'open locations exceed the purchased quantity';
+  END IF;
+
   PERFORM 1
   FROM public.commercial_subscriptions parent
-  WHERE parent.id = NEW.subscription_id
+  WHERE parent.id = subscription
   FOR UPDATE;
-  SELECT item.quantity_limit_snapshot INTO cap
+  SELECT item.quantity INTO purchased
   FROM public.commercial_subscription_items item
-  WHERE item.subscription_id = NEW.subscription_id
-    AND item.component_code = 'GUARD';
-  SELECT count(*) INTO open_count
-  FROM public.bundle_guard_allocations allocation
-  WHERE allocation.subscription_id = NEW.subscription_id
-    AND allocation.state IN ('RESERVED', 'PREVIEW');
-  IF cap IS NULL OR open_count > cap THEN
-    RAISE EXCEPTION 'open Guard allocations exceed quantity_limit_snapshot';
+  WHERE item.subscription_id = subscription
+    AND item.component_code = component
+  FOR UPDATE;
+
+  IF TG_TABLE_NAME = 'bundle_guard_allocations' THEN
+    SELECT count(*) INTO open_count
+    FROM public.bundle_guard_allocations allocation
+    WHERE allocation.subscription_id = subscription
+      AND allocation.state IN ('RESERVED', 'PREVIEW');
+  ELSE
+    SELECT count(*) INTO open_count
+    FROM public.product_entitlements entitlement
+    WHERE entitlement.commercial_subscription_id = subscription
+      AND entitlement.component_code = component
+      AND entitlement.state IN ('PENDING', 'ELIGIBLE');
+  END IF;
+  IF purchased IS NULL OR open_count > purchased THEN
+    RAISE EXCEPTION 'open locations exceed the purchased quantity';
   END IF;
   RETURN NULL;
 END;
@@ -980,7 +1061,7 @@ CREATE TRIGGER commercial_subscriptions_guard
   FOR EACH ROW EXECUTE FUNCTION admin_private.guard_commercial_subscription_v1();
 
 CREATE TRIGGER commercial_subscription_items_guard
-  BEFORE INSERT OR UPDATE ON public.commercial_subscription_items
+  BEFORE INSERT OR UPDATE OR DELETE ON public.commercial_subscription_items
   FOR EACH ROW EXECUTE FUNCTION admin_private.guard_commercial_subscription_item_v1();
 
 CREATE TRIGGER commercial_payment_evidence_guard
@@ -1002,7 +1083,12 @@ CREATE TRIGGER bundle_guard_allocations_guard
 CREATE CONSTRAINT TRIGGER bundle_guard_allocations_quantity
   AFTER INSERT OR UPDATE ON public.bundle_guard_allocations
   DEFERRABLE INITIALLY DEFERRED
-  FOR EACH ROW EXECUTE FUNCTION admin_private.enforce_allocation_quantity_v1();
+  FOR EACH ROW EXECUTE FUNCTION admin_private.enforce_purchased_location_quantity_v1();
+
+CREATE CONSTRAINT TRIGGER product_entitlements_quantity
+  AFTER INSERT OR UPDATE ON public.product_entitlements
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION admin_private.enforce_purchased_location_quantity_v1();
 
 CREATE TRIGGER onboarding_requests_touch
   BEFORE UPDATE ON public.onboarding_requests
@@ -1083,26 +1169,26 @@ REVOKE ALL ON FUNCTION
   admin_private.guard_product_entitlement_v1(),
   admin_private.guard_service_provision_v1(),
   admin_private.guard_bundle_allocation_v1(),
-  admin_private.enforce_allocation_quantity_v1(),
+  admin_private.enforce_purchased_location_quantity_v1(),
   admin_private.guard_onboarding_invitation_v1()
 FROM PUBLIC, anon, authenticated, service_role;
 
 COMMENT ON TABLE public.product_catalogue IS
   'Sellable Telloya and Complete products. Not a Recovery or Guard catalogue.';
 COMMENT ON TABLE public.plan_versions IS
-  'Approved commercial price windows. A null amount cannot be approved or offered as billable.';
+  'Approved commercial terms. A null amount is a pilot contract and cannot be offered as billable.';
 COMMENT ON TABLE public.plan_components IS
   'Location caps for Telloya and Guard. No numeric cap is seeded.';
 COMMENT ON TABLE public.commercial_subscriptions IS
   'Voice commercial term for one business. Not Guard billing and not a Recovery obligation.';
 COMMENT ON TABLE public.commercial_subscription_items IS
-  'Frozen location quantity for one component of a commercial subscription.';
+  'Purchased location quantity for one component. The snapshot is the plan maximum.';
 COMMENT ON TABLE public.commercial_payment_evidence IS
-  'Future paid-invoice evidence. Inserting a row does not activate the subscription.';
+  'Empty until a trusted invoice binding exists. This phase rejects every insert.';
 COMMENT ON TABLE public.product_entitlements IS
   'Who may use a component at one location. Not Guard coverage and not a payment.';
 COMMENT ON TABLE public.service_provisions IS
-  'Per-location Telloya setup. Live requires provider evidence and no command here sets it.';
+  'Per-location Telloya setup. LIVE is rejected until a provider-verified command exists.';
 COMMENT ON TABLE public.bundle_guard_allocations IS
   'Complete seat reservation or preview. It cannot fund, cancel, or cover Guard.';
 COMMENT ON TABLE public.onboarding_requests IS

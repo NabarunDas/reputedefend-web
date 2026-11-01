@@ -2,8 +2,10 @@
 
 import Link from "next/link"
 import { cloneElement, useEffect, useId, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, Check } from "lucide-react"
+import { ArrowLeft, ArrowRight, Check, Mail } from "lucide-react"
 import styles from "./telloya-enquiry-form.module.css"
+import type { TelloyaEnquiryRequest, TelloyaEnquiryResponse, TelloyaEnquiryCapabilities } from "@/lib/enquiry-contract"
+import { legalIdentity } from "@/lib/legal"
 
 const PRODUCT_OPTIONS = [
   { value: "telloya", label: "Telloya", description: "AI receptionist for missed-call enquiries" },
@@ -53,7 +55,8 @@ const STEP_TITLES = {
   4: "Review and submit",
 } as const
 
-export function TelloyaEnquiryForm() {
+export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnquiryCapabilities }) {
+  const submissionEnabled = capabilities?.submissionEnabled ?? false
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
   const [values, setValues] = useState<EnquiryValues>(INITIAL_VALUES)
   const [errors, setErrors] = useState<EnquiryFieldErrors>({})
@@ -171,24 +174,19 @@ export function TelloyaEnquiryForm() {
     }
 
     try {
-      const payload = {
-        fullName: values.fullName,
-        email: values.email,
+      const payload: TelloyaEnquiryRequest = {
+        product: values.product,
         businessName: values.businessName,
         country: values.country,
-        phone: values.phone,
-        service: "",
-        subject: "",
+        trade: values.trade,
+        locations: values.locations,
         websiteUrl: values.websiteUrl,
-        businessProfileUrl: "",
-        reviewUrl: "",
-        details: `Product Interest: ${values.product}
-Trade: ${values.trade}
-Locations: ${values.locations || "Not specified"}
-Missed Call Problem: ${values.missedCallProblem || "Not specified"}
-Phone Setup: ${values.phoneSetup || "Not specified"}
-Contact Preference: ${values.contactPreference || "Not specified"}`,
-        informationAccurate: false,
+        fullName: values.fullName,
+        email: values.email,
+        phone: values.phone,
+        missedCallProblem: values.missedCallProblem,
+        phoneSetup: values.phoneSetup,
+        contactPreference: values.contactPreference,
         privacyAccepted: values.privacyAccepted,
         source: "telloya",
         submissionKey: submissionKeyRef.current,
@@ -200,7 +198,7 @@ Contact Preference: ${values.contactPreference || "Not specified"}`,
         body: JSON.stringify(payload),
       })
 
-      const json = await res.json() as { ok?: boolean; enquiryRef?: string; message?: string; errors?: EnquiryFieldErrors; code?: string }
+      const json = await res.json() as TelloyaEnquiryResponse
 
       if (json.ok) {
         setEnquiryRef(json.enquiryRef || "")
@@ -244,6 +242,29 @@ Contact Preference: ${values.contactPreference || "Not specified"}`,
 
   const errorEntries = Object.entries(errors) as [keyof EnquiryValues, string][]
   const showSummary = errorEntries.length > 0 || deliveryError
+
+  if (!submissionEnabled) {
+    return (
+      <div className={styles.prelaunch} role="status">
+        <div className={styles.prelaunchIcon}>
+          <Mail size={32} aria-hidden="true" />
+        </div>
+        <h3 className={styles.prelaunchTitle}>Online enquiry submission is being prepared</h3>
+        <p className={styles.prelaunchLead}>
+          We're finalising the Telloya enquiry system before public launch. In the meantime, please email us directly to discuss your requirements.
+        </p>
+        <div className={styles.prelaunchContact}>
+          <p className={styles.prelaunchLabel}>Contact us at</p>
+          <a href={`mailto:${legalIdentity.contactEmail}`} className={styles.prelaunchEmail}>
+            {legalIdentity.contactEmail}
+          </a>
+        </div>
+        <p className={styles.prelaunchNote}>
+          Include details about your business, trade, and the missed-call challenge you're facing. We'll get back to you promptly.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <form className={styles.form} onSubmit={submitEnquiry} noValidate aria-busy={status === "loading"}>

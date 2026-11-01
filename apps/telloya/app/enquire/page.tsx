@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { pageTitle } from "@/lib/brand"
 import { TelloyaEnquiryForm } from "@/components/telloya-enquiry-form"
+import { getEnquiryCapabilities } from "@/lib/enquiry-contract"
 import styles from "./enquire.module.css"
 
 const seo = {
@@ -24,6 +25,8 @@ export const metadata: Metadata = {
 }
 
 export default function EnquirePage() {
+  const capabilities = getEnquiryCapabilities()
+  
   return (
     <div className={styles.page}>
       <section className={styles.heroBand} aria-labelledby="enquire-title">
@@ -51,7 +54,7 @@ export default function EnquirePage() {
 
       <div className={styles.main}>
         <div className={styles.formColumn}>
-          <TelloyaEnquiryForm />
+          <TelloyaEnquiryForm capabilities={capabilities} />
         </div>
         <aside className={styles.aside}>
           <section className={styles.process} aria-labelledby="next-title">

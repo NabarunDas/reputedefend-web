@@ -1,27 +1,13 @@
 import { NextResponse } from "next/server"
+import type { TelloyaEnquiryRequest, TelloyaEnquiryResponse } from "@/lib/enquiry-contract"
+import { legalIdentity } from "@/lib/legal"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
 
 // Telloya enquiry API endpoint
 // This validates enquiry data and prepares for database persistence
-// Note: Full persistence depends on database schema from Phase 02B
-
-type TelloyaEnquiryInput = {
-  product: "telloya" | "complete" | ""
-  businessName: string
-  country: string
-  trade: string
-  locations: string
-  websiteUrl: string
-  fullName: string
-  email: string
-  phone: string
-  missedCallProblem: string
-  phoneSetup: string
-  contactPreference: string
-  privacyAccepted: boolean
-}
+// Note: Full persistence depends on database schema deployment
 
 function normalizeText(value: string) {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim()
@@ -40,7 +26,7 @@ async function readJsonBody(request: Request): Promise<{ ok: boolean; value?: un
   }
 }
 
-function validateTelloyaEnquiry(raw: unknown): { valid: boolean; data?: TelloyaEnquiryInput; errors?: Record<string, string> } {
+function validateTelloyaEnquiry(raw: unknown): { valid: boolean; data?: TelloyaEnquiryRequest; errors?: Record<string, string> } {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
     return { valid: false, errors: { _error: "Invalid request format" } }
   }
@@ -119,6 +105,8 @@ function validateTelloyaEnquiry(raw: unknown): { valid: boolean; data?: TelloyaE
       phoneSetup: normalizeText(String(input.phoneSetup || "")),
       contactPreference: normalizeText(String(input.contactPreference || "")),
       privacyAccepted: true,
+      source: "telloya",
+      submissionKey: normalizeText(String(input.submissionKey || "")),
     },
   }
 }
@@ -147,12 +135,12 @@ export async function POST(request: Request) {
     // - Do NOT generate fake references
     // - Do NOT return success without persistence
     // - Do NOT claim emails were sent
-    // Return 503 with honest unavailable message
+    // Return 503 with honest unavailable message using verified contact email from lib/legal.ts
     
     return NextResponse.json(
       {
         ok: false,
-        message: "The enquiry system is being prepared for launch. Please contact us at hello@profilerelaunch.com or call +44 20 1234 5678 to discuss your requirements.",
+        message: `The enquiry system is being prepared for launch. Please email us at ${legalIdentity.contactEmail} to discuss your requirements.`,
         code: "SERVICE_UNAVAILABLE",
       },
       { status: 503 }

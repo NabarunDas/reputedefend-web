@@ -1,5 +1,6 @@
 .form,
-.success {
+.success,
+.prelaunch {
   --edge: color-mix(in srgb, var(--ink) 14%, transparent);
   --tint: color-mix(in srgb, var(--green) 5%, var(--paper));
   --muted-strong: #52615b;
@@ -18,8 +19,88 @@
   padding: 32px;
 }
 
-.success {
+.success,
+.prelaunch {
   padding: 36px 28px;
+}
+
+.prelaunch {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.prelaunchIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--green) 8%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--green) 20%, transparent);
+  color: var(--green);
+  margin-bottom: 8px;
+}
+
+.prelaunchTitle {
+  font-family: var(--font-display), Arial, sans-serif;
+  font-size: clamp(22px, 3vw, 28px);
+  line-height: 1.2;
+  letter-spacing: -.04em;
+  font-weight: 800;
+  margin: 0;
+}
+
+.prelaunchLead {
+  color: var(--muted-strong);
+  font-size: 16px;
+  line-height: 1.6;
+  max-width: 42rem;
+  margin: 0;
+}
+
+.prelaunchContact {
+  margin-top: 12px;
+  padding: 20px 24px;
+  background: color-mix(in srgb, var(--green) 5%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--green) 15%, transparent);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 28rem;
+}
+
+.prelaunchLabel {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--green);
+  margin: 0 0 10px 0;
+}
+
+.prelaunchEmail {
+  display: block;
+  font-size: 18px;
+  font-weight: 750;
+  color: var(--green);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.prelaunchEmail:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.prelaunchNote {
+  color: var(--muted-strong);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 42rem;
 }
 
 .progressLabel {

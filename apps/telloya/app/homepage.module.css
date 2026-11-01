@@ -933,7 +933,6 @@
     min-height: auto;
   }
   .consoleVisual {
-    order: -1;
     max-width: 500px;
     margin-inline: auto;
   }

@@ -1248,14 +1248,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Customer Portal idle timeout", probe: "public.customer_portal_touch_session_v1" },
   },
   {
-    // Commercial foundation for Telloya and Complete. Schema only.
-    // Not applied to DEV. Do not apply it to Production. No seed rows and no
-    // replay. It does not update customers, cases, Guard, Stripe, or sessions.
+    // Commercial foundation for Telloya and Complete. Verified DEV ledger head.
+    // Applied once to profilerelaunch-dev (rmzozuiamjcclvtgutgd). Do not replay
+    // it and do not apply it to Production. Schema only: no customer,
+    // subscription, entitlement, or payment rows were created. All 15
+    // commercial tables exist and have RLS enabled. containsDataChange stays
+    // false. The ledger statement is one statement of 51,901 characters.
+    // SHA-256 5e293cf4091c12096e7cba65e59e450e660d529d739ec8cdfc83a03bf2b2e7fb.
     version: "20261101170000",
     filename: "20261101170000_commercial_foundation_v1.sql",
     step: "Multi-product commercial schema",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Commercial foundation", probe: "public.product_catalogue" },
@@ -1271,13 +1275,20 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261031160000`. The verified live DEV ledger contains 91 entries and ends
- * there. The idle-timeout file updates existing session rows outside a function
- * body, so containsDataChange is true. Do not replay `20261031160000`. It is not
- * applied to Production. Customer case-reference subjects were applied once to DEV and must
- * not be replayed. Do not replay `20261031150000`. It is not applied to
- * Production. Guided customer outcome and Guided pack-ready dispatch were applied
- * once to DEV and must not be replayed. Do not replay `20261031140000` or
+ * `20261101170000`. The verified live DEV ledger contains 92 entries and ends
+ * there. The commercial foundation file is schema only, so containsDataChange
+ * stays false. Do not replay `20261101170000`. It is not applied to Production.
+ * No customer, subscription, entitlement, or payment rows were created. All 15
+ * commercial tables exist and have RLS enabled. The ledger statement is one
+ * statement of 51,901 characters. SHA-256
+ * 5e293cf4091c12096e7cba65e59e450e660d529d739ec8cdfc83a03bf2b2e7fb.
+ * The previous head `20261031160000` remains applied. The idle-timeout file
+ * updates existing session rows outside a function body, so containsDataChange
+ * is true. Do not replay `20261031160000`. It is not applied to Production.
+ * Customer case-reference subjects were applied once to DEV and must not be
+ * replayed. Do not replay `20261031150000`. It is not applied to Production.
+ * Guided customer outcome and Guided pack-ready dispatch were applied once to
+ * DEV and must not be replayed. Do not replay `20261031140000` or
  * `20261031120000`. They are not applied to Production. Guided payment request
  * after acceptance, Guided assessment basis and Guided pack stage sync were
  * applied once to DEV and must not be replayed. Do not replay `20261030200000`.
@@ -1285,9 +1296,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `20261101170000_commercial_foundation_v1.sql`
- * is in the repository and is not applied to DEV. `pendingMigrations()` returns
- * that file only.
+ * applied and must not be replayed. `pendingMigrations()` is empty.
  * The repository chain is longer than the live ledger because it still records the
  * three foundation files that live DEV omits (issue #190).
  * Production remains on its own historical migration head `20261014170000`.

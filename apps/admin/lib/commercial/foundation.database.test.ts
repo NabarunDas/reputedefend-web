@@ -172,7 +172,11 @@ describe("the commercial foundation migration text", () => {
     const stateCheck = sql.slice(sql.indexOf("state text NOT NULL CHECK (state IN ('RESERVED'"), sql.indexOf("paid_through_at"))
     expect(stateCheck).not.toContain("FUNDED")
     expect(stateCheck).not.toContain("PROVIDER_PENDING")
-    expect(readFileSync(new URL("../../../../apps/admin/lib/recovery/manifest.ts", import.meta.url), "utf8")).toContain("appliedToDev: false")
+    const manifest = readFileSync(new URL("../../../../apps/admin/lib/recovery/manifest.ts", import.meta.url), "utf8")
+    const commercial = manifest.slice(manifest.indexOf('filename: "20261101170000_commercial_foundation_v1.sql"'), manifest.indexOf('filename: "20261101170000_commercial_foundation_v1.sql"') + 500)
+    expect(commercial).toContain("appliedToDev: true")
+    expect(commercial).toContain("containsDataChange: false")
+    expect(commercial).toContain("safeToReplay: false")
   })
 })
 

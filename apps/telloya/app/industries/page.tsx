@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { pageTitle } from "@/lib/brand"
 import { industriesContent } from "@/lib/content"
-import { Section, Eyebrow, SectionTitle, ScenarioCard, CtaSection } from "@/components/ui"
+import styles from "./industries.module.css"
 
 const { seo, hero, industries, universal, cta } = industriesContent
 
@@ -22,60 +23,86 @@ export const metadata: Metadata = {
 
 export default function Industries() {
   return (
-    <>
-      <Section className="hero">
-        <div className="hero-content">
-          <Eyebrow>{hero.eyebrow}</Eyebrow>
-          <h1 className="hero-headline">{hero.title}</h1>
-          <p className="hero-supporting">{hero.lead}</p>
+    <div className={styles.page}>
+      {/* Hero */}
+      <section className={styles.heroBand} aria-labelledby="industries-title">
+        <div className={styles.hero}>
+          <p className={styles.eyebrow}>{hero.eyebrow}</p>
+          <h1 id="industries-title">{hero.title}</h1>
+          <p className={styles.lead}>{hero.lead}</p>
         </div>
-      </Section>
+      </section>
 
-      {industries.map((industry, index) => (
-        <Section key={industry.name} background={index % 2 === 0 ? "surface" : "paper"}>
-          <div className="mb-12">
-            <h2 className="section-title">{industry.name}</h2>
-            <p className="text-lg font-semibold text-green mb-4">{industry.tagline}</p>
-            <p className="text-muted max-w-prose">{industry.description}</p>
-          </div>
-          <div className="max-w-4xl mx-auto">
-            <h3 className="text-xl font-bold mb-6">Example scenarios</h3>
-            {industry.scenarios.map((scenario) => (
-              <ScenarioCard
-                key={scenario.title}
-                title={scenario.title}
-                situation={scenario.situation}
-                telloyaHelps={scenario.telletoyaHelps}
-              />
-            ))}
-            <div className="mt-8 card">
-              <h4 className="font-bold mb-4">Key benefits for {industry.name.toLowerCase()}</h4>
-              <ul className="feature-points">
-                {industry.benefits.map((benefit) => (
-                  <li key={benefit}>{benefit}</li>
-                ))}
-              </ul>
+      {/* Industries */}
+      {industries.map((industry) => (
+        <section
+          key={industry.name}
+          className={styles.industrySection}
+          aria-labelledby={`industry-${industry.name.toLowerCase().replace(/\s+/g, "-")}`}
+        >
+          <div className={styles.industryContent}>
+            <div className={styles.industryHeader}>
+              <h2 id={`industry-${industry.name.toLowerCase().replace(/\s+/g, "-")}`}>
+                {industry.name}
+              </h2>
+              <p className={styles.industryTagline}>{industry.tagline}</p>
+              <p className={styles.industryDescription}>{industry.description}</p>
+            </div>
+            <div className={styles.industryDetails}>
+              <h3 className={styles.scenariosTitle}>Example scenarios</h3>
+              {industry.scenarios.map((scenario) => (
+                <article key={scenario.title} className={styles.scenarioCard}>
+                  <h4>{scenario.title}</h4>
+                  <div className={styles.scenarioDetail}>
+                    <p className={styles.scenarioLabel}>Situation:</p>
+                    <p className={styles.scenarioText}>{scenario.situation}</p>
+                  </div>
+                  <div className={styles.scenarioDetail}>
+                    <p className={styles.scenarioLabel}>Telloya helps:</p>
+                    <p className={styles.scenarioText}>{scenario.telletoyaHelps}</p>
+                  </div>
+                </article>
+              ))}
+              <div className={styles.benefitsBox}>
+                <h4>Key benefits for {industry.name.toLowerCase()}</h4>
+                <ul className={styles.benefitsList}>
+                  {industry.benefits.map((benefit) => (
+                    <li key={benefit}>{benefit}</li>
+                  ))}
+                </ul>
+              </div>
             </div>
           </div>
-        </Section>
+        </section>
       ))}
 
-      <Section background="surface">
-        <div className="text-center mb-12">
-          <Eyebrow>{universal.eyebrow}</Eyebrow>
-          <SectionTitle>{universal.title}</SectionTitle>
-          <p className="text-muted max-w-prose mx-auto">{universal.lead}</p>
+      {/* Universal */}
+      <section className={styles.universalSection} aria-labelledby="universal-title">
+        <div className={styles.universalContent}>
+          <div className={styles.sectionIntro}>
+            <p className={styles.eyebrow}>{universal.eyebrow}</p>
+            <h2 id="universal-title">{universal.title}</h2>
+            <p>{universal.lead}</p>
+          </div>
+          <div className={styles.universalGrid}>
+            {universal.examples.map((example) => (
+              <div key={example} className={styles.exampleCard}>
+                <p>{example}</p>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="grid-4 max-w-4xl mx-auto">
-          {universal.examples.map((example) => (
-            <div key={example} className="card text-center">
-              <p className="font-semibold">{example}</p>
-            </div>
-          ))}
-        </div>
-      </Section>
+      </section>
 
-      <CtaSection title={cta.title} cta={cta.cta} href={cta.href} />
-    </>
+      {/* CTA */}
+      <section className={styles.ctaSection} aria-labelledby="cta-title">
+        <div className={styles.ctaContent}>
+          <h2 id="cta-title">{cta.title}</h2>
+          <Link className={styles.ctaButton} href={cta.href}>
+            {cta.cta}
+          </Link>
+        </div>
+      </section>
+    </div>
   )
 }

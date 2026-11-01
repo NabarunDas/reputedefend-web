@@ -14,7 +14,7 @@ export function Footer() {
         <div className="footer-content">
           <div className="footer-brand">
             <Link href="/" aria-label={brandHomeLabel} className="site-logo-footer">
-              <TelloyaLogo variant="light" />
+              <TelloyaLogo variant="symbol" />
             </Link>
             <p className="footer-tagline">{footerContent.tagline}</p>
           </div>

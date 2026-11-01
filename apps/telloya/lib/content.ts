@@ -23,7 +23,7 @@ export const homepageContent = {
     primaryCta: "See how it works",
     primaryHref: "/how-it-works",
     secondaryCta: "Enquire about Telloya",
-    secondaryHref: "/demo",
+    secondaryHref: "/enquire",
   },
   problem: {
     eyebrow: "The missed-call challenge",
@@ -173,7 +173,7 @@ export const homepageContent = {
   finalCta: {
     title: "Spend more time on the job, less time worrying about missed calls",
     cta: "Enquire about Telloya",
-    href: "/demo",
+    href: "/enquire",
   },
 } as const
 
@@ -298,7 +298,7 @@ export const howItWorksContent = {
     title: "Ready to see if Telloya fits your business?",
     description: "Enquire about the service and we'll help you understand if it's right for your setup.",
     cta: "Enquire now",
-    href: "/demo",
+    href: "/enquire",
   },
 } as const
 
@@ -435,7 +435,7 @@ export const featuresContent = {
   cta: {
     title: "Want to see how Telloya could work for you?",
     cta: "Get in touch",
-    href: "/demo",
+    href: "/enquire",
   },
 } as const
 
@@ -597,7 +597,7 @@ export const industriesContent = {
   cta: {
     title: "See how Telloya works for your trade",
     cta: "Enquire now",
-    href: "/demo",
+    href: "/enquire",
   },
 } as const
 
@@ -634,7 +634,7 @@ export const pricingContent = {
         "Call forwarding setup depends on your telephone provider",
       ],
       cta: "Contact us for details",
-      href: "/demo",
+      href: "/enquire",
     },
     {
       name: "Complete",
@@ -653,7 +653,7 @@ export const pricingContent = {
         "Minute allowance and subscription terms to be confirmed",
       ],
       cta: "Enquire about Complete",
-      href: "/demo",
+      href: "/enquire",
     },
   ],
   comparison: {
@@ -726,7 +726,7 @@ export const pricingContent = {
     title: "Interested in Telloya?",
     description: "Enquire now and we'll keep you informed as we approach launch.",
     cta: "Get in touch",
-    href: "/demo",
+    href: "/enquire",
   },
 } as const
 
@@ -784,7 +784,7 @@ export const navigationContent = {
     { label: "Features", href: "/features" },
     { label: "Industries", href: "/industries" },
     { label: "Pricing", href: "/pricing" },
-    { label: "Request Info", href: "/demo" },
+    { label: "Enquire", href: "/enquire" },
   ],
   cta: {
     label: "Customer Login",
@@ -803,7 +803,7 @@ export const footerContent = {
         { label: "Features", href: "/features" },
         { label: "Industries", href: "/industries" },
         { label: "Pricing", href: "/pricing" },
-        { label: "Demo", href: "/demo" },
+        { label: "Enquire", href: "/enquire" },
       ],
     },
     {

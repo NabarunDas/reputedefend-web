@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { pageTitle } from "@/lib/brand"
 import { howItWorksContent } from "@/lib/content"
-import { Section, Eyebrow, SectionTitle, StepCard, CtaSection } from "@/components/ui"
+import styles from "./how-it-works.module.css"
 
 const { seo, hero, journey, experience, setup, limitations, cta } = howItWorksContent
 
@@ -22,88 +23,97 @@ export const metadata: Metadata = {
 
 export default function HowItWorks() {
   return (
-    <>
-      <Section className="hero">
-        <div className="hero-content">
-          <Eyebrow>{hero.eyebrow}</Eyebrow>
-          <h1 className="hero-headline">{hero.title}</h1>
-          <p className="hero-supporting">{hero.lead}</p>
+    <div className={styles.page}>
+      {/* Hero */}
+      <section className={styles.heroBand} aria-labelledby="how-it-works-title">
+        <div className={styles.hero}>
+          <p className={styles.eyebrow}>{hero.eyebrow}</p>
+          <h1 id="how-it-works-title">{hero.title}</h1>
+          <p className={styles.lead}>{hero.lead}</p>
         </div>
-      </Section>
+      </section>
 
-      <Section background="surface">
-        <div className="mb-12">
-          <SectionTitle>{journey.title}</SectionTitle>
+      {/* Journey Steps */}
+      <section className={styles.journeySection} aria-labelledby="journey-title">
+        <div className={styles.sectionIntro}>
+          <h2 id="journey-title">{journey.title}</h2>
         </div>
-        <div className="max-w-4xl mx-auto">
+        <div className={styles.stepsList}>
           {journey.steps.map((step) => (
-            <StepCard
-              key={step.number}
-              number={step.number}
-              title={step.title}
-              description={step.description}
-              detail={step.detail}
-            />
+            <article key={step.number} className={styles.stepCard}>
+              <div className={styles.stepNumber}>{step.number}</div>
+              <div className={styles.stepContent}>
+                <h3>{step.title}</h3>
+                <p className={styles.stepDescription}>{step.description}</p>
+                {step.detail && <div className={styles.stepDetail}>{step.detail}</div>}
+              </div>
+            </article>
           ))}
         </div>
-      </Section>
+      </section>
 
-      <Section>
-        <div className="mb-12">
-          <Eyebrow>{experience.eyebrow}</Eyebrow>
-          <SectionTitle>{experience.title}</SectionTitle>
-          <p className="text-muted max-w-prose">{experience.lead}</p>
+      {/* Experience */}
+      <section className={styles.experienceSection} aria-labelledby="experience-title">
+        <div className={styles.sectionIntro}>
+          <p className={styles.eyebrow}>{experience.eyebrow}</p>
+          <h2 id="experience-title">{experience.title}</h2>
+          <p>{experience.lead}</p>
         </div>
-        <div className="max-w-3xl card">
-          <p className="mb-6 font-semibold">{experience.example.greeting}</p>
-          <ul className="space-y-3">
+        <div className={styles.exampleBox}>
+          <p className={styles.exampleGreeting}>{experience.example.greeting}</p>
+          <ul className={styles.flowList}>
             {experience.example.flow.map((item, index) => (
-              <li key={index} className="text-muted pl-6 relative">
-                <span className="absolute left-0">→</span>
-                {item}
-              </li>
+              <li key={index}>{item}</li>
             ))}
           </ul>
-          <p className="mt-6 text-sm text-muted italic">{experience.example.note}</p>
+          <p className={styles.exampleNote}>{experience.example.note}</p>
         </div>
-      </Section>
+      </section>
 
-      <Section background="surface">
-        <div className="mb-12">
-          <Eyebrow>{setup.eyebrow}</Eyebrow>
-          <SectionTitle>{setup.title}</SectionTitle>
-          <p className="text-muted max-w-prose">{setup.lead}</p>
+      {/* Setup */}
+      <section className={styles.setupSection} aria-labelledby="setup-title">
+        <div className={styles.sectionIntro}>
+          <p className={styles.eyebrow}>{setup.eyebrow}</p>
+          <h2 id="setup-title">{setup.title}</h2>
+          <p>{setup.lead}</p>
         </div>
-        <div className="grid-3 max-w-4xl mx-auto">
+        <div className={styles.setupGrid}>
           {setup.steps.map((step, index) => (
-            <div key={index} className="card">
-              <h3 className="feature-title">{step.title}</h3>
-              <p className="text-muted">{step.description}</p>
-            </div>
+            <article key={index} className={styles.setupCard}>
+              <h3>{step.title}</h3>
+              <p>{step.description}</p>
+            </article>
           ))}
         </div>
-        <p className="mt-8 text-center text-muted max-w-prose mx-auto">{setup.note}</p>
-      </Section>
+        <p className={styles.setupNote}>{setup.note}</p>
+      </section>
 
-      <Section>
-        <div className="mb-8">
-          <Eyebrow>{limitations.eyebrow}</Eyebrow>
-          <SectionTitle>{limitations.title}</SectionTitle>
-          <p className="text-muted max-w-prose">{limitations.lead}</p>
+      {/* Limitations */}
+      <section className={styles.limitationsSection} aria-labelledby="limitations-title">
+        <div className={styles.sectionIntro}>
+          <p className={styles.eyebrow}>{limitations.eyebrow}</p>
+          <h2 id="limitations-title">{limitations.title}</h2>
+          <p>{limitations.lead}</p>
         </div>
-        <div className="max-w-3xl card">
-          <ul className="space-y-3">
+        <div className={styles.limitationsBox}>
+          <ul className={styles.limitationsList}>
             {limitations.points.map((point, index) => (
-              <li key={index} className="text-muted pl-6 relative">
-                <span className="absolute left-0">•</span>
-                {point}
-              </li>
+              <li key={index}>{point}</li>
             ))}
           </ul>
         </div>
-      </Section>
+      </section>
 
-      <CtaSection title={cta.title} description={cta.description} cta={cta.cta} href={cta.href} />
-    </>
+      {/* CTA */}
+      <section className={styles.ctaSection} aria-labelledby="cta-title">
+        <div className={styles.ctaContent}>
+          <h2 id="cta-title">{cta.title}</h2>
+          <p>{cta.description}</p>
+          <Link className={styles.ctaButton} href={cta.href}>
+            {cta.cta}
+          </Link>
+        </div>
+      </section>
+    </div>
   )
 }

@@ -6,13 +6,14 @@
   --paper: #f7f8f3;
   --surface: #fff;
   --line: #dfe5dc;
-  /* ProfileRelaunch design system colors (shared) */
-  --green: #0A6E3C;
+  --green: #0a6e3c;
   --green-dark: #085330;
   --accent: #009838;
-  --lime: #C5E8B4;
+  --lime: #c5e8b4;
   --warm: #f0e8da;
   --edge: color-mix(in srgb, var(--ink) 14%, transparent);
+  --muted-strong: #52615b;
+  --control-border: color-mix(in srgb, var(--ink) 42%, var(--paper));
 }
 
 * { box-sizing: border-box; }
@@ -93,12 +94,14 @@ button, input, textarea, select { font: inherit; }
 
 /* Header */
 .site-header {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 50;
-  background: var(--paper);
-  border-bottom: 1px solid var(--line);
-  transition: background-color 220ms ease-out, border-color 220ms ease-out, box-shadow 220ms ease-out, backdrop-filter 220ms ease-out;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background-color 350ms ease-out, border-color 350ms ease-out, box-shadow 350ms ease-out, backdrop-filter 350ms ease-out;
 }
 
 .site-header > .container {
@@ -106,14 +109,15 @@ button, input, textarea, select { font: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 4.75rem;
+  min-height: 5rem;
+  padding-block: 16px;
 }
 
 .site-header-scrolled {
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
-  border-color: color-mix(in srgb, var(--line) 82%, transparent);
-  box-shadow: 0 8px 24px rgba(16, 38, 31, .04);
-  backdrop-filter: blur(12px);
+  background: rgba(0, 26, 18, 0.75);
+  border-color: rgba(197, 232, 180, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(20px);
 }
 
 .site-logo {
@@ -123,8 +127,10 @@ button, input, textarea, select { font: inherit; }
   font-size: 1.5rem;
   font-weight: 800;
   letter-spacing: -.02em;
-  color: var(--green);
+  color: var(--paper);
   flex-shrink: 0;
+  transition: color 350ms ease-out;
+  text-shadow: 0 0 20px rgba(197, 232, 180, 0.2);
 }
 
 .site-logo-footer {
@@ -161,11 +167,14 @@ button, input, textarea, select { font: inherit; }
 .site-nav-link {
   font-size: .9375rem;
   font-weight: 600;
-  color: var(--ink);
-  transition: color 180ms;
+  color: rgba(247, 248, 243, 0.85);
+  transition: color 280ms, text-shadow 280ms;
 }
 
-.site-nav-link:hover { color: var(--green); }
+.site-nav-link:hover { 
+  color: var(--lime);
+  text-shadow: 0 0 20px rgba(197, 232, 180, 0.4);
+}
 
 .site-nav-cta { display: none; }
 
@@ -182,7 +191,12 @@ button, input, textarea, select { font: inherit; }
   border: none;
   background: transparent;
   cursor: pointer;
-  color: var(--ink);
+  color: rgba(247, 248, 243, 0.85);
+  transition: color 280ms;
+}
+
+.mobile-menu-button:hover {
+  color: var(--lime);
 }
 
 @media (min-width: 900px) {
@@ -861,4 +875,134 @@ button, input, textarea, select { font: inherit; }
   
   .button-primary:hover,
   .button-secondary:hover { transform: none; }
+}
+
+
+/* Telloya cinematic navigation: left-aligned brand, balanced links and CTA.
+   Scope everything to the homepage, preserving the standard header elsewhere. */
+.site-header-standard { background: var(--paper); border-bottom: 1px solid var(--line); }
+.site-header-standard .site-nav-link { color: var(--ink); }
+.site-header-standard .site-nav-link:hover { color: var(--green); }
+.site-header-standard .mobile-menu-button { color: var(--ink); }
+.site-header-standard .site-logo { text-shadow: none; }
+
+.site-header-cinematic { background: transparent; border: 0; }
+.site-header-cinematic > .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(16px, 2.4vw, 34px);
+  width: min(1370px, calc(100% - 56px));
+  max-width: none;
+  min-height: 76px;
+  padding: 9px clamp(18px, 2.25vw, 36px);
+  margin-top: 15px;
+  border: 1px solid rgba(206, 255, 198, .25);
+  border-radius: 100px;
+  background: linear-gradient(110deg, rgba(0, 28, 24, .78), rgba(4, 40, 30, .56));
+  box-shadow: inset 0 1px rgba(242,255,225,.11), 0 16px 46px rgba(0,0,0,.17);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.site-header-cinematic .site-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  flex-shrink: 0;
+  min-width: max-content;
+  margin-right: auto;
+  color: #fffdf4;
+  text-shadow: none;
+}
+.site-header-cinematic .site-logo .telloya-logo-symbol {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px !important;
+}
+.site-header-cinematic .site-logo .telloya-logo-symbol img {
+  width: 42px !important;
+  height: 42px !important;
+  padding: 3px;
+  background: radial-gradient(circle at 40% 34%, rgba(199,255,149,.29), rgba(22,85,55,.42) 67%, rgba(7,34,25,.75));
+  border: 1px solid rgba(215,255,175,.37);
+  border-radius: 15px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 0 25px rgba(147,255,121,.25);
+  filter: brightness(1.14) saturate(1.16);
+}
+.site-header-cinematic .site-logo .telloya-logo-symbol span {
+  font-family: var(--font-display), Arial, sans-serif;
+  color: #f9fff3 !important;
+  font-size: 24px !important;
+  font-weight: 800;
+  letter-spacing: -.045em;
+}
+.site-header-cinematic .site-nav {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: clamp(18px, 1.9vw, 32px);
+  margin-left: auto;
+  min-width: 0;
+}
+.site-header-cinematic .site-nav-links {
+  align-items: center;
+  gap: clamp(14px, 1.65vw, 28px);
+}
+.site-header-cinematic .site-nav-link {
+  white-space: nowrap;
+  color: rgba(245,255,239,.91);
+  font-size: .89rem;
+  font-weight: 650;
+  transition: color .2s ease, text-shadow .2s ease;
+}
+.site-header-cinematic .site-nav-link:hover,
+.site-header-cinematic .site-nav-link:focus-visible {
+  color: #d1ff9c;
+  text-shadow: 0 0 18px rgba(194,255,148,.4);
+}
+.site-header-cinematic .site-nav-cta .button-secondary {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 43px;
+  padding: 9px 19px;
+  font-size: .86rem;
+  line-height: 1.2;
+  font-weight: 760;
+  white-space: nowrap;
+  color: #d6ffa4;
+  border: 1px solid rgba(192,255,151,.56);
+  background: linear-gradient(135deg, rgba(118,213,90,.18), rgba(12,75,45,.42));
+  box-shadow: inset 0 1px 0 rgba(240,255,225,.13), 0 0 18px rgba(175,251,124,.10);
+}
+.site-header-cinematic .site-nav-cta .button-secondary:hover {
+  background: rgba(125,238,99,.23);
+  border-color: #c5ff98;
+  color: #fff;
+}
+.site-header-cinematic.site-header-scrolled {
+  background: rgba(0, 21, 18, .85);
+  border-bottom-color: transparent;
+}
+.site-header-cinematic.site-header-scrolled > .container {
+  margin-top: 8px;
+  background: rgba(0, 31, 24, .91);
+}
+@media (max-width: 1150px) {
+  .site-header-cinematic > .container { width: calc(100% - 36px); padding-inline: 22px; }
+  .site-header-cinematic .site-nav { gap: 16px; }
+  .site-header-cinematic .site-nav-links { gap: 16px; }
+  .site-header-cinematic .site-nav-link { font-size: .82rem; }
+}
+@media (max-width: 1060px) {
+  .site-header-cinematic .site-nav-links,
+  .site-header-cinematic .site-nav-cta { display: none; }
+  .site-header-cinematic .mobile-menu-button { display: flex; color: #f6fff0; }
+  .site-header-cinematic > .container { width: calc(100% - 36px); min-height: 66px; padding: 9px 22px; }
+  .site-header-cinematic .site-nav { margin-left: auto; }
+}
+@media (max-width: 520px) {
+  .site-header-cinematic > .container { width: calc(100% - 28px); margin-top: 10px; padding-inline: 16px; min-height: 62px; }
+  .site-header-cinematic .site-logo .telloya-logo-symbol img { width: 36px !important; height: 36px !important; border-radius: 13px; }
+  .site-header-cinematic .site-logo .telloya-logo-symbol span { font-size: 22px !important; }
 }

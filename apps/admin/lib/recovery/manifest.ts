@@ -1217,8 +1217,8 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Customer mail leads with the case reference. Quotation, service-order
-    // and receipt numbers stay labelled secondary records. This is the observed
-    // DEV head. Applied once. Do not replay it and do not apply it to Production.
+    // and receipt numbers stay labelled secondary records. Applied once.
+    // Do not replay it and do not apply it to Production.
     // It does not rewrite stored communications, quotations, receipts or catalogue rows.
     // Repository file SHA-256 a500bb693b914745ff746904552253bf67e8bd635f3b2798f482650d1eb6c2b1.
     version: "20261031150000",
@@ -1231,16 +1231,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Customer case reference", probe: "admin_private.guided_payment_request_snapshot_reason_v1" },
   },
   {
-    // Customer Portal idle timeout. Repository only. appliedToDev is false.
-    // Do not apply this file from the pull request and do not apply it to
-    // Production. Existing sessions are initialised from authenticated_at.
-    // The column initialisation is not a customer, case, payment, or message change.
+    // Customer Portal idle timeout. Verified DEV ledger head. Applied once.
+    // Do not replay it and do not apply it to Production.
+    // The top-level UPDATE sets last_activity_at = authenticated_at on existing
+    // session rows. That is DML outside a function body, so containsDataChange
+    // is true. It does not change customer, case, payment, message, or quotation
+    // rows. Repository file is 7,609 bytes. SHA-256
+    // bdb533e18a4a947f2726c9007a59f90288985d4eeae1ca9afc5c5d0d4329db8f.
     version: "20261031160000",
     filename: "20261031160000_customer_portal_idle_timeout_v1.sql",
     step: "Customer Portal sessions expire after 30 minutes idle",
     kind: "additive",
-    appliedToDev: false,
-    containsDataChange: false,
+    appliedToDev: true,
+    containsDataChange: true,
     safeToReplay: false,
     verification: { category: "Customer Portal idle timeout", probe: "public.customer_portal_touch_session_v1" },
   },
@@ -1255,8 +1258,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261031150000`. The verified live DEV ledger contains 90 entries and ends
- * there. Customer case-reference subjects were applied once to DEV and must
+ * `20261031160000`. The verified live DEV ledger contains 91 entries and ends
+ * there. The idle-timeout file updates existing session rows outside a function
+ * body, so containsDataChange is true. Do not replay `20261031160000`. It is not
+ * applied to Production. Customer case-reference subjects were applied once to DEV and must
  * not be replayed. Do not replay `20261031150000`. It is not applied to
  * Production. Guided customer outcome and Guided pack-ready dispatch were applied
  * once to DEV and must not be replayed. Do not replay `20261031140000` or
@@ -1267,11 +1272,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` contains unapplied
- * `20261031160000_customer_portal_idle_timeout_v1.sql`. Do not apply it
- * without a separate approval, and do not apply it to Production.
+ * applied and must not be replayed. `pendingMigrations()` is empty.
  * The repository chain is longer than the live ledger because it still records the
- * three foundation files that live DEV omits (issue #190) and this unapplied file.
+ * three foundation files that live DEV omits (issue #190).
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

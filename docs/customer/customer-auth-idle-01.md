@@ -20,18 +20,18 @@ The migration sets `last_activity_at = authenticated_at` for rows that do not ha
 
 After the migration commits, a DEV session whose OTP is already older than 30 minutes is idle-expired immediately, even if the eight-hour cookie and `expires_at` are still in date. That customer needs a new email code. A session younger than 30 minutes stays valid until 30 minutes after `authenticated_at`, until the new Customer app records genuine activity.
 
-The column initialisation does not change customer, case, payment, message, or quotation rows. `appliedToDev` stays false in this pull request. `safeToReplay` stays false. Production and AWS approved heads stay at `20261014170000`.
+The column initialisation is an `UPDATE` of existing `admin_private.customer_portal_sessions` rows outside a function body. The manifest therefore records `containsDataChange: true`. It does not change customer, case, payment, message, or quotation rows. The verified DEV ledger head is `20261031160000`. `appliedToDev` is true. `safeToReplay` stays false. Do not replay this file. Production and AWS approved heads stay at `20261014170000`.
 
 ## Source
 
 `supabase/migrations/20261031160000_customer_portal_idle_timeout_v1.sql`
 
-SHA-256 `bdb533e18a4a947f2726c9007a59f90288985d4eeae1ca9afc5c5d0d4329db8f` (7,609 bytes). Confirm this hash against the file that is applied. Do not replay `20261031150000` or any earlier DEV-applied migration while applying this one.
+SHA-256 `bdb533e18a4a947f2726c9007a59f90288985d4eeae1ca9afc5c5d0d4329db8f` (7,609 bytes). This is the hash of the statement already stored on DEV. Do not replay `20261031160000`, `20261031150000`, or any earlier DEV-applied migration.
 
 ## DEV rollout order
 
 1. Do not apply this migration to Production. Do not deploy this Customer app to Production.
-2. Apply `20261031160000_customer_portal_idle_timeout_v1.sql` on DEV first, before the Customer deployment that calls `customer_portal_touch_session_v1`.
+2. `20261031160000_customer_portal_idle_timeout_v1.sql` is already the verified DEV head. Do not apply it again. It was applied before the Customer deployment that calls `customer_portal_touch_session_v1`.
 3. Confirm the DEV ledger version, the SHA-256 above, and that existing `last_activity_at` values equal `authenticated_at`.
 4. Confirm a session older than 30 minutes and younger than eight hours is rejected by `customer_portal_session_v1` while its cookie would still look present.
 5. Deploy the Customer app after that confirmation. Until that deploy, the previous app does not send activity, so a customer is signed out 30 minutes after OTP verification even if they keep using the portal.

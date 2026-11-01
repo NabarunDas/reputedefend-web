@@ -20,3 +20,9 @@ export function portalExpiryWarning(clock: PortalClock, now: number): boolean {
   const remaining = deadline - now
   return remaining > 0 && remaining <= PORTAL_IDLE_WARNING_SECONDS * 1000
 }
+
+/** True at the earlier deadline itself. Exactly 30 idle minutes, or the eight-hour limit, has passed. */
+export function portalDeadlinePassed(clock: PortalClock, now: number): boolean {
+  const deadline = portalDeadlineMs(clock)
+  return deadline !== null && now >= deadline
+}

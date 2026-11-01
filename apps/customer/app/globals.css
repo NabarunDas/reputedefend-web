@@ -667,6 +667,8 @@ form button { margin: 1rem 0; }
 
 html[data-portal-session="checking"] .portal-private,
 html[data-portal-session="held"] .portal-private,
+html[data-portal-session="checking"] .customer-header-context,
+html[data-portal-session="held"] .customer-header-context,
 html[data-portal-session="checking"] .portal-idle-warning {
   visibility: hidden;
 }

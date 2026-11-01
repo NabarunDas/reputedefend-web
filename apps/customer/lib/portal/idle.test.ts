@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { portalDeadlineMs, portalExpiryWarning } from "./idle"
+import { portalDeadlineMs, portalDeadlinePassed, portalExpiryWarning } from "./idle"
 
 const clock = {
   authenticatedAt: "2026-10-31T12:00:00.000Z",
@@ -16,5 +16,9 @@ describe("portal idle warning", () => {
     expect(portalExpiryWarning(clock, idle)).toBe(false)
     const absoluteFirst = { ...clock, expiresAt: "2026-10-31T12:10:00.000Z" }
     expect(portalDeadlineMs(absoluteFirst)).toBe(Date.parse(absoluteFirst.expiresAt))
+    expect(portalDeadlinePassed(clock, idle - 1)).toBe(false)
+    expect(portalDeadlinePassed(clock, idle)).toBe(true)
+    expect(portalDeadlinePassed(absoluteFirst, Date.parse(absoluteFirst.expiresAt))).toBe(true)
+    expect(portalDeadlinePassed(absoluteFirst, Date.parse(absoluteFirst.idleExpiresAt) - 1)).toBe(true)
   })
 })

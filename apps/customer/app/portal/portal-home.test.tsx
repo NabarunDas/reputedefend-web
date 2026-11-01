@@ -175,7 +175,7 @@ describe("portal shell", () => {
     resolveSignOut(jsonResult({}, false, 500))
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("We couldn't sign you out. Try again."))
     expect(screen.getAllByRole("alert")).toHaveLength(1)
-    expect(screen.queryByText("We couldn't confirm your session. Refresh the page.")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
     expect(router.push).not.toHaveBeenCalled()
     expect(replaceDocument).not.toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled()

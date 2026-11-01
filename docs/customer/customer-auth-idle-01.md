@@ -10,6 +10,8 @@ Customer Portal sessions now end after 30 minutes without genuine activity. The 
 
 The browser records activity only for a visible tab: pointer and keyboard, debounced to 60 seconds, plus the explicit **Stay signed in** control. Hidden tabs, `visibilitychange`, `pageshow`, `popstate`, and navigation re-check the read-only session endpoint. Restoration hides portal content until that check succeeds. A portal cookie that fails validation sends the customer to `/login?ended=security`.
 
+When the earlier of the idle deadline and the eight-hour absolute deadline passes, the browser hides portal content and the customer name in the header immediately, before it asks the server. It then reads `/api/portal/auth/session` once. That read does not extend the session. The one-second warning clock does not send a request. An expired session goes to `/login?ended=security`. A session another tab has kept valid replaces the deadlines and shows the page again. If the server cannot be reached, the concealed page stays concealed until the customer chooses **Try again**, which reads the session again and does not record activity. A late response cannot reveal the page or redirect a second time.
+
 Sign out still calls `customer_portal_sign_out_v1`. If that call throws or does not return `ok`, the response is 503, the cookies stay, and the screen does not say the session was revoked.
 
 ## Existing DEV sessions

@@ -59,13 +59,15 @@ export function OnboardingPanel({ view, enquiryId, open, businessName, country }
       <p>No customer uses this email yet. Creating the record does not verify the email and does not send a message.</p>
       <Reason label="Why is a new customer record needed?" />
     </CommandForm>}
-    {view.step === "business" && view.businesses.map(business => <CommandForm key={business.id} endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel={`Use ${business.name || "this business"}`} payload={form => ({ operation: "match_business", version, enquiryId, businessId: business.id, membership: form.get("membership"), reason: form.get("reason") })}>
-      <p>{business.name} · {business.membership === "verified" ? "Authority verified" : business.membership === "revoked" ? "Authority withdrawn" : "Authority pending"}</p>
-      <label>Authority<select name="membership" defaultValue={business.membership === "verified" ? "verified" : "pending"}><option value="pending">Pending. This is not verified authority.</option>{view.contactVerified && business.membership !== "revoked" && <option value="verified">Verified. Email or phone proof already exists.</option>}</select></label>
-      <Reason label="Why is this the right business?" />
-    </CommandForm>)}
+    {view.step === "business" && view.businesses.map(business => business.membership === "revoked"
+      ? <p key={business.id}>{business.name} · Authority withdrawn. Matching does not restore it. Changing authority uses the membership record.</p>
+      : <CommandForm key={business.id} endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel={`Use ${business.name || "this business"}`} payload={form => ({ operation: "match_business", version, enquiryId, businessId: business.id, membership: business.membership === "verified" ? "verified" : "pending", reason: form.get("reason") })}>
+        <p>{business.name} · {business.membership === "verified" ? "Authority verified" : "Authority pending"}</p>
+        <p>Matching keeps this authority. It does not verify pending authority or change verified authority.</p>
+        <Reason label="Why is this the right business?" />
+      </CommandForm>)}
     {view.step === "business" && <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Create this business" payload={form => ({ operation: "match_business", version, enquiryId, create: true, name: form.get("name"), website: form.get("website") || "", membership: form.get("membership"), reason: form.get("reason") })}>
-      <p>Create a business only when it does not already exist. Pending authority is not verified authority.</p>
+      <p>Create a business only when it does not already exist. Pending authority is not verified authority. Verified authority needs existing email or phone proof and a recent Admin sign-in.</p>
       <label>Business name<input name="name" required maxLength={200} defaultValue={businessName} /></label>
       <label>Website (optional)<input name="website" type="url" maxLength={2048} defaultValue="" /></label>
       <label>Authority<select name="membership" defaultValue="pending"><option value="pending">Pending. This is not verified authority.</option>{view.contactVerified && <option value="verified">Verified. Email or phone proof already exists.</option>}</select></label>
@@ -80,21 +82,21 @@ export function OnboardingPanel({ view, enquiryId, open, businessName, country }
     </CommandForm>}
     {view.step === "next" && <>
       {view.customer && <p>Customer: {view.customer.name}</p>}
-      {request?.subscriptionId && <p>An offer is pinned to the approved plan. No payment has been taken and no product is active.</p>}
+      {request?.subscriptionId && <p>The customer, business, locations and commercial terms are fixed for this offer. No payment has been taken and no product is active.</p>}
       {!view.invitationReady && <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Mark ready for a later invitation" payload={form => ({ operation: "mark_ready", version, enquiryId, reason: form.get("reason") })}>
         <p>This records that the matched customer, business and locations are ready for a later invitation. It does not send email, create a login, or verify an address.</p>
         <Reason label="Why is this ready for a later invitation?" />
       </CommandForm>}
       {view.invitationReady && <p>{view.emailVerified ? "Admin has recorded this request as ready for a later invitation. The customer email is already verified, so the existing login remains available. No invitation email has been sent." : "Admin has recorded this request as ready for a later invitation. The customer email is not verified. No invitation email has been sent."}</p>}
       {view.termsConfigured && view.membership === "verified" && !request?.subscriptionId && <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare the approved offer" payload={form => ({ operation: "prepare_offer", version, enquiryId, reason: form.get("reason") })}>
-        <p>This pins the approved price, terms and location quantity. It does not open a checkout or activate Telloya or Guard.</p>
+        <p>This pins the approved price and each component’s approved quantity. Telloya and Guard are not given the same quantity. It does not open a checkout or activate Telloya or Guard.</p>
         <Reason label="Why is this offer being prepared?" />
       </CommandForm>}
     </>}
     {request && request.state !== "DECLINED" && request.state !== "CLOSED" && <details>
       <summary>Decline this onboarding request</summary>
       <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Decline onboarding" payload={form => ({ operation: "decline", version, enquiryId, reason: form.get("reason") })}>
-        <p>Declining stops this request. It does not delete the customer or the business, and it does not send email.</p>
+        <p>Declining stops this request. A prepared offer is withdrawn in the same step and does not stay open. It does not delete the customer or the business, and it does not send email or take payment.</p>
         <Reason label="Why is this request declined?" />
       </CommandForm>
     </details>}

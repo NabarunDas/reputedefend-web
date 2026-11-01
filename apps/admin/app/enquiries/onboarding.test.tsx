@@ -82,4 +82,36 @@ describe("Telloya onboarding panel", () => {
     expect(screen.queryByRole("button", { name: "Prepare the approved offer" })).toBeNull()
     expect(screen.getByRole("button", { name: "Mark ready for a later invitation" })).toBeTruthy()
   })
+
+  it("shows a fixed offer and does not treat withdrawn authority as selectable", () => {
+    render(<OnboardingPanel view={{
+      ...base,
+      step: "next",
+      emailVerified: true,
+      contactVerified: true,
+      membership: "verified",
+      termsConfigured: true,
+      outstanding: [],
+      nextAction: null,
+      request: { id: "33333333-3333-4333-8333-333333333333", product: "COMPLETE", state: "OFFERED", version: 6, customerId: "22222222-2222-4222-8222-222222222222", businessId: "44444444-4444-4444-8444-444444444444", declineReason: null, subscriptionId: "55555555-5555-4555-8555-555555555555" },
+      customer: { id: "22222222-2222-4222-8222-222222222222", name: "Verified Owner", emailVerified: true, version: 2 },
+    }} enquiryId={enquiryId} open businessName="North Plumbing" country="United Kingdom" />)
+    expect(screen.getByText(/locations and commercial terms are fixed/)).toBeTruthy()
+    expect(screen.getByText(/withdrawn in the same step/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Save locations" })).toBeNull()
+  })
+
+  it("does not offer a match that would restore withdrawn authority", () => {
+    render(<OnboardingPanel view={{
+      ...base,
+      step: "business",
+      membership: "revoked",
+      outstanding: ["Business authority has been withdrawn. Withdrawn authority cannot receive an invitation."],
+      nextAction: "Business authority has been withdrawn. Withdrawn authority cannot receive an invitation.",
+      request: { id: "33333333-3333-4333-8333-333333333333", product: "TELLOYA", state: "IN_REVIEW", version: 2, customerId: "22222222-2222-4222-8222-222222222222", businessId: null, declineReason: null, subscriptionId: null },
+      businesses: [{ id: "44444444-4444-4444-8444-444444444444", name: "North Plumbing", membership: "revoked", membershipVersion: 2 }],
+    }} enquiryId={enquiryId} open businessName="North Plumbing" country="United Kingdom" />)
+    expect(screen.getByText(/Matching does not restore it/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Use North Plumbing" })).toBeNull()
+  })
 })

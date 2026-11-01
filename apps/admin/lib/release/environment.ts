@@ -261,6 +261,7 @@ export const environmentContract: readonly EnvVariable[] = [
       "apps/telloya/app/robots.ts",
       "apps/telloya/app/sitemap.ts",
       "apps/telloya/lib/config.ts",
+      "apps/telloya/lib/customer-portal.ts",
       "apps/telloya/next.config.mjs",
       "lib/cases/email-confirmation.ts",
       "lib/cases/persistence-config.ts",
@@ -334,7 +335,7 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "Those develop-only controls refuse the request. The guided case workflow is not served, and Marketing Preview case email stays closed.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["apps/admin/lib/case-journey/gate.ts", "apps/admin/lib/commercial/dev-establishment-gate.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-payment-events.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/admin/proxy.ts", "apps/customer/lib/payments/central-dispatch.ts", "lib/cases/email-confirmation.ts", "lib/cases/persistence-config.ts"],
+    readBy: ["apps/admin/lib/case-journey/gate.ts", "apps/admin/lib/commercial/dev-establishment-gate.ts", "apps/admin/lib/communications/dev-lane.ts", "apps/admin/lib/jobs/dev-payment-events.ts", "apps/admin/lib/jobs/dev-stripe-one-shot.ts", "apps/admin/proxy.ts", "apps/customer/lib/payments/central-dispatch.ts", "apps/telloya/lib/customer-portal.ts", "lib/cases/email-confirmation.ts", "lib/cases/persistence-config.ts"],
   },
 
   {

@@ -6,11 +6,11 @@
   --paper: #f7f8f3;
   --surface: #fff;
   --line: #dfe5dc;
-  /* Telloya brand colors */
-  --green: #00572D;
-  --green-dark: #003d20;
-  --accent: #00572D;
-  --lime: #C4F93F;
+  /* ProfileRelaunch design system colors (shared) */
+  --green: #0A6E3C;
+  --green-dark: #085330;
+  --accent: #009838;
+  --lime: #C5E8B4;
   --warm: #f0e8da;
   --edge: color-mix(in srgb, var(--ink) 14%, transparent);
 }

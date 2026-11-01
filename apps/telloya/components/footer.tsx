@@ -1,11 +1,12 @@
 import Link from "next/link"
 import { TelloyaLogo } from "@/components/telloya-logo"
-import { brandName, brandHomeLabel, brandOperator, operatorSiteUrl } from "@/lib/brand"
-import { legalIdentity } from "../../../lib/legal"
+import { brandName, brandHomeLabel } from "@/lib/brand"
+import { publicLegalDisclosure, legalIdentity } from "../../../lib/legal"
 import { footerContent } from "@/lib/content"
 
 export function Footer() {
   const currentYear = new Date().getFullYear()
+  const disclosure = publicLegalDisclosure()
 
   return (
     <footer className="site-footer">
@@ -59,10 +60,15 @@ export function Footer() {
             </ul>
             <p className="footer-note">{footerContent.note}</p>
           </div>
-          <p className="text-sm opacity-70">
-            © {currentYear} {legalIdentity.legalName}. Company number{" "}
-            {legalIdentity.registrationNumber}. Registered in {legalIdentity.placeOfRegistration}.
-          </p>
+          <div className="text-sm opacity-70">
+            <p className="mb-2">{disclosure.tradingStatement}</p>
+            <p className="mb-2">
+              © {currentYear} {disclosure.operator}. {disclosure.companyNumber} {disclosure.placeOfRegistration}
+            </p>
+            <p>
+              {disclosure.registeredOfficeLabel}: {disclosure.registeredOfficeInline}
+            </p>
+          </div>
         </div>
       </div>
     </footer>

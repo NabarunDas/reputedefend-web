@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 
 export default function Pricing() {
   return (
-    <main>
+    <>
       <Section className="hero">
         <div className="hero-content">
           <Eyebrow>{hero.eyebrow}</Eyebrow>
@@ -125,6 +125,6 @@ export default function Pricing() {
         href={cta.href}
         className="bg-surface"
       />
-    </main>
+    </>
   )
 }

@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 
 export default function Demo() {
   return (
-    <main>
+    <>
       <Section className="hero">
         <div className="hero-content">
           <Eyebrow>{hero.eyebrow}</Eyebrow>
@@ -84,6 +84,6 @@ export default function Demo() {
           <p className="text-muted">{finalCta.description}</p>
         </div>
       </Section>
-    </main>
+    </>
   )
 }

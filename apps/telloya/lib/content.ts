@@ -6,6 +6,8 @@
  */
 
 import { brandName, brandSiteUrl } from "@/lib/brand"
+import { getCustomerPortalHref } from "@/lib/customer-portal"
+import { legalIdentity } from "../../../lib/legal"
 
 // Homepage content
 export const homepageContent = {
@@ -116,7 +118,7 @@ export const homepageContent = {
     eyebrow: "Service plans",
     title: "Telloya and Complete",
     lead:
-      "Choose standalone Telloya for AI receptionist service, or Complete for Telloya plus Relaunch Guard profile monitoring",
+      "Choose standalone Telloya for AI receptionist service, or the proposed Complete package for Telloya plus Relaunch Guard profile monitoring. Final pricing and Complete package details are being confirmed.",
     telloya: {
       name: "Telloya",
       description: "AI receptionist for missed-call enquiries",
@@ -131,7 +133,7 @@ export const homepageContent = {
     },
     complete: {
       name: "Complete",
-      description: "Telloya plus Relaunch Guard",
+      description: "Telloya plus Relaunch Guard (proposed package)",
       features: [
         "Everything in Telloya",
         "Google Business Profile monitoring",
@@ -319,7 +321,7 @@ export const featuresContent = {
       title: "Missed-call assistance",
       description:
         "When you can't pick up, Telloya can answer the forwarded call and help the customer. Our AI receptionist explains you're unavailable and offers to collect their enquiry details.",
-      status: "Proven in POC",
+      status: "POC-tested",
       points: [
         "Natural greeting and explanation",
         "Professional tone without sounding robotic",
@@ -331,7 +333,7 @@ export const featuresContent = {
       title: "Conversational enquiry collection",
       description:
         "Telloya asks for the information you need to follow up effectively. The conversation feels natural, not like filling out a form over the phone.",
-      status: "Proven in POC",
+      status: "POC-tested",
       points: [
         "Contact details (name and phone number)",
         "Service requested",
@@ -345,7 +347,7 @@ export const featuresContent = {
       title: "Lead summaries",
       description:
         "Every enquiry Telloya captures is delivered as a clear, structured summary. You get the context you need without listening to the full call.",
-      status: "Proven in POC",
+      status: "POC-tested",
       points: [
         "Structured format for quick review",
         "Key details highlighted",
@@ -357,7 +359,7 @@ export const featuresContent = {
       title: "Callback preferences",
       description:
         "Telloya asks when the customer prefers to be called back. This helps you follow up at a time that works for them.",
-      status: "Proven in POC",
+      status: "POC-tested",
       points: [
         "Morning, afternoon or evening preference",
         "Urgent vs routine enquiries",
@@ -369,7 +371,7 @@ export const featuresContent = {
       title: "Business-specific configuration",
       description:
         "Telloya is configured for your business type and services. The questions adapt to what your customers typically need.",
-      status: "Proven in POC",
+      status: "POC-tested",
       points: [
         "Business name and service description",
         "Industry-specific question flow",
@@ -392,14 +394,14 @@ export const featuresContent = {
   ],
   technical: {
     eyebrow: "Technical foundation",
-    title: "Built on proven voice AI",
+    title: "Voice AI technology",
     lead:
-      "Telloya uses Retell AI for conversational intelligence and Twilio for telephony. These are established platforms that power voice applications globally.",
+      "Telloya is built using established voice AI platforms. Implementation details and provider partnerships are subject to final technical architecture decisions.",
     points: [
       "Real-time conversation processing",
       "Natural language understanding",
-      "UK-based phone numbers",
-      "Reliable call routing",
+      "UK-based phone numbers (provider dependent)",
+      "Telephony routing and call handling",
     ],
   },
   future: {
@@ -696,9 +698,9 @@ export const pricingContent = {
           "Both plans will include a monthly minute allowance. Overage handling and rates are being confirmed.",
       },
       {
-        title: "Separate services in Complete",
+        title: "Proposed package structure",
         description:
-          "Complete combines Telloya and Relaunch Guard in one subscription, but they remain distinct services with separate features and scope.",
+          "Complete is a proposed package combining Telloya and Relaunch Guard. Final package terms, feature scope, and pricing are being confirmed before launch.",
       },
     ],
   },
@@ -723,7 +725,7 @@ export const pricingContent = {
       },
       {
         q: "Do I need Relaunch Guard to use Telloya?",
-        a: "No. Telloya is available as a standalone service. Complete is an option for businesses that want both AI receptionist and profile monitoring.",
+        a: "No. Telloya is available as a standalone service. Complete is a proposed package option for businesses that want both AI receptionist and profile monitoring, subject to final terms.",
       },
     ],
   },
@@ -751,14 +753,14 @@ export const demoContent = {
   contact: {
     title: "Send us an enquiry",
     lead:
-      "Email us at the address below with 'Telloya Enquiry' in the subject line. We'll respond within one working day.",
-    email: "hello@profilerelaunch.com",
+      "Email us at the address below with 'Telloya Enquiry' in the subject line.",
+    email: legalIdentity.contactEmail ?? "contact@profilerelaunch.com",
     subject: "Telloya Enquiry",
     whatToInclude: [
       "Your business name and type of work",
       "Rough location (town or region)",
       "How many calls you typically miss per week",
-      "Whether you're interested in Telloya standalone or Complete",
+      "Whether you're interested in Telloya standalone or the proposed Complete package",
       "Any questions about how the service works",
     ],
   },
@@ -774,7 +776,7 @@ export const demoContent = {
     title: "Access your account",
     lead: "Existing customers can log in to the ProfileRelaunch customer portal.",
     cta: "Customer login",
-    href: process.env.CUSTOMER_ORIGIN || "https://customer.profilerelaunch.com",
+    href: getCustomerPortalHref(),
   },
   cta: {
     title: "We'll be in touch soon",
@@ -793,7 +795,7 @@ export const navigationContent = {
   ],
   cta: {
     label: "Customer Login",
-    href: process.env.CUSTOMER_ORIGIN || "https://customer.profilerelaunch.com",
+    href: getCustomerPortalHref(),
   },
 } as const
 
@@ -814,7 +816,7 @@ export const footerContent = {
     {
       title: "Account",
       links: [
-        { label: "Customer Login", href: process.env.CUSTOMER_ORIGIN || "https://customer.profilerelaunch.com" },
+        { label: "Customer Login", href: getCustomerPortalHref() },
       ],
     },
     {
@@ -830,5 +832,5 @@ export const footerContent = {
     { label: "Terms", href: "https://profilerelaunch.com/terms" },
   ],
   note:
-    "Telloya-specific terms and privacy documentation for call handling, recordings and data processing are being finalised before launch.",
+    "Privacy and Terms links above are company-wide website notices. Telloya-specific terms covering AI voice services, call recording, transcripts and data retention will be published before public launch.",
 } as const

@@ -34,7 +34,7 @@ export const metadata: Metadata = {
 
 export default function Home() {
   return (
-    <main>
+    <>
       {/* Hero */}
       <Section className="hero">
         <div className="hero-content">
@@ -181,6 +181,6 @@ export default function Home() {
 
       {/* Final CTA */}
       <CtaSection title={finalCta.title} cta={finalCta.cta} href={finalCta.href} />
-    </main>
+    </>
   )
 }

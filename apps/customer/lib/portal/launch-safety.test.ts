@@ -72,16 +72,19 @@ describe("customer portal launch safety", () => {
     expect(joined).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
   })
 
-  it("does not render portal content as HTML and does not add a marketing Customer Login", () => {
+  it("does not render portal content as HTML and does not host a marketing login form", () => {
     const markup = portalViews.map(file => readFileSync(file, "utf8")).join("\n")
     expect(markup).not.toContain("dangerouslySetInnerHTML")
     expect(markup).not.toMatch(/tabIndex=\{?[1-9]/)
     const marketing = [
-      ...files(new URL("app/", repoRoot), name => name.endsWith(".tsx")),
-      ...files(new URL("components/", repoRoot), name => name.endsWith(".tsx")),
+      ...files(new URL("app/", repoRoot), name => name.endsWith(".tsx") && !name.includes(".test.")),
+      ...files(new URL("components/", repoRoot), name => name.endsWith(".tsx") && !name.includes(".test.")),
     ]
-    const leaked = marketing.filter(file => /Customer Login|href=["'`]\/login/.test(readFileSync(file, "utf8")))
+    const leaked = marketing.filter(file => /href=["'`]\/login|type=["'`]password/.test(readFileSync(file, "utf8")))
     expect(leaked).toEqual([])
+    const header = readFileSync(new URL("components/header.tsx", repoRoot), "utf8")
+    expect(header).toContain("Customer login")
+    expect(header).not.toMatch(/<form|type=["']password/)
   })
 
   it("keeps messages and account read-only and the portal gate exact", () => {

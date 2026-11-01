@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
+import { DEV_CUSTOMER_PORTAL_HREF, PRODUCTION_CUSTOMER_PORTAL_HREF } from "@/lib/customer-portal-href"
 import { Header } from "./header"
 
 let pathname = "/"
@@ -208,5 +209,66 @@ describe("Header navigation", () => {
     expect(screen.queryByRole("navigation", { name: "Mobile" })).not.toBeInTheDocument()
     expect(servicesButton()).not.toHaveFocus()
     expect(screen.getByRole("button", { name: "Open navigation" })).not.toHaveFocus()
+  })
+
+  it("places a ghost Customer login before Get Help and keeps the services menu", () => {
+    render(<Header portalHref={DEV_CUSTOMER_PORTAL_HREF} />)
+    const login = screen.getByRole("link", { name: "Customer login" })
+    const help = screen.getByRole("link", { name: /^Get Help/ })
+    expect(login).toHaveAttribute("href", DEV_CUSTOMER_PORTAL_HREF)
+    expect(login).toHaveAttribute("rel", "noopener noreferrer")
+    expect(login.className).toContain("customer-login")
+    expect(login.className).not.toContain("button-primary")
+    expect(help.className).toContain("button-primary")
+    expect(login.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    login.focus()
+    expect(login).toHaveFocus()
+    expect(document.querySelector("input, form")).toBeNull()
+
+    openServices()
+    expect(screen.getByRole("link", { name: "Profile Recovery" })).toHaveAttribute("href", "/business-profile-recovery")
+    expect(screen.getByRole("link", { name: "Review Protection" })).toHaveAttribute("href", "/review-protection")
+    expect(screen.getByRole("link", { name: "Relaunch Guard" })).toHaveAttribute("href", "/relaunch-guard")
+  })
+
+  it("shows Customer login in the mobile menu, separated from marketing links, and closes on selection", () => {
+    render(<Header portalHref={PRODUCTION_CUSTOMER_PORTAL_HREF} />)
+    openMobile()
+    const mobile = screen.getByRole("navigation", { name: "Mobile" })
+    const links = within(mobile).getAllByRole("link")
+    expect(links.map((link) => [link.textContent?.trim(), link.getAttribute("href")])).toEqual([
+      ["Profile Recovery", "/business-profile-recovery"],
+      ["Review Protection", "/review-protection"],
+      ["Relaunch Guard", "/relaunch-guard"],
+      ["How It Works", "/how-it-works"],
+      ["Pricing", "/pricing"],
+      ["Resources", "/resources"],
+      ["About", "/about"],
+      ["Contact", "/contact"],
+      ["Customer login", PRODUCTION_CUSTOMER_PORTAL_HREF],
+      ["Get Help", "/get-help"],
+    ])
+    const login = within(mobile).getByRole("link", { name: "Customer login" })
+    expect(login.className).toContain("customer-login")
+    expect(login.className).not.toContain("mobile-nav-cta")
+    expect(within(mobile).getByRole("link", { name: "Get Help" }).className).toContain("mobile-nav-cta")
+    expect(login.previousElementSibling?.tagName).toBe("HR")
+    fireEvent.click(login)
+    expect(screen.queryByRole("navigation", { name: "Mobile" })).not.toBeInTheDocument()
+  })
+
+  it("omits Customer login when the destination is missing or not an approved portal URL", () => {
+    const { rerender } = render(<Header />)
+    expect(screen.queryByRole("link", { name: "Customer login" })).not.toBeInTheDocument()
+    for (const href of [
+      "https://evil.example/portal",
+      "https://customer.profilerelaunch.com/login",
+      "https://customer.profilerelaunch.com/portal?next=https://evil.example",
+      "https://profilerelaunch-customer-git-feature-clientcove.vercel.app/portal",
+      "/portal",
+    ]) {
+      rerender(<Header portalHref={href} />)
+      expect(screen.queryByRole("link", { name: "Customer login" })).not.toBeInTheDocument()
+    }
   })
 })

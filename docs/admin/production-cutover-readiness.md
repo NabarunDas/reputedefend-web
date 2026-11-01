@@ -108,6 +108,7 @@ capability gate is expected to be missing.
 | `CUSTOMER_AUTH_ENABLED` | customer | FEATURE_GATE | non-secret | OPTIONAL | customerConfig() is null, so no customer action link can be opened. The Customer Portal keeps its own gate. Admin is unaffected. |
 | `CUSTOMER_PORTAL_ENABLED` | customer | FEATURE_GATE | non-secret | OPTIONAL | Portal login, /portal and the portal auth routes stay closed. Existing customer action links keep using CUSTOMER_AUTH_ENABLED. |
 | `CUSTOMER_ORIGIN` | admin, customer, marketing | REQUIRED_FOR_OPTIONAL_FEATURE | non-secret | OPTIONAL | customerBackendConfig() is null, so customer actions and the Customer Portal both stay closed and no customer-facing link can be composed. |
+| `CUSTOMER_PORTAL_LINK` | marketing | FEATURE_GATE | non-secret | OPTIONAL | Marketing omits Customer login and the footer Customer portal link on production. Preview keeps its own DEV origin check and never substitutes the production portal. |
 | `NODE_ENV` | marketing, admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Next.js sets it. A non-production value would select the development cookie names, which is why the production smoke test checks the cookie name. |
 | `VERCEL_ENV` | marketing, admin, customer | NON_SECRET_CONFIGURATION | non-secret | PRESENT | Every one of those capabilities stays off, which is the safe direction. |
 | `VERCEL_DEPLOYMENT_ID` | admin | NON_SECRET_CONFIGURATION | non-secret | PRESENT | The heartbeat records null. Nothing else changes. |

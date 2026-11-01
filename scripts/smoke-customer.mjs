@@ -143,6 +143,8 @@ try {
     "/portal/messages",
     `/portal/messages/mc-${"ab".repeat(32)}`,
     "/portal/account",
+    "/portal/products",
+    "/portal/recovery",
   ]
   for (const path of portalPages) {
     const response = await fetch(`${origin}${path}`, { redirect: "manual" })

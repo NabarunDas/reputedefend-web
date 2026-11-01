@@ -15,6 +15,8 @@ import { GuardUnavailable, GuardView } from "./guard/guard-view"
 import { MessagesUnavailable, MessagesView } from "./messages/messages-view"
 import { AccountUnavailable, AccountView } from "./account/account-view"
 import { LoginClient } from "../login/login-client"
+import { ProductsLoading, ProductsView } from "./products/products-view"
+import { presentProducts } from "@/lib/portal/products/present"
 
 const nav = vi.hoisted(() => ({ pathname: "/portal" }))
 vi.mock("next/navigation", () => ({
@@ -77,5 +79,23 @@ describe("assembled portal accessibility", () => {
     check("/portal/messages", "Messages", <MessagesUnavailable />)
     check("/portal/account", "Account", <AccountView account={{ name: "Alex Customer", email: `${"a".repeat(80)}@example.com`, phone: null, emailVerified: true, phoneVerified: false }} />)
     check("/portal/account", "Account", <AccountUnavailable />)
+  })
+
+  it("keeps one My Products heading and marks that destination when the hub is open", () => {
+    vi.stubEnv("CUSTOMER_PRODUCTS_HUB_ENABLED", "true")
+    nav.pathname = "/portal/products"
+    render(<PortalLayout><ProductsView accountName="Ada Okonkwo" products={presentProducts({
+      recovery: { status: "unavailable" },
+      guard: { status: "unavailable" },
+    })} /></PortalLayout>)
+    oneHeading("My Products")
+    const current = screen.getByRole("navigation", { name: "Customer portal" }).querySelector("[aria-current='page']")
+    expect(current?.textContent).toBe("My Products")
+    expect(current?.getAttribute("href")).toBe("/portal/products")
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled()
+    cleanup()
+    render(<PortalLayout><ProductsLoading /></PortalLayout>)
+    oneHeading("My Products")
+    vi.unstubAllEnvs()
   })
 })

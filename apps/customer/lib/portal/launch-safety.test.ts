@@ -42,6 +42,8 @@ function allowedPortalHref(href: string) {
     /^\/portal\/messages\/\$\{[^}]+\}$/,
     /^\/portal\/messages#\$\{[^}]+\}$/,
     /^\/portal\/account$/,
+    /^\/portal\/products$/,
+    /^\/portal\/recovery$/,
     /^\/api\/portal\/documents\/download\?reference=\$\{[^}]+\}\&selector=\$\{[^}]+\}$/,
     /^\/api\/portal\/documents\/archive\?reference=\$\{[^}]+\}$/,
     /^\/api\/portal\/payments\/receipt\?selector=\$\{[^}]+\}$/,
@@ -58,6 +60,7 @@ describe("customer portal launch safety", () => {
       ...portalViews,
       new URL("lib/portal/cases/model.ts", customerRoot).pathname,
       new URL("lib/portal/cases/workspace.ts", customerRoot).pathname,
+      new URL("lib/portal/products/present.ts", customerRoot).pathname,
     ]
     const found = linkFiles.flatMap(file => {
       const source = readFileSync(file, "utf8")

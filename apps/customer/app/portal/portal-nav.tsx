@@ -16,19 +16,22 @@ const more = [
   { label: "Account", href: "/portal/account" },
 ] as const
 
+const productsHubItem = { label: "My Products", href: "/portal/products" } as const
+
 function current(pathname: string, href: string) {
   if (href === "/portal") return pathname === "/portal"
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 
-export function PortalNav({ defaultOpen = false }: { defaultOpen?: boolean } = {}) {
+export function PortalNav({ defaultOpen = false, productsHub = false }: { defaultOpen?: boolean; productsHub?: boolean } = {}) {
   const pathname = usePathname()
   const menuId = useId()
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLUListElement>(null)
   const seenPath = useRef(pathname)
   const [open, setOpen] = useState(defaultOpen)
-  const activeMore = more.find(item => current(pathname, item.href))
+  const moreItems = productsHub ? [productsHubItem, ...more] : more
+  const activeMore = moreItems.find(item => current(pathname, item.href))
 
   useEffect(() => {
     if (seenPath.current === pathname) return
@@ -110,7 +113,7 @@ export function PortalNav({ defaultOpen = false }: { defaultOpen?: boolean } = {
             className={open ? "portal-more-menu is-open" : "portal-more-menu"}
             aria-label="More destinations"
           >
-            {more.map(item => {
+            {moreItems.map(item => {
               const active = current(pathname, item.href)
               return (
                 <li key={item.label}>

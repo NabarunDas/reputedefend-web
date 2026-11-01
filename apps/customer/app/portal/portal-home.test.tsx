@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import PortalLayout from "./layout"
 import { PortalHome } from "./portal-home"
+import { PortalNav } from "./portal-nav"
 
 const router = vi.hoisted(() => ({ push: vi.fn() }))
 const replaceDocument = vi.hoisted(() => vi.fn())
@@ -179,5 +180,17 @@ describe("portal shell", () => {
     expect(router.push).not.toHaveBeenCalled()
     expect(replaceDocument).not.toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled()
+  })
+
+  it("keeps My Products out of navigation until the hub flag is on", () => {
+    const closed = render(<PortalNav />)
+    expect(screen.queryByRole("link", { name: "My Products" })).toBeNull()
+    closed.unmount()
+    nav.pathname = "/portal/products"
+    render(<PortalNav productsHub />)
+    const link = screen.getByRole("link", { name: "My Products" })
+    expect(link).toHaveAttribute("href", "/portal/products")
+    expect(link).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("link", { name: "Dashboard" })).not.toHaveAttribute("aria-current")
   })
 })

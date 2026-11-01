@@ -1,6 +1,6 @@
 # 02A — Current state
 
-Status: **planning only**. No SQL is applied. No Customer Portal UI, Stripe object, Retell agent, or Production setting is changed. Revised against review comments `6559957225` and `6560133090`. The schema facts below are the constraints the other 02A documents now follow.
+Status: **planning only**. No SQL is applied. No Customer Portal UI, Stripe object, Retell agent, or Production setting is changed. Revised against review comments `6559957225`, `6560133090`, and `6560349430`. The schema facts below are the constraints the other 02A documents now follow.
 
 Reviewed on 1 November 2026 against `develop` commit `bb03642c4e70fb7f7d4b184c48facb49e7eb47cd` (PR #384, the flagged My Products hub). This environment did not open a connection to `profilerelaunch-dev`. The ledger facts below are the committed manifest and history test, not a fresh remote query.
 
@@ -98,6 +98,8 @@ The live coverage origin check does not admit a Complete-funded location. After 
 So a Complete customer cannot be given Guard coverage, paid-through, or activation with the functions that exist today. Saying otherwise would require forging an included recovery, a Guard invoice, or a call to the privileged billing setter. None of those are acceptable. A later gated change has to add a bundle origin and a bundle paid-through writer. Until that change is applied, Complete does not activate Guard.
 
 `docs/admin/guard-subscriptions-billing.md` already separates a failed renewal from loss of service: if `paid_through_at > now()`, coverage stays operational, and paid-through is monotonic. A Complete preview must not cancel that coverage or shorten that timestamp while the bundle writer does not yet exist.
+
+Guard cancellation and money movement are also asynchronous. `admin_private.guard_schedule_cancellation_v1` only records cancel-at-period-end intent and a `provider_operations` row of kind `CANCEL_SUBSCRIPTION_PERIOD_END`. `public.guard_confirm_cancellation_v1` is what later accepts the provider flag. `admin_private.guard_approve_immediate_cancellation_v1` queues `CANCEL_SUBSCRIPTION_IMMEDIATE`; the confirm function is what ends that coverage. `admin_private.guard_approve_refund_v1` queues `CREATE_REFUND`, and `public.guard_record_refund_v1` records whether the provider succeeded. `admin_private.guard_approve_credit_v1` inserts a local `SERVICE_CREDIT` in `PENDING_APPLICATION`. That status is not proof Stripe applied a credit. A database transaction cannot roll back any of those provider calls.
 
 Customer actions already include `GUARD_PERMISSION`, `GUARD_SUBSCRIPTION_START`, and `GUARD_PRICE_CHANGE_ACCEPTANCE`. Those are scoped links for an existing customer and coverage, not account invitations.
 

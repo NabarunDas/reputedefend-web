@@ -1,6 +1,6 @@
 # 02A — Data model
 
-Status: **proposed**, revised against review comments `6559957225` and `6560133090`. Names below are recommended. They are not created by this PR. No prices, Stripe products, or rows are seeded. Complete cannot activate Guard until the gated change in this document exists. Phase 02H does not cancel or credit an existing Guard subscription.
+Status: **proposed**, revised against review comments `6559957225`, `6560133090`, and `6560349430`. Names below are recommended. They are not created by this PR. No prices, Stripe products, or rows are seeded. Complete cannot activate Guard until the gated change in this document exists. Phase 02H does not cancel or credit an existing Guard subscription. A Guard cutover does not treat a queued Stripe operation as a committed provider result.
 
 ## Recommendation
 
@@ -247,40 +247,52 @@ A `GUARD` entitlement means the commercial term includes that location. It does 
 | `subscription_id` | Foreign key. The plan must include a `GUARD` component. |
 | `subscription_item` | The Guard item on that subscription. |
 | `customer_id`, `business_id`, `location_id` | Must match each other. Composite foreign key `(location_id, business_id)` → `locations (id, business_id)`. |
-| `state` | In 02B: `RESERVED`, `PREVIEW`, `LAPSED`, `ENDED`. Later, and only after 02I: `CUTOVER_SCHEDULED` and `FUNDED`. There is no `RECONCILING`, `READY_FOR_GUARD_SCHEMA`, or `LINKED` state. 02B cannot insert a legal coverage. |
-| `paid_through_at` | Planned Complete period end for this seat. Null while no Complete period is evidenced. It is not written into `guard_billing` by 02B or 02H. |
-| `scheduled_cutover_at` | Null in 02H. Set only after 02I, to this location's current `guard_billing.paid_through_at` for a boundary cutover, or to an earlier instant that 02J will credit inside the same transaction. |
+| `state` | In 02B: `RESERVED`, `PREVIEW`, `LAPSED`, `ENDED`. Later, and only after 02I: `PROVIDER_PENDING`, `PROVIDER_CONFIRMED`, `FUNDED`, `RECONCILIATION_REQUIRED`. There is no `RECONCILING`, `READY_FOR_GUARD_SCHEMA`, `CUTOVER_SCHEDULED`, or `LINKED` state. 02B cannot insert a legal coverage. |
+| `paid_through_at` | Planned Complete period end for this seat. Null while no Complete period is evidenced. It is not written into `guard_billing` by 02B, 02H, or a queued provider operation. |
+| `scheduled_cutover_at` | Null in 02H. Set only when a period-end cancellation is requested, to this location's current `guard_billing.paid_through_at`. It is not an earlier credit instant. |
+| `provider_operation_id` | Null until the schedule step. Points at the `CANCEL_SUBSCRIPTION_PERIOD_END` operation. A refund or credit operation must not be stored here as if it had unlocked funding. |
 | `effective_from`, `effective_to` | The allocation window. |
 | `standalone_guard_subscription_id` | Nullable foreign key to the open `guard_subscriptions` row for this location. Setting it does not end that row. |
-| `guard_coverage_id` | Null while the state is `RESERVED`, `PREVIEW`, `CUTOVER_SCHEDULED`, `LAPSED`, or `ENDED` before funding. After a successful 02J cutover it stores the coverage that already existed, or the one coverage 02I created for a location that had none. 02B's check forces null. |
-| `request_id` | The idempotency key of the command that created or last changed the row. |
+| `guard_coverage_id` | Null until `FUNDED`. Funding stores the coverage that already existed. 02B's check forces null. |
+| `request_id` | The idempotency key of the latest saga step. Repeating it returns the stored result for that step. |
 
 Indexes:
 
-- Unique `(location_id)` where `state IN ('RESERVED','PREVIEW')` in 02B, extended by 02J to include `CUTOVER_SCHEDULED` and `FUNDED`. One location cannot be in two open bundle allocations. 02B's state check does not allow those later values.
+- Unique `(location_id)` where `state IN ('RESERVED','PREVIEW')` in 02B, extended by 02J to include `PROVIDER_PENDING`, `PROVIDER_CONFIRMED`, `FUNDED`, and `RECONCILIATION_REQUIRED`. One location cannot be in two open bundle allocations. 02B's state check does not allow those later values.
 - Unique `(subscription_id, location_id)`.
 - A count of open allocations for a subscription must be less than or equal to that item's `quantity_limit_snapshot`. Enforce it in the command with a row lock on the subscription, and add a deferred constraint trigger so two concurrent commands cannot both pass.
 
-`bundle_guard_allocation_events` is append-only: allocation id, actor, `request_id`, from state, to state, reason, and the standalone Guard subscription id when relevant. Repeating the same `request_id` returns the stored result. A refused cancel or credit is still an event. It is not a silent no-op.
+`bundle_guard_allocation_events` is append-only: allocation id, actor, `request_id`, from state, to state, reason, the standalone Guard subscription id, and the provider operation id when relevant. Repeating the same `request_id` returns the stored result.
 
-`RESERVED` means the seat is held and this location has no open Guard subscription. `PREVIEW` means an open standalone Guard subscription was recorded and left untouched. `CUTOVER_SCHEDULED` means 02I is present, a verified Complete period exists, and `scheduled_cutover_at` is set, but Guard rows are still unchanged. `FUNDED` means the 02J transaction committed. `LAPSED` means the Complete period ended. `ENDED` means the seat was removed. Ending a `PREVIEW` seat does not end the standalone subscription.
+`RESERVED` means the seat is held and this location has no open Guard subscription. `PREVIEW` means an open standalone Guard subscription was recorded and left untouched. `PROVIDER_PENDING` means a period-end cancellation was requested and the provider operation is not yet `SUCCEEDED`. `PROVIDER_CONFIRMED` means `guard_confirm_cancellation_v1` accepted `cancel_at_period_end` for that operation. `FUNDED` means the later database funding switch committed. `RECONCILIATION_REQUIRED` means a provider result and the funding switch disagree, or the wait timed out, and an admin issue is open. `LAPSED` means the Complete period ended. `ENDED` means the seat was removed. Ending a `PREVIEW` seat does not end the standalone subscription.
 
 02H may insert `RESERVED` or `PREVIEW` only. It must not call Guard cancel, Guard credit, `guard_activate_v1`, or `guard_apply_invoice_paid_v1`. It must not change `guard_subscriptions`, `guard_coverages`, or `guard_billing`.
 
-### Cutover after 02I
+### Cutover saga after 02I
 
-02J is the only phase that may end or credit a standalone Guard subscription for a Complete upgrade. It cannot run until 02I has added the bundle origin, `entitlement_source = BUNDLE`, the readiness branch, and `guard_apply_bundle_paid_through_v1`, and until this location has a verified Complete period with `period_end > now()`.
+02J is the only phase that may ask Guard to stop renewing a standalone subscription for a Complete upgrade. It cannot start until 02I has added the bundle origin, `entitlement_source = BUNDLE`, the readiness branch, and `guard_apply_bundle_paid_through_v1`, and until this location has a verified Complete period with `period_end > now()`.
 
-`admin_private.guard_cutover_bundle_location_v1` is idempotent on `(allocation_id, scheduled_cutover_at)`. It takes `admin_session_v1` and `p_request`. One location per call. Dock being ready does not include Yard.
+A PostgreSQL transaction cannot roll back Stripe. The existing Guard commands do not cancel or refund synchronously:
 
-| Mode | When | What the one transaction does |
-| --- | --- | --- |
-| Boundary, the default | `scheduled_cutover_at` equals this location's `guard_billing.paid_through_at`. The command refuses to run earlier. | Ends that standalone subscription at the boundary, so no prepaid remainder remains. Applies bundle paid-through from that same timestamp through the Complete `period_end`. Keeps the existing coverage row. Does not insert a second coverage, a second open subscription, or a second invoice for the overlapping days. |
-| Credited remainder | An admin explicitly chooses an earlier `scheduled_cutover_at`. | Credits the unused Guard remainder and applies bundle funding from that instant. If either step fails, both roll back. Coverage never sits with neither `PROVIDER` nor `BUNDLE` current. |
+- `guard_schedule_cancellation_v1` sets local cancel intent and inserts `provider_operations` kind `CANCEL_SUBSCRIPTION_PERIOD_END`. Coverage stays up. `guard_confirm_cancellation_v1` is the later acceptance of the provider flag.
+- `guard_approve_immediate_cancellation_v1` inserts `CANCEL_SUBSCRIPTION_IMMEDIATE`. The later confirm ends that coverage. 02J does not use it.
+- `guard_approve_refund_v1` inserts `CREATE_REFUND`. `guard_record_refund_v1` later records success or failure. A queued refund is not success.
+- `guard_approve_credit_v1` inserts `SERVICE_CREDIT` with status `PENDING_APPLICATION`. That is not proof Stripe applied a credit.
 
-While a location is `PREVIEW`, its only Guard charge is the existing Guard subscription. Complete `commercial_payment_evidence` is refused when the evidence period overlaps that location's `guard_billing.paid_through_at`. Locations do not share a cutover clock. If the bundle price cannot exclude a location that is still inside its standalone paid-through, the charge writer refuses the Complete charge and leaves every `PREVIEW` location on standalone Guard. It does not cancel a location to make the charge fit.
+The default, and the only path 02J enables, is a provider-confirmed boundary cutover. Early credit, early refund, and immediate cancellation stay disabled until a later review. A queued credit or refund never moves an allocation to `FUNDED`.
 
-A failed 02J attempt writes the event and leaves every Guard row as it was. The same `request_id` returns that stored result. A committed cutover is not reversed by deleting coverage. Compensation is a later forward command. It may run only when it can restore one current source, `PROVIDER` or `BUNDLE`, without a gap. If it cannot, it records an issue and stops.
+One location per saga. Dock being ready does not create a provider operation for Yard.
+
+1. **Reserve.** The allocation is already `PREVIEW` from 02H. This step checks 02I, the evidenced Complete period, and that `standalone_guard_subscription_id` is still the open subscription for this location. It writes an event and does not call Stripe.
+2. **Request.** Call `guard_schedule_cancellation_v1` once, with the existing admin session, `p_request`, and `guard_reuse_provider_operation_v1` idempotency. Store that operation id. Set `scheduled_cutover_at` to the current `guard_billing.paid_through_at` and the state to `PROVIDER_PENDING`. The subscription lifecycle is not `CANCELED`. Coverage and paid-through are unchanged.
+3. **Wait.** Stay in `PROVIDER_PENDING` until `guard_confirm_cancellation_v1` returns success for that operation with the cancel flag true. A `PENDING` or `SUBMITTED` operation is not confirmation. A flag mismatch stays on the existing `RECONCILIATION_MISMATCH` path and moves the allocation to `RECONCILIATION_REQUIRED`. The daily Guard reconciliation sweep is the timeout: an operation still not `SUCCEEDED` or `FAILED` when that sweep runs does not unlock funding, and the allocation opens an admin issue. This document does not invent a shorter wait.
+4. **Fund.** Only from `PROVIDER_CONFIRMED`, and only when the confirmed effective date is `scheduled_cutover_at`, the Complete period covers from that date, and no second Guard charge can still be collected for the overlap. `guard_apply_bundle_paid_through_v1` then runs as its own database transaction. It is idempotent on `(allocation_id, period_end)`. It keeps the existing coverage row, refuses to move `paid_through_at` backwards, and sets the allocation to `FUNDED`. It does not call Stripe and it does not insert a second coverage or a second open subscription.
+
+While a location is `PREVIEW` or `PROVIDER_PENDING`, its only Guard charge is the existing Guard subscription. Complete `commercial_payment_evidence` is refused when the evidence period overlaps that location's `guard_billing.paid_through_at` and the provider has not confirmed cancel-at-period-end. If the bundle price cannot exclude a location that is still inside that window, the charge writer refuses the Complete charge. It does not cancel the location to make the charge fit.
+
+If the provider confirms cancellation and the funding transaction then fails, the allocation becomes `RECONCILIATION_REQUIRED`. Coverage stays in force and `guard_billing.paid_through_at` stays. The command must not call immediate cancellation to finish the job, because that confirm ends coverage. Retry uses the same funding key. If the period end arrives before a successful retry, the saga holds the existing coverage and paid entitlement and leaves the admin issue open. It does not delete the coverage and it does not mark the seat `FUNDED`.
+
+Undo, if the customer stays on standalone Guard, is the existing `guard_undo_cancellation_v1` followed by its own provider confirmation. A queued undo is not confirmation that `cancel_at_period_end` is false.
 
 ### Later gated Guard change
 
@@ -288,26 +300,30 @@ A separate PR, after 02B and not part of it, may add:
 
 - `coverage_origin = BUNDLE_COMPLETE` and a new `coverage_basis` that is neither `DIRECT_GUARD` nor `INCLUDED`, so `guard_coverages_included_period` does not force 30 days and `guard_coverages_basis_origin` does not demand a recovery case or a `RELAUNCH_GUARD` service order. For a location that already has a coverage, 02J keeps that row and changes its funding. It does not insert a second non-ended coverage.
 - `guard_billing.entitlement_source = BUNDLE`, allowed to be `CURRENT` only while `paid_through_at > now()` and that timestamp equals the funded allocation's `paid_through_at`. A failed Complete renewal must not shorten a `paid_through_at` that is still in the future. Guard's own rule already says this for provider renewals: `invoice.payment_failed` does not remove service while `paid_through_at > now()`.
-- A new private writer, `admin_private.guard_apply_bundle_paid_through_v1`, which reads the allocation and the commercial period. It is idempotent on `(allocation_id, period_end)`. It refuses to move `paid_through_at` backwards. It is not `guard_set_billing_entitlement_v1`, and that function stays ungranted to `service_role`. 02I ships the writer. 02I does not call it against a location whose standalone subscription is still open. 02J is the caller for that location.
-- A readiness branch only for the new origin: billing is ready when the bundle source is current. Membership, permission, access, contact, baseline, rota, and mapping stay mandatory. `guard_activate_v1` remains the only way to set `ACTIVE`. An existing `ACTIVE` coverage stays `ACTIVE` across the cutover. 02J does not deactivate it in order to fund it.
+- A new private writer, `admin_private.guard_apply_bundle_paid_through_v1`, which reads the allocation and the commercial period. It is idempotent on `(allocation_id, period_end)`. It refuses to move `paid_through_at` backwards. It is not `guard_set_billing_entitlement_v1`, and that function stays ungranted to `service_role`. 02I ships the writer and does not call it against a location whose standalone subscription is still open. The 02J funding step is the only caller, and only from `PROVIDER_CONFIRMED`.
+- A readiness branch only for the new origin: billing is ready when the bundle source is current. Membership, permission, access, contact, baseline, rota, and mapping stay mandatory. `guard_activate_v1` remains the only way to set `ACTIVE`. An existing `ACTIVE` coverage stays `ACTIVE` across the funding switch. The switch does not deactivate it in order to fund it.
 
 Tests, before any Complete customer is told their Guard seat has moved:
 
 | Case | Expected |
 | --- | --- |
-| 02H preview | Dock and Yard gain `PREVIEW` rows. Their `guard_subscriptions` lifecycle, `guard_coverages.state`, and `guard_billing.paid_through_at` are unchanged. Cancel and credit are not called. |
-| One location not ready | Dock may become `CUTOVER_SCHEDULED` after 02I. Yard stays `PREVIEW`. Yard's coverage stays in force and its paid-through is unchanged. The portal still shows Yard as existing Guard, not as bundle Guard. |
-| 02J before 02I | Rejected. No Guard row changes. |
-| Boundary cutover | One coverage row before and after. The standalone subscription ends at its paid-through. Bundle paid-through starts at that same timestamp. No second charge for the overlapping days. |
-| Credited remainder | The credit and the bundle apply commit together or not at all. |
+| 02H preview | Dock and Yard gain `PREVIEW` rows. Their lifecycle, coverage state, and `paid_through_at` are unchanged. No provider operation is inserted. |
+| One location not ready | Dock may reach `PROVIDER_PENDING` and, after provider confirmation, `FUNDED`. Yard stays `PREVIEW` with no provider operation. Yard's coverage and paid-through are unchanged. The portal still shows Yard as existing Guard. |
+| 02J before 02I | Rejected. No Guard row changes and no provider operation is inserted. |
+| Queued is not confirmed | After `guard_schedule_cancellation_v1`, the operation is not `SUCCEEDED` and the allocation stays `PROVIDER_PENDING`. Funding is rejected. Coverage stays up. |
+| Queued credit or refund | A `PENDING_APPLICATION` credit, or a `CREATE_REFUND` that is not `SUCCEEDED`, does not move the allocation to `FUNDED`. Immediate cancellation is rejected. |
+| Provider confirmed, funding fails | Allocation becomes `RECONCILIATION_REQUIRED`. Coverage and `paid_through_at` remain. No immediate-cancel operation is created. Retry of the same `(allocation_id, period_end)` can fund later. |
+| Boundary funding | One coverage row before and after. Funding starts at the confirmed `paid_through_at`. No second Guard charge is collected for the overlap. |
+| Out-of-order callback | A cancel flag that does not match the operation follows the existing mismatch path. The allocation is `RECONCILIATION_REQUIRED` and is not `FUNDED`. |
+| Timeout | An operation still pending at the Guard reconciliation sweep does not fund. An admin issue is open. |
 | Renewal | A second paid Complete period extends `paid_through_at` once. The same `period_end` does not extend it again. A failed renewal leaves the current `paid_through_at` in place. |
 | Lapse | The evidenced period end, with no new evidence, sets the allocation `LAPSED` and moves bundle billing off `CURRENT`. It does not do that when the renewal fails but `paid_through_at` is still in the future. |
-| Cancellation | After funding, each open allocation ends through the bundle end path. Coverages are not deleted. No Guard invoice is inserted. A `PREVIEW` cancellation does not end the standalone subscription. |
+| Cancellation | After funding, each open allocation ends through the bundle end path. Coverages are not deleted. A `PREVIEW` or `PROVIDER_PENDING` cancellation does not end the standalone subscription by itself. |
 | Downgrade | A lower quantity is refused while more locations are still open than the new cap. Ending one reservation leaves the others, and does not cancel their standalone Guard subscriptions. |
-| Overlap | `PREVIEW` beside an open standalone subscription is allowed. A second open `guard_subscriptions` row is still refused. `FUNDED` plus an open standalone subscription on the same location is refused. |
+| Overlap | `PREVIEW` beside an open standalone subscription is allowed. A second open `guard_subscriptions` row is still refused. `FUNDED` while that subscription can still renew is refused. |
 | Privilege | `service_role` still cannot execute `guard_set_billing_entitlement_v1`. |
 
-Until 02I is applied, documents and the portal must not say a Complete customer can activate Guard. Until 02J commits for that location, documents and the portal must not say the standalone Guard subscription has been replaced.
+Until 02I is applied, documents and the portal must not say a Complete customer can activate Guard. Until the funding step has committed for that location, documents and the portal must not say the standalone Guard subscription has been replaced. A queued provider operation is not that commitment.
 
 ## Telloya provisioning
 

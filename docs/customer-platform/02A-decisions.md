@@ -1,6 +1,6 @@
 # 02A — Decisions
 
-Status: **needed before 02B**, revised against review comments `6559957225` and `6560133090`. Each item has a recommended default so implementation can start without another open-ended design. A different choice should be written down here before the migration.
+Status: **needed before 02B**, revised against review comments `6559957225`, `6560133090`, and `6560349430`. Each item has a recommended default so implementation can start without another open-ended design. A different choice should be written down here before the migration.
 
 The recommendations follow the schema that is already on `develop` at `bb03642c`. They do not approve a price, a pilot length, or a location cap. They do not say a Complete customer can activate Guard.
 
@@ -8,7 +8,7 @@ The recommendations follow the schema that is already on `develop` at `bb03642c`
 
 **Recommended:** `guard_subscriptions`, `guard_subscription_invoices`, and `guard_billing` remain the only Guard money and paid-through records through 02H and through the 02I schema change. 02H does not write them. The commercial subscription stores no Guard Stripe subscription id and no single reconciled Guard subscription id. A planned Complete period on an allocation is not copied into `guard_billing`.
 
-A later gated PR (02I) may add `entitlement_source = BUNDLE` and `guard_apply_bundle_paid_through_v1`. That writer is the only proposed way for a bundle period to become Guard paid-through. It refuses to move `paid_through_at` backwards. It is not `guard_set_billing_entitlement_v1`. 02J is the only phase that may call it for a location that still has a standalone subscription, and only inside the cutover transaction. Until 02I is applied, Complete does not activate Guard. Until 02J commits, the standalone subscription remains the Guard service.
+A later gated PR (02I) may add `entitlement_source = BUNDLE` and `guard_apply_bundle_paid_through_v1`. That writer is the only proposed way for a bundle period to become Guard paid-through. It refuses to move `paid_through_at` backwards. It is not `guard_set_billing_entitlement_v1`. The 02J funding step is the only phase that may call it for a location that still has a standalone subscription, and only after `guard_confirm_cancellation_v1` has accepted period-end cancellation. The funding call does not include the Stripe request. Until 02I is applied, Complete does not activate Guard. Until funding commits, the standalone subscription remains the Guard service.
 
 **If rejected:** a second Guard ledger, a forged included-recovery coverage, or a forged Guard invoice will diverge from `invoice.paid` and from `guard_activate_v1`. Do not reject this without a replacement that still respects `guard_coverages_basis_origin` and the 30-day included-period check.
 
@@ -64,7 +64,7 @@ If the email is not verified, `begin_invited_login` writes a normal login challe
 
 ## D10. Complete double charge and several locations
 
-**Recommended:** one occupying commercial subscription per business, plus at most one incoming replacement with `succeeds_subscription_id`. Two businesses are two subscriptions. One open `bundle_guard_allocations` row per location, capped by `quantity_limit_snapshot`. One open `guard_subscriptions` row and one non-ended coverage per location, already true. 02H records a `PREVIEW` and leaves that Guard subscription open. A Complete charge that overlaps its `paid_through_at` is refused. 02J cuts one location over at that paid-through, or credits the remainder in the same transaction, and does not include a location that is not ready. Do not insert a second open Guard subscription, a Guard invoice, or a second coverage.
+**Recommended:** one occupying commercial subscription per business, plus at most one incoming replacement with `succeeds_subscription_id`. Two businesses are two subscriptions. One open `bundle_guard_allocations` row per location, capped by `quantity_limit_snapshot`. One open `guard_subscriptions` row and one non-ended coverage per location, already true. 02H records a `PREVIEW` and leaves that Guard subscription open. A Complete charge that overlaps its `paid_through_at` is refused until period-end cancellation is provider-confirmed. 02J requests that cancellation for one ready location and funds only after confirmation. A location that is not ready is not included. Do not insert a second open Guard subscription, a Guard invoice, or a second coverage.
 
 **If rejected:** cancelling Guard in 02H leaves the customer without monitoring until 02I exists, and one shared cutover column cannot represent Dock and Yard. Do not reject this for a launch shortcut.
 
@@ -82,9 +82,9 @@ If the email is not verified, `begin_invited_login` writes a normal login challe
 
 ## D13. When a Guard upgrade may end the old subscription
 
-**Recommended:** 02H is a reservation preview. It does not cancel, credit, or reduce coverage. 02I adds the funding machinery and also does not end the standalone subscription. 02J is the audited per-location cutover, after both a verified Complete period and 02I exist. The default instant is that location's current `guard_billing.paid_through_at`. An earlier instant is allowed only as a credited remainder inside the same transaction. Failure rolls back. One ready location does not drag an unready location with it.
+**Recommended:** 02H is a reservation preview. It does not cancel, credit, or reduce coverage. 02I adds the funding machinery and also does not end the standalone subscription. 02J is a per-location saga, after both a verified Complete period and 02I exist. It requests `CANCEL_SUBSCRIPTION_PERIOD_END`, stays `PROVIDER_PENDING` until `guard_confirm_cancellation_v1`, and only then runs the database funding switch at that location's `paid_through_at`. A queued operation, a `PENDING_APPLICATION` credit, and an unconfirmed refund do not unlock funding. Immediate cancellation and early credit stay disabled. If provider confirmation succeeds and funding fails, coverage and paid-through stay, an admin issue is opened, and the funding step can be retried. One ready location does not drag an unready location with it.
 
-**If rejected:** ending Guard first and funding it later drops paid monitoring. Do not do that.
+**If rejected:** promising that a credit and a bundle apply commit together ignores the existing provider operations. A queued cancel is not a Stripe result, and immediate cancellation ends coverage before funding can hold it. Do not do that.
 
 ## D14. What may set Telloya LIVE
 

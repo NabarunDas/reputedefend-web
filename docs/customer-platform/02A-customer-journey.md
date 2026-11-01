@@ -1,6 +1,6 @@
 # 02A — Customer journey
 
-Status: **proposed operating model**, revised against review comments `6559957225` and `6560133090`. Admin-approved onboarding. No invitation email is sent by this PR. Admin approval does not verify an email and does not create a session. A Complete preview does not cancel Guard. Telloya is not live without provider evidence.
+Status: **proposed operating model**, revised against review comments `6559957225`, `6560133090`, and `6560349430`. Admin-approved onboarding. No invitation email is sent by this PR. Admin approval does not verify an email and does not create a session. A Complete preview does not cancel Guard. Telloya is not live without provider evidence.
 
 ## Sequence
 
@@ -163,11 +163,11 @@ Admin offers Complete for South. Phase 02H only reserves seats. It does not canc
 
 No `guard_subscription_invoices` row is inserted. `guard_set_billing_entitlement_v1` is not called. The portal keeps showing Dock and Yard as the Guard service they already have. It does not say Complete has taken over monitoring.
 
-02I later adds the bundle origin and the paid-through writer. It still does not end Dock or Yard. After 02I, a schedule command may set Dock's `scheduled_cutover_at` to Dock's `guard_billing.paid_through_at` and move only Dock to `CUTOVER_SCHEDULED`. Yard stays `PREVIEW` if Yard is not ready. Yard's coverage stays in force.
+02I later adds the bundle origin and the paid-through writer. It still does not end Dock or Yard, and it does not call Stripe.
 
-02J then cuts Dock over in one transaction at that timestamp: the standalone subscription ends at the boundary, bundle paid-through starts at the same timestamp, and the same coverage row remains. There is no second charge for the days Dock had already paid. If someone wants Dock moved earlier, the same command credits the unused remainder and applies bundle funding together, or rolls both back. 02H cannot request that.
+02J then runs a saga for one location. For Dock it calls `guard_schedule_cancellation_v1`, which only queues `CANCEL_SUBSCRIPTION_PERIOD_END` and leaves coverage and paid-through in place. The allocation stays `PROVIDER_PENDING` until `guard_confirm_cancellation_v1` accepts that operation. A queued operation is not confirmation. A `PENDING_APPLICATION` credit or a refund that is not yet `SUCCEEDED` does not unlock the switch, and immediate cancellation is not used, because its confirm ends coverage. After confirmation, a separate database transaction applies bundle paid-through from Dock's existing paid-through and keeps the same coverage row. If that transaction fails, Dock stays covered, the allocation is `RECONCILIATION_REQUIRED`, and an admin issue is open. Yard never receives a provider operation while it is not ready.
 
-A Complete charge is refused while its period overlaps a `PREVIEW` location's Guard paid-through. If the bundle price cannot leave Yard off the invoice, the charge waits and Yard's Guard subscription keeps running. The charge writer does not cancel Yard to clear the overlap.
+There is no second Guard charge for the days Dock had already paid. A Complete charge is refused while its period overlaps a location whose cancel-at-period-end is not yet provider-confirmed. If the bundle price cannot leave Yard off the invoice, the charge waits and Yard's Guard subscription keeps running. The charge writer does not cancel Yard to make the charge fit. Moving Dock earlier than its paid-through is not part of this saga.
 
 `guard_activate_v1` still has no legal origin for a brand-new Complete-funded location until 02I. An existing active coverage is not turned off while it waits.
 

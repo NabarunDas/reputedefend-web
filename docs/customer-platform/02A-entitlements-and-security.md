@@ -1,6 +1,6 @@
 # 02A — Entitlements and security
 
-Status: **proposed rules**, revised against review comments `6559957225` and `6560133090`. Production is unchanged. No privilege grant is made by this PR.
+Status: **proposed rules**, revised against review comments `6559957225`, `6560133090`, and `6560349430`. Production is unchanged. No privilege grant is made by this PR.
 
 ## Four different facts
 
@@ -104,9 +104,9 @@ Complete is a plan with two location-scoped components. The customer portal show
 - Telloya and Guard quantity limits on the pinned plan version are location caps. They are pending numbers (D5), snapshotted onto the items, and enforced with a row lock plus a deferred constraint trigger.
 - Billing is one occupying commercial subscription per business. Each Guard location has its own `bundle_guard_allocations` row. `standalone_guard_subscription_id` records an open Guard subscription without ending it. There is no single `reconciled_guard_subscription_id`.
 - 02H may set `RESERVED` or `PREVIEW` only. It does not cancel, credit, or shorten standalone Guard. Existing coverage and `guard_billing.paid_through_at` stay authoritative. A second open Guard subscription or a second non-ended coverage is still forbidden.
-- 02J, and only 02J, performs the cutover, and only after 02I. The default is the standalone paid-through boundary. An earlier move credits the remainder in the same transaction as the bundle apply. One location can be `FUNDED` while another stays `PREVIEW`.
-- Complete payment evidence is refused when it overlaps a `PREVIEW` location's Guard paid-through. If the charge cannot exclude that location, the charge is refused and the standalone subscription keeps running.
-- `paid_through_at` on the allocation is not written to `guard_billing` in 02B through 02H. After 02J it is applied by `guard_apply_bundle_paid_through_v1`, which must not move paid-through backwards.
+- 02J, and only 02J, may request a period-end cancellation, and only after 02I. The request queues `CANCEL_SUBSCRIPTION_PERIOD_END` and leaves the allocation `PROVIDER_PENDING`. Funding waits for `guard_confirm_cancellation_v1`. A queued credit, a queued refund, and immediate cancellation do not unlock it. Immediate cancellation stays disabled because its confirm ends coverage. One location can be `FUNDED` while another stays `PREVIEW`.
+- Complete payment evidence is refused when it overlaps a Guard paid-through whose period-end cancellation is not provider-confirmed. If the charge cannot exclude that location, the charge is refused and the standalone subscription keeps running.
+- `paid_through_at` on the allocation is not written to `guard_billing` by 02B, 02H, or a queued provider operation. The funding transaction calls `guard_apply_bundle_paid_through_v1` only from `PROVIDER_CONFIRMED`, and that writer must not move paid-through backwards. The funding transaction does not call Stripe.
 - `guard_coverage_id` stays null until 02J stores the preserved coverage. There is no `LINKED` state in 02B.
 - Downgrade refuses a new cap while more locations are open than that cap. Ending one location leaves the others. The commercial handoff uses `succeeds_subscription_id` and sets `eligible_to` and `eligible_from` to the same timestamp.
 - Cancellation of a `PREVIEW` seat removes the reservation and leaves the standalone Guard subscription running. Cancellation after `FUNDED` revokes the Telloya entitlements at the chosen time and ends the bundle funding. It does not delete coverages, invoices, or events. It does not use 02H.
@@ -171,7 +171,7 @@ Webhook handlers do not take an admin actor. They take a verified provider event
 - Pilot `ACTIVE` requires the pilot command, a reason, an actor, and a future `pilot_ends_at`. It must not have an evidence row. The portal label is pilot.
 - A non-Stripe payment rail is pending. It would be its own receipt table. It is not in 02B or 02F.
 - Refunds and disputes for Guard stay in `guard_refunds` and `guard_disputes`. Telloya refunds, when they exist, get their own child table in the payment phase rather than overloading Guard.
-- A refused 02J attempt inserts an event and leaves both ledgers unchanged. It does not guess a credit and it does not mark the allocation `FUNDED`. 02H does not call the credit command at all.
+- A refused funding step inserts an event, leaves coverage and `paid_through_at` unchanged, and opens an admin issue. It does not guess a credit and it does not mark the allocation `FUNDED`. 02H does not call the credit command at all. A `PENDING_APPLICATION` credit is not an applied Stripe credit.
 
 ## Release safety
 

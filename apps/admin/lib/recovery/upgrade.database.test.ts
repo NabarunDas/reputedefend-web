@@ -59,15 +59,15 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The repository tail is the applied Customer Portal idle-timeout migration.
-    // It is already on DEV and must not be replayed. The case-reference file
-    // before it is already applied on DEV and must not be replayed. The Guided
-    // customer outcome and pack-ready dispatch stay before it and must not be
-    // replayed on the live database. Payment request 20261030200000 is applied
-    // on DEV and must not be replayed. This disposable rebuild is not a live
-    // apply. Production remains at SEC-08.
+    // The repository tail is the applied commercial foundation migration.
+    // It is already on DEV and must not be replayed. The idle-timeout file
+    // before it is already applied on DEV and must not be replayed. The
+    // case-reference, Guided customer outcome and pack-ready dispatch files
+    // stay before it and must not be replayed on the live database. Payment
+    // request 20261030200000 is applied on DEV and must not be replayed. This
+    // disposable rebuild is not a live apply. Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261101170000_commercial_foundation_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261031160000_customer_portal_idle_timeout_v1.sql")

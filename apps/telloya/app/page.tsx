@@ -35,15 +35,14 @@ function CinematicConsole() {
           <Image
             src="/brand/telloya-cinematic-console-mobile.webp"
             alt="AI receptionist call handling dashboard interface"
-            width={925}
+            width={1672}
             height={604}
             priority
             className={styles.consoleImage}
-            sizes="(min-width: 768px) 600px, 100vw"
+            sizes="(min-width: 768px) 1200px, 100vw"
           />
         </picture>
       </div>
-      <p className={styles.consoleCaption}>Illustrative product preview</p>
     </div>
   )
 }
@@ -54,7 +53,17 @@ export default function Home() {
       {/* Hero */}
       <section className={styles.heroBand} aria-labelledby="home-title">
         <div className={styles.hero}>
-          <div className={styles.heroCopy}>
+          <div className={styles.heroLogo}>
+            <Image
+              src="/brand/telloya-mark-approved.webp"
+              alt="Telloya"
+              width={56}
+              height={56}
+              priority
+              className={styles.logoMark}
+            />
+          </div>
+          <div className={styles.heroContent}>
             <p className={styles.eyebrow}>AI Receptionist for Tradespeople</p>
             <h1 id="home-title">
               <span className={styles.titleMain}>You focus on the job.</span>{" "}

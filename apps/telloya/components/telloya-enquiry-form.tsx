@@ -257,7 +257,7 @@ Contact Preference: ${values.contactPreference || "Not specified"}`,
 
       {showSummary && (
         <div ref={summaryRef} tabIndex={-1} role="alert" className={styles.summary}>
-          {deliveryError && <p>We couldn't submit your enquiry right now. Your information is still on this page. Please try again shortly.</p>}
+          {deliveryError && <p>We couldn&apos;t submit your enquiry right now. Your information is still on this page. Please try again shortly.</p>}
           {errorEntries.length > 0 && (
             <>
               <p>Please correct the following:</p>

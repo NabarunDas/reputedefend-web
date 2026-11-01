@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { pageTitle } from "@/lib/brand"
 import { featuresContent } from "@/lib/content"
-import { Section, Eyebrow, SectionTitle, FeatureCard, CtaSection } from "@/components/ui"
+import styles from "./features.module.css"
 
 const { seo, hero, features, technical, future, cta } = featuresContent
 
@@ -22,65 +23,84 @@ export const metadata: Metadata = {
 
 export default function Features() {
   return (
-    <>
-      <Section className="hero">
-        <div className="hero-content">
-          <Eyebrow>{hero.eyebrow}</Eyebrow>
-          <h1 className="hero-headline">{hero.title}</h1>
-          <p className="hero-supporting">{hero.lead}</p>
+    <div className={styles.page}>
+      {/* Hero */}
+      <section className={styles.heroBand} aria-labelledby="features-title">
+        <div className={styles.hero}>
+          <p className={styles.eyebrow}>{hero.eyebrow}</p>
+          <h1 id="features-title">{hero.title}</h1>
+          <p className={styles.lead}>{hero.lead}</p>
         </div>
-      </Section>
+      </section>
 
-      <Section background="surface">
-        <div className="max-w-5xl mx-auto space-y-12">
+      {/* Features */}
+      <section className={styles.featuresSection} aria-label="Product features">
+        <div className={styles.featuresList}>
           {features.map((feature) => (
-            <FeatureCard
-              key={feature.title}
-              kicker={feature.kicker}
-              title={feature.title}
-              description={feature.description}
-              status={feature.status}
-              points={feature.points}
-              note={"note" in feature ? feature.note : undefined}
-            />
+            <article key={feature.title} className={styles.featureCard}>
+              {feature.kicker && <p className={styles.featureKicker}>{feature.kicker}</p>}
+              <h3>{feature.title}</h3>
+              <div className={styles.featureStatus}>{feature.status}</div>
+              <p className={styles.featureDescription}>{feature.description}</p>
+              {feature.points && feature.points.length > 0 && (
+                <ul className={styles.featurePoints}>
+                  {feature.points.map((point, index) => (
+                    <li key={index}>{point}</li>
+                  ))}
+                </ul>
+              )}
+              {"note" in feature && feature.note && (
+                <div className={styles.featureNote}>{feature.note}</div>
+              )}
+            </article>
           ))}
         </div>
-      </Section>
+      </section>
 
-      <Section>
-        <div className="mb-12">
-          <Eyebrow>{technical.eyebrow}</Eyebrow>
-          <SectionTitle>{technical.title}</SectionTitle>
-          <p className="text-muted max-w-prose">{technical.lead}</p>
+      {/* Technical */}
+      <section className={styles.technicalSection} aria-labelledby="technical-title">
+        <div className={styles.sectionIntro}>
+          <p className={styles.eyebrow}>{technical.eyebrow}</p>
+          <h2 id="technical-title">{technical.title}</h2>
+          <p>{technical.lead}</p>
         </div>
-        <div className="grid-2 max-w-3xl mx-auto">
+        <div className={styles.technicalGrid}>
           {technical.points.map((point, index) => (
-            <div key={index} className="card">
-              <p>{point}</p>
+            <div key={index} className={styles.technicalCard}>
+              {point}
             </div>
           ))}
         </div>
-      </Section>
+      </section>
 
-      <Section background="surface">
-        <div className="mb-12">
-          <Eyebrow>{future.eyebrow}</Eyebrow>
-          <SectionTitle>{future.title}</SectionTitle>
-          <p className="text-muted max-w-prose">{future.lead}</p>
+      {/* Future */}
+      <section className={styles.futureSection} aria-labelledby="future-title">
+        <div className={styles.sectionIntro}>
+          <p className={styles.eyebrow}>{future.eyebrow}</p>
+          <h2 id="future-title">{future.title}</h2>
+          <p>{future.lead}</p>
         </div>
-        <div className="grid-2 max-w-4xl mx-auto">
+        <div className={styles.futureGrid}>
           {future.items.map((item) => (
-            <div key={item.title} className="card">
-              <h3 className="feature-title">{item.title}</h3>
-              <p className="text-muted mb-4">{item.description}</p>
-              <span className="text-sm font-semibold text-green">{item.timeline}</span>
-            </div>
+            <article key={item.title} className={styles.futureCard}>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <span className={styles.timeline}>{item.timeline}</span>
+            </article>
           ))}
         </div>
-        <p className="mt-8 text-center text-sm text-muted max-w-prose mx-auto">{future.note}</p>
-      </Section>
+        <p className={styles.futureNote}>{future.note}</p>
+      </section>
 
-      <CtaSection title={cta.title} cta={cta.cta} href={cta.href} />
-    </>
+      {/* CTA */}
+      <section className={styles.ctaSection} aria-labelledby="cta-title">
+        <div className={styles.ctaContent}>
+          <h2 id="cta-title">{cta.title}</h2>
+          <Link className={styles.ctaButton} href={cta.href}>
+            {cta.cta}
+          </Link>
+        </div>
+      </section>
+    </div>
   )
 }

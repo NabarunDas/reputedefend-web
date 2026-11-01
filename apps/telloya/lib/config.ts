@@ -18,6 +18,6 @@ function trimEnv(value: string | undefined) {
  * Server-side only. Do not prefix with NEXT_PUBLIC_ and do not read this
  * from client components.
  */
-export function isSitePublic(env: Record<string, string | undefined> = process.env) {
+export function isSitePublic(env: Record<string, string | undefined>) {
   return trimEnv(env.VERCEL_ENV) === "production" && trimEnv(env.TELLOYA_LAUNCHED) === "true"
 }

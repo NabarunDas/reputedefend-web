@@ -7,18 +7,16 @@ function trimEnv(value) {
   return value?.trim() ?? ""
 }
 
-function isSitePublic(env = process.env) {
-  return trimEnv(env.VERCEL_ENV) === "production" && trimEnv(env.TELLOYA_LAUNCHED) === "true"
-}
-
 const config = {
   poweredByHeader: false,
   outputFileTracingRoot: repositoryRoot,
   turbopack: { root: repositoryRoot },
   async headers() {
-    const robotsValue = isSitePublic()
-      ? "all"
-      : "noindex, nofollow, noarchive"
+    const isLaunched = 
+      trimEnv(process.env.VERCEL_ENV) === "production" && 
+      trimEnv(process.env.TELLOYA_LAUNCHED) === "true"
+    
+    const robotsValue = isLaunched ? "all" : "noindex, nofollow, noarchive"
     
     return [{
       source: "/:path*",

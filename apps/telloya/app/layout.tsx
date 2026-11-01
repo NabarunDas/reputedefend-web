@@ -11,7 +11,14 @@ import {
   defaultTitle,
   titleTemplate,
 } from "@/lib/brand"
-import { isSitePublic } from "@/lib/config"
+
+function trimEnv(value: string | undefined) {
+  return value?.trim() ?? ""
+}
+
+function isSitePublicForMetadata() {
+  return trimEnv(process.env.VERCEL_ENV) === "production" && trimEnv(process.env.TELLOYA_LAUNCHED) === "true"
+}
 
 const bodyFont = Inter({ subsets: ["latin"], variable: "--font-body" })
 const displayFont = Manrope({ subsets: ["latin"], variable: "--font-display" })
@@ -37,7 +44,7 @@ export const metadata: Metadata = {
     title: defaultTitle,
     description: brandDescription,
   },
-  robots: isSitePublic()
+  robots: isSitePublicForMetadata()
     ? { index: true, follow: true }
     : { index: false, follow: false, noarchive: true },
 }

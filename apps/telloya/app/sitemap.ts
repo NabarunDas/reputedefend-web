@@ -1,9 +1,16 @@
 import type { MetadataRoute } from "next"
 import { brandSiteUrl } from "@/lib/brand"
-import { isSitePublic } from "@/lib/config"
+
+function trimEnv(value: string | undefined) {
+  return value?.trim() ?? ""
+}
+
+function isSitePublicForSitemap() {
+  return trimEnv(process.env.VERCEL_ENV) === "production" && trimEnv(process.env.TELLOYA_LAUNCHED) === "true"
+}
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  if (!isSitePublic()) {
+  if (!isSitePublicForSitemap()) {
     return []
   }
 

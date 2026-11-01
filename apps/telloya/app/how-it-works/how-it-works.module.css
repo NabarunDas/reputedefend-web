@@ -1,55 +1,156 @@
 /* How It Works page - cinematic design */
-@import url("../../components/cinematic-layout.module.css");
 
 .page {
-  composes: cinematicPage from "../../components/cinematic-layout.module.css";
+  --night: #001a15;
+  --night-deep: #00110e;
+  --glass-line: rgba(176, 244, 175, .22);
+  --ivory: #f4f8ef;
+  --acid: #c0fc81;
+  overflow: clip;
+  color: var(--ivory);
+  background: var(--night-deep);
+  isolation: isolate;
+  min-height: 100vh;
 }
 
+.page :is(h1,h2,h3,p,ul,ol,dl) { margin-block-start: 0; }
+
+/* Hero section */
 .hero {
-  composes: cinematicHero from "../../components/cinematic-layout.module.css";
+  position: relative;
+  isolation: isolate;
+  min-height: 500px;
+  padding: clamp(120px, 15vh, 160px) 0 clamp(75px, 10vh, 95px);
+  text-align: center;
+  background:
+    radial-gradient(ellipse 45% 35% at 50% 25%, rgba(5, 72, 42, .52), transparent 100%),
+    radial-gradient(ellipse 38% 42% at 5% 50%, rgba(42, 127, 81, .24), transparent 100%),
+    radial-gradient(ellipse 38% 42% at 95% 50%, rgba(19, 136, 81, .20), transparent 100%),
+    linear-gradient(180deg, #001c16 0%, #002820 50%, #001913 100%);
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 30% 25% at 15% 30%, rgba(107,205,132,.15), transparent 100%),
+    radial-gradient(ellipse 28% 20% at 88% 35%, rgba(164,255,170,.15), transparent 100%),
+    radial-gradient(ellipse 35% 22% at 50% 60%, rgba(11,97,60,.28), transparent 100%);
+  filter: blur(18px);
+  opacity: .92;
+  animation: atmosphericBreathe 18s ease-in-out infinite alternate;
 }
 
 .heroContent {
-  composes: heroContent from "../../components/cinematic-layout.module.css";
+  position: relative;
+  z-index: 1;
+  width: min(940px, calc(100% - 36px));
+  margin-inline: auto;
 }
 
 .eyebrow {
-  composes: eyebrow from "../../components/cinematic-layout.module.css";
+  color: #b9ec8a;
+  text-transform: uppercase;
+  letter-spacing: .17em;
+  font-size: .72rem;
+  font-weight: 800;
+  margin-bottom: 15px;
 }
 
 .heroTitle {
-  composes: heroTitle from "../../components/cinematic-layout.module.css";
+  font-family: Georgia, "Times New Roman", serif;
+  color: #fffdf6;
+  font-weight: 400;
+  font-size: clamp(2.75rem, 4.2vw, 4.5rem);
+  letter-spacing: -.055em;
+  line-height: 1.02;
+  text-shadow: 0 4px 35px rgba(0,0,0,.44);
+  margin: 0 0 20px;
+  text-wrap: balance;
+}
+
+.heroTitle em {
+  color: #c5ef9d;
+  font-style: italic;
+  font-weight: 400;
 }
 
 .heroLead {
-  composes: heroLead from "../../components/cinematic-layout.module.css";
+  max-width: 720px;
+  margin-inline: auto;
+  color: rgba(244,248,239,.82);
+  font-size: clamp(.98rem, 1.12vw, 1.12rem);
+  line-height: 1.52;
+  text-shadow: 0 1px 12px #001c16;
 }
 
+/* Body */
 .body {
-  composes: cinematicBody from "../../components/cinematic-layout.module.css";
+  position: relative;
+  background:
+    radial-gradient(ellipse 42% 12% at 97% 15%, rgba(29,105,70,.16), transparent),
+    radial-gradient(ellipse 32% 20% at 3% 65%, rgba(31,105,71,.14), transparent),
+    linear-gradient(180deg, #00110e, #042219 40%, #001713 72%, #00110d);
+  padding: 0 0 84px;
+}
+
+.body::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .11;
+  background: repeating-linear-gradient(0deg, transparent 0, transparent 149px, rgba(208,255,180,.15) 150px);
 }
 
 .sectionWrap {
-  composes: sectionWrap from "../../components/cinematic-layout.module.css";
+  position: relative;
+  z-index: 1;
+  width: min(1230px, calc(100% - 64px));
+  margin-inline: auto;
 }
 
 .section {
-  composes: section from "../../components/cinematic-layout.module.css";
+  padding-block: clamp(75px, 10vh, 95px);
+  border-bottom: 1px solid rgba(198,242,188,.16);
+}
+
+.section:last-child {
+  border-bottom: none;
 }
 
 .sectionHeader {
-  composes: sectionHeader from "../../components/cinematic-layout.module.css";
+  text-align: center;
+  max-width: 870px;
+  margin: 0 auto 48px;
 }
 
 .sectionTitle {
-  composes: sectionTitle from "../../components/cinematic-layout.module.css";
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2.15rem, 3.5vw, 3.85rem);
+  line-height: 1.08;
+  font-weight: 500;
+  letter-spacing: -.045em;
+  text-wrap: balance;
+  margin-bottom: 18px;
+}
+
+.sectionTitle em {
+  color: #c5ef9d;
+  font-weight: 400;
+  font-style: italic;
 }
 
 .sectionLead {
-  composes: sectionLead from "../../components/cinematic-layout.module.css";
+  color: rgba(244,248,239,.78);
+  font-size: 1.05rem;
+  line-height: 1.65;
+  max-width: 680px;
+  margin-inline: auto;
 }
 
-/* Journey steps with glowing numbers and glass cards */
+/* Journey steps */
 .journeySteps {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -57,42 +158,65 @@
 }
 
 .stepCard {
-  composes: glassPanel from "../../components/cinematic-layout.module.css";
+  border: 1px solid var(--glass-line);
   padding: 30px 26px;
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(11,82,54,.48), rgba(4,36,28,.72));
+  box-shadow: inset 0 1px rgba(255,255,255,.08), 0 18px 52px rgba(0,0,0,.18);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: transform .25s, border-color .25s;
   display: flex;
   flex-direction: column;
   gap: 22px;
 }
 
+.stepCard:hover {
+  transform: translateY(-4px);
+  border-color: rgba(208,255,177,.42);
+}
+
 .stepNumber {
-  composes: stepNumber from "../../components/cinematic-layout.module.css";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(171,251,123,.32);
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: rgba(123,236,104,.10);
+  color: #baf98b;
+  font-size: .82rem;
+  font-weight: 800;
+  letter-spacing: .04em;
 }
 
 .stepTitle {
-  composes: cardTitle from "../../components/cinematic-layout.module.css";
   font-size: 1.08rem;
+  font-weight: 700;
+  color: #eaf9e7;
+  line-height: 1.25;
+  letter-spacing: -.02em;
+  margin-bottom: 12px;
 }
 
 .stepDescription {
-  composes: cardDescription from "../../components/cinematic-layout.module.css";
+  font-size: .88rem;
+  color: #adc9b7;
+  line-height: 1.62;
+  margin: 0;
 }
 
-/* Connecting line between steps */
-.journeySteps::after {
-  content: "";
-  position: absolute;
-  top: 24px;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(196,254,162,.25) 20%, rgba(196,254,162,.25) 80%, transparent);
-  z-index: -1;
-  pointer-events: none;
-}
-
-/* Example conversation in emerald glass */
+/* Example box */
 .exampleBox {
-  composes: glassSection from "../../components/cinematic-layout.module.css";
+  position: relative;
+  border: 1px solid rgba(218,255,198,.30);
+  border-radius: 30px;
+  padding: 42px;
+  background: linear-gradient(125deg, rgba(17,83,58,.58), rgba(4,38,30,.82));
+  box-shadow: 0 26px 90px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.10);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   max-width: 720px;
   margin-inline: auto;
 }
@@ -132,38 +256,70 @@
 }
 
 .exampleNote {
-  composes: noteText from "../../components/cinematic-layout.module.css";
+  font-size: .82rem;
+  color: #bdd0c1;
+  line-height: 1.55;
   padding-top: 16px;
   border-top: 1px solid rgba(199,250,190,.18);
 }
 
-/* Setup cards */
+/* Setup grid */
 .setupGrid {
-  composes: grid2 from "../../components/cinematic-layout.module.css";
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
 }
 
 .setupCard {
-  composes: glassPanel from "../../components/cinematic-layout.module.css";
+  border: 1px solid var(--glass-line);
   padding: 28px;
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(11,82,54,.48), rgba(4,36,28,.72));
+  box-shadow: inset 0 1px rgba(255,255,255,.08), 0 18px 52px rgba(0,0,0,.18);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: transform .25s, border-color .25s;
+}
+
+.setupCard:hover {
+  transform: translateY(-4px);
+  border-color: rgba(208,255,177,.42);
 }
 
 .setupCard h3 {
-  composes: cardTitle from "../../components/cinematic-layout.module.css";
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #eaf9e7;
+  line-height: 1.25;
+  letter-spacing: -.02em;
+  margin-bottom: 12px;
 }
 
 .setupCard p {
-  composes: cardDescription from "../../components/cinematic-layout.module.css";
+  font-size: .88rem;
+  color: #adc9b7;
+  line-height: 1.62;
+  margin: 0;
 }
 
 .setupNote {
-  composes: noteText from "../../components/cinematic-layout.module.css";
+  font-size: .82rem;
+  color: #bdd0c1;
+  line-height: 1.55;
   margin-top: 24px;
   text-align: center;
 }
 
-/* Limitations - clear and upfront */
+/* Limitations box */
 .limitationsBox {
-  composes: glassSection from "../../components/cinematic-layout.module.css";
+  position: relative;
+  border: 1px solid rgba(218,255,198,.30);
+  border-radius: 30px;
+  padding: 42px;
+  background: linear-gradient(125deg, rgba(17,83,58,.58), rgba(4,38,30,.82));
+  box-shadow: 0 26px 90px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.10);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   max-width: 820px;
   margin-inline: auto;
 }
@@ -198,22 +354,93 @@
   font-size: 1.05rem;
 }
 
-/* Final CTA */
+/* CTA section */
 .ctaSection {
-  composes: finalCtaSection from "../../components/cinematic-layout.module.css";
+  isolation: isolate;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  border: 1px solid rgba(196,254,162,.31);
+  border-radius: 34px;
+  min-height: 200px;
+  padding: 36px 46px;
+  overflow: hidden;
+  background: linear-gradient(120deg, rgba(13,87,54,.67), rgba(7,53,37,.82));
+  box-shadow: inset 0 1px rgba(238,255,224,.11), 0 24px 75px rgba(0,0,0,.24);
+  text-align: center;
   margin-top: 85px;
 }
 
+.ctaSection::before {
+  content: "";
+  position: absolute;
+  inset: -50%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(ellipse 38% 32% at 50% 55%, rgba(165,255,139,.14), transparent);
+}
+
 .ctaTitle {
-  composes: finalCtaTitle from "../../components/cinematic-layout.module.css";
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.9rem, 3.2vw, 3.2rem);
+  line-height: 1.1;
+  font-weight: 500;
+  letter-spacing: -.045em;
+  text-wrap: balance;
+  max-width: 680px;
+  margin-bottom: 10px;
+}
+
+.ctaTitle em {
+  color: #c5ef9d;
+  font-weight: 400;
+  font-style: italic;
 }
 
 .ctaDescription {
-  composes: finalCtaDescription from "../../components/cinematic-layout.module.css";
+  font-size: .88rem;
+  color: #bdd3c1;
+  max-width: 580px;
+  margin-bottom: 6px;
 }
 
 .ctaButton {
-  composes: primaryCta from "../../components/cinematic-layout.module.css";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 52px;
+  border-radius: 99px;
+  padding: 13px 27px;
+  font-size: .92rem;
+  line-height: 1.2;
+  font-weight: 760;
+  text-decoration: none;
+  transition: transform .25s ease, box-shadow .25s ease;
+  white-space: nowrap;
+  color: #082316;
+  background: linear-gradient(150deg, #d8ffaf 0%, #b8fb78 100%);
+  border: 1px solid #ddffc3;
+  box-shadow: 0 0 32px rgba(169,247,116,.25), 0 15px 34px rgba(0,0,0,.22), inset 0 2px 0 rgba(255,255,255,.62);
+}
+
+.ctaButton:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 0 48px rgba(188,250,119,.48), 0 17px 36px rgba(0,0,0,.26);
+}
+
+.page :is(a,button,summary):focus-visible {
+  outline: 3px solid #d9ff94;
+  outline-offset: 5px;
+}
+
+/* Animations */
+@keyframes atmosphericBreathe {
+  from { transform: translateX(-1.2%) scale(1); }
+  to { transform: translateX(1.2%) scale(1.05); }
 }
 
 /* Responsive */
@@ -221,18 +448,41 @@
   .journeySteps {
     grid-template-columns: repeat(2, 1fr);
   }
+  
+  .setupGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .sectionWrap { width: calc(100% - 38px); }
+  .hero { padding: clamp(100px, 12vh, 130px) 0 clamp(60px, 8vh, 75px); }
+  .heroTitle { font-size: clamp(2.3rem, 6.5vw, 3.5rem); }
+  .sectionTitle { font-size: clamp(1.9rem, 5vw, 3rem); }
+  .exampleBox, .limitationsBox { padding: 26px; }
 }
 
 @media (max-width: 520px) {
+  .sectionWrap { width: calc(100% - 32px); }
+  .hero { min-height: 420px; padding: 95px 0 55px; }
+  .heroContent { width: calc(100% - 32px); }
+  .heroTitle { font-size: clamp(2rem, 8vw, 2.8rem); }
+  .heroLead { font-size: .94rem; }
   .journeySteps {
     grid-template-columns: 1fr;
   }
-  
   .stepCard {
     padding: 24px 22px;
   }
-  
-  .ctaSection {
-    margin-top: 60px;
+  .exampleBox, .limitationsBox { padding: 28px; border-radius: 24px; }
+  .section { padding-block: clamp(55px, 8vh, 70px); }
+  .ctaSection { padding: 26px 22px; border-radius: 24px; min-height: 180px; margin-top: 60px; }
+  .ctaTitle { font-size: clamp(1.65rem, 7vw, 2.4rem); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page *, .page *::before, .page *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }

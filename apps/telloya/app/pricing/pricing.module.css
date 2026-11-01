@@ -1,52 +1,39 @@
 /* Pricing page - cinematic design */
-@import url("../../components/cinematic-layout.module.css");
 
 .page {
-  composes: cinematicPage from "../../components/cinematic-layout.module.css";
 }
 
 .hero {
-  composes: cinematicHero from "../../components/cinematic-layout.module.css";
 }
 
 .heroContent {
-  composes: heroContent from "../../components/cinematic-layout.module.css";
 }
 
 .eyebrow {
-  composes: eyebrow from "../../components/cinematic-layout.module.css";
 }
 
 .heroTitle {
-  composes: heroTitle from "../../components/cinematic-layout.module.css";
 }
 
 .heroLead {
-  composes: heroLead from "../../components/cinematic-layout.module.css";
 }
 
 .body {
-  composes: cinematicBody from "../../components/cinematic-layout.module.css";
 }
 
 .sectionWrap {
-  composes: sectionWrap from "../../components/cinematic-layout.module.css";
 }
 
 .section {
-  composes: section from "../../components/cinematic-layout.module.css";
 }
 
 .sectionHeader {
-  composes: sectionHeader from "../../components/cinematic-layout.module.css";
 }
 
 .sectionTitle {
-  composes: sectionTitle from "../../components/cinematic-layout.module.css";
 }
 
 .sectionLead {
-  composes: sectionLead from "../../components/cinematic-layout.module.css";
 }
 
 /* Plan cards - elegant glass with premium styling */
@@ -59,7 +46,6 @@
 }
 
 .planCard {
-  composes: glassPanel from "../../components/cinematic-layout.module.css";
   padding: 42px 38px;
   display: flex;
   flex-direction: column;
@@ -108,7 +94,6 @@
 }
 
 .planFeatures {
-  composes: checkList from "../../components/cinematic-layout.module.css";
   flex-grow: 1;
   margin-bottom: 18px;
 }
@@ -122,7 +107,6 @@
 }
 
 .planNote {
-  composes: noteText from "../../components/cinematic-layout.module.css";
   margin-bottom: 10px;
 }
 
@@ -131,7 +115,6 @@
 }
 
 .planCta {
-  composes: glassCta from "../../components/cinematic-layout.module.css";
   width: 100%;
   margin-top: auto;
 }
@@ -197,20 +180,16 @@
 
 /* Commercial info cards */
 .commercialGrid {
-  composes: grid3 from "../../components/cinematic-layout.module.css";
 }
 
 .commercialCard {
-  composes: glassPanel from "../../components/cinematic-layout.module.css";
   padding: 28px;
 }
 
 .commercialCard h3 {
-  composes: cardTitle from "../../components/cinematic-layout.module.css";
 }
 
 .commercialCard p {
-  composes: cardDescription from "../../components/cinematic-layout.module.css";
 }
 
 /* FAQ with premium styling */
@@ -252,20 +231,16 @@
 
 /* Final CTA */
 .ctaSection {
-  composes: finalCtaSection from "../../components/cinematic-layout.module.css";
   margin-top: 85px;
 }
 
 .ctaTitle {
-  composes: finalCtaTitle from "../../components/cinematic-layout.module.css";
 }
 
 .ctaDescription {
-  composes: finalCtaDescription from "../../components/cinematic-layout.module.css";
 }
 
 .ctaButton {
-  composes: primaryCta from "../../components/cinematic-layout.module.css";
 }
 
 /* Responsive */

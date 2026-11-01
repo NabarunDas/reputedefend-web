@@ -65,12 +65,6 @@ export const viewport: Viewport = {
   themeColor: "#0a6e3c",
 }
 
-export const viewport: Viewport = {
-  themeColor: brandColors.paper,
-  width: "device-width",
-  initialScale: 1,
-}
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-GB" data-scroll-behavior="smooth">

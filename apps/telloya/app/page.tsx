@@ -30,9 +30,9 @@ export default function Home() {
             {brandName} — {brandTagline}
           </h1>
           <p className="mx-auto mt-8 max-w-2xl text-lg leading-8 text-[var(--muted)] md:text-xl">
-            Capture customer enquiries when you&rsquo;re busy and can&rsquo;t answer the
-            phone. {brandName} answers calls professionally, gathers the information you need,
-            and ensures no opportunity is missed.
+            {brandName} helps capture customer enquiries when you&rsquo;re busy and unable to
+            answer the phone. Our AI receptionist answers calls professionally and gathers the
+            information you need.
           </p>
           <div className="mt-12 rounded-2xl border border-[var(--line)] bg-white p-8 text-left shadow-sm">
             <h2 className="text-xl font-bold text-[var(--ink)]">

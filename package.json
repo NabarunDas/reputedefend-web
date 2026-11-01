@@ -33,7 +33,8 @@
     "build:telloya": "npm run build --workspace=@profilerelaunch/telloya",
     "start:telloya": "npm run start --workspace=@profilerelaunch/telloya",
     "typecheck:telloya": "npm run typecheck --workspace=@profilerelaunch/telloya",
-    "test:telloya": "npm run test --workspace=@profilerelaunch/telloya"
+    "test:telloya": "npm run test --workspace=@profilerelaunch/telloya",
+    "smoke:telloya": "node scripts/smoke-telloya.mjs"
   },
   "repository": {
     "type": "git",

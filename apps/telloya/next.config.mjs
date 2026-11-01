@@ -3,15 +3,27 @@ import { marketingContentSecurityPolicy } from "../../lib/security/content-secur
 
 const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url))
 
+function trimEnv(value) {
+  return value?.trim() ?? ""
+}
+
+function isSitePublic(env = process.env) {
+  return trimEnv(env.VERCEL_ENV) === "production" && trimEnv(env.TELLOYA_LAUNCHED) === "true"
+}
+
 const config = {
   poweredByHeader: false,
   outputFileTracingRoot: repositoryRoot,
   turbopack: { root: repositoryRoot },
   async headers() {
+    const robotsValue = isSitePublic()
+      ? "all"
+      : "noindex, nofollow, noarchive"
+    
     return [{
       source: "/:path*",
       headers: [
-        { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+        { key: "X-Robots-Tag", value: robotsValue },
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         { key: "Strict-Transport-Security", value: "max-age=63072000" },

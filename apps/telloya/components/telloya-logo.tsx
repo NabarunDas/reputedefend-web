@@ -7,9 +7,24 @@ import { brandName } from "@/lib/brand"
  * is approved and available. The final logo will replace this component
  * and be served from public/brand/.
  *
+ * Supports light and dark variants for accessible contrast:
+ * - Dark variant for light backgrounds (header)
+ * - Light variant for dark backgrounds (footer)
+ *
  * Do not generate or commit an unapproved logo image.
  */
-export function TelloyaLogo({ className = "" }: { className?: string }) {
+
+type LogoVariant = "dark" | "light"
+
+export function TelloyaLogo({ 
+  className = "", 
+  variant = "dark" 
+}: { 
+  className?: string
+  variant?: LogoVariant 
+}) {
+  const color = variant === "light" ? "var(--lime)" : "var(--green)"
+  
   return (
     <span
       className={className}
@@ -18,7 +33,7 @@ export function TelloyaLogo({ className = "" }: { className?: string }) {
         fontSize: "clamp(1.5rem, 4vw, 2rem)",
         fontWeight: 800,
         letterSpacing: "-0.03em",
-        color: "var(--green)",
+        color,
       }}
       aria-label={brandName}
     >

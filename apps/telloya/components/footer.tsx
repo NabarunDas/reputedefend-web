@@ -7,6 +7,7 @@ import {
   brandOperator,
   operatorSiteUrl,
 } from "@/lib/brand"
+import { legalIdentity } from "../../../lib/legal"
 
 /**
  * Telloya footer with required legal operator disclosure.
@@ -14,6 +15,9 @@ import {
  * Telloya is a product of ProfileRelaunch Ltd, not a separate company.
  * The footer must clearly disclose this relationship while maintaining
  * Telloya's visual identity.
+ *
+ * Legal information is sourced from the verified central legal identity
+ * to prevent duplication and ensure consistency with ProfileRelaunch.
  */
 export function Footer() {
   const currentYear = new Date().getFullYear()
@@ -23,7 +27,7 @@ export function Footer() {
       <div className="container">
         <div className="mb-12">
           <Link href="/" aria-label={brandHomeLabel} className="inline-flex items-center">
-            <TelloyaLogo className="site-logo site-logo-footer" />
+            <TelloyaLogo className="site-logo site-logo-footer" variant="light" />
           </Link>
           <p className="mt-5 max-w-md text-base leading-7 text-[#C9D5CE]">
             {brandDescriptor}
@@ -47,9 +51,10 @@ export function Footer() {
             .
           </p>
           <p className="text-[13px] leading-6 text-[#A8B8B0]">
-            © {currentYear} {brandOperator}. Company number 17520826. Registered in England
-            and Wales. Registered office: 71–75 Shelton Street, Covent Garden, London, WC2H
-            9JQ, United Kingdom.
+            © {currentYear} {legalIdentity.legalName}. Company number{" "}
+            {legalIdentity.registrationNumber}. Registered in{" "}
+            {legalIdentity.placeOfRegistration}. Registered office:{" "}
+            {legalIdentity.postalAddress?.split("\n").join(", ")}.
           </p>
         </div>
       </div>

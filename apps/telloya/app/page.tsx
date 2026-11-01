@@ -1,7 +1,20 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import Image from "next/image"
-import { ArrowRight, ArrowUpRight, Check } from "lucide-react"
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  ChevronRight,
+  ClipboardList,
+  Clock3,
+  Headphones,
+  PhoneCall,
+  ShieldCheck,
+  Sparkles,
+  Wrench,
+  Zap,
+} from "lucide-react"
 import { pageTitle } from "@/lib/brand"
 import { homepageContent } from "@/lib/content"
 import styles from "./homepage.module.css"
@@ -12,279 +25,202 @@ export const metadata: Metadata = {
   title: { absolute: pageTitle(seo.title) },
   description: seo.description,
   alternates: { canonical: "/" },
-  openGraph: {
-    title: seo.title,
-    description: seo.description,
-    url: "/",
-  },
-  twitter: {
-    title: seo.title,
-    description: seo.description,
-  },
+  openGraph: { title: seo.title, description: seo.description, url: "/" },
+  twitter: { title: seo.title, description: seo.description },
 }
 
-function CinematicConsole() {
-  return null
+const benefitIcons = [PhoneCall, ClipboardList, ShieldCheck, Clock3] as const
+const industryIcons = [Wrench, Zap, Headphones, ShieldCheck, Sparkles] as const
+
+/**
+ * The approved console photograph is the SCENERY, not a card or a screenshot
+ * standing in for the website. The accessible content and CTAs stay in HTML.
+ */
+function CinematicWorld() {
+  return (
+    <div className={styles.world} aria-hidden="true">
+      <div className={styles.worldMist} />
+      <div className={styles.worldHorizon} />
+      <div className={styles.worldLight} />
+      <div className={styles.worldLandscape}>
+        <picture>
+          <source media="(max-width: 639px)" srcSet="/brand/telloya-cinematic-console-mobile.webp" />
+          <Image
+            src="/brand/telloya-cinematic-console.webp"
+            alt=""
+            width={1672}
+            height={604}
+            priority
+            sizes="100vw"
+            className={styles.worldImage}
+          />
+        </picture>
+      </div>
+      <div className={styles.worldForeground} />
+    </div>
+  )
+}
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return <p className={styles.eyebrow}>{children}</p>
 }
 
 export default function Home() {
   return (
-    <div className={styles.page}>
-      {/* Immersive Cinematic Hero */}
-      <section className={styles.cinematicHero} aria-labelledby="home-title">
-        {/* Atmospheric Background Layers */}
-        <div className={styles.atmosphericLayer1}></div>
-        <div className={styles.atmosphericLayer2}></div>
-        <div className={styles.atmosphericLayer3}></div>
-        <div className={styles.atmosphericGlow}></div>
-        
-        {/* Hero Content Container */}
-        <div className={styles.heroContainer}>
-          {/* Integrated Logo */}
-          <div className={styles.heroLogoArea}>
-            <div className={styles.heroLogoMark}>
-              <Image
-                src="/brand/telloya-mark-approved.webp"
-                alt=""
-                width={48}
-                height={48}
-                priority
-                className={styles.logoIcon}
-              />
-            </div>
-            <span className={styles.heroLogoText}>Telloya</span>
+    <div className={`${styles.page} telloya-cinematic-home`}>
+      <section className={styles.hero} aria-labelledby="home-title">
+        <CinematicWorld />
+        <div className={styles.heroCopy}>
+          <div className={styles.heroEyebrow}><span className={styles.eyebrowDot} /> AI receptionist · by ProfileRelaunch Ltd</div>
+          <h1 id="home-title" className={styles.heroTitle}>
+            <span>Your AI Receptionist</span>
+            <em>Never Misses a Call</em>
+          </h1>
+          <p className={styles.heroSubtitle}>
+            When you cannot answer, Telloya can help capture the enquiry and the details you need to follow up.
+          </p>
+          <div className={styles.heroActions}>
+            <Link className={styles.primaryCta} href={hero.primaryHref}>
+              See how Telloya works <ArrowUpRight size={19} aria-hidden="true" />
+            </Link>
+            <Link className={styles.glassCta} href={hero.secondaryHref}>
+              Enquire about Telloya <ArrowRight size={18} aria-hidden="true" />
+            </Link>
           </div>
+        </div>
+        <p className={styles.previewNote}>Illustrative product preview — actual features depend on configuration</p>
+        <span className={styles.heroScroll} aria-hidden="true">Discover Telloya <ChevronRight size={14} /></span>
+      </section>
 
-          {/* Centered Hero Content */}
-          <div className={styles.heroContent}>
-            <h1 id="home-title" className={styles.heroTitle}>
-              <span className={styles.heroTitleLine1}>Your AI Receptionist</span>
-              <span className={styles.heroTitleLine2}>Never Misses a Call</span>
-            </h1>
-            <p className={styles.heroSubtitle}>{hero.supporting}</p>
-            <div className={styles.heroActions}>
-              <Link className={styles.heroPrimaryButton} href={hero.primaryHref}>
-                {hero.primaryCta}
-                <ArrowUpRight aria-hidden="true" size={18} />
+      <div className={styles.cinematicBody}>
+        <section className={styles.valueRibbon} aria-label="Telloya at a glance">
+          <div className={styles.valueRibbonTitle}><Sparkles size={18} aria-hidden="true" /> Built for busy service businesses</div>
+          <div><Check size={18} aria-hidden="true" /> Missed-call assistance</div>
+          <div><Check size={18} aria-hidden="true" /> Useful enquiry details</div>
+          <div><Check size={18} aria-hidden="true" /> Easier follow-up</div>
+        </section>
+
+        <section className={styles.challenge} aria-labelledby="challenge-title">
+          <div className={styles.challengeIntro}>
+            <Eyebrow>{problem.eyebrow}</Eyebrow>
+            <h2 id="challenge-title">Customers call <em>while you&apos;re working.</em></h2>
+            <p>{problem.lead}</p>
+          </div>
+          <ol className={styles.challengeList}>
+            {problem.points.map((point, index) => (
+              <li key={point}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <p>{point}</p>
+              </li>
+            ))}
+          </ol>
+          <div className={styles.callBeacon} aria-hidden="true">
+            <span className={styles.beaconHalo} />
+            <span className={styles.beaconPhone}><PhoneCall size={30} /></span>
+            <span className={styles.beaconCaption}>Missed call <small>New enquiry</small></span>
+          </div>
+        </section>
+
+        <section className={styles.process} aria-labelledby="how-title">
+          <div className={styles.sectionHeader}>
+            <div><Eyebrow>{howItWorks.eyebrow}</Eyebrow><h2 id="how-title">A smarter way to <em>stay in touch.</em></h2></div>
+            <p>{howItWorks.lead}</p>
+          </div>
+          <ol className={styles.processSteps}>
+            {howItWorks.steps.map((step) => (
+              <li key={step.number}>
+                <span className={styles.stepNum}>{step.number}</span>
+                <h3>{step.title}</h3>
+                <p>{step.description}</p>
+              </li>
+            ))}
+          </ol>
+          <p className={styles.processNote}>{howItWorks.note}</p>
+        </section>
+
+        <section className={styles.benefits} aria-labelledby="benefits-title">
+          <div className={styles.sectionHeader}>
+            <div><Eyebrow>Why Telloya</Eyebrow><h2 id="benefits-title">More than just <em>call answering.</em></h2></div>
+            <p>{benefits.title}</p>
+          </div>
+          <div className={styles.benefitGrid}>
+            {benefits.items.map((item, index) => {
+              const Icon = benefitIcons[index] ?? Sparkles
+              return (
+                <article key={item.title} className={styles.benefitCard}>
+                  <span className={styles.benefitIcon}><Icon size={25} strokeWidth={1.7} aria-hidden="true" /></span>
+                  <h3>{item.title}</h3><p>{item.description}</p>
+                </article>
+              )
+            })}
+          </div>
+        </section>
+
+        <section className={styles.example} aria-labelledby="example-title">
+          <div className={styles.exampleCopy}>
+            <Eyebrow>{example.eyebrow}</Eyebrow>
+            <h2 id="example-title">From an unanswered call to <em>a useful conversation.</em></h2>
+            <p>{example.lead}</p>
+            <Link href="/features" className={styles.textLink}>Explore what Telloya can capture <ArrowUpRight size={17} aria-hidden="true" /></Link>
+          </div>
+          <div className={styles.leadCard}>
+            <div className={styles.leadTop}><span><span className={styles.liveDot} /> Example enquiry</span><span>{example.card.time}</span></div>
+            <div className={styles.leadName}><span className={styles.leadAvatar}><PhoneCall size={22} aria-hidden="true" /></span><div><strong>{example.card.caller}</strong><small>{example.card.service}</small></div></div>
+            <dl>
+              <div><dt>Location</dt><dd>{example.card.location}</dd></div>
+              <div><dt>Enquiry</dt><dd>{example.card.problem}</dd></div>
+              <div><dt>Callback</dt><dd>{example.card.callback}</dd></div>
+            </dl>
+            <p className={styles.exampleDisclaimer}>Illustrative example only — not a real customer record.</p>
+          </div>
+        </section>
+
+        <section className={styles.industries} aria-labelledby="industries-title">
+          <div className={styles.sectionHeader}>
+            <div><Eyebrow>{audience.title}</Eyebrow><h2 id="industries-title">Built for <em>service businesses.</em></h2></div>
+            <p>{audience.lead}</p>
+          </div>
+          <div className={styles.industryGrid}>
+            {audience.industries.map((industry, index) => {
+              const Icon = industryIcons[index] ?? Wrench
+              return <Link href="/industries" className={styles.industryTile} key={industry}>
+                <span className={styles.industryArt}><Icon size={44} strokeWidth={1.2} aria-hidden="true" /></span>
+                <span className={styles.industryLabel}>{industry}<ArrowUpRight size={17} aria-hidden="true" /></span>
               </Link>
-              <Link className={styles.heroSecondaryButton} href={hero.secondaryHref}>
-                {hero.secondaryCta}
-                <ArrowRight aria-hidden="true" size={18} />
-              </Link>
-            </div>
+            })}
           </div>
+        </section>
 
-          {/* Integrated Console Artwork */}
-          <div className={styles.consoleScene}>
-            <div className={styles.consoleGlowRing}></div>
-            <div className={styles.consoleArtwork}>
-              <picture>
-                <source 
-                  media="(min-width: 768px)" 
-                  srcSet="/brand/telloya-cinematic-console.webp"
-                />
-                <Image
-                  src="/brand/telloya-cinematic-console-mobile.webp"
-                  alt="AI receptionist dashboard interface"
-                  width={1672}
-                  height={604}
-                  priority
-                  className={styles.consoleImage}
-                  sizes="(min-width: 768px) 1400px, 100vw"
-                />
-              </picture>
-            </div>
-            <div className={styles.consoleBloom}></div>
+        <section className={styles.plans} aria-labelledby="plans-title">
+          <div className={styles.sectionHeader}>
+            <div><Eyebrow>{plans.eyebrow}</Eyebrow><h2 id="plans-title">Find the right <em>fit for your business.</em></h2></div>
+            <p>{plans.lead}</p>
           </div>
-        </div>
-      </section>
-
-      {/* Trust strip */}
-      <section className={styles.trustStrip} aria-label="How Telloya works">
-        <ul>
-          <li>Never miss an enquiry</li>
-          <li>Professional call handling</li>
-          <li>Clear lead summaries</li>
-          <li>Designed for tradespeople</li>
-        </ul>
-      </section>
-
-      {/* Problem */}
-      <section className={styles.situations} aria-labelledby="situations-title">
-        <div className={styles.situationIntro}>
-          <p className={styles.eyebrow}>{problem.eyebrow}</p>
-          <h2 id="situations-title">{problem.title}</h2>
-          <p>{problem.lead}</p>
-        </div>
-        <ol className={styles.problemList}>
-          {problem.points.map((point, index) => (
-            <li key={point}>
-              <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-              {point}
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      {/* How It Works */}
-      <section className={styles.process} aria-labelledby="process-title">
-        <div className={styles.processIntro}>
-          <div>
-            <p className={styles.eyebrow}>{howItWorks.eyebrow}</p>
-            <h2 id="process-title">{howItWorks.title}</h2>
+          <div className={styles.planGrid}>
+            {[plans.telloya, plans.complete].map((plan) => (
+              <article className={styles.planCard} key={plan.name}>
+                <h3>{plan.name}</h3><p>{plan.description}</p>
+                <ul>{plan.features.map(f => <li key={f}><Check size={17} aria-hidden="true" />{f}</li>)}</ul>
+                {"note" in plan && <p className={styles.planNote}>{plan.note}</p>}
+                <Link href={plan.href}>Explore {plan.name} <ArrowRight size={17} aria-hidden="true" /></Link>
+              </article>
+            ))}
           </div>
-          <p>{howItWorks.lead}</p>
-        </div>
-        <ol className={styles.processList}>
-          {howItWorks.steps.map((step) => (
-            <li key={step.number}>
-              <span className={styles.processNumber}>{step.number}</span>
-              <h3>{step.title}</h3>
-              <p>{step.description}</p>
-            </li>
-          ))}
-        </ol>
-        <p className={styles.processNote}>{howItWorks.note}</p>
-      </section>
+        </section>
 
-      {/* Benefits */}
-      <section className={styles.benefitsBand} aria-labelledby="benefits-title">
-        <div className={styles.benefitsIntro}>
-          <p className={styles.eyebrow}>{benefits.eyebrow}</p>
-          <h2 id="benefits-title">{benefits.title}</h2>
-        </div>
-        <div className={styles.benefitsGrid}>
-          {benefits.items.map((item) => (
-            <article key={item.title} className={styles.benefitCard}>
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+        <section className={styles.faq} aria-labelledby="faq-title">
+          <div><Eyebrow>{faq.eyebrow}</Eyebrow><h2 id="faq-title">Good questions. <em>Clear answers.</em></h2></div>
+          <div className={styles.faqList}>{faq.questions.map(({ q, a }) => (
+            <details key={q}><summary>{q}<span aria-hidden="true">+</span></summary><p>{a}</p></details>
+          ))}</div>
+        </section>
 
-      {/* Example */}
-      <section className={styles.example} aria-labelledby="example-title">
-        <div className={styles.exampleIntro}>
-          <p className={styles.eyebrow}>{example.eyebrow}</p>
-          <h2 id="example-title">{example.title}</h2>
-          <p>{example.lead}</p>
-        </div>
-        <div className={styles.leadCard}>
-          <p className={styles.leadLabel}>{example.card.label}</p>
-          <div className={styles.leadHeader}>
-            <h3>{example.card.caller}</h3>
-            <p className={styles.leadTime}>{example.card.time}</p>
-          </div>
-          <dl className={styles.leadDetails}>
-            <div>
-              <dt>Service</dt>
-              <dd>{example.card.service}</dd>
-            </div>
-            <div>
-              <dt>Location</dt>
-              <dd>{example.card.location}</dd>
-            </div>
-            <div>
-              <dt>Problem</dt>
-              <dd>{example.card.problem}</dd>
-            </div>
-            <div>
-              <dt>Callback</dt>
-              <dd>{example.card.callback}</dd>
-            </div>
-          </dl>
-        </div>
-      </section>
-
-      {/* Audience */}
-      <section className={styles.audienceBand} aria-labelledby="audience-title">
-        <div className={styles.audienceIntro}>
-          <p className={styles.eyebrow}>{audience.eyebrow}</p>
-          <h2 id="audience-title">{audience.title}</h2>
-          <p>{audience.lead}</p>
-        </div>
-        <div className={styles.audienceGrid}>
-          {audience.industries.map((industry) => (
-            <div key={industry} className={styles.industryCard}>
-              <p>{industry}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Plans */}
-      <section className={styles.pricing} aria-labelledby="pricing-title">
-        <div className={styles.pricingIntro}>
-          <p className={styles.eyebrow}>{plans.eyebrow}</p>
-          <h2 id="pricing-title">{plans.title}</h2>
-          <p>{plans.lead}</p>
-        </div>
-        <div className={styles.plansGrid}>
-          <article className={styles.planCard}>
-            <h3>{plans.telloya.name}</h3>
-            <p className={styles.planDescription}>{plans.telloya.description}</p>
-            <ul>
-              {plans.telloya.features.map((feature) => (
-                <li key={feature}>
-                  <Check aria-hidden="true" size={16} />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <Link className={styles.planCta} href={plans.telloya.href}>
-              {plans.telloya.cta}
-              <ArrowRight aria-hidden="true" size={18} />
-            </Link>
-          </article>
-          <article className={styles.planCard}>
-            <h3>{plans.complete.name}</h3>
-            <p className={styles.planDescription}>{plans.complete.description}</p>
-            <ul>
-              {plans.complete.features.map((feature) => (
-                <li key={feature}>
-                  <Check aria-hidden="true" size={16} />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <p className={styles.planNote}>{plans.complete.note}</p>
-            <Link className={styles.planCta} href={plans.complete.href}>
-              {plans.complete.cta}
-              <ArrowRight aria-hidden="true" size={18} />
-            </Link>
-          </article>
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section className={styles.faqSection} aria-labelledby="faq-title">
-        <div>
-          <p className={styles.eyebrow}>{faq.eyebrow}</p>
-          <h2 id="faq-title">{faq.title}</h2>
-        </div>
-        <div className={styles.faqList}>
-          {faq.questions.map(({ q, a }) => (
-            <details key={q}>
-              <summary>{q}</summary>
-              <p>{a}</p>
-            </details>
-          ))}
-        </div>
-      </section>
-
-      {/* Final CTA */}
-      <section className={styles.conversionBand} aria-labelledby="cta-title">
-        <div className={styles.conversion}>
-          <div>
-            <h2 id="cta-title">{finalCta.title}</h2>
-            <Link className={styles.ctaButton} href={finalCta.href}>
-              {finalCta.cta}
-              <ArrowUpRight aria-hidden="true" size={20} />
-            </Link>
-          </div>
-        </div>
-      </section>
+        <section className={styles.finalCta} aria-labelledby="final-title">
+          <div className={styles.finalGlow} aria-hidden="true" />
+          <div className={styles.finalCopy}><Eyebrow>A better first impression</Eyebrow><h2 id="final-title">See how Telloya can <em>work for your business.</em></h2><p>{finalCta.title}</p></div>
+          <Link href={finalCta.href} className={styles.primaryCta}>{finalCta.cta}<ArrowUpRight size={19} aria-hidden="true" /></Link>
+        </section>
+      </div>
     </div>
   )
 }

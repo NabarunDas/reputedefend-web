@@ -142,18 +142,21 @@ export async function POST(request: Request) {
       )
     }
 
-    // TODO: Persist to database once schema is available
-    // For now, return success with generated reference
-    // Real implementation will use `create_telloya_enquiry_v1` RPC
-    // and send customer acknowledgement + admin notification emails
+    // Database persistence not yet deployed
+    // Until the schema from docs/telloya-enquiry-database-proposal.md is applied:
+    // - Do NOT generate fake references
+    // - Do NOT return success without persistence
+    // - Do NOT claim emails were sent
+    // Return 503 with honest unavailable message
     
-    const mockRef = `TY-${new Date().getFullYear().toString().slice(-2)}-${Math.floor(Math.random() * 900000 + 100000)}`
-
-    return NextResponse.json({
-      ok: true,
-      message: "Your enquiry has been received.",
-      enquiryRef: mockRef,
-    })
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "The enquiry system is being prepared for launch. Please contact us at hello@profilerelaunch.com or call +44 20 1234 5678 to discuss your requirements.",
+        code: "SERVICE_UNAVAILABLE",
+      },
+      { status: 503 }
+    )
   } catch (error) {
     console.error("[telloya-enquiry] Submission error:", error)
     return NextResponse.json(

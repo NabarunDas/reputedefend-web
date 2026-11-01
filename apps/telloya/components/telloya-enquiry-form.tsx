@@ -200,7 +200,7 @@ Contact Preference: ${values.contactPreference || "Not specified"}`,
         body: JSON.stringify(payload),
       })
 
-      const json = await res.json() as { ok?: boolean; enquiryRef?: string; errors?: EnquiryFieldErrors }
+      const json = await res.json() as { ok?: boolean; enquiryRef?: string; message?: string; errors?: EnquiryFieldErrors; code?: string }
 
       if (json.ok) {
         setEnquiryRef(json.enquiryRef || "")
@@ -216,7 +216,8 @@ Contact Preference: ${values.contactPreference || "Not specified"}`,
 
       setStatus("idle")
       setDeliveryError(true)
-      setStatusText("We couldn't submit your enquiry right now. Please try again shortly.")
+      // Use the API's message if available, otherwise fall back to generic message
+      setStatusText(json.message || "We couldn't submit your enquiry right now. Please try again shortly.")
       requestFocus("summary")
     } catch {
       setStatus("idle")
@@ -236,8 +237,7 @@ Contact Preference: ${values.contactPreference || "Not specified"}`,
             <p className={styles.refValue}>{enquiryRef}</p>
           </>
         )}
-        <p>Your request is safely recorded. Our team will review the details and get in touch if we need anything else.</p>
-        <p>A confirmation email is on its way. Please check your inbox and, if needed, your spam folder.</p>
+        <p>Your request is safely recorded. Our team will review the details and get in touch soon.</p>
       </div>
     )
   }
@@ -257,7 +257,7 @@ Contact Preference: ${values.contactPreference || "Not specified"}`,
 
       {showSummary && (
         <div ref={summaryRef} tabIndex={-1} role="alert" className={styles.summary}>
-          {deliveryError && <p>We couldn&apos;t submit your enquiry right now. Your information is still on this page. Please try again shortly.</p>}
+          {deliveryError && <p>{statusText}</p>}
           {errorEntries.length > 0 && (
             <>
               <p>Please correct the following:</p>

@@ -1,6 +1,6 @@
 # 02A — Data model
 
-Status: **proposed**, revised against review comment `6559957225`. Names below are recommended. They are not created by this PR. No prices, Stripe products, or rows are seeded. Complete cannot activate Guard until the gated change in this document exists.
+Status: **proposed**, revised against review comments `6559957225` and `6560133090`. Names below are recommended. They are not created by this PR. No prices, Stripe products, or rows are seeded. Complete cannot activate Guard until the gated change in this document exists. Phase 02H does not cancel or credit an existing Guard subscription.
 
 ## Recommendation
 
@@ -136,7 +136,9 @@ Occupancy is per business, not per customer:
 | Unique `(business_id)` where `state IN ('ACTIVE','PAUSED','PAST_DUE','CANCEL_AT_PERIOD_END')` | One occupying subscription. A second business owned by the same customer is a different `business_id`. |
 | Unique `(business_id)` where `state IN ('OFFERED','ACCEPTED','PAYMENT_PENDING')` | One incoming subscription, so a replacement can be offered while the occupying row is still in force. |
 
-`PAST_DUE` occupies the business and does not entitle. `ACTIVE` entitles only under the grant rules below. `DRAFT`, `CANCELED`, and `ENDED` do not occupy.
+`PAST_DUE` occupies the business. It removes access only when no paid period is still open. A first charge that never produced `commercial_payment_evidence` leaves entitlements `PENDING`. A renewal failure after evidence leaves entitlements `ELIGIBLE` until `current_period_end`, which is that evidence's `period_end`. Expiry is that timestamp passing with no newer evidence. It is not the renewal failure itself. `ACTIVE` entitles only under the grant rules below. `DRAFT`, `CANCELED`, and `ENDED` do not occupy.
+
+Suspension and fraud are different from `PAST_DUE`. `PAUSED`, or an entitlement `REVOKED` for fraud, may stop access before paid-through. Both require `admin_session_v1`, a reason, and an event. A provider webhook must not use that path, and it must not shorten `current_period_end` or an existing `guard_billing.paid_through_at`.
 
 If an occupying row exists, the incoming row's `succeeds_subscription_id` must point at it. The switch command, in one transaction, sets the old entitlement `eligible_to` and the new entitlement `eligible_from` to the same timestamp. There is no interval where the business has neither an eligible row nor an explicit expired row. A period-end switch leaves the old entitlement eligible until `current_period_end` and the new one `PENDING` until that instant.
 
@@ -180,11 +182,13 @@ stateDiagram-v2
   ACCEPTED --> PAYMENT_PENDING: checkout started
   ACCEPTED --> ACTIVE: non-billable pilot command only
   PAYMENT_PENDING --> ACTIVE: commercial_payment_evidence
-  PAYMENT_PENDING --> PAST_DUE: payment failed
+  PAYMENT_PENDING --> PAST_DUE: first charge failed, no paid-through
   PAST_DUE --> ACTIVE: new commercial_payment_evidence
-  PAST_DUE --> ENDED: abandoned
-  ACTIVE --> PAUSED: admin suspension
-  PAUSED --> ACTIVE: admin resume and still entitled
+  ACTIVE --> PAST_DUE: renewal failed, paid-through remains
+  PAST_DUE --> ENDED: evidenced paid-through reached
+  ACTIVE --> ENDED: period or pilot ended with no newer evidence
+  ACTIVE --> PAUSED: suspension or fraud control
+  PAUSED --> ACTIVE: control lifted and still paid-through
   ACTIVE --> CANCEL_AT_PERIOD_END: customer or admin schedules
   CANCEL_AT_PERIOD_END --> ACTIVE: schedule undone
   CANCEL_AT_PERIOD_END --> ENDED: period ends
@@ -192,7 +196,7 @@ stateDiagram-v2
   CANCELED --> ENDED: provider confirms
 ```
 
-`ACTIVE` means the commercial term is in force. For `BILLABLE` that requires `commercial_payment_evidence`. For `NON_BILLABLE_PILOT` it requires the pilot command and `pilot_ends_at` still in the future. It does not mean Telloya is answering calls or that Guard monitoring is on.
+`ACTIVE` means the commercial term is in force. For `BILLABLE` that requires `commercial_payment_evidence` whose period contains `now()`. For `NON_BILLABLE_PILOT` it requires the pilot command and `pilot_ends_at` still in the future. A billable row may also sit in `PAST_DUE` while `current_period_end` is still in the future: the customer keeps the period they already paid, and the portal says the renewal failed. Access ends at that `current_period_end` if no newer evidence arrives. `ACTIVE` does not mean Telloya is answering calls or that Guard monitoring is on.
 
 Checkout success, `checkout.session.completed`, a Stripe subscription status of `active`, and an admin marking a billable row paid are not evidence. There is no manual-paid state.
 
@@ -212,7 +216,7 @@ This is who may use a component. It is not a payment and not an operational swit
 | `commercial_subscription_id` | Set unless `source_kind = GUARD_COVERAGE`. |
 | `guard_coverage_id` | Null for Telloya. For Guard, null until a later gated Guard migration has created a legal coverage. A non-null value must be a coverage for this same location and business. |
 | `state` | `PENDING`, `ELIGIBLE`, `REVOKED`, `EXPIRED`. |
-| `eligible_from`, `eligible_to` | `eligible_to` required for a pilot and for `CANCEL_AT_PERIOD_END`. |
+| `eligible_from`, `eligible_to` | `eligible_to` is the evidenced `period_end`, the pilot end, or the scheduled cancel time. A renewal failure does not clear it. |
 | `revoked_at`, `revoked_by`, `revocation_reason` | Required together when `REVOKED`. |
 | Location consistency | Composite foreign key `(location_id, business_id)` → `locations (id, business_id)`. Add `UNIQUE (id, business_id)` on `locations` to support it. The location primary key alone does not prove the business. |
 | Checks | A `GUARD` entitlement cannot update `guard_coverages` or `guard_billing`. |
@@ -243,46 +247,67 @@ A `GUARD` entitlement means the commercial term includes that location. It does 
 | `subscription_id` | Foreign key. The plan must include a `GUARD` component. |
 | `subscription_item` | The Guard item on that subscription. |
 | `customer_id`, `business_id`, `location_id` | Must match each other. Composite foreign key `(location_id, business_id)` → `locations (id, business_id)`. |
-| `state` | `RESERVED`, `RECONCILING`, `READY_FOR_GUARD_SCHEMA`, `LAPSED`, `ENDED`. There is no `LINKED` state in 02B, because no legal coverage can be inserted yet. |
-| `paid_through_at` | Copy of the commercial period end, or the pilot end. This is Complete paid-through for that location. It is not written into `guard_billing`. |
+| `state` | In 02B: `RESERVED`, `PREVIEW`, `LAPSED`, `ENDED`. Later, and only after 02I: `CUTOVER_SCHEDULED` and `FUNDED`. There is no `RECONCILING`, `READY_FOR_GUARD_SCHEMA`, or `LINKED` state. 02B cannot insert a legal coverage. |
+| `paid_through_at` | Planned Complete period end for this seat. Null while no Complete period is evidenced. It is not written into `guard_billing` by 02B or 02H. |
+| `scheduled_cutover_at` | Null in 02H. Set only after 02I, to this location's current `guard_billing.paid_through_at` for a boundary cutover, or to an earlier instant that 02J will credit inside the same transaction. |
 | `effective_from`, `effective_to` | The allocation window. |
-| `superseded_guard_subscription_id` | Nullable foreign key to `guard_subscriptions` for this same location. |
-| `guard_coverage_id` | Must stay null until the gated Guard migration. A check enforces null in 02B. |
+| `standalone_guard_subscription_id` | Nullable foreign key to the open `guard_subscriptions` row for this location. Setting it does not end that row. |
+| `guard_coverage_id` | Null while the state is `RESERVED`, `PREVIEW`, `CUTOVER_SCHEDULED`, `LAPSED`, or `ENDED` before funding. After a successful 02J cutover it stores the coverage that already existed, or the one coverage 02I created for a location that had none. 02B's check forces null. |
 | `request_id` | The idempotency key of the command that created or last changed the row. |
 
 Indexes:
 
-- Unique `(location_id)` where `state IN ('RESERVED','RECONCILING','READY_FOR_GUARD_SCHEMA')`. One location cannot be in two open bundle allocations.
+- Unique `(location_id)` where `state IN ('RESERVED','PREVIEW')` in 02B, extended by 02J to include `CUTOVER_SCHEDULED` and `FUNDED`. One location cannot be in two open bundle allocations. 02B's state check does not allow those later values.
 - Unique `(subscription_id, location_id)`.
 - A count of open allocations for a subscription must be less than or equal to that item's `quantity_limit_snapshot`. Enforce it in the command with a row lock on the subscription, and add a deferred constraint trigger so two concurrent commands cannot both pass.
 
-`bundle_guard_allocation_events` is append-only: allocation id, actor, `request_id`, from state, to state, reason, and the superseded subscription id when relevant. Repeating the same `request_id` returns the stored result.
+`bundle_guard_allocation_events` is append-only: allocation id, actor, `request_id`, from state, to state, reason, and the standalone Guard subscription id when relevant. Repeating the same `request_id` returns the stored result. A refused cancel or credit is still an event. It is not a silent no-op.
 
-`RESERVED` means the seat is held and no Guard coverage exists. `RECONCILING` means this location still has an open `guard_subscriptions` row. The allocation stays there until that row is `CANCELED` or `ENDED` through the existing Guard cancel or credit command. `READY_FOR_GUARD_SCHEMA` means the old subscription is closed, or there was none, and the seat is waiting for the gated origin. `LAPSED` means the commercial period or pilot ended. `ENDED` means the seat was removed or the bundle was cancelled.
+`RESERVED` means the seat is held and this location has no open Guard subscription. `PREVIEW` means an open standalone Guard subscription was recorded and left untouched. `CUTOVER_SCHEDULED` means 02I is present, a verified Complete period exists, and `scheduled_cutover_at` is set, but Guard rows are still unchanged. `FUNDED` means the 02J transaction committed. `LAPSED` means the Complete period ended. `ENDED` means the seat was removed. Ending a `PREVIEW` seat does not end the standalone subscription.
 
-None of these states call `guard_activate_v1`. None insert `guard_subscription_invoices`.
+02H may insert `RESERVED` or `PREVIEW` only. It must not call Guard cancel, Guard credit, `guard_activate_v1`, or `guard_apply_invoice_paid_v1`. It must not change `guard_subscriptions`, `guard_coverages`, or `guard_billing`.
+
+### Cutover after 02I
+
+02J is the only phase that may end or credit a standalone Guard subscription for a Complete upgrade. It cannot run until 02I has added the bundle origin, `entitlement_source = BUNDLE`, the readiness branch, and `guard_apply_bundle_paid_through_v1`, and until this location has a verified Complete period with `period_end > now()`.
+
+`admin_private.guard_cutover_bundle_location_v1` is idempotent on `(allocation_id, scheduled_cutover_at)`. It takes `admin_session_v1` and `p_request`. One location per call. Dock being ready does not include Yard.
+
+| Mode | When | What the one transaction does |
+| --- | --- | --- |
+| Boundary, the default | `scheduled_cutover_at` equals this location's `guard_billing.paid_through_at`. The command refuses to run earlier. | Ends that standalone subscription at the boundary, so no prepaid remainder remains. Applies bundle paid-through from that same timestamp through the Complete `period_end`. Keeps the existing coverage row. Does not insert a second coverage, a second open subscription, or a second invoice for the overlapping days. |
+| Credited remainder | An admin explicitly chooses an earlier `scheduled_cutover_at`. | Credits the unused Guard remainder and applies bundle funding from that instant. If either step fails, both roll back. Coverage never sits with neither `PROVIDER` nor `BUNDLE` current. |
+
+While a location is `PREVIEW`, its only Guard charge is the existing Guard subscription. Complete `commercial_payment_evidence` is refused when the evidence period overlaps that location's `guard_billing.paid_through_at`. Locations do not share a cutover clock. If the bundle price cannot exclude a location that is still inside its standalone paid-through, the charge writer refuses the Complete charge and leaves every `PREVIEW` location on standalone Guard. It does not cancel a location to make the charge fit.
+
+A failed 02J attempt writes the event and leaves every Guard row as it was. The same `request_id` returns that stored result. A committed cutover is not reversed by deleting coverage. Compensation is a later forward command. It may run only when it can restore one current source, `PROVIDER` or `BUNDLE`, without a gap. If it cannot, it records an issue and stops.
 
 ### Later gated Guard change
 
 A separate PR, after 02B and not part of it, may add:
 
-- `coverage_origin = BUNDLE_COMPLETE` and a new `coverage_basis` that is neither `DIRECT_GUARD` nor `INCLUDED`, so `guard_coverages_included_period` does not force 30 days and `guard_coverages_basis_origin` does not demand a recovery case or a `RELAUNCH_GUARD` service order.
-- `guard_billing.entitlement_source = BUNDLE`, allowed to be `CURRENT` only while `paid_through_at > now()` and that timestamp equals the allocation's `paid_through_at`.
-- A new private writer, `admin_private.guard_apply_bundle_paid_through_v1`, which reads the allocation and the commercial period. It is idempotent on `(allocation_id, period_end)`. It is not `guard_set_billing_entitlement_v1`, and that function stays ungranted to `service_role`.
-- A readiness branch only for the new origin: billing is ready when the bundle source is current. Membership, permission, access, contact, baseline, rota, and mapping stay mandatory. `guard_activate_v1` remains the only way to set `ACTIVE`.
+- `coverage_origin = BUNDLE_COMPLETE` and a new `coverage_basis` that is neither `DIRECT_GUARD` nor `INCLUDED`, so `guard_coverages_included_period` does not force 30 days and `guard_coverages_basis_origin` does not demand a recovery case or a `RELAUNCH_GUARD` service order. For a location that already has a coverage, 02J keeps that row and changes its funding. It does not insert a second non-ended coverage.
+- `guard_billing.entitlement_source = BUNDLE`, allowed to be `CURRENT` only while `paid_through_at > now()` and that timestamp equals the funded allocation's `paid_through_at`. A failed Complete renewal must not shorten a `paid_through_at` that is still in the future. Guard's own rule already says this for provider renewals: `invoice.payment_failed` does not remove service while `paid_through_at > now()`.
+- A new private writer, `admin_private.guard_apply_bundle_paid_through_v1`, which reads the allocation and the commercial period. It is idempotent on `(allocation_id, period_end)`. It refuses to move `paid_through_at` backwards. It is not `guard_set_billing_entitlement_v1`, and that function stays ungranted to `service_role`. 02I ships the writer. 02I does not call it against a location whose standalone subscription is still open. 02J is the caller for that location.
+- A readiness branch only for the new origin: billing is ready when the bundle source is current. Membership, permission, access, contact, baseline, rota, and mapping stay mandatory. `guard_activate_v1` remains the only way to set `ACTIVE`. An existing `ACTIVE` coverage stays `ACTIVE` across the cutover. 02J does not deactivate it in order to fund it.
 
-Tests that PR must include, before any Complete customer is told they can activate Guard:
+Tests, before any Complete customer is told their Guard seat has moved:
 
 | Case | Expected |
 | --- | --- |
-| Renewal | A second paid Complete period extends `paid_through_at` once. The same `period_end` does not extend it again. |
-| Lapse | Period end with no new evidence sets the allocation `LAPSED`, moves bundle billing off `CURRENT`, and `guard_activate_v1` refuses. |
-| Cancellation | Each open allocation for that subscription ends. Coverages are ended through the new bundle end path, not deleted, and no Guard invoice is inserted. |
-| Downgrade | A lower quantity is refused while more locations are still open than the new cap. Ending one location leaves the others. |
-| Overlap | A location with a non-ended `guard_subscriptions` row is refused unless that row is the superseded one and is already `CANCELED` or `ENDED`. |
+| 02H preview | Dock and Yard gain `PREVIEW` rows. Their `guard_subscriptions` lifecycle, `guard_coverages.state`, and `guard_billing.paid_through_at` are unchanged. Cancel and credit are not called. |
+| One location not ready | Dock may become `CUTOVER_SCHEDULED` after 02I. Yard stays `PREVIEW`. Yard's coverage stays in force and its paid-through is unchanged. The portal still shows Yard as existing Guard, not as bundle Guard. |
+| 02J before 02I | Rejected. No Guard row changes. |
+| Boundary cutover | One coverage row before and after. The standalone subscription ends at its paid-through. Bundle paid-through starts at that same timestamp. No second charge for the overlapping days. |
+| Credited remainder | The credit and the bundle apply commit together or not at all. |
+| Renewal | A second paid Complete period extends `paid_through_at` once. The same `period_end` does not extend it again. A failed renewal leaves the current `paid_through_at` in place. |
+| Lapse | The evidenced period end, with no new evidence, sets the allocation `LAPSED` and moves bundle billing off `CURRENT`. It does not do that when the renewal fails but `paid_through_at` is still in the future. |
+| Cancellation | After funding, each open allocation ends through the bundle end path. Coverages are not deleted. No Guard invoice is inserted. A `PREVIEW` cancellation does not end the standalone subscription. |
+| Downgrade | A lower quantity is refused while more locations are still open than the new cap. Ending one reservation leaves the others, and does not cancel their standalone Guard subscriptions. |
+| Overlap | `PREVIEW` beside an open standalone subscription is allowed. A second open `guard_subscriptions` row is still refused. `FUNDED` plus an open standalone subscription on the same location is refused. |
 | Privilege | `service_role` still cannot execute `guard_set_billing_entitlement_v1`. |
 
-Until that PR is applied, documents and the portal must not say a Complete customer can activate Guard.
+Until 02I is applied, documents and the portal must not say a Complete customer can activate Guard. Until 02J commits for that location, documents and the portal must not say the standalone Guard subscription has been replaced.
 
 ## Telloya provisioning
 
@@ -294,22 +319,28 @@ One row per Telloya entitlement, and therefore one per location. A business with
 | --- | --- |
 | `entitlement_id` | Unique foreign key. |
 | `business_id`, `location_id` | Must match the entitlement. Composite foreign key to `locations (id, business_id)`. |
-| `state` | `NOT_STARTED`, `PROFILE_REQUIRED`, `AGENT_REQUIRED`, `NUMBER_REQUIRED`, `FORWARDING_REQUIRED`, `TEST_REQUIRED`, `AWAITING_CONFIRMATION`, `LIVE`, `SUSPENDED`, `ENDED`. |
+| `state` | `NOT_STARTED`, `PROFILE_REQUIRED`, `AGENT_REQUIRED`, `NUMBER_REQUIRED`, `FORWARDING_REQUIRED`, `TEST_REQUIRED`, `AWAITING_CONFIRMATION`, `READY_FOR_PROVIDER_VERIFICATION`, `LIVE`, `SUSPENDED`, `ENDED`. |
 | `profile_ready_at` | This location's profile accepted by an admin command. |
-| `agent_configured_at` | This location's agent recorded. No Retell id is stored in 02B. |
-| `number_allocated_at` | This location's number recorded. The browser does not choose it. |
-| `provider_binding_ref` | Nullable, unique when set. Server-side only. Two locations must not store the same ref. It stays null until a provider phase. |
+| `agent_configured_at` | This location's agent recorded by an admin command. That timestamp is not provider proof. |
+| `number_allocated_at` | A number was requested for this location. The browser does not choose it. The timestamp is not proof that a provider issued it. |
+| `provider_binding_ref` | Nullable until verification. Unique when set. Server-side only. Two locations must not store the same ref. Required before `LIVE`. |
 | `forwarding_instructed_at` | Forwarding instructions recorded for this location. |
-| `agent_test_passed_at` | A successful test for this location. |
-| `customer_confirmed_at` | The verified member confirmed this location. |
-| `live_at` | Set only by the command that moves this location to `LIVE`. |
+| `provider_test_call_ref` | Nullable until verification. Unique when set. The provider's call id, stored by the provider command. Required before `LIVE`. |
+| `provider_test_outcome` | Null, `PASSED`, or `FAILED`. `LIVE` requires `PASSED`. An admin form cannot set this. |
+| `agent_test_passed_at` | Set only by the provider command that stores a unique call id and `PASSED`. An admin timestamp write cannot set it. |
+| `customer_confirmed_at` | The verified member confirmed this location. Confirmation without provider evidence stops at `READY_FOR_PROVIDER_VERIFICATION`. |
+| `live_at` | Set only by the provider command that moves this location to `LIVE`. |
 | `suspended_at`, `suspension_reason` | Set together when `SUSPENDED`. |
+
+A check rejects `state = LIVE` unless `provider_binding_ref`, `provider_test_call_ref`, `provider_test_outcome = PASSED`, `live_at`, `customer_confirmed_at`, and the setup timestamps are all present.
 
 Unique `(location_id)` where `state NOT IN ('SUSPENDED','ENDED')` keeps one active binding per location.
 
-`LIVE` for that location requires all six timestamps, an `ELIGIBLE` entitlement, and a commercial subscription that is `ACTIVE` under the grant rules. A second location of the same business can remain `NUMBER_REQUIRED`. The product is not Active for the business while any entitled location is not `LIVE`.
+02E may move a location as far as `READY_FOR_PROVIDER_VERIFICATION`. It must reject `LIVE`. The later provider command is the only writer of the binding ref, the test-call ref, the outcome, and `LIVE`. Each location is verified on its own. A manually typed timestamp, with or without a second admin looking at it, is not that command. A future DEV pilot that wants a human to record provider proof is not part of 02E. It would still need the real binding ref, the real call id, `PASSED`, and a second admin signoff, and it is not approved here.
 
-No provider credential is stored in 02B.
+`LIVE` also requires an `ELIGIBLE` entitlement and a commercial term that is still inside its paid-through or pilot end. A second location of the same business can remain `READY_FOR_PROVIDER_VERIFICATION`. The product is not Active for the business while any entitled location is not `LIVE`.
+
+No provider credential or call recording is stored. The browser never receives a provider secret.
 
 ## Onboarding
 
@@ -400,6 +431,9 @@ Every new public table is `ON DELETE RESTRICT` to customers, businesses, locatio
 - A Telloya login or Telloya user id.
 - A `guard_coverages` origin for Complete. That is a later gated PR, not 02B.
 - A call to `guard_set_billing_entitlement_v1` from the application.
+- A 02H command that cancels, credits, or shortens an existing Guard subscription or coverage.
+- `LIVE` from admin-entered timestamps without a provider binding and a passed test call.
+- A renewal failure that shortens `current_period_end` or `guard_billing.paid_through_at`.
 - A generic entitlement that Guard activation reads instead of `guard_billing`.
 - An admin command that marks a billable subscription paid without `commercial_payment_evidence`.
 - A foreign key from that evidence to `payment_receipts`. Those receipts belong to Recovery obligations.

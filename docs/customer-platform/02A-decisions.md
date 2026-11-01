@@ -1,14 +1,14 @@
 # 02A — Decisions
 
-Status: **needed before 02B**, revised against review comment `6559957225`. Each item has a recommended default so implementation can start without another open-ended design. A different choice should be written down here before the migration.
+Status: **needed before 02B**, revised against review comments `6559957225` and `6560133090`. Each item has a recommended default so implementation can start without another open-ended design. A different choice should be written down here before the migration.
 
 The recommendations follow the schema that is already on `develop` at `bb03642c`. They do not approve a price, a pilot length, or a location cap. They do not say a Complete customer can activate Guard.
 
 ## D1. Where Guard billing lives
 
-**Recommended:** `guard_subscriptions`, `guard_subscription_invoices`, and `guard_billing` remain the only Guard money and paid-through records through 02H. The commercial subscription stores no Guard Stripe subscription id and no single reconciled Guard subscription id. Complete paid-through for a location lives on `bundle_guard_allocations.paid_through_at` and is not written into `guard_billing`.
+**Recommended:** `guard_subscriptions`, `guard_subscription_invoices`, and `guard_billing` remain the only Guard money and paid-through records through 02H and through the 02I schema change. 02H does not write them. The commercial subscription stores no Guard Stripe subscription id and no single reconciled Guard subscription id. A planned Complete period on an allocation is not copied into `guard_billing`.
 
-A later gated PR (02I) may add `entitlement_source = BUNDLE` and `guard_apply_bundle_paid_through_v1`. That writer is the only proposed way for a bundle period to become Guard paid-through. It is not `guard_set_billing_entitlement_v1`, and it does not exist yet. Until 02I is applied, Complete does not activate Guard.
+A later gated PR (02I) may add `entitlement_source = BUNDLE` and `guard_apply_bundle_paid_through_v1`. That writer is the only proposed way for a bundle period to become Guard paid-through. It refuses to move `paid_through_at` backwards. It is not `guard_set_billing_entitlement_v1`. 02J is the only phase that may call it for a location that still has a standalone subscription, and only inside the cutover transaction. Until 02I is applied, Complete does not activate Guard. Until 02J commits, the standalone subscription remains the Guard service.
 
 **If rejected:** a second Guard ledger, a forged included-recovery coverage, or a forged Guard invoice will diverge from `invoice.paid` and from `guard_activate_v1`. Do not reject this without a replacement that still respects `guard_coverages_basis_origin` and the 30-day included-period check.
 
@@ -58,15 +58,15 @@ If the email is not verified, `begin_invited_login` writes a normal login challe
 
 ## D9. When the UI may say Active
 
-**Recommended:** for one Telloya location, only when that location's provision is `LIVE` after its own checks. For the product aggregate, only when every entitled location is `LIVE`. For Guard, only when an existing coverage is `ACTIVE` under the current readiness function. Mixed locations are partial setup. Commercial `ACTIVE` is displayed as paid or pilot, with the setup step for each location that is not live. A Complete allocation is not Active and is not "you can activate Guard".
+**Recommended:** for one Telloya location, only when that location is `LIVE` after a provider command has stored a unique binding and a passed test call. Admin timestamps stop at `READY_FOR_PROVIDER_VERIFICATION`, which is not Active. For the product aggregate, only when every entitled location is `LIVE`. For Guard, only when an existing coverage is `ACTIVE` under the current readiness function. A `PREVIEW` allocation does not change that. Mixed locations are partial setup. Commercial `ACTIVE`, and `PAST_DUE` inside an evidenced period, are displayed as paid through a date, with the setup step for each location that is not live.
 
-**If rejected:** showing Active at `invoice.paid`, or showing the whole product Active because one location is live, repeats a mistake Guard's own docs already forbid.
+**If rejected:** showing Active from typed timestamps, at `invoice.paid`, or for the whole product because one location is live, would tell the customer a service exists that has not been verified.
 
 ## D10. Complete double charge and several locations
 
-**Recommended:** one occupying commercial subscription per business, plus at most one incoming replacement with `succeeds_subscription_id`. Two businesses are two subscriptions. One open `bundle_guard_allocations` row per location, capped by `quantity_limit_snapshot`. One open `guard_subscriptions` row and one non-ended coverage per location, already true. Reconciliation is per location. The allocation stays `RECONCILING` until that location's Guard subscription is `CANCELED` or `ENDED`. Do not insert a second open Guard subscription, a Guard invoice, or a coverage.
+**Recommended:** one occupying commercial subscription per business, plus at most one incoming replacement with `succeeds_subscription_id`. Two businesses are two subscriptions. One open `bundle_guard_allocations` row per location, capped by `quantity_limit_snapshot`. One open `guard_subscriptions` row and one non-ended coverage per location, already true. 02H records a `PREVIEW` and leaves that Guard subscription open. A Complete charge that overlaps its `paid_through_at` is refused. 02J cuts one location over at that paid-through, or credits the remainder in the same transaction, and does not include a location that is not ready. Do not insert a second open Guard subscription, a Guard invoice, or a second coverage.
 
-**If rejected:** one `reconciled_guard_subscription_id` cannot represent Dock and Yard. Customers with a live Guard subscription at either location will pay twice, or the second location will be dropped. Do not reject this for a launch shortcut.
+**If rejected:** cancelling Guard in 02H leaves the customer without monitoring until 02I exists, and one shared cutover column cannot represent Dock and Yard. Do not reject this for a launch shortcut.
 
 ## D11. First migration contents
 
@@ -80,8 +80,26 @@ If the email is not verified, `begin_invited_login` writes a normal login challe
 
 **If rejected:** a hub rewrite before the read exists will show fixture states to real customers. The Phase 1 code already forbids that.
 
+## D13. When a Guard upgrade may end the old subscription
+
+**Recommended:** 02H is a reservation preview. It does not cancel, credit, or reduce coverage. 02I adds the funding machinery and also does not end the standalone subscription. 02J is the audited per-location cutover, after both a verified Complete period and 02I exist. The default instant is that location's current `guard_billing.paid_through_at`. An earlier instant is allowed only as a credited remainder inside the same transaction. Failure rolls back. One ready location does not drag an unready location with it.
+
+**If rejected:** ending Guard first and funding it later drops paid monitoring. Do not do that.
+
+## D14. What may set Telloya LIVE
+
+**Recommended:** only a provider command that stores a unique binding ref, a unique test-call id, and `PASSED`. 02E stops at `READY_FOR_PROVIDER_VERIFICATION`. Timestamps entered by an admin are not evidence. A manual DEV exception is not approved in this document.
+
+**If rejected:** `LIVE` from timestamps would show Active when no reachable number or agent has been verified. Do not do that.
+
+## D15. Renewal failure and paid-through
+
+**Recommended:** follow the existing Guard rule. A failed renewal sets `PAST_DUE` and leaves access in place until the evidenced `current_period_end` or `guard_billing.paid_through_at`. Expiry is that timestamp with no newer evidence. The failure must not shorten either timestamp. The first charge, which has no evidence, entitles nothing. Suspension and fraud may stop access earlier, and they require an actor and a reason. A billing webhook must not use that path.
+
+**If rejected:** treating `PAST_DUE` as immediate expiry takes away a period the customer has already paid for. Do not do that.
+
 ## Acceptance
 
-02B is unblocked when D1–D4 and D7–D12 are accepted as recommended, and D5–D6 are accepted as "no price, no pilot length, no location cap, and no manual-paid grant". D5 does not need a number before the empty schema. It needs a number before any billable offer succeeds and before 02G.
+02B is unblocked when D1–D4 and D7–D15 are accepted as recommended, and D5–D6 are accepted as "no price, no pilot length, no location cap, and no manual-paid grant". D5 does not need a number before the empty schema. It needs a number before any billable offer succeeds and before 02G.
 
-Accepting these decisions does not unblock Guard activation. 02I needs its own review. Until that migration is applied, Complete must not be described as able to activate Guard.
+Accepting these decisions does not unblock Guard activation or a Guard cutover. 02I and 02J need their own reviews. Until 02I is applied, Complete must not be described as able to activate Guard. Until 02J commits for a location, that location's standalone Guard subscription stays in force.

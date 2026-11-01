@@ -1,6 +1,6 @@
 # 02A — Customer journey
 
-Status: **proposed operating model**, revised against review comment `6559957225`. Admin-approved onboarding. No invitation email is sent by this PR. Admin approval does not verify an email and does not create a session.
+Status: **proposed operating model**, revised against review comments `6559957225` and `6560133090`. Admin-approved onboarding. No invitation email is sent by this PR. Admin approval does not verify an email and does not create a session. A Complete preview does not cancel Guard. Telloya is not live without provider evidence.
 
 ## Sequence
 
@@ -99,20 +99,21 @@ The invited finish checks `customer_portal_auth_identity_current_v1`, inserts th
 | --- | --- | --- |
 | Checkout not finished | `PAYMENT_PENDING` | `PENDING` |
 | `checkout.session.completed` or Stripe subscription `active`, with no paid-invoice evidence | stays `PAYMENT_PENDING` | stays `PENDING` |
-| Payment failed | `PAST_DUE` | stays `PENDING`, or leaves `ELIGIBLE` if a renewal fails. `PAST_DUE` still occupies the business. |
-| `commercial_payment_evidence` for a processed paid invoice | `ACTIVE` | `ELIGIBLE` for that evidence period, one row per location |
+| First charge failed, no evidence yet | `PAST_DUE` with no `current_period_end` | stays `PENDING`. Nothing has been paid. |
+| Renewal failed, evidenced `period_end` still in the future | `PAST_DUE` | stays `ELIGIBLE` until that `period_end`. Portal says renewal failed, access until that date. Telloya is not suspended for the billing failure. Existing `guard_billing.paid_through_at` is not shortened. |
+| `commercial_payment_evidence` for a processed paid invoice | `ACTIVE` | `ELIGIBLE` until that evidence `period_end`, one row per location |
 | Non-billable pilot command | `ACTIVE` with `pilot_ends_at` | `ELIGIBLE` until `eligible_to`. Portal copy says pilot, never paid. |
-| Pilot date passed, or paid period ended with no new evidence | `ENDED` | `EXPIRED`. Guard allocations for that subscription become `LAPSED`. |
+| Evidenced period or pilot end reached, no newer evidence | `ENDED` | `EXPIRED`. This is expiry. It is not the same event as the renewal failure. |
 
 The paid-invoice writer is 02G. It must share `stripe_event_receipts` idempotency. It must not write `guard_billing` and must not call `guard_apply_invoice_paid_v1` or `guard_set_billing_entitlement_v1`. It must not point at `payment_receipts`, because those rows belong to Recovery obligations.
 
 ### 7. Provisioning and activation
 
-Telloya setup is one `service_provisions` row per entitled location. Each location has its own profile, agent, number, forwarding, test, and confirmation timestamps, and its own `provider_binding_ref` once a later provider phase sets it. Two locations must not share that ref. The customer can see the current step for each location after they are eligible to log in. They cannot see provider credentials.
+Telloya setup is one `service_provisions` row per entitled location. Each location has its own profile, agent request, forwarding, and confirmation. Those admin timestamps can reach `READY_FOR_PROVIDER_VERIFICATION`. They cannot reach `LIVE`. `LIVE` also requires a unique server-side `provider_binding_ref`, a unique provider test-call id, and `provider_test_outcome = PASSED`, written by the provider command. Two locations must not share a binding or a call id. The customer can see the current step after they are eligible to log in. They cannot see provider credentials.
 
-`LIVE` is per location, and only after that location's customer confirmation. The product phrase Active is returned only when every entitled location is `LIVE`. Location A `LIVE` and location B `NUMBER_REQUIRED` is partial setup.
+The product phrase Active is returned only when every entitled location is `LIVE`. Location A verified `LIVE` and location B `READY_FOR_PROVIDER_VERIFICATION` is partial setup.
 
-Guard setup is not this table. A Complete Guard seat is a `bundle_guard_allocations` row. It does not create `guard_coverages`, does not set `guard_billing`, and does not call `guard_activate_v1`. The portal must not say Guard can be activated from Complete until the gated Guard migration in the data model has been applied.
+Guard setup is not this table. A Complete Guard seat starts as `bundle_guard_allocations` in `RESERVED` or `PREVIEW`. Preview records the open standalone subscription and does not cancel it, credit it, or change `guard_billing`. The portal must not say that seat is bundle Guard, and must not say Guard can be activated from Complete, until 02I exists and 02J has committed for that location.
 
 ### 8. Portal access
 
@@ -147,32 +148,38 @@ An incoming Complete offer may also exist on North while North's Telloya row sti
 
 North's Telloya plan includes two locations, High Street and Market. The subscription is one row. The item quantity is 2, checked against `quantity_limit_snapshot`. Each location gets its own `product_entitlements` row (`location_id` not null) and its own `service_provisions` row.
 
-High Street has all six timestamps, a unique `provider_binding_ref`, customer confirmation, and state `LIVE`. Market is `NUMBER_REQUIRED` and has a null binding. The portal returns High Street as live for that location and Market as setup. The business aggregate is not Active. A second open provision for High Street is rejected by the partial unique index on `location_id`.
+High Street has its setup timestamps, customer confirmation, a unique `provider_binding_ref`, a unique test-call id, and `provider_test_outcome = PASSED`, so it is `LIVE`. Market has the same admin timestamps and customer confirmation, but no provider binding and no test-call id, so it stays `READY_FOR_PROVIDER_VERIFICATION`. The portal returns High Street as live for that location and Market as waiting for provider verification. It does not call Market live because an admin typed `agent_test_passed_at`. The business aggregate is not Active. A second open provision for High Street is rejected by the partial unique index on `location_id`. Copying High Street's binding or call id onto Market is rejected.
 
 ### Complete upgrade across Guard locations
 
 South already pays for Guard at Dock and at Yard. Each location has its own open `guard_subscriptions` row and its own non-ended `guard_coverages` row. Paid-through for those coverages is `guard_billing`, written by `guard_apply_invoice_paid_v1`.
 
-Admin offers Complete for South. The commercial subscription has no `reconciled_guard_subscription_id`. Instead there are two `bundle_guard_allocations`:
+Admin offers Complete for South. Phase 02H only reserves seats. It does not cancel or credit either Guard subscription.
 
-| Location | Allocation state | Superseded Guard subscription | Coverage link |
+| Location | After 02H | Standalone Guard | Coverage |
 | --- | --- | --- | --- |
-| Dock | `RECONCILING` | Dock's open `guard_subscriptions` id | null, check-forced in 02B |
-| Yard | `RECONCILING` | Yard's open `guard_subscriptions` id | null, check-forced in 02B |
+| Dock | `PREVIEW`, `standalone_guard_subscription_id` set | Still open. Lifecycle, coverage state, and `paid_through_at` unchanged. | The existing row. No second coverage. |
+| Yard | `PREVIEW`, its own subscription id | Still open, on its own paid-through. | The existing row. |
 
-Each allocation's `paid_through_at` is the Complete period end. That timestamp is not copied into `guard_billing`. No `guard_subscription_invoices` row is inserted. `guard_set_billing_entitlement_v1` is not called.
+No `guard_subscription_invoices` row is inserted. `guard_set_billing_entitlement_v1` is not called. The portal keeps showing Dock and Yard as the Guard service they already have. It does not say Complete has taken over monitoring.
 
-The existing Guard cancel or credit command runs once per location. Dock can reach `READY_FOR_GUARD_SCHEMA` when Dock's Guard subscription is `CANCELED` or `ENDED`, while Yard stays `RECONCILING`. Until both are closed, Complete must not start a second Guard charge for the one that is still open. The open-subscription indexes already forbid a second open `guard_subscriptions` row and a second non-ended coverage on the same location. The allocation unique index forbids a second open seat on that location. The quantity cap forbids a third location when the pinned Guard item allows two.
+02I later adds the bundle origin and the paid-through writer. It still does not end Dock or Yard. After 02I, a schedule command may set Dock's `scheduled_cutover_at` to Dock's `guard_billing.paid_through_at` and move only Dock to `CUTOVER_SCHEDULED`. Yard stays `PREVIEW` if Yard is not ready. Yard's coverage stays in force.
 
-`READY_FOR_GUARD_SCHEMA` is not activation. `guard_activate_v1` still has no legal origin for a Complete-funded location: `DIRECT_GUARD` needs a `RELAUNCH_GUARD` service order, and `INCLUDED_RECOVERY` needs a recovery case and is pinned to 30 days. The portal says the Guard seat is waiting. It does not say monitoring is on.
+02J then cuts Dock over in one transaction at that timestamp: the standalone subscription ends at the boundary, bundle paid-through starts at the same timestamp, and the same coverage row remains. There is no second charge for the days Dock had already paid. If someone wants Dock moved earlier, the same command credits the unused remainder and applies bundle funding together, or rolls both back. 02H cannot request that.
+
+A Complete charge is refused while its period overlaps a `PREVIEW` location's Guard paid-through. If the bundle price cannot leave Yard off the invoice, the charge waits and Yard's Guard subscription keeps running. The charge writer does not cancel Yard to clear the overlap.
+
+`guard_activate_v1` still has no legal origin for a brand-new Complete-funded location until 02I. An existing active coverage is not turned off while it waits.
 
 ### Subscription expiry
 
-Complete on South is `ACTIVE` until `current_period_end`. No new `commercial_payment_evidence` arrives. The expiry command sets the subscription `ENDED`, every Complete entitlement `EXPIRED`, and both allocations `LAPSED`. Telloya provisions leave `LIVE`. `guard_billing` is unchanged because 02B never wrote it. `guard_activate_v1` is not involved.
+South's Complete period was paid through `current_period_end`. The renewal invoice fails before that date. The subscription becomes `PAST_DUE`. Entitlements stay `ELIGIBLE`. Telloya locations that are `LIVE` stay `LIVE`. A location already `FUNDED` keeps `guard_billing.paid_through_at` until that same evidenced end. A location still `PREVIEW` keeps the standalone Guard paid-through, which this failure does not touch. The portal says the renewal failed and names the date access still runs to.
 
-A North pilot works the same way with `pilot_ends_at`. There is no evidence row to extend. The portal says the pilot has ended. It does not say the invoice failed, and it does not say the service is Active.
+When that date arrives and there is still no new evidence, the expiry command sets the subscription `ENDED`, the Complete entitlements `EXPIRED`, and the funded allocations `LAPSED`. Telloya provisions leave `LIVE`. Bundle billing moves off `CURRENT` at that instant, not at the earlier failure. `guard_activate_v1` is not involved.
 
-`PAST_DUE` is the billable failure before expiry. It occupies the business, entitles nothing, and still does not suspend Guard by deleting a coverage. Telloya provisions that were `LIVE` move to `SUSPENDED`.
+A North pilot has no renewal invoice. It ends at `pilot_ends_at`. The portal says the pilot has ended. It does not say an invoice failed.
+
+A first Complete charge that never produced evidence is also `PAST_DUE`, but `current_period_end` is null, so nothing is entitled. Suspension or a fraud revocation can stop access before paid-through. Those commands record an actor and a reason. The renewal webhook does not.
 
 ### First-time login and an already verified email
 
@@ -199,8 +206,9 @@ A North pilot works the same way with `pilot_ends_at`. There is no evidence row 
 | One customer, several businesses | Each business has its own subscription and its own evidence or pilot | One occupying row per business | See the North and South example. |
 | Several users, one business | One billing customer on the subscription | One occupying row | Other verified members can use an eligible location. They do not see invoice amounts unless a later decision says so. They do not see another business. |
 | Payment pending | Subscription `PAYMENT_PENDING` | One incoming or occupying row, as the state table allows | Entitlements `PENDING`. Provisions may be drafted. None can be `LIVE`. |
-| Paid, not provisioned | Commercial `ACTIVE` from evidence | One | Entitlements `ELIGIBLE`. A location without `LIVE` keeps the product off Active. |
-| Paused or suspended | Commercial `PAUSED` and/or a location provision `SUSPENDED` | Kept | That location stops. Other locations stay as they are. Rows remain. |
+| Paid, not provisioned | Commercial `ACTIVE` from evidence | One | Entitlements `ELIGIBLE`. A location in `READY_FOR_PROVIDER_VERIFICATION` keeps the product off Active. |
+| Renewal failed inside a paid period | `PAST_DUE`, `current_period_end` still in the future | Occupies | Access continues until that end. Guard paid-through is not cleared. |
+| Paused or suspended | Commercial `PAUSED` and/or a location provision `SUSPENDED` | Kept | Access stops only for this control, with an actor and a reason. A renewal webhook cannot set it. |
 | Cancel at period end | `CANCEL_AT_PERIOD_END` | Occupies until period end | Access continues until `eligible_to`. Then `EXPIRED` and allocations `LAPSED`. |
 | Immediate revocation | Admin command with reason | `CANCELED` | Entitlements `REVOKED` immediately. Guard monitoring stops only through the existing Guard cancellation command, and only for coverages that already exist. 02B has none to delete. |
 | Bundle downgrade | The Complete row ends or is succeeded. A Telloya row opens only through `succeeds_subscription_id` and the same-timestamp handoff. | One occupying row after the handoff | Open allocations above the new quantity are refused until a location is `ENDED`. Telloya provisions can move to the new subscription's entitlements in that same transaction. |
@@ -216,10 +224,12 @@ After login, a later portal read can show, per location and as an aggregate:
 - invited, payment not started
 - payment pending or failed
 - paid, or pilot ending on a date, plus the setup step for each location that is not `LIVE`
+- renewal failed, access until the paid-through date
+- waiting for provider verification, which is not live
 - live at a location
 - partial, when entitled locations disagree
 - paused, cancelled, or expired
-- Guard seat reserved, reconciling, or waiting on the Guard schema change
+- Guard seat reserved or previewed beside the existing Guard service
 - unavailable, when the read fails
 
 "Active" is reserved for the operational aggregate: every entitled Telloya location is `LIVE`, or an existing Guard coverage is `ACTIVE` under the current readiness function. Commercial `ACTIVE` is shown as paid or as pilot in force. A Complete Guard allocation is never shown as monitoring on.

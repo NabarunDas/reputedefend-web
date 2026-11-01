@@ -1230,6 +1230,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Customer case reference", probe: "admin_private.guided_payment_request_snapshot_reason_v1" },
   },
+  {
+    // Customer Portal idle timeout. Repository only. appliedToDev is false.
+    // Do not apply this file from the pull request and do not apply it to
+    // Production. Existing sessions are initialised from authenticated_at.
+    // The column initialisation is not a customer, case, payment, or message change.
+    version: "20261031160000",
+    filename: "20261031160000_customer_portal_idle_timeout_v1.sql",
+    step: "Customer Portal sessions expire after 30 minutes idle",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Customer Portal idle timeout", probe: "public.customer_portal_touch_session_v1" },
+  },
 ]
 
 /**
@@ -1253,9 +1267,11 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` contains unapplied
+ * `20261031160000_customer_portal_idle_timeout_v1.sql`. Do not apply it
+ * without a separate approval, and do not apply it to Production.
  * The repository chain is longer than the live ledger because it still records the
- * three foundation files that live DEV omits (issue #190).
+ * three foundation files that live DEV omits (issue #190) and this unapplied file.
  * Production remains on its own historical migration head `20261014170000`.
  */
 export const appliedMigrationHead = [...migrationChain].reverse().find(entry => entry.appliedToDev)!

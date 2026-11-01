@@ -21,8 +21,8 @@ describe("the migration chain manifest", () => {
     expect(appliedMigrationHead.filename).toBe("20261031150000_customer_case_reference_subjects_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261031150000_customer_case_reference_subjects_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261031160000_customer_portal_idle_timeout_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
@@ -36,7 +36,10 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations()).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261031160000_customer_portal_idle_timeout_v1.sql",
+    ])
+    expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
     expect(findMigration("20261028120000_guided_postpayment_handover_v1.sql")?.appliedToDev).toBe(true)
@@ -89,7 +92,7 @@ describe("the migration chain manifest", () => {
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
     const paymentSql = readFileSync(new URL("20261030200000_guided_payment_request_after_acceptance_v1.sql", directory), "utf8")
     expect(createHash("sha256").update(paymentSql).digest("hex")).toBe("32195da0c20f665e87cfeaa9f5e2b9600341f2c02502c140c403cf9ec2d40ca5")
     expect(paymentSql).toContain("SECURITY DEFINER")

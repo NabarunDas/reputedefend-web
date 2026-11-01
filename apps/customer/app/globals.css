@@ -647,6 +647,45 @@ form button { margin: 1rem 0; }
   margin: 0;
 }
 
+.portal-idle-warning {
+  margin: 0 0 1rem;
+  padding: 0.9rem 1rem;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius-sm);
+}
+
+.portal-idle-warning p {
+  margin: 0 0 0.75rem;
+  color: var(--ink);
+}
+
+.portal-idle-warning button {
+  margin: 0;
+}
+
+html[data-portal-session="checking"] .portal-private,
+html[data-portal-session="held"] .portal-private,
+html[data-portal-session="checking"] .customer-header-context,
+html[data-portal-session="held"] .customer-header-context,
+html[data-portal-session="checking"] .portal-idle-warning {
+  visibility: hidden;
+}
+
+html[data-portal-session="checking"]::before {
+  content: "Checking your session…";
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--paper);
+  color: var(--ink);
+  font: 1rem/1.5 system-ui, sans-serif;
+}
+
 .portal-sign-out button.secondary {
   min-height: 44px;
   padding: 0.35rem 0.7rem;

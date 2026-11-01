@@ -32,6 +32,8 @@ import { POST as startPost } from "@/app/api/portal/auth/start/route"
 import { POST as resendPost } from "@/app/api/portal/auth/resend/route"
 import { POST as verifyPost } from "@/app/api/portal/auth/verify/route"
 import { POST as signOutPost } from "@/app/api/portal/auth/sign-out/route"
+import { GET as sessionGet } from "@/app/api/portal/auth/session/route"
+import { POST as activityPost } from "@/app/api/portal/auth/activity/route"
 import { POST as commandPost } from "@/app/api/action/command/route"
 import { POST as exchangePost } from "@/app/api/action/exchange/route"
 import { pendingCookie, sessionCookie } from "@/lib/config"
@@ -384,6 +386,78 @@ describe("portal sign-out", () => {
     expect(setCookie).not.toContain(sessionCookie)
     expect(setCookie).not.toContain(pendingCookie)
     expect(state.rpc.mock.calls.map(call => call[0])).toEqual(["customer_portal_sign_out_v1"])
+  })
+
+  it("does not report a successful revocation when the database call fails", async () => {
+    state.rpc.mockRejectedValueOnce(new Error("database unavailable"))
+    const failed = await signOutPost(req("/api/portal/auth/sign-out", {}, { cookie: `${portalSessionCookieName()}=${pending}` }))
+    expect(failed.status).toBe(503)
+    expect(await failed.json()).toEqual({ message: "We couldn't sign you out. Try again." })
+    expect(failed.headers.getSetCookie().join("\n")).not.toContain(portalSessionCookieName())
+
+    state.rpc.mockResolvedValueOnce({ status: "unavailable" })
+    const rejected = await signOutPost(req("/api/portal/auth/sign-out", {}, { cookie: `${portalSessionCookieName()}=${pending}` }))
+    expect(rejected.status).toBe(503)
+    expect(rejected.headers.getSetCookie().join("\n")).not.toContain(portalSessionCookieName())
+  })
+})
+
+describe("portal session activity", () => {
+  const deadlines = {
+    customerId,
+    authUserId: authUser,
+    email: "alex@example.com",
+    authenticatedAt: "2026-10-31T12:00:00.000Z",
+    expiresAt: "2026-10-31T20:00:00.000Z",
+    lastActivityAt: "2026-10-31T18:00:00.000Z",
+    idleExpiresAt: "2026-10-31T18:30:00.000Z",
+  }
+
+  function get(path: string, cookie = `${portalSessionCookieName()}=${pending}`) {
+    return new NextRequest(`${origin}${path}`, { method: "GET", headers: { cookie } })
+  }
+
+  it("reads deadlines without calling the activity writer", async () => {
+    state.rpc.mockResolvedValue(deadlines)
+    const response = await sessionGet(get("/api/portal/auth/session"))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      status: "ok",
+      authenticatedAt: deadlines.authenticatedAt,
+      expiresAt: deadlines.expiresAt,
+      lastActivityAt: deadlines.lastActivityAt,
+      idleExpiresAt: deadlines.idleExpiresAt,
+    })
+    expect(state.rpc.mock.calls.map(call => call[0])).toEqual(["customer_portal_session_v1"])
+  })
+
+  it("updates activity only through the touch function and refuses an expired session", async () => {
+    state.rpc.mockResolvedValueOnce({ status: "ok", unchanged: false, ...deadlines })
+    const fresh = await activityPost(req("/api/portal/auth/activity", {}, { cookie: `${portalSessionCookieName()}=${pending}` }))
+    expect(fresh.status).toBe(200)
+    expect(await fresh.json()).toMatchObject({ status: "ok", unchanged: false, expiresAt: deadlines.expiresAt })
+    expect(state.rpc).toHaveBeenCalledWith("customer_portal_touch_session_v1", { p_token_hash: hash(pending) })
+
+    state.rpc.mockResolvedValueOnce({ status: "expired" })
+    const expired = await activityPost(req("/api/portal/auth/activity", {}, { cookie: `${portalSessionCookieName()}=${pending}` }))
+    expect(expired.status).toBe(401)
+    expect(expired.cookies.get(portalSessionCookieName())?.value).toBe("")
+    expect(await expired.json()).toEqual({ message: "Your session ended for security. Sign in again with a new email code." })
+  })
+
+  it("does not claim success when the activity write fails, and ignores a cross-origin request", async () => {
+    state.rpc.mockRejectedValueOnce(new Error("database unavailable"))
+    const failed = await activityPost(req("/api/portal/auth/activity", {}, { cookie: `${portalSessionCookieName()}=${pending}` }))
+    expect(failed.status).toBe(503)
+    expect(failed.headers.getSetCookie().join("\n")).not.toContain(portalSessionCookieName())
+
+    state.rpc.mockClear()
+    const foreign = await activityPost(req("/api/portal/auth/activity", {}, {
+      cookie: `${portalSessionCookieName()}=${pending}`,
+      origin: "https://evil.example",
+    }))
+    expect(foreign.status).toBe(401)
+    expect(state.rpc).not.toHaveBeenCalled()
   })
 })
 

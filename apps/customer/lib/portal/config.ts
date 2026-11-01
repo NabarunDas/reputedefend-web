@@ -3,6 +3,7 @@ import { customerBackendConfig } from "@/lib/config"
 
 export const PORTAL_SESSION_SECONDS = 60 * 60 * 8
 export const PORTAL_PENDING_SECONDS = 60 * 10
+export { PORTAL_ACTIVITY_DEBOUNCE_MS, PORTAL_IDLE_SECONDS, PORTAL_IDLE_WARNING_SECONDS } from "./idle-policy"
 
 /**
  * Independent of customer-action availability. This flag does not read

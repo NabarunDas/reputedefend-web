@@ -16,11 +16,15 @@ function proceed(request: NextRequest) {
   return NextResponse.next({ request: { headers } })
 }
 
-function redirectTo(request: NextRequest, pathname: string) {
+function redirectTo(request: NextRequest, pathname: string, search = "") {
   const destination = request.nextUrl.clone()
   destination.pathname = pathname
-  destination.search = ""
+  destination.search = search
   return NextResponse.redirect(destination, 303)
+}
+
+function portalTokenShape(token: string | undefined): token is string {
+  return !!token && /^[a-f0-9]{64}$/.test(token)
 }
 
 export async function proxy(request: NextRequest) {
@@ -31,14 +35,16 @@ export async function proxy(request: NextRequest) {
   const portalPreAuth = method === "POST" && /^\/api\/portal\/auth\/(start|resend|verify)$/.test(pathname)
   const portalSignOut = method === "POST" && pathname === "/api/portal/auth/sign-out"
   const portalMutation = method === "POST" && (
-    pathname === "/api/portal/evidence"
+    pathname === "/api/portal/auth/activity"
+    || pathname === "/api/portal/evidence"
     || pathname === "/api/portal/service"
-    ||     pathname === "/api/portal/payments"
+    || pathname === "/api/portal/payments"
     || pathname === "/api/portal/guard"
     || pathname === "/api/portal/documents/handover"
   )
   const portalRead = method === "GET" && (
-    pathname === "/api/portal/payments/receipt"
+    pathname === "/api/portal/auth/session"
+    || pathname === "/api/portal/payments/receipt"
     || pathname === "/api/portal/payments/invoice"
     || pathname === "/api/portal/payments/invoice-document"
     || pathname === "/api/portal/service/quotation"
@@ -54,9 +60,10 @@ export async function proxy(request: NextRequest) {
   if (isPublicRead(pathname, method) || loginRead || actionPost || portalPreAuth || portalSignOut) {
     response = proceed(request)
   } else if (portalPage) {
+    const portalToken = request.cookies.get(portalSessionCookieName())?.value
     if (!portalOn) response = redirectTo(request, "/")
-    else if (await portalSessionFromToken(request.cookies.get(portalSessionCookieName())?.value)) response = proceed(request)
-    else response = redirectTo(request, "/login")
+    else if (await portalSessionFromToken(portalToken)) response = proceed(request)
+    else response = redirectTo(request, "/login", portalTokenShape(portalToken) ? "?ended=security" : "")
   } else if (portalMutation || portalRead) {
     if (!portalOn) response = NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 404 })
     else if (await portalSessionFromToken(request.cookies.get(portalSessionCookieName())?.value)) response = proceed(request)

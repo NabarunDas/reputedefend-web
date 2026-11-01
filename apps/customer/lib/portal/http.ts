@@ -12,6 +12,7 @@ import {
   normalizePortalEmail,
 } from "./email"
 import {
+  PORTAL_IDLE_SECONDS,
   PORTAL_PENDING_SECONDS,
   PORTAL_SESSION_SECONDS,
   portalAvailable,
@@ -19,6 +20,7 @@ import {
   portalPendingCookieName,
   portalSessionCookieName,
 } from "./config"
+import { portalSessionFromToken, type PortalSession } from "./session"
 
 const refused = (http = 401) =>
   NextResponse.json({ message: PORTAL_UNAVAILABLE }, { status: http, headers: privateResponseHeaders })
@@ -28,6 +30,30 @@ const loginAccepted = () =>
 
 const verifyDenied = () =>
   NextResponse.json({ message: PORTAL_VERIFY_ERROR }, { status: 401, headers: privateResponseHeaders })
+
+const SESSION_ENDED = "Your session ended for security. Sign in again with a new email code."
+const SIGN_OUT_FAILED = "We couldn't sign you out. Try again."
+
+export type PortalDeadlines = {
+  authenticatedAt: string
+  expiresAt: string
+  lastActivityAt: string
+  idleExpiresAt: string
+}
+
+function deadlinesFrom(session: PortalSession): PortalDeadlines | null {
+  const authenticatedAt = Date.parse(session.authenticatedAt)
+  const expiresAt = Date.parse(session.expiresAt)
+  if (!Number.isFinite(authenticatedAt) || !Number.isFinite(expiresAt)) return null
+  const lastActivityAt = session.lastActivityAt ?? session.authenticatedAt
+  const idleExpiresAt = session.idleExpiresAt ?? new Date(authenticatedAt + PORTAL_IDLE_SECONDS * 1000).toISOString()
+  if (!Number.isFinite(Date.parse(lastActivityAt)) || !Number.isFinite(Date.parse(idleExpiresAt))) return null
+  return { authenticatedAt: session.authenticatedAt, expiresAt: session.expiresAt, lastActivityAt, idleExpiresAt }
+}
+
+function sessionEnded() {
+  return NextResponse.json({ message: SESSION_ENDED }, { status: 401, headers: privateResponseHeaders })
+}
 
 async function readJson(request: NextRequest, limit: number) {
   const reader = request.body?.getReader(), decoder = new TextDecoder()
@@ -162,8 +188,64 @@ export async function signOutPortal(request: NextRequest) {
   if (!body || !exactKeys(body, [])) return refused()
   const token = request.cookies.get(portalSessionCookieName())?.value
   if (customerBackendConfig() && validToken(token)) {
-    try { await backend().rpc("customer_portal_sign_out_v1", { p_token_hash: tokenHash(token) }) }
-    catch { /* Clearing the cookie is still required. */ }
+    try {
+      const revoked = await backend().rpc<{ status?: string }>("customer_portal_sign_out_v1", { p_token_hash: tokenHash(token) })
+      if (revoked?.status !== "ok") {
+        return NextResponse.json({ message: SIGN_OUT_FAILED }, { status: 503, headers: privateResponseHeaders })
+      }
+    } catch {
+      return NextResponse.json({ message: SIGN_OUT_FAILED }, { status: 503, headers: privateResponseHeaders })
+    }
   }
   return clearPortalCookies(NextResponse.json({ status: "ok" }, { headers: privateResponseHeaders }))
+}
+
+/** Read-only. Prefetch and polling hit this path and must not move last_activity_at. */
+export async function readPortalSession(request: NextRequest) {
+  if (!portalAvailable()) return refused(404)
+  if (request.method !== "GET" && request.method !== "HEAD") return refused()
+  const token = request.cookies.get(portalSessionCookieName())?.value
+  const session = await portalSessionFromToken(token)
+  const deadlines = session ? deadlinesFrom(session) : null
+  if (!deadlines) {
+    const response = sessionEnded()
+    return validToken(token) ? clearPortalCookies(response) : response
+  }
+  return NextResponse.json({ status: "ok", ...deadlines }, { headers: privateResponseHeaders })
+}
+
+type TouchResult = {
+  status?: string
+  unchanged?: boolean
+  authenticatedAt?: string
+  expiresAt?: string
+  lastActivityAt?: string
+  idleExpiresAt?: string
+}
+
+/** Confirms a still-valid session and records genuine activity. An expired row is not rewritten. */
+export async function touchPortalSession(request: NextRequest) {
+  if (!portalAvailable()) return refused(404)
+  if (!originOk(request) || !jsonRequest(request)) return refused()
+  const body = await readJson(request, 256)
+  if (!body || !exactKeys(body, [])) return refused()
+  const token = request.cookies.get(portalSessionCookieName())?.value
+  if (!validToken(token)) return sessionEnded()
+  try {
+    const touched = await backend().rpc<TouchResult>("customer_portal_touch_session_v1", { p_token_hash: tokenHash(token) })
+    if (touched?.status !== "ok" || !touched.authenticatedAt || !touched.expiresAt || !touched.lastActivityAt || !touched.idleExpiresAt) {
+      const response = sessionEnded()
+      return touched?.status === "expired" ? clearPortalCookies(response) : response
+    }
+    return NextResponse.json({
+      status: "ok",
+      unchanged: touched.unchanged === true,
+      authenticatedAt: touched.authenticatedAt,
+      expiresAt: touched.expiresAt,
+      lastActivityAt: touched.lastActivityAt,
+      idleExpiresAt: touched.idleExpiresAt,
+    }, { headers: privateResponseHeaders })
+  } catch {
+    return NextResponse.json({ message: "We couldn't confirm your session. Try again." }, { status: 503, headers: privateResponseHeaders })
+  }
 }

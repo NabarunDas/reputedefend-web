@@ -5,7 +5,7 @@
  * to enable consistent content management and testing.
  */
 
-import { brandName, brandSiteUrl } from "@/lib/brand"
+import { brandName } from "@/lib/brand"
 import { getCustomerPortalHref } from "@/lib/customer-portal"
 import { legalIdentity } from "../../../lib/legal"
 
@@ -706,7 +706,7 @@ export const pricingContent = {
       },
       {
         q: "Can I sign up now?",
-        a: "Not yet. We're in the final stages before launch. Use the enquiry form to express interest and we'll contact you when subscriptions open.",
+        a: "Not yet. We're in the final stages before launch. Email us to express interest and we'll contact you when subscriptions open.",
       },
       {
         q: "What's included in the minute allowance?",

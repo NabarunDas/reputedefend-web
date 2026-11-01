@@ -8,7 +8,6 @@ import {
   Eyebrow,
   SectionTitle,
   StepCard,
-  FeatureCard,
   LeadCard,
   FaqItem,
   CtaSection,
@@ -151,8 +150,7 @@ export default function Home() {
             </ul>
             <ButtonPrimary href={plans.telloya.href}>{plans.telloya.cta}</ButtonPrimary>
           </div>
-          <div className="card" style={{ borderColor: "var(--green)", borderWidth: "2px" }}>
-            <div className="pricing-badge">Recommended</div>
+          <div className="card">
             <h3 className="pricing-plan-name">{plans.complete.name}</h3>
             <p className="text-muted mb-6">{plans.complete.description}</p>
             <ul className="feature-points mb-6">

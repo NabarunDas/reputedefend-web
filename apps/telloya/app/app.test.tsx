@@ -116,14 +116,20 @@ describe("Navigation", () => {
     expect(menu).toHaveAttribute('aria-modal', 'true')
     expect(menu).toHaveAttribute('aria-label')
   })
+
+  it("mobile menu has inert attribute when closed", () => {
+    const { container } = render(<Header />)
+    const menu = container.querySelector('#mobile-menu')
+    expect(menu).toHaveAttribute('inert')
+  })
 })
 
 describe("Customer Portal Routing", () => {
   it("uses production portal by default", () => {
     const originalEnv = process.env
     process.env = { ...originalEnv }
-    delete (process.env as any).VERCEL_ENV
-    delete (process.env as any).VERCEL_GIT_COMMIT_REF
+    delete process.env.VERCEL_ENV
+    delete process.env.VERCEL_GIT_COMMIT_REF
     
     expect(getCustomerPortalHref()).toBe(PRODUCTION_CUSTOMER_PORTAL_HREF)
     
@@ -206,6 +212,27 @@ describe("Marketing Claims", () => {
     expect('highlight' in (completePlan || {})).toBe(false)
   })
 
+  it("homepage does not render Recommended badge for Complete", async () => {
+    const HomePage = (await import("@/app/page")).default
+    const { container } = render(<HomePage />)
+    
+    // Check that no Recommended badge appears on the page
+    const badge = container.querySelector('.pricing-badge')
+    expect(badge).not.toBeInTheDocument()
+  })
+
+  it("does not reference a non-existent enquiry form", async () => {
+    const contentModule = await import("@/lib/content")
+    const pricingFaq = contentModule.pricingContent.faq.questions
+    
+    // Check that FAQ doesn't claim there's a form
+    const formReferences = pricingFaq.filter(q => 
+      q.a.toLowerCase().includes('enquiry form') || 
+      (q.a.toLowerCase().includes('submit') && q.a.toLowerCase().includes('form'))
+    )
+    expect(formReferences.length).toBe(0)
+  })
+
   it("describes Complete as proposed package", async () => {
     const contentModule = await import("@/lib/content")
     const pricingContent = contentModule.pricingContent
@@ -255,7 +282,7 @@ describe("Pre-launch Behavior", () => {
     
     const result = sitemap()
     expect(Array.isArray(result)).toBe(true)
-    expect(result.length).toBeGreaterThan(0)
+    expect(result.length).toBe(6)
     expect(result[0].url).toBe("https://telloya.com")
     
     process.env = originalEnv
@@ -276,5 +303,60 @@ describe("Pre-launch Behavior", () => {
     }
     
     process.env = originalEnv
+  })
+})
+
+describe("Page Structure and Accessibility", () => {
+  it("homepage does not have nested main landmark", async () => {
+    const HomePage = (await import("@/app/page")).default
+    const { container } = render(<HomePage />)
+    // Page components should not have their own <main> tags
+    // The layout.tsx provides the single <main> wrapper
+    const mains = container.querySelectorAll('main')
+    expect(mains.length).toBe(0)
+  })
+
+  it("all six marketing pages exist and are importable", async () => {
+    const pages = [
+      "@/app/page",
+      "@/app/how-it-works/page",
+      "@/app/features/page",
+      "@/app/industries/page",
+      "@/app/pricing/page",
+      "@/app/demo/page"
+    ]
+    
+    for (const pagePath of pages) {
+      const pageModule = await import(pagePath)
+      expect(pageModule.default).toBeDefined()
+      expect(typeof pageModule.default).toBe("function")
+    }
+  })
+
+  it("navigation links point to correct routes", () => {
+    const { container } = render(<Header />)
+    const links = Array.from(container.querySelectorAll('.site-nav-links a'))
+    
+    const hrefs = links.map(link => link.getAttribute('href'))
+    expect(hrefs).toContain('/how-it-works')
+    expect(hrefs).toContain('/features')
+    expect(hrefs).toContain('/industries')
+    expect(hrefs).toContain('/pricing')
+    expect(hrefs).toContain('/demo')
+  })
+
+  it("customer login CTA points to valid portal href", () => {
+    const { container } = render(<Header />)
+    const ctaLinks = Array.from(container.querySelectorAll('a')).filter(
+      link => link.textContent?.includes('Customer Login')
+    )
+    
+    expect(ctaLinks.length).toBeGreaterThan(0)
+    const href = ctaLinks[0].getAttribute('href')
+    expect(href).toBeTruthy()
+    expect(
+      href === PRODUCTION_CUSTOMER_PORTAL_HREF || 
+      href === DEV_CUSTOMER_PORTAL_HREF
+    ).toBe(true)
   })
 })

@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { TelloyaLogo } from "@/components/telloya-logo"
-import { brandName, brandHomeLabel } from "@/lib/brand"
-import { publicLegalDisclosure, legalIdentity } from "../../../lib/legal"
+import { brandHomeLabel } from "@/lib/brand"
+import { publicLegalDisclosure } from "../../../lib/legal"
 import { footerContent } from "@/lib/content"
 
 export function Footer() {

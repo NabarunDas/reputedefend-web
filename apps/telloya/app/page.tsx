@@ -1,20 +1,11 @@
 import type { Metadata } from "next"
+import Link from "next/link"
+import { ArrowRight, ArrowUpRight, Check, Phone } from "lucide-react"
 import { pageTitle } from "@/lib/brand"
 import { homepageContent } from "@/lib/content"
-import {
-  ButtonPrimary,
-  ButtonSecondary,
-  Section,
-  Eyebrow,
-  SectionTitle,
-  StepCard,
-  LeadCard,
-  FaqItem,
-  CtaSection,
-} from "@/components/ui"
+import styles from "./homepage.module.css"
 
-const { seo, hero, problem, howItWorks, benefits, example, audience, plans, faq, finalCta } =
-  homepageContent
+const { seo, hero, problem, howItWorks, benefits, example, audience, plans, faq, finalCta } = homepageContent
 
 export const metadata: Metadata = {
   title: { absolute: pageTitle(seo.title) },
@@ -31,154 +22,254 @@ export const metadata: Metadata = {
   },
 }
 
+function EnquiryFlowVisual() {
+  return (
+    <figure className={styles.flowVisual} aria-label="Customer calls, Telloya answers, you receive lead summary">
+      <div className={styles.flowChrome}>
+        <span>Enquiry flow</span>
+        <span>AI receptionist</span>
+      </div>
+      <div className={`${styles.flowStage} ${styles.stageCall}`}>
+        <p className={styles.stageLabel}>Customer calls</p>
+        <ul>
+          <li>You're on a job</li>
+          <li>Can't pick up</li>
+          <li>Call forwarded</li>
+        </ul>
+      </div>
+      <div className={styles.flowArrow} aria-hidden="true" />
+      <div className={`${styles.flowStage} ${styles.stageAnswer}`}>
+        <p className={styles.stageLabel}>Telloya answers</p>
+        <ul>
+          <li>Greets caller</li>
+          <li>Collects details</li>
+          <li>Professional experience</li>
+        </ul>
+      </div>
+      <div className={styles.flowArrow} aria-hidden="true" />
+      <div className={`${styles.flowStage} ${styles.stageLead}`}>
+        <p className={styles.stageLabel}>You receive</p>
+        <div className={styles.leadPreview}>
+          <span>Lead summary</span>
+        </div>
+      </div>
+    </figure>
+  )
+}
+
 export default function Home() {
   return (
-    <>
+    <div className={styles.page}>
       {/* Hero */}
-      <Section className="hero">
-        <div className="hero-content">
-          <h1 className="hero-headline">{hero.headline}</h1>
-          <p className="hero-supporting">{hero.supporting}</p>
-          <div className="hero-ctas">
-            <ButtonPrimary href={hero.primaryHref}>{hero.primaryCta}</ButtonPrimary>
-            <ButtonSecondary href={hero.secondaryHref}>{hero.secondaryCta}</ButtonSecondary>
+      <section className={styles.heroBand} aria-labelledby="home-title">
+        <div className={styles.hero}>
+          <div className={styles.heroCopy}>
+            <p className={styles.eyebrow}>AI Receptionist for Tradespeople</p>
+            <h1 id="home-title">
+              <span className={styles.titleMain}>{hero.headline}</span>
+            </h1>
+            <p className={styles.lead}>{hero.supporting}</p>
+            <div className={styles.actions}>
+              <Link className={styles.primaryButton} href={hero.primaryHref}>
+                {hero.primaryCta}
+                <ArrowUpRight aria-hidden="true" size={18} />
+              </Link>
+              <Link className={styles.secondaryButton} href={hero.secondaryHref}>
+                {hero.secondaryCta}
+                <ArrowRight aria-hidden="true" size={18} />
+              </Link>
+            </div>
           </div>
+          <EnquiryFlowVisual />
         </div>
-      </Section>
+      </section>
+
+      {/* Trust strip */}
+      <section className={styles.trustStrip} aria-label="How Telloya works">
+        <ul>
+          <li>Never miss an enquiry</li>
+          <li>Professional call handling</li>
+          <li>Clear lead summaries</li>
+          <li>Designed for tradespeople</li>
+        </ul>
+      </section>
 
       {/* Problem */}
-      <Section background="surface">
-        <div className="text-center mb-12">
-          <Eyebrow>{problem.eyebrow}</Eyebrow>
-          <SectionTitle>{problem.title}</SectionTitle>
-          <p className="text-muted max-w-prose mx-auto">{problem.lead}</p>
+      <section className={styles.situations} aria-labelledby="situations-title">
+        <div className={styles.situationIntro}>
+          <p className={styles.eyebrow}>{problem.eyebrow}</p>
+          <h2 id="situations-title">{problem.title}</h2>
+          <p>{problem.lead}</p>
         </div>
-        <div className="grid-2 max-w-3xl mx-auto">
+        <ol className={styles.problemList}>
           {problem.points.map((point, index) => (
-            <div key={index} className="card">
-              <p>{point}</p>
-            </div>
+            <li key={point}>
+              <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+              {point}
+            </li>
           ))}
-        </div>
-      </Section>
+        </ol>
+      </section>
 
       {/* How It Works */}
-      <Section>
-        <div className="text-center mb-12">
-          <Eyebrow>{howItWorks.eyebrow}</Eyebrow>
-          <SectionTitle>{howItWorks.title}</SectionTitle>
-          <p className="text-muted max-w-prose mx-auto">{howItWorks.lead}</p>
+      <section className={styles.process} aria-labelledby="process-title">
+        <div className={styles.processIntro}>
+          <div>
+            <p className={styles.eyebrow}>{howItWorks.eyebrow}</p>
+            <h2 id="process-title">{howItWorks.title}</h2>
+          </div>
+          <p>{howItWorks.lead}</p>
         </div>
-        <div className="max-w-4xl mx-auto">
+        <ol className={styles.processList}>
           {howItWorks.steps.map((step) => (
-            <StepCard
-              key={step.number}
-              number={step.number}
-              title={step.title}
-              description={step.description}
-            />
+            <li key={step.number}>
+              <span className={styles.processNumber}>{step.number}</span>
+              <h3>{step.title}</h3>
+              <p>{step.description}</p>
+            </li>
           ))}
-        </div>
-        <p className="text-center text-muted mt-8 max-w-prose mx-auto">{howItWorks.note}</p>
-      </Section>
+        </ol>
+        <p className={styles.processNote}>{howItWorks.note}</p>
+      </section>
 
       {/* Benefits */}
-      <Section background="surface">
-        <div className="text-center mb-12">
-          <Eyebrow>{benefits.eyebrow}</Eyebrow>
-          <SectionTitle>{benefits.title}</SectionTitle>
+      <section className={styles.benefitsBand} aria-labelledby="benefits-title">
+        <div className={styles.benefitsIntro}>
+          <p className={styles.eyebrow}>{benefits.eyebrow}</p>
+          <h2 id="benefits-title">{benefits.title}</h2>
         </div>
-        <div className="grid-2 max-w-4xl mx-auto">
+        <div className={styles.benefitsGrid}>
           {benefits.items.map((item) => (
-            <div key={item.title} className="card">
-              <h3 className="feature-title">{item.title}</h3>
-              <p className="text-muted">{item.description}</p>
-            </div>
+            <article key={item.title} className={styles.benefitCard}>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+            </article>
           ))}
         </div>
-      </Section>
+      </section>
 
       {/* Example */}
-      <Section>
-        <div className="text-center mb-12">
-          <Eyebrow>{example.eyebrow}</Eyebrow>
-          <SectionTitle>{example.title}</SectionTitle>
-          <p className="text-muted max-w-prose mx-auto">{example.lead}</p>
+      <section className={styles.example} aria-labelledby="example-title">
+        <div className={styles.exampleIntro}>
+          <p className={styles.eyebrow}>{example.eyebrow}</p>
+          <h2 id="example-title">{example.title}</h2>
+          <p>{example.lead}</p>
         </div>
-        <LeadCard
-          label={example.card.label}
-          caller={example.card.caller}
-          service={example.card.service}
-          location={example.card.location}
-          problem={example.card.problem}
-          callback={example.card.callback}
-          time={example.card.time}
-        />
-      </Section>
+        <div className={styles.leadCard}>
+          <p className={styles.leadLabel}>{example.card.label}</p>
+          <div className={styles.leadHeader}>
+            <h3>{example.card.caller}</h3>
+            <p className={styles.leadTime}>{example.card.time}</p>
+          </div>
+          <dl className={styles.leadDetails}>
+            <div>
+              <dt>Service</dt>
+              <dd>{example.card.service}</dd>
+            </div>
+            <div>
+              <dt>Location</dt>
+              <dd>{example.card.location}</dd>
+            </div>
+            <div>
+              <dt>Problem</dt>
+              <dd>{example.card.problem}</dd>
+            </div>
+            <div>
+              <dt>Callback</dt>
+              <dd>{example.card.callback}</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
 
       {/* Audience */}
-      <Section background="surface">
-        <div className="text-center mb-12">
-          <Eyebrow>{audience.eyebrow}</Eyebrow>
-          <SectionTitle>{audience.title}</SectionTitle>
-          <p className="text-muted max-w-prose mx-auto">{audience.lead}</p>
+      <section className={styles.audienceBand} aria-labelledby="audience-title">
+        <div className={styles.audienceIntro}>
+          <p className={styles.eyebrow}>{audience.eyebrow}</p>
+          <h2 id="audience-title">{audience.title}</h2>
+          <p>{audience.lead}</p>
         </div>
-        <div className="grid-3 max-w-3xl mx-auto">
+        <div className={styles.audienceGrid}>
           {audience.industries.map((industry) => (
-            <div key={industry} className="card text-center">
-              <p className="font-semibold">{industry}</p>
+            <div key={industry} className={styles.industryCard}>
+              <p>{industry}</p>
             </div>
           ))}
         </div>
-      </Section>
+      </section>
 
       {/* Plans */}
-      <Section>
-        <div className="text-center mb-12">
-          <Eyebrow>{plans.eyebrow}</Eyebrow>
-          <SectionTitle>{plans.title}</SectionTitle>
-          <p className="text-muted max-w-prose mx-auto">{plans.lead}</p>
+      <section className={styles.pricing} aria-labelledby="pricing-title">
+        <div className={styles.pricingIntro}>
+          <p className={styles.eyebrow}>{plans.eyebrow}</p>
+          <h2 id="pricing-title">{plans.title}</h2>
+          <p>{plans.lead}</p>
         </div>
-        <div className="grid-2 max-w-4xl mx-auto">
-          <div className="card">
-            <h3 className="pricing-plan-name">{plans.telloya.name}</h3>
-            <p className="text-muted mb-6">{plans.telloya.description}</p>
-            <ul className="feature-points mb-8">
+        <div className={styles.plansGrid}>
+          <article className={styles.planCard}>
+            <h3>{plans.telloya.name}</h3>
+            <p className={styles.planDescription}>{plans.telloya.description}</p>
+            <ul>
               {plans.telloya.features.map((feature) => (
-                <li key={feature}>{feature}</li>
+                <li key={feature}>
+                  <Check aria-hidden="true" size={16} />
+                  {feature}
+                </li>
               ))}
             </ul>
-            <ButtonPrimary href={plans.telloya.href}>{plans.telloya.cta}</ButtonPrimary>
-          </div>
-          <div className="card">
-            <h3 className="pricing-plan-name">{plans.complete.name}</h3>
-            <p className="text-muted mb-6">{plans.complete.description}</p>
-            <ul className="feature-points mb-6">
+            <Link className={styles.planCta} href={plans.telloya.href}>
+              {plans.telloya.cta}
+              <ArrowRight aria-hidden="true" size={18} />
+            </Link>
+          </article>
+          <article className={styles.planCard}>
+            <h3>{plans.complete.name}</h3>
+            <p className={styles.planDescription}>{plans.complete.description}</p>
+            <ul>
               {plans.complete.features.map((feature) => (
-                <li key={feature}>{feature}</li>
+                <li key={feature}>
+                  <Check aria-hidden="true" size={16} />
+                  {feature}
+                </li>
               ))}
             </ul>
-            <p className="text-sm text-muted mb-8">{plans.complete.note}</p>
-            <ButtonPrimary href={plans.complete.href}>{plans.complete.cta}</ButtonPrimary>
-          </div>
+            <p className={styles.planNote}>{plans.complete.note}</p>
+            <Link className={styles.planCta} href={plans.complete.href}>
+              {plans.complete.cta}
+              <ArrowRight aria-hidden="true" size={18} />
+            </Link>
+          </article>
         </div>
-      </Section>
+      </section>
 
       {/* FAQ */}
-      <Section background="surface">
-        <div className="text-center mb-12">
-          <Eyebrow>{faq.eyebrow}</Eyebrow>
-          <SectionTitle>{faq.title}</SectionTitle>
+      <section className={styles.faqSection} aria-labelledby="faq-title">
+        <div>
+          <p className={styles.eyebrow}>{faq.eyebrow}</p>
+          <h2 id="faq-title">{faq.title}</h2>
         </div>
-        <div className="max-w-3xl mx-auto">
-          {faq.questions.map((item) => (
-            <FaqItem key={item.q} question={item.q} answer={item.a} />
+        <div className={styles.faqList}>
+          {faq.questions.map(({ q, a }) => (
+            <details key={q}>
+              <summary>{q}</summary>
+              <p>{a}</p>
+            </details>
           ))}
         </div>
-      </Section>
+      </section>
 
       {/* Final CTA */}
-      <CtaSection title={finalCta.title} cta={finalCta.cta} href={finalCta.href} />
-    </>
+      <section className={styles.conversionBand} aria-labelledby="cta-title">
+        <div className={styles.conversion}>
+          <div>
+            <h2 id="cta-title">{finalCta.title}</h2>
+            <Link className={styles.ctaButton} href={finalCta.href}>
+              {finalCta.cta}
+              <ArrowUpRight aria-hidden="true" size={20} />
+            </Link>
+          </div>
+        </div>
+      </section>
+    </div>
   )
 }

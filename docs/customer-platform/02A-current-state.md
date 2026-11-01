@@ -1,6 +1,6 @@
 # 02A — Current state
 
-Status: **planning only**. No SQL is applied. No Customer Portal UI, Stripe object, Retell agent, or Production setting is changed.
+Status: **planning only**. No SQL is applied. No Customer Portal UI, Stripe object, Retell agent, or Production setting is changed. Revised against review comment `6559957225`: the schema facts below are the constraints the other 02A documents now follow.
 
 Reviewed on 1 November 2026 against `develop` commit `bb03642c4e70fb7f7d4b184c48facb49e7eb47cd` (PR #384, the flagged My Products hub). This environment did not open a connection to `profilerelaunch-dev`. The ledger facts below are the committed manifest and history test, not a fresh remote query.
 
@@ -83,6 +83,20 @@ Guard is already a per-location operational and billing system.
 
 `customer_portal_guard_v1` lists coverages for the session customer. It does not treat "has a portal account" as coverage.
 
+The live coverage origin check does not admit a Complete-funded location. After `20260930180050_guard_subscriptions_billing_v1.sql`, `guard_coverages_basis_origin` allows only:
+
+| Basis | Origin | Required links |
+| --- | --- | --- |
+| `DIRECT_GUARD` | `DIRECT_GUARD` | A `service_order_id`. No recovery case, managed order, or source included coverage. |
+| `DIRECT_GUARD` | `INCLUDED_CONTINUATION` | A `service_order_id` and `source_included_coverage_id`. |
+| `INCLUDED` | `INCLUDED_RECOVERY` | `source_recovery_case_id` and `source_managed_order_id`. No direct service order. |
+
+`guard_coverages_included_period` forces an included coverage's window to exactly 30 days from `activated_at`. `guard_billing.entitlement_source` is only `NONE`, `INCLUDED`, or `PROVIDER`. Readiness treats direct Guard as billable only when `billing_state = CURRENT`, `entitlement_source = PROVIDER`, and `paid_through_at > now()`. That `CURRENT`/`PROVIDER` pair is what `guard_apply_invoice_paid_v1` writes. `admin_private.guard_set_billing_entitlement_v1` is not granted to `service_role`. `guard_set_entitlement_checked_v1` refuses `CURRENT` unless the source is `PROVIDER`.
+
+`guard_coverages_one_open_location_idx` and `guard_subscriptions_one_open_location_idx` allow one non-ended coverage and one open subscription per location. A bundle cannot point one subscription column at several of those rows.
+
+So a Complete customer cannot be given Guard coverage, paid-through, or activation with the functions that exist today. Saying otherwise would require forging an included recovery, a Guard invoice, or a call to the privileged billing setter. None of those are acceptable. A later gated change has to add a bundle origin and a bundle paid-through writer. Until that change is applied, Complete does not activate Guard.
+
 Customer actions already include `GUARD_PERMISSION`, `GUARD_SUBSCRIPTION_START`, and `GUARD_PRICE_CHANGE_ACCEPTANCE`. Those are scoped links for an existing customer and coverage, not account invitations.
 
 ### Payments and mail
@@ -125,7 +139,7 @@ These are gaps in the current schema, not a request to replace the tables above.
 3. Portal Recovery and Guard reads key off `customer_id` on the case or coverage. Verified membership is necessary for Guard activation and is not sufficient for portal visibility.
 4. Nothing records that a paid invoice is distinct from a live service, except Guard's existing split between `guard_subscriptions`, `guard_billing`, and `guard_coverages.state`. Telloya has no equivalent split.
 5. Enquiries cannot point at an onboarding request without either misusing case conversion or adding a new link.
-6. There is no hashed, expiring invitation that reuses an existing customer and still refuses to create a session.
+6. There is no hashed, expiring invitation that reuses an existing customer and still refuses to create a session. `admin_contact_verify_v1` stores an administrator evidence string and a non-null `verified_by`. It does not prove the person controls the mailbox. `customer_portal_begin_login_v1`, confirm, resend, attempt, and `customer_portal_finish_otp_v1` all reject that customer through `customer_portal_email_current_v1`, because `verified_current_email_v1` is null. `customer_portal_session_v1` also returns null until a verification row exists. A new customer therefore cannot sign in unless a later OTP success writes that row. Admin approval must not write it.
 7. Complete does not exist as data. A bundle cannot be represented by a second Guard subscription without double billing.
 8. The Phase 1 hub has nowhere authoritative to read a Telloya or Complete state. Its comment already names the future session-scoped projection.
 
@@ -138,8 +152,8 @@ These are gaps in the current schema, not a request to replace the tables above.
 | Portal session | `customer_portal_session_v1` from the token hash |
 | Recovery work and Recovery money | `cases`, quotes, `service_orders`, `payment_obligations` |
 | Guard coverage and monitoring | `guard_coverages` and the readiness/activation functions |
-| Guard paid-through | `guard_billing`, fed by `invoice.paid` |
-| Guard Stripe subscription | `guard_subscriptions` |
+| Guard paid-through | `guard_billing`, fed by `invoice.paid` for provider Guard. Included recovery stays `NOT_REQUIRED` / `INCLUDED` and is 30 days. |
+| Guard Stripe subscription | `guard_subscriptions`, one open row per location |
 | Stripe customer | `stripe_customer_maps` |
 | Mail | `communications` and the `SEND_EMAIL` outbox |
 | Admin trace | command receipts and `admin_audit_events` |

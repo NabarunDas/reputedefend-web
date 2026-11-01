@@ -1,6 +1,6 @@
 # 02A — Data model
 
-Status: **proposed**. Names below are recommended. They are not created by this PR. No prices, Stripe products, or rows are seeded.
+Status: **proposed**, revised against review comment `6559957225`. Names below are recommended. They are not created by this PR. No prices, Stripe products, or rows are seeded. Complete cannot activate Guard until the gated change in this document exists.
 
 ## Recommendation
 
@@ -30,11 +30,13 @@ erDiagram
   businesses ||--o{ commercial_subscriptions : serves
   plan_versions ||--o{ commercial_subscriptions : prices
   commercial_subscriptions ||--o{ commercial_subscription_items : includes
+  commercial_subscriptions ||--o{ bundle_guard_allocations : "one per location"
+  guard_subscriptions ||--o{ bundle_guard_allocations : "old location sub"
   commercial_subscriptions ||--o{ product_entitlements : grants
   businesses ||--o{ product_entitlements : scoped
-  locations ||--o{ product_entitlements : "optional location"
-  guard_coverages ||--o{ product_entitlements : "link only"
-  product_entitlements ||--o| service_provisions : "Telloya setup"
+  locations ||--o{ product_entitlements : "required location"
+  product_entitlements ||--o| service_provisions : "Telloya location only"
+  bundle_guard_allocations ||--o| guard_coverages : "null until a later Guard PR"
   enquiries ||--o| onboarding_requests : starts
   customers ||--o{ onboarding_requests : "matched person"
   businesses ||--o{ onboarding_requests : "matched business"
@@ -68,10 +70,10 @@ Recovery and Guard are not rows here. They already have service codes. Putting t
 | `version_number` | Integer, unique with `product_code`. |
 | `status` | `DRAFT`, `APPROVED`, `RETIRED`. |
 | `effective_from`, `effective_to` | `effective_to` null means open. Approved windows for one product must not overlap. Follow the `price_versions` predecessor rule. |
-| `billing_cadence` | `MONTH`, `YEAR`, `ONCE`, `TRIAL`. |
+| `billing_cadence` | `MONTH`, `YEAR`, `ONCE`. A non-billable pilot is a grant on the subscription, not a catalogue cadence. |
 | `currency` | `char(3)`, default `GBP`. |
-| `amount_minor` | Integer pence, **null until a human approves a verified price**. A null amount cannot be offered or charged. |
-| `trial_days` | Integer null. Required only when cadence is `TRIAL`, and then greater than 0. |
+| `amount_minor` | Integer pence, **null until a human approves a verified price**. A null amount cannot be offered as billable. |
+| `tax_behaviour` | Null until a human records it. A billable offer is refused while it is null. |
 | `terms_ref` | Text, the approved terms identity. Not a URL pasted from the browser. |
 | `approved_by`, `approved_at` | Required when status is `APPROVED`. |
 
@@ -87,7 +89,7 @@ No seed prices in the first migration. `lib/pricing.ts` is not a source for Tell
 | `scope` | `BUSINESS` or `LOCATION`. |
 | Primary key | `(plan_version_id, component_code)`. |
 
-A Telloya plan has one `TELLOYA` / `BUSINESS` component. A Complete plan has `TELLOYA` / `BUSINESS` and `GUARD` / `LOCATION` with the agreed location limit. The limit is data on the approved plan version, not a constant in the portal.
+Both components are `LOCATION` scope. Telloya is billed once per business and operated once per location: the plan's `quantity_limit` is how many locations that one subscription may include. A Complete plan has `TELLOYA` and `GUARD`, each with its own location cap. The caps are data on the approved plan version, not a constant in the portal. A business-scoped component is not used. PostgreSQL would treat two `NULL` location ids as distinct, so the model does not rely on a nullable location in a unique key.
 
 Guard component rows do not contain a Stripe price. The Guard price remains `price_versions` plus `guard_provider_price_maps` for standalone Guard only.
 
@@ -95,7 +97,7 @@ Guard component rows do not contain a Stripe price. The Guard price remains `pri
 
 ### `public.commercial_subscriptions`
 
-Used for Telloya standalone and Complete. Not used for a Recovery case. Not used as a copy of `guard_subscriptions`.
+Used for Telloya standalone and Complete. Not used for a Recovery case. Not a copy of `guard_subscriptions`, and it has no single column pointing at one Guard subscription. One occupying row per business. The same customer may occupy a second row only on a different `business_id`. An incoming replacement may sit beside the occupying row.
 
 | Column | Rule |
 | --- | --- |
@@ -103,29 +105,70 @@ Used for Telloya standalone and Complete. Not used for a Recovery case. Not used
 | `public_ref` | Unique, human reference. Do not reuse `PR-` / `RV-` case refs. |
 | `customer_id` | Billing customer. Foreign key, `ON DELETE RESTRICT`. |
 | `business_id` | The business served. Foreign key, `ON DELETE RESTRICT`. |
-| `plan_version_id` | Foreign key to an `APPROVED` plan at acceptance time. Pinned. Later catalogue edits do not rewrite it. |
+| `plan_family` | `VOICE`. Both `TELLOYA` and `COMPLETE` use this family so they cannot both occupy one business. |
+| `plan_version_id` | Foreign key to an `APPROVED` plan at acceptance. Pinned. |
+| `grant_kind` | `BILLABLE` or `NON_BILLABLE_PILOT`. |
 | `state` | See transitions below. |
+| `amount_minor` | Immutable snapshot. Null only when `grant_kind = NON_BILLABLE_PILOT`. Required and greater than 0 when `BILLABLE`. |
+| `currency` | Immutable `char(3)`. Required. Pilots still record `GBP` and a null amount. |
+| `tax_behaviour` | Immutable. Null until known. A billable offer is refused while it is null. |
+| `tax_amount_minor` | Immutable integer, null only when tax does not apply. |
+| `cadence_snapshot` | Immutable copy of the plan cadence. |
+| `terms_ref` | Immutable copy of the plan's terms identity. |
+| `quantity_limit_snapshot` | Immutable per component, stored on the items. |
 | `stripe_customer_id` | Null until a later payment phase. If set, it must equal `stripe_customer_maps.stripe_customer_id` for `customer_id`. |
-| `stripe_subscription_id` | Null until that later phase. Unique when set. A trigger or insert check rejects any value that already exists on `guard_subscriptions.stripe_subscription_id`. |
-| `current_period_start`, `current_period_end` | Null until a paid or trial period exists. |
-| `trial_ends_at` | Null unless the plan cadence is `TRIAL` or an authorised trial was recorded. |
+| `stripe_subscription_id` | Null until that phase. Unique when set. Reject any value that already exists on `guard_subscriptions.stripe_subscription_id`. |
+| `current_period_start`, `current_period_end` | Null until a paid period or a pilot window exists. |
+| `pilot_ends_at` | Required for `NON_BILLABLE_PILOT`. Must be null for `BILLABLE`. |
 | `cancel_at_period_end` | Boolean, default false. |
 | `canceled_at`, `ended_at` | Set only on those transitions. |
-| `replaces_subscription_id` | Nullable self foreign key for an upgrade. The replaced row is ended, not deleted. |
-| `reconciled_guard_subscription_id` | Nullable foreign key to `guard_subscriptions`. Set when an existing standalone Guard subscription was matched so it is not charged again. |
+| `succeeds_subscription_id` | Nullable self foreign key. Set when this row is the incoming replacement for another row of the same business. The old row is not deleted. |
 | `record_version`, timestamps | Standard. |
 
-Partial unique index: one row per `business_id` whose state is not `CANCELED` or `ENDED`. Telloya and Complete therefore cannot both be open for the same business. That is the double-billing guard.
+There is no `reconciled_guard_subscription_id` on this table. Several Guard locations cannot share one column.
 
-The billing customer must have a `verified` membership of `business_id` before the state can leave `DRAFT`. Revoking that membership later does not delete the subscription. It removes portal access for that person. Another verified member can still be granted access. Billing history stays.
+Snapshot columns are copied from the approved plan at acceptance and a trigger rejects later updates. A price change is a new acceptance, written as a subscription event, not an in-place edit.
+
+Occupancy is per business, not per customer:
+
+| Index | Rows it allows |
+| --- | --- |
+| Unique `(business_id)` where `state IN ('ACTIVE','PAUSED','PAST_DUE','CANCEL_AT_PERIOD_END')` | One occupying subscription. A second business owned by the same customer is a different `business_id`. |
+| Unique `(business_id)` where `state IN ('OFFERED','ACCEPTED','PAYMENT_PENDING')` | One incoming subscription, so a replacement can be offered while the occupying row is still in force. |
+
+`PAST_DUE` occupies the business and does not entitle. `ACTIVE` entitles only under the grant rules below. `DRAFT`, `CANCELED`, and `ENDED` do not occupy.
+
+If an occupying row exists, the incoming row's `succeeds_subscription_id` must point at it. The switch command, in one transaction, sets the old entitlement `eligible_to` and the new entitlement `eligible_from` to the same timestamp. There is no interval where the business has neither an eligible row nor an explicit expired row. A period-end switch leaves the old entitlement eligible until `current_period_end` and the new one `PENDING` until that instant.
+
+The billing customer must have a verified membership before the state can leave `DRAFT`. Revoking that membership later hides the business for that person and does not delete the subscription.
 
 ### `public.commercial_subscription_items`
 
 | Column | Rule |
 | --- | --- |
 | `subscription_id`, `component_code` | Primary key. Component must exist on the pinned plan version. |
-| `quantity` | Integer, 1..`quantity_limit`. |
-| `stripe_subscription_item_id` | Null in the first phases. |
+| `quantity` | Integer, 1..`quantity_limit`. This is the location cap, not a phone number shared across locations. |
+| `quantity_limit_snapshot` | Immutable copy of the plan cap at acceptance. |
+| `stripe_subscription_item_id` | Null until the payment phase. |
+
+### `public.commercial_payment_evidence`
+
+A billable subscription becomes `ACTIVE` only from a row here. An admin sentence is not evidence. `public.payment_receipts` is not evidence either: that table requires a Recovery `payment_obligations` row (`obligation_id` is `NOT NULL` and unique). A Telloya or Complete period is not a Recovery obligation, so this table does not reference `payment_receipts`.
+
+| Column | Rule |
+| --- | --- |
+| `id` | UUID primary key. |
+| `subscription_id` | Foreign key. The subscription `grant_kind` must be `BILLABLE`. |
+| `period_start`, `period_end` | The period this evidence pays. Copied onto the subscription as `current_period_start` and `current_period_end`. |
+| `amount_minor`, `currency` | Must equal the subscription snapshots. A mismatch is refused. |
+| `provider_event_id` | Required for the Stripe path. It must already exist in `admin_private.stripe_event_receipts` for a processed paid-invoice event, and it must not already have been applied to Guard. |
+| Unique | `provider_event_id`, and `(subscription_id, period_end)`. The same invoice cannot pay two periods or two subscriptions. |
+
+`checkout.session.completed` and a Stripe subscription status of `active` do not qualify as the paid-invoice event.
+
+A non-Stripe payment rail is **pending**. If one is approved later it needs its own append-only commercial receipt, with actor, external evidence reference, and the same amount, currency, tax, and period snapshots. It is not a flag on `commercial_subscriptions`, and it is not a row in `payment_receipts`. 02B does not create that rail. 02F does not invent one.
+
+`NON_BILLABLE_PILOT` must not have a row in this table. Its only authority is the pilot command: actor from `admin_session_v1`, reason, and `pilot_ends_at`. The portal calls that a pilot, never paid.
 
 ### State transitions
 
@@ -135,10 +178,10 @@ stateDiagram-v2
   DRAFT --> OFFERED: approved plan and matched business
   OFFERED --> ACCEPTED: customer or admin records acceptance
   ACCEPTED --> PAYMENT_PENDING: checkout started
-  ACCEPTED --> ACTIVE: authorised trial only
-  PAYMENT_PENDING --> ACTIVE: confirmed paid invoice
+  ACCEPTED --> ACTIVE: non-billable pilot command only
+  PAYMENT_PENDING --> ACTIVE: commercial_payment_evidence
   PAYMENT_PENDING --> PAST_DUE: payment failed
-  PAST_DUE --> ACTIVE: confirmed paid invoice
+  PAST_DUE --> ACTIVE: new commercial_payment_evidence
   PAST_DUE --> ENDED: abandoned
   ACTIVE --> PAUSED: admin suspension
   PAUSED --> ACTIVE: admin resume and still entitled
@@ -149,9 +192,9 @@ stateDiagram-v2
   CANCELED --> ENDED: provider confirms
 ```
 
-`ACTIVE` on this table means the commercial term is in force (paid invoice or an authorised trial that has not expired). It does not mean Telloya is answering calls or Guard monitoring is on.
+`ACTIVE` means the commercial term is in force. For `BILLABLE` that requires `commercial_payment_evidence`. For `NON_BILLABLE_PILOT` it requires the pilot command and `pilot_ends_at` still in the future. It does not mean Telloya is answering calls or that Guard monitoring is on.
 
-Checkout success, `checkout.session.completed`, and a Stripe subscription status of `active` do not enter `ACTIVE`. The same rule Guard already uses applies: a confirmed paid invoice, or an explicit admin trial command, is required. The trial command stores the admin actor, reason, and `trial_ends_at`.
+Checkout success, `checkout.session.completed`, a Stripe subscription status of `active`, and an admin marking a billable row paid are not evidence. There is no manual-paid state.
 
 ## Entitlement
 
@@ -163,58 +206,110 @@ This is who may use a component. It is not a payment and not an operational swit
 | --- | --- |
 | `id` | UUID primary key. |
 | `business_id` | Required. Foreign key. |
-| `location_id` | Null for business scope. Required for location scope. The location must belong to `business_id`. |
+| `location_id` | Not null. Both Telloya and Guard are per location. |
 | `component_code` | `TELLOYA` or `GUARD`. |
-| `source_kind` | `COMMERCIAL_SUBSCRIPTION`, `GUARD_COVERAGE`, `AUTHORISED_TRIAL`. |
-| `commercial_subscription_id` | Set for the first and third sources. |
-| `guard_coverage_id` | Set when `source_kind = GUARD_COVERAGE`, or when a Complete Guard seat has been linked to a real coverage. |
+| `source_kind` | `COMMERCIAL_SUBSCRIPTION`, `GUARD_COVERAGE`, or `NON_BILLABLE_PILOT`. |
+| `commercial_subscription_id` | Set unless `source_kind = GUARD_COVERAGE`. |
+| `guard_coverage_id` | Null for Telloya. For Guard, null until a later gated Guard migration has created a legal coverage. A non-null value must be a coverage for this same location and business. |
 | `state` | `PENDING`, `ELIGIBLE`, `REVOKED`, `EXPIRED`. |
-| `eligible_from`, `eligible_to` | `eligible_to` required for a trial. |
+| `eligible_from`, `eligible_to` | `eligible_to` required for a pilot and for `CANCEL_AT_PERIOD_END`. |
 | `revoked_at`, `revoked_by`, `revocation_reason` | Required together when `REVOKED`. |
-| Checks | Exactly one source shape. A `GUARD` entitlement cannot set `guard_coverages.state` or `guard_billing.billing_state`. |
+| Location consistency | Composite foreign key `(location_id, business_id)` → `locations (id, business_id)`. Add `UNIQUE (id, business_id)` on `locations` to support it. The location primary key alone does not prove the business. |
+| Checks | A `GUARD` entitlement cannot update `guard_coverages` or `guard_billing`. |
 
-Partial unique index: one `PENDING` or `ELIGIBLE` row per `(business_id, location_id, component_code)`.
+Unique index, `NULLS NOT DISTINCT` is unnecessary because `location_id` is not null:
+
+`UNIQUE (business_id, location_id, component_code) WHERE state IN ('PENDING','ELIGIBLE')`.
+
+Two businesses for one customer are two `business_id` values, so this index does not collapse them. Two locations of one business are two `location_id` values.
 
 Access for a person is: valid portal session, `business_memberships` verified for that business, and an `ELIGIBLE` entitlement whose window contains `now()`. Revoking the membership hides the product immediately. The entitlement row remains for the business until it is revoked or it expires. Commercial history is not deleted.
 
 Recovery does not get an entitlement row. Case access stays `cases.customer_id` plus the existing portal case RPCs. A later decision can widen that. This model does not.
 
-### Why Guard entitlement is a link
+### Why a Guard entitlement is not coverage
 
-A Complete or standalone Guard seat can insert a `product_entitlements` row of component `GUARD`. Operational use still requires the existing chain:
+A `GUARD` entitlement means the commercial term includes that location. It does not create `guard_coverages` and it does not satisfy `guard_coverage_readiness_v1`. Today's readiness still requires a legal origin, and none of `DIRECT_GUARD`, `INCLUDED_RECOVERY`, or `INCLUDED_CONTINUATION` can describe a Complete-funded location. See the bridge below. Until the gated Guard change exists, `guard_coverage_id` stays null and the portal must not say Guard can be activated.
 
-1. `guard_location_authorized_v1`
-2. permission, access, contact, baseline, rota
-3. `guard_billing` `CURRENT` or an included/`NOT_REQUIRED` basis that the coverage origin allows
-4. `guard_coverages.state` reaching `ACTIVE` only through `guard_activate_v1`
+## Complete to Guard bridge
 
-If the entitlement says `ELIGIBLE` and the coverage is not `ACTIVE`, the portal shows setup in progress, not Active.
+### What 02B is allowed to store
 
-Linking `guard_coverage_id` is how Complete avoids a second coverage. The partial unique index on non-ended `guard_coverages.location_id` already prevents two live coverages.
+`public.bundle_guard_allocations` is the only Complete-to-Guard link in the first schema. It is not a coverage, not an invoice, and not a call to `guard_set_billing_entitlement_v1`.
+
+| Column | Rule |
+| --- | --- |
+| `id` | UUID primary key. |
+| `subscription_id` | Foreign key. The plan must include a `GUARD` component. |
+| `subscription_item` | The Guard item on that subscription. |
+| `customer_id`, `business_id`, `location_id` | Must match each other. Composite foreign key `(location_id, business_id)` → `locations (id, business_id)`. |
+| `state` | `RESERVED`, `RECONCILING`, `READY_FOR_GUARD_SCHEMA`, `LAPSED`, `ENDED`. There is no `LINKED` state in 02B, because no legal coverage can be inserted yet. |
+| `paid_through_at` | Copy of the commercial period end, or the pilot end. This is Complete paid-through for that location. It is not written into `guard_billing`. |
+| `effective_from`, `effective_to` | The allocation window. |
+| `superseded_guard_subscription_id` | Nullable foreign key to `guard_subscriptions` for this same location. |
+| `guard_coverage_id` | Must stay null until the gated Guard migration. A check enforces null in 02B. |
+| `request_id` | The idempotency key of the command that created or last changed the row. |
+
+Indexes:
+
+- Unique `(location_id)` where `state IN ('RESERVED','RECONCILING','READY_FOR_GUARD_SCHEMA')`. One location cannot be in two open bundle allocations.
+- Unique `(subscription_id, location_id)`.
+- A count of open allocations for a subscription must be less than or equal to that item's `quantity_limit_snapshot`. Enforce it in the command with a row lock on the subscription, and add a deferred constraint trigger so two concurrent commands cannot both pass.
+
+`bundle_guard_allocation_events` is append-only: allocation id, actor, `request_id`, from state, to state, reason, and the superseded subscription id when relevant. Repeating the same `request_id` returns the stored result.
+
+`RESERVED` means the seat is held and no Guard coverage exists. `RECONCILING` means this location still has an open `guard_subscriptions` row. The allocation stays there until that row is `CANCELED` or `ENDED` through the existing Guard cancel or credit command. `READY_FOR_GUARD_SCHEMA` means the old subscription is closed, or there was none, and the seat is waiting for the gated origin. `LAPSED` means the commercial period or pilot ended. `ENDED` means the seat was removed or the bundle was cancelled.
+
+None of these states call `guard_activate_v1`. None insert `guard_subscription_invoices`.
+
+### Later gated Guard change
+
+A separate PR, after 02B and not part of it, may add:
+
+- `coverage_origin = BUNDLE_COMPLETE` and a new `coverage_basis` that is neither `DIRECT_GUARD` nor `INCLUDED`, so `guard_coverages_included_period` does not force 30 days and `guard_coverages_basis_origin` does not demand a recovery case or a `RELAUNCH_GUARD` service order.
+- `guard_billing.entitlement_source = BUNDLE`, allowed to be `CURRENT` only while `paid_through_at > now()` and that timestamp equals the allocation's `paid_through_at`.
+- A new private writer, `admin_private.guard_apply_bundle_paid_through_v1`, which reads the allocation and the commercial period. It is idempotent on `(allocation_id, period_end)`. It is not `guard_set_billing_entitlement_v1`, and that function stays ungranted to `service_role`.
+- A readiness branch only for the new origin: billing is ready when the bundle source is current. Membership, permission, access, contact, baseline, rota, and mapping stay mandatory. `guard_activate_v1` remains the only way to set `ACTIVE`.
+
+Tests that PR must include, before any Complete customer is told they can activate Guard:
+
+| Case | Expected |
+| --- | --- |
+| Renewal | A second paid Complete period extends `paid_through_at` once. The same `period_end` does not extend it again. |
+| Lapse | Period end with no new evidence sets the allocation `LAPSED`, moves bundle billing off `CURRENT`, and `guard_activate_v1` refuses. |
+| Cancellation | Each open allocation for that subscription ends. Coverages are ended through the new bundle end path, not deleted, and no Guard invoice is inserted. |
+| Downgrade | A lower quantity is refused while more locations are still open than the new cap. Ending one location leaves the others. |
+| Overlap | A location with a non-ended `guard_subscriptions` row is refused unless that row is the superseded one and is already `CANCELED` or `ENDED`. |
+| Privilege | `service_role` still cannot execute `guard_set_billing_entitlement_v1`. |
+
+Until that PR is applied, documents and the portal must not say a Complete customer can activate Guard.
 
 ## Telloya provisioning
 
 ### `public.service_provisions`
 
-One row per Telloya entitlement.
+One row per Telloya entitlement, and therefore one per location. A business with two locations has two provisions. They do not share an agent or a phone number.
 
 | Column | Rule |
 | --- | --- |
 | `entitlement_id` | Unique foreign key. |
-| `business_id` | Must match the entitlement. |
-| `state` | `NOT_STARTED`, `PROFILE_REQUIRED`, `AGENT_REQUIRED`, `NUMBER_REQUIRED`, `FORWARDING_REQUIRED`, `TEST_REQUIRED`, `AWAITING_CONFIRMATION`, `LIVE`, `SUSPENDED`. |
-| `profile_ready_at` | Business profile accepted by an admin command. |
-| `agent_configured_at` | Admin recorded that the agent configuration exists. No Retell id in this phase. |
-| `number_allocated_at` | Admin recorded allocation. The provider number is not selected by the browser. |
-| `forwarding_instructed_at` | Customer has been given forwarding instructions. |
-| `agent_test_passed_at` | A successful test was recorded by an admin command. |
-| `customer_confirmed_at` | The verified customer confirmed activation. |
-| `live_at` | Set only by the command that moves state to `LIVE`. |
+| `business_id`, `location_id` | Must match the entitlement. Composite foreign key to `locations (id, business_id)`. |
+| `state` | `NOT_STARTED`, `PROFILE_REQUIRED`, `AGENT_REQUIRED`, `NUMBER_REQUIRED`, `FORWARDING_REQUIRED`, `TEST_REQUIRED`, `AWAITING_CONFIRMATION`, `LIVE`, `SUSPENDED`, `ENDED`. |
+| `profile_ready_at` | This location's profile accepted by an admin command. |
+| `agent_configured_at` | This location's agent recorded. No Retell id is stored in 02B. |
+| `number_allocated_at` | This location's number recorded. The browser does not choose it. |
+| `provider_binding_ref` | Nullable, unique when set. Server-side only. Two locations must not store the same ref. It stays null until a provider phase. |
+| `forwarding_instructed_at` | Forwarding instructions recorded for this location. |
+| `agent_test_passed_at` | A successful test for this location. |
+| `customer_confirmed_at` | The verified member confirmed this location. |
+| `live_at` | Set only by the command that moves this location to `LIVE`. |
 | `suspended_at`, `suspension_reason` | Set together when `SUSPENDED`. |
 
-`LIVE` is allowed only when all six timestamps are set, the entitlement is `ELIGIBLE`, and the commercial subscription is `ACTIVE` or a trial window is current. Payment alone leaves the provision below `LIVE`.
+Unique `(location_id)` where `state NOT IN ('SUSPENDED','ENDED')` keeps one active binding per location.
 
-No phone-number table and no Retell credential table in the first schema. Those wait until a provider phase, and credentials stay server-side.
+`LIVE` for that location requires all six timestamps, an `ELIGIBLE` entitlement, and a commercial subscription that is `ACTIVE` under the grant rules. A second location of the same business can remain `NUMBER_REQUIRED`. The product is not Active for the business while any entitled location is not `LIVE`.
+
+No provider credential is stored in 02B.
 
 ## Onboarding
 
@@ -225,13 +320,21 @@ No phone-number table and no Retell credential table in the first schema. Those 
 | `id` | UUID primary key. |
 | `enquiry_id` | Nullable foreign key. Does not change `enquiries.status` and does not set `case_id`. |
 | `customer_id`, `business_id` | Null until an admin matches them. |
-| `email_snapshot` | Lower-case email from the enquiry or the matched customer. |
+| `email_snapshot` | Lower-case email. It is not a uniqueness key by itself. |
 | `product_code` | `TELLOYA` or `COMPLETE`. Guard-only and Recovery stay on their current enquiry conversion. |
-| `state` | `RECEIVED`, `IN_REVIEW`, `IDENTITY_REQUIRED`, `OFFERED`, `INVITED`, `AWAITING_PAYMENT`, `PROVISIONING`, `READY`, `CLOSED`, `DECLINED`. |
+| `plan_family` | `VOICE`, so Telloya and Complete compete per business, not per email. |
+| `state` | `RECEIVED`, `IN_REVIEW`, `MAILBOX_REQUIRED`, `OFFERED`, `INVITED`, `AWAITING_PAYMENT`, `PROVISIONING`, `READY`, `CLOSED`, `DECLINED`. |
 | `decline_reason` | Required when `DECLINED`. |
 | `commercial_subscription_id` | Null until an offer becomes a subscription. |
 
-Partial unique index on `(email_snapshot, product_code)` where state is not `CLOSED` or `DECLINED`. That blocks a second open onboarding for the same person and product.
+Deduplication is business-scoped and enquiry-scoped. It is not `(email_snapshot, product_code)`, which would block one person from opening a second business.
+
+| Index | Purpose |
+| --- | --- |
+| Unique `enquiry_id` where `enquiry_id` is not null and state is not `CLOSED` or `DECLINED` | One open request per enquiry. A second admin insert returns the existing row. |
+| Unique `(business_id, plan_family)` where `business_id` is not null and state is not `CLOSED` or `DECLINED` | One open Voice request per business after the business is matched. |
+
+An unmatched enquiry has a null `business_id`, so the second index does not apply. The same email may have two unmatched enquiries for two future businesses. After match, the business index applies. A customer with two matched businesses has two requests.
 
 ### `admin_private.onboarding_invitations`
 
@@ -241,12 +344,35 @@ Partial unique index on `(email_snapshot, product_code)` where state is not `CLO
 | `onboarding_request_id` | Foreign key. |
 | `email_snapshot` | Must match the request. |
 | `expires_at` | Required. Recommended default 7 days. |
-| `consumed_at` | Null until the existing customer signs in through the normal OTP path, or a new customer completes the same path after an admin has verified the email. |
+| `customer_id` | The unmatched address is not invited. The customer row may exist with no contact verification. |
+| `consumed_at` | Null until OTP finish consumes it in the same transaction as the session. |
 | `send_count` | Incremented only when a queued email is accepted. |
-
-The invitation does not insert `customer_portal_sessions`. Consuming it does not call `customer_portal_finish_otp_v1`. Login remains the portal OTP functions.
+| `mailbox_proved_at` | Null until OTP finish. Admin approval does not set it. |
 
 Partial unique index: one unconsumed invitation per onboarding request.
+
+Admin approval must not call `admin_contact_verify_v1` for a mailbox nobody has proved. That function only stores an administrator evidence string of 10 to 1000 characters and a non-null `verified_by`. `verified_current_email_v1` reads `customer_contact_verifications` and returns null when that row is missing. `customer_portal_begin_login_v1` then returns `ineligible`.
+
+The existing OTP functions cannot be called unchanged for that customer. `customer_portal_begin_login_v1`, `customer_portal_confirm_otp_sent_v1`, `customer_portal_begin_resend_v1`, `customer_portal_attempt_otp_v1`, and `customer_portal_finish_otp_v1` all consult `verified_current_email_v1` through `customer_portal_email_current_v1`. Each one rejects an unverified address. `customer_portal_session_v1` also returns null until the verification row exists.
+
+The invited path reuses the Supabase OTP, `customer_portal_reserve_send_v1`, `customer_portal_login_challenges`, `customer_portal_auth_identity_current_v1`, and `customer_portal_sessions`. It does not add a second session table or a second rate limit. It is not a call to the five functions above.
+
+1. `customer_portal_begin_invited_login_v1(p_invitation_hash, p_pending_hash)` loads one unconsumed, unexpired invitation whose email still equals `customers.email`. It inserts the same challenge row `begin_login` would insert, with `expected_email_snapshot` set to that email, and it consumes the same send reservation. An unknown hash, an expired hash, a consumed hash, and an invitation whose email no longer matches all return the same generic `unavailable` result. If the email is already verified, it returns `unavailable` as well, so this function cannot be used to bypass `begin_login`.
+2. Invited confirm, resend, and attempt functions mirror the existing ones, including the five-attempt cap, but they authorise the challenge from the open invitation instead of from `customer_portal_email_current_v1`. They refuse a challenge that `begin_login` created.
+3. After `verifyOtp` succeeds, `customer_portal_finish_invited_otp_v1(p_pending_hash, p_session_hash, p_auth_user, p_email, p_invitation_hash)` checks `customer_portal_auth_identity_current_v1`. It then inserts the email verification, consumes the challenge and the invitation, and inserts a normal `customer_portal_sessions` row with the same lifetime columns `finish_otp` uses. The verification insert happens before the session insert. `customer_portal_session_v1` would otherwise see no verified email and return null.
+
+`customer_contact_verifications` has no `proof_kind` today, and `verified_by` is `NOT NULL`. The invited finish therefore needs a later migration, not a write that pretends the current row shape is enough:
+
+- Add `proof_kind` with values `ADMIN_RECORDED` and `MAILBOX_OTP`. Existing rows default to `ADMIN_RECORDED`.
+- Allow `verified_by` to be null only when `proof_kind = MAILBOX_OTP`. `ADMIN_RECORDED` still requires `verified_by`.
+- `admin_contact_verify_v1` keeps writing `ADMIN_RECORDED` and the admin user id. It is not mailbox proof.
+- `MAILBOX_OTP` evidence is the challenge hash, not the one-time code. A SHA-256 hex string fits the existing 10 to 1000 character evidence check.
+
+The next sign-in uses ordinary `customer_portal_begin_login_v1`. The invited functions keep refusing an address that already has an email verification.
+
+`admin_membership_save_v1` still refuses `verified` until some contact is verified. Business authority stays a separate decision, made only after mailbox proof exists. Membership evidence is not a substitute for the OTP.
+
+An invitation hash never inserts a session by itself.
 
 ## Audit
 
@@ -272,7 +398,11 @@ Every new public table is `ON DELETE RESTRICT` to customers, businesses, locatio
 
 - A second `customers` or `businesses` table.
 - A Telloya login or Telloya user id.
+- A `guard_coverages` origin for Complete. That is a later gated PR, not 02B.
+- A call to `guard_set_billing_entitlement_v1` from the application.
 - A generic entitlement that Guard activation reads instead of `guard_billing`.
+- An admin command that marks a billable subscription paid without `commercial_payment_evidence`.
+- A foreign key from that evidence to `payment_receipts`. Those receipts belong to Recovery obligations.
 - Stripe product or price ids.
 - Seeded amounts.
 - A Complete dashboard route.

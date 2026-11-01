@@ -62,10 +62,12 @@ describe("Legal Disclosure", () => {
 
   it("footer logo uses light variant for contrast", () => {
     const { container } = render(<Footer />)
-    const logo = container.querySelector('.site-logo-footer')
+    const logo = container.querySelector('.site-logo-footer span')
     expect(logo).toBeInTheDocument()
     // Light variant should be used on dark footer background
-    expect(logo?.getAttribute('style')).toContain("var(--lime)")
+    const style = logo?.getAttribute('style')
+    expect(style).toBeTruthy()
+    expect(style).toContain("var(--lime)")
   })
 })
 

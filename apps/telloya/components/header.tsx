@@ -1,13 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { TelloyaLogo } from "@/components/telloya-logo"
 import { brandHomeLabel } from "@/lib/brand"
 
 export function Header() {
-  const pathname = usePathname()
   const [scrolled, setScrolled] = useState(false)
 
   useEffect(() => {

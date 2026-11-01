@@ -44,3 +44,7 @@ jobs:
       - run: npm run build:customer
       - run: npm run typecheck:customer
       - run: npm run smoke:customer
+      - run: npm run test:telloya
+      - run: npm run build:telloya
+      - run: npm run typecheck:telloya
+      - run: npm run smoke:telloya

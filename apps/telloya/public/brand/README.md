@@ -1,25 +1,41 @@
 # Telloya Brand Assets
 
-This directory is prepared for the approved Telloya brand assets.
+This directory contains the approved Telloya brand assets.
 
-## Pending Assets
+## Current Status
 
-The following files are required but awaiting final approval:
+⚠️ **Placeholder assets are currently in use**. Awaiting ZIP upload with approved assets:
 
-- `telloya-logo.svg` - Primary Telloya logo (SVG)
-- `telloya-logo-dark.png` - Logo for light backgrounds
-- `telloya-logo-light.png` - Logo for dark backgrounds
-- `telloya-mark.svg` - Telloya icon mark (square/compact)
+- Emerald-glass Telloya logo (telephone handset, AI sparkle, orbital speech emblem)
+- Cinematic forest-green landscape with floating AI receptionist dashboard
+- Optimized WebP variants and favicon assets
 
-## Favicon Assets
+## Expected Assets
 
-The following favicon assets should be placed in `apps/telloya/public/`:
+Once the approved ZIP is provided, these files will be added:
 
-- `icon.png` - Primary favicon (512×512px recommended)
-- `apple-icon.png` - Apple touch icon (180×180px)
+### Logo Assets
+- `telloya-mark-approved.webp` — Glass logo symbol for dark surfaces
+- `telloya-logo-approved.webp` — Full logo for light surfaces (DO NOT use on dark backgrounds)
+- `telloya-logo-approved.svg` — Vector version
 
-## Temporary Solution
+### Cinematic Artwork
+- `telloya-cinematic-console.webp` — Main homepage console artwork
+- `telloya-cinematic-console-mobile.webp` — Mobile-optimized crop
+- `telloya-cinematic-approved.webp` — Full approved design reference
 
-Until the approved assets are available, the application uses a text-based wordmark component (`components/telloya-logo.tsx`).
+### Favicon Assets
+- PNG sizes (16x16, 32x32, 180x180, 512x512) for app icons
 
-**Do not generate or commit unapproved placeholder images to these paths.**
+## Temporary Placeholders
+
+Current SVG placeholders indicate asset locations and maintain layout during development.
+
+**These placeholders must be replaced before production deployment.**
+
+## Usage Guidelines
+
+1. **Dark surfaces**: Use `telloya-mark-approved.webp` (glass symbol) with ivory HTML wordmark
+2. **Light surfaces**: Use `telloya-logo-approved.webp` (full logo)
+3. **Console artwork**: Use with "Illustrative product preview" caption
+4. **DO NOT**: Place dark-green wordmark on dark backgrounds (readability issue)

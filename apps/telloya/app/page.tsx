@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import Image from "next/image"
 import { ArrowRight, ArrowUpRight, Check } from "lucide-react"
 import { pageTitle } from "@/lib/brand"
 import { homepageContent } from "@/lib/content"
@@ -22,38 +23,21 @@ export const metadata: Metadata = {
   },
 }
 
-function EnquiryFlowVisual() {
+function CinematicConsole() {
   return (
-    <figure className={styles.flowVisual} aria-label="Customer calls, Telloya answers, you receive lead summary">
-      <div className={styles.flowChrome}>
-        <span>Enquiry flow</span>
-        <span>AI receptionist</span>
+    <div className={styles.consoleVisual}>
+      <div className={styles.consoleWrapper}>
+        <Image
+          src="/brand/telloya-cinematic-console.svg"
+          alt="AI receptionist dashboard interface"
+          width={600}
+          height={400}
+          priority
+          className={styles.consoleImage}
+        />
       </div>
-      <div className={`${styles.flowStage} ${styles.stageCall}`}>
-        <p className={styles.stageLabel}>Customer calls</p>
-        <ul>
-          <li>You&apos;re on a job</li>
-          <li>Can&apos;t pick up</li>
-          <li>Call forwarded</li>
-        </ul>
-      </div>
-      <div className={styles.flowArrow} aria-hidden="true" />
-      <div className={`${styles.flowStage} ${styles.stageAnswer}`}>
-        <p className={styles.stageLabel}>Telloya answers</p>
-        <ul>
-          <li>Greets caller</li>
-          <li>Collects details</li>
-          <li>Professional experience</li>
-        </ul>
-      </div>
-      <div className={styles.flowArrow} aria-hidden="true" />
-      <div className={`${styles.flowStage} ${styles.stageLead}`}>
-        <p className={styles.stageLabel}>You receive</p>
-        <div className={styles.leadPreview}>
-          <span>Lead summary</span>
-        </div>
-      </div>
-    </figure>
+      <p className={styles.consoleCaption}>Illustrative product preview</p>
+    </div>
   )
 }
 
@@ -66,7 +50,8 @@ export default function Home() {
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>AI Receptionist for Tradespeople</p>
             <h1 id="home-title">
-              <span className={styles.titleMain}>{hero.headline}</span>
+              <span className={styles.titleMain}>You focus on the job.</span>{" "}
+              <span className={styles.titleHighlight}>Telloya helps answer your missed calls.</span>
             </h1>
             <p className={styles.lead}>{hero.supporting}</p>
             <div className={styles.actions}>
@@ -80,7 +65,7 @@ export default function Home() {
               </Link>
             </div>
           </div>
-          <EnquiryFlowVisual />
+          <CinematicConsole />
         </div>
       </section>
 

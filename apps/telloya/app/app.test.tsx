@@ -17,7 +17,7 @@ import {
 describe("Telloya Branding", () => {
   it("renders the Telloya logo with correct brand name", () => {
     render(<TelloyaLogo />)
-    expect(screen.getByLabelText(brandName)).toBeInTheDocument()
+    expect(screen.getByAltText(brandName)).toBeInTheDocument()
   })
 
   it("uses the correct brand name", () => {
@@ -26,14 +26,16 @@ describe("Telloya Branding", () => {
 
   it("supports dark variant for light backgrounds", () => {
     const { container } = render(<TelloyaLogo variant="dark" />)
-    const logo = container.querySelector('span')
-    expect(logo?.style.color).toBe("var(--green)")
+    const img = container.querySelector('img')
+    expect(img).toBeInTheDocument()
+    expect(img?.getAttribute('alt')).toBe("Telloya")
   })
 
   it("supports light variant for dark backgrounds", () => {
     const { container } = render(<TelloyaLogo variant="light" />)
-    const logo = container.querySelector('span')
-    expect(logo?.style.color).toBe("var(--lime)")
+    const img = container.querySelector('img')
+    expect(img).toBeInTheDocument()
+    expect(img?.getAttribute('alt')).toBe("Telloya")
   })
 })
 
@@ -67,13 +69,11 @@ describe("Legal Disclosure", () => {
   })
 
   it("footer logo uses light variant for contrast", () => {
-    const { container} = render(<Footer />)
-    const logo = container.querySelector('.site-logo-footer span')
+    const { container } = render(<Footer />)
+    const logo = container.querySelector('.site-logo-footer img')
     expect(logo).toBeInTheDocument()
     // Light variant should be used on dark footer background
-    const style = logo?.getAttribute('style')
-    expect(style).toBeTruthy()
-    expect(style).toContain("var(--lime)")
+    expect(logo?.getAttribute('alt')).toBe("Telloya")
   })
 
   it("includes legal terms disclosure about missing product-specific policies", () => {

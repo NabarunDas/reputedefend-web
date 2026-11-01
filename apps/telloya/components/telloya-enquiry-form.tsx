@@ -251,7 +251,7 @@ export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnq
         </div>
         <h3 className={styles.prelaunchTitle}>Online enquiry submission is being prepared</h3>
         <p className={styles.prelaunchLead}>
-          We're finalising the Telloya enquiry system before public launch. In the meantime, please email us directly to discuss your requirements.
+          We&apos;re finalising the Telloya enquiry system before public launch. In the meantime, please email us directly to discuss your requirements.
         </p>
         <div className={styles.prelaunchContact}>
           <p className={styles.prelaunchLabel}>Contact us at</p>
@@ -260,7 +260,7 @@ export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnq
           </a>
         </div>
         <p className={styles.prelaunchNote}>
-          Include details about your business, trade, and the missed-call challenge you're facing. We'll get back to you promptly.
+          Include details about your business, trade, and the missed-call challenge you&apos;re facing. We&apos;ll get back to you promptly.
         </p>
       </div>
     )

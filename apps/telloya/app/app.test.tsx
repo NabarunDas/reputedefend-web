@@ -4,9 +4,15 @@ import { render, screen } from "@testing-library/react"
 import "@testing-library/jest-dom/vitest"
 import { TelloyaLogo } from "@/components/telloya-logo"
 import { Footer } from "@/components/footer"
+import { Header } from "@/components/header"
 import { brandName, brandSiteUrl, brandDescriptor, brandOperator } from "@/lib/brand"
 import { isSitePublic } from "@/lib/config"
+import { getCustomerPortalHref } from "@/lib/customer-portal"
 import { legalIdentity } from "../../../lib/legal"
+import {
+  PRODUCTION_CUSTOMER_PORTAL_HREF,
+  DEV_CUSTOMER_PORTAL_HREF,
+} from "../../../lib/customer-portal-href"
 
 describe("Telloya Branding", () => {
   it("renders the Telloya logo with correct brand name", () => {
@@ -35,7 +41,7 @@ describe("Legal Disclosure", () => {
   it("displays correct operator disclosure", () => {
     render(<Footer />)
     expect(screen.getByText(/Telloya is an AI receptionist service operated by/i)).toBeInTheDocument()
-    // ProfileRelaunch Ltd appears twice (in link and in copyright), so use getAllByText
+    // ProfileRelaunch Ltd appears multiple times
     const elements = screen.getAllByText(/ProfileRelaunch Ltd/i)
     expect(elements.length).toBeGreaterThan(0)
   })
@@ -61,13 +67,97 @@ describe("Legal Disclosure", () => {
   })
 
   it("footer logo uses light variant for contrast", () => {
-    const { container } = render(<Footer />)
+    const { container} = render(<Footer />)
     const logo = container.querySelector('.site-logo-footer span')
     expect(logo).toBeInTheDocument()
     // Light variant should be used on dark footer background
     const style = logo?.getAttribute('style')
     expect(style).toBeTruthy()
     expect(style).toContain("var(--lime)")
+  })
+
+  it("includes legal terms disclosure about missing product-specific policies", () => {
+    render(<Footer />)
+    const footerText = document.body.textContent || ""
+    
+    expect(footerText).toContain("company-wide website notices")
+    expect(footerText).toContain("before public launch")
+  })
+})
+
+describe("Navigation", () => {
+  it("renders main navigation links", () => {
+    render(<Header />)
+    expect(screen.getByText("How It Works")).toBeInTheDocument()
+    expect(screen.getByText("Features")).toBeInTheDocument()
+    expect(screen.getByText("Industries")).toBeInTheDocument()
+    expect(screen.getByText("Pricing")).toBeInTheDocument()
+    expect(screen.getByText("Request Info")).toBeInTheDocument()
+  })
+
+  it("includes customer login CTA", () => {
+    render(<Header />)
+    expect(screen.getByText("Customer Login")).toBeInTheDocument()
+  })
+
+  it("mobile menu button has proper ARIA attributes", () => {
+    const { container } = render(<Header />)
+    const button = container.querySelector('.mobile-menu-button')
+    expect(button).toHaveAttribute('aria-label')
+    expect(button).toHaveAttribute('aria-expanded')
+    expect(button).toHaveAttribute('aria-controls')
+  })
+
+  it("mobile menu has dialog role and proper ARIA", () => {
+    const { container } = render(<Header />)
+    const menu = container.querySelector('#mobile-menu')
+    expect(menu).toHaveAttribute('role', 'dialog')
+    expect(menu).toHaveAttribute('aria-modal', 'true')
+    expect(menu).toHaveAttribute('aria-label')
+  })
+})
+
+describe("Customer Portal Routing", () => {
+  it("uses production portal by default", () => {
+    const originalEnv = process.env
+    process.env = {}
+    
+    expect(getCustomerPortalHref()).toBe(PRODUCTION_CUSTOMER_PORTAL_HREF)
+    
+    process.env = originalEnv
+  })
+
+  it("uses production portal for production environment", () => {
+    const originalEnv = process.env
+    process.env = { VERCEL_ENV: "production" }
+    
+    expect(getCustomerPortalHref()).toBe(PRODUCTION_CUSTOMER_PORTAL_HREF)
+    
+    process.env = originalEnv
+  })
+
+  it("uses DEV portal only for develop preview", () => {
+    const originalEnv = process.env
+    process.env = { VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: "develop" }
+    
+    expect(getCustomerPortalHref()).toBe(DEV_CUSTOMER_PORTAL_HREF)
+    
+    process.env = originalEnv
+  })
+
+  it("uses production portal for feature branch previews", () => {
+    const originalEnv = process.env
+    process.env = { VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: "feature/test" }
+    
+    expect(getCustomerPortalHref()).toBe(PRODUCTION_CUSTOMER_PORTAL_HREF)
+    
+    process.env = originalEnv
+  })
+})
+
+describe("Contact Email Consistency", () => {
+  it("uses verified contact email from central legal identity", () => {
+    expect(legalIdentity.contactEmail).toBe("contact@profilerelaunch.com")
   })
 })
 
@@ -101,6 +191,25 @@ describe("Marketing Claims", () => {
     // Verify the page component exists and exports correctly
     expect(pageModule).toBeDefined()
     expect(typeof pageModule).toBe("function")
+  })
+
+  it("does not claim Complete is 'Recommended'", async () => {
+    const contentModule = await import("@/lib/content")
+    const pricingContent = contentModule.pricingContent
+    
+    // Verify Complete plan doesn't have highlight flag
+    const completePlan = pricingContent.plans.find(p => p.name === "Complete")
+    expect(completePlan).toBeDefined()
+    expect('highlight' in (completePlan || {})).toBe(false)
+  })
+
+  it("describes Complete as proposed package", async () => {
+    const contentModule = await import("@/lib/content")
+    const pricingContent = contentModule.pricingContent
+    
+    const completePlan = pricingContent.plans.find(p => p.name === "Complete")
+    expect(completePlan?.description).toContain("Proposed package")
+    expect(completePlan?.status).toContain("Proposed")
   })
 })
 

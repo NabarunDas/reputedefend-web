@@ -133,16 +133,15 @@ export const homepageContent = {
     },
     complete: {
       name: "Complete",
-      description: "Telloya plus Relaunch Guard (proposed package)",
+      description: "Proposed package combining Telloya plus Relaunch Guard",
       features: [
         "Everything in Telloya",
-        "Google Business Profile monitoring",
-        "Review alerts",
-        "Profile change detection",
+        "Google Business Profile monitoring (proposed)",
+        "Profile observation and reporting (proposed)",
       ],
       cta: "View pricing",
       href: "/pricing",
-      note: "Combines two distinct services in one subscription",
+      note: "Proposed package combining two distinct services. Final scope and feature entitlements pending approval.",
     },
   },
   faq: {
@@ -321,7 +320,7 @@ export const featuresContent = {
       title: "Missed-call assistance",
       description:
         "When you can't pick up, Telloya can answer the forwarded call and help the customer. Our AI receptionist explains you're unavailable and offers to collect their enquiry details.",
-      status: "POC-tested",
+      status: "Demonstrated in proof of concept",
       points: [
         "Natural greeting and explanation",
         "Professional tone without sounding robotic",
@@ -333,7 +332,7 @@ export const featuresContent = {
       title: "Conversational enquiry collection",
       description:
         "Telloya asks for the information you need to follow up effectively. The conversation feels natural, not like filling out a form over the phone.",
-      status: "POC-tested",
+      status: "Demonstrated in proof of concept",
       points: [
         "Contact details (name and phone number)",
         "Service requested",
@@ -347,7 +346,7 @@ export const featuresContent = {
       title: "Lead summaries",
       description:
         "Every enquiry Telloya captures is delivered as a clear, structured summary. You get the context you need without listening to the full call.",
-      status: "POC-tested",
+      status: "Demonstrated in proof of concept",
       points: [
         "Structured format for quick review",
         "Key details highlighted",
@@ -359,7 +358,7 @@ export const featuresContent = {
       title: "Callback preferences",
       description:
         "Telloya asks when the customer prefers to be called back. This helps you follow up at a time that works for them.",
-      status: "POC-tested",
+      status: "Demonstrated in proof of concept",
       points: [
         "Morning, afternoon or evening preference",
         "Urgent vs routine enquiries",
@@ -371,7 +370,7 @@ export const featuresContent = {
       title: "Business-specific configuration",
       description:
         "Telloya is configured for your business type and services. The questions adapt to what your customers typically need.",
-      status: "POC-tested",
+      status: "Demonstrated in proof of concept",
       points: [
         "Business name and service description",
         "Industry-specific question flow",
@@ -641,24 +640,20 @@ export const pricingContent = {
       name: "Complete",
       tagline: "Telloya plus Relaunch Guard",
       description:
-        "Combines Telloya AI receptionist with Relaunch Guard Google Business Profile monitoring in one subscription.",
-      status: "Pricing being finalised",
+        "Proposed package combining Telloya AI receptionist with Relaunch Guard Google Business Profile monitoring. Package scope, pricing and specific feature entitlements pending final approval.",
+      status: "Proposed package — pricing pending approval",
       features: [
         "Everything included in Telloya",
-        "Google Business Profile monitoring",
-        "Review alerts (new reviews, suspicious activity)",
-        "Profile change detection",
-        "Monthly monitoring reports",
-        "Early warning of potential issues",
+        "Google Business Profile monitoring (proposed)",
+        "Profile observation and reporting (proposed)",
       ],
       notes: [
-        "Complete includes two distinct services from ProfileRelaunch",
-        "Each service operates independently with its own features",
+        "Complete is a proposed package combining two distinct ProfileRelaunch services",
+        "Specific monitoring features, alert types, and reporting frequency are being confirmed against existing Guard capabilities",
         "Minute allowance and subscription terms to be confirmed",
       ],
-      cta: "Contact us for details",
+      cta: "Enquire about Complete",
       href: "/demo",
-      highlight: true,
     },
   ],
   comparison: {
@@ -672,9 +667,7 @@ export const pricingContent = {
         ["Enquiry collection", true, true],
         ["Lead summaries", true, true],
         ["Business configuration", true, true],
-        ["Profile monitoring", false, true],
-        ["Review alerts", false, true],
-        ["Change detection", false, true],
+        ["Profile monitoring (proposed)", false, true],
       ],
     },
   },
@@ -746,14 +739,14 @@ export const demoContent = {
   },
   hero: {
     eyebrow: "Get in touch",
-    title: "Enquire about Telloya",
+    title: "Request information about Telloya",
     lead:
-      "We're in the final stages before public launch. Let us know you're interested and we'll be in touch with details.",
+      "We're preparing for public launch. Email us to learn more and we'll be in touch with details.",
   },
   contact: {
-    title: "Send us an enquiry",
+    title: "How to contact us",
     lead:
-      "Email us at the address below with 'Telloya Enquiry' in the subject line.",
+      "Send an email to the address below with 'Telloya Enquiry' in the subject line. We'll respond to discuss your requirements.",
     email: legalIdentity.contactEmail ?? "contact@profilerelaunch.com",
     subject: "Telloya Enquiry",
     whatToInclude: [
@@ -779,8 +772,8 @@ export const demoContent = {
     href: getCustomerPortalHref(),
   },
   cta: {
-    title: "We'll be in touch soon",
-    description: "Thank you for your interest in Telloya. We're excited to launch this service.",
+    title: "Questions about Telloya?",
+    description: "Send us an email and we'll help you understand how Telloya can support your business.",
   },
 } as const
 
@@ -791,7 +784,7 @@ export const navigationContent = {
     { label: "Features", href: "/features" },
     { label: "Industries", href: "/industries" },
     { label: "Pricing", href: "/pricing" },
-    { label: "Demo", href: "/demo" },
+    { label: "Request Info", href: "/demo" },
   ],
   cta: {
     label: "Customer Login",

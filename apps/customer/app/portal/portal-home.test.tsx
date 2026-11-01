@@ -14,10 +14,25 @@ const nav = vi.hoisted(() => ({ pathname: "/portal" }))
 vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => nav.pathname }))
 vi.mock("@/lib/portal/account/document", () => ({
   replaceAuthenticatedDocument: replaceDocument,
+  replaceExpiredPortalDocument: vi.fn(),
   reloadAuthenticatedDocument: vi.fn(),
 }))
 
 const fetchMock = vi.fn()
+
+function sessionPayload() {
+  const now = Date.now()
+  return {
+    authenticatedAt: new Date(now - 60_000).toISOString(),
+    expiresAt: new Date(now + 7 * 60 * 60 * 1000).toISOString(),
+    lastActivityAt: new Date(now - 60_000).toISOString(),
+    idleExpiresAt: new Date(now + 29 * 60 * 1000).toISOString(),
+  }
+}
+
+function jsonResult(body: unknown, ok = true, status = ok ? 200 : 500) {
+  return { ok, status, json: async () => body }
+}
 
 const emptyDashboard = {
   summary: { activeCases: 0, attentionCases: 0, previousCases: 0 },
@@ -33,6 +48,10 @@ beforeEach(() => {
   nav.pathname = "/portal"
   vi.stubGlobal("fetch", fetchMock)
   fetchMock.mockReset()
+  fetchMock.mockImplementation((url: string) => {
+    if (url === "/api/portal/auth/sign-out") return Promise.resolve(jsonResult({ status: "ok" }))
+    return Promise.resolve(jsonResult(sessionPayload()))
+  })
   router.push.mockReset()
   replaceDocument.mockReset()
 })
@@ -133,26 +152,30 @@ describe("portal shell", () => {
   })
 
   it("signs out through the portal endpoint and returns to login", async () => {
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) })
     renderPortal()
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }))
     await waitFor(() => expect(replaceDocument).toHaveBeenCalledWith("login"))
     expect(router.push).not.toHaveBeenCalled()
-    expect(fetchMock).toHaveBeenCalledWith("/api/portal/auth/sign-out", expect.objectContaining({ method: "POST" }))
-    expect(fetchMock.mock.calls[0][1].body).toBe("{}")
+    const signOut = fetchMock.mock.calls.find(call => call[0] === "/api/portal/auth/sign-out")
+    expect(signOut?.[1]).toEqual(expect.objectContaining({ method: "POST", body: "{}" }))
   })
 
   it("shows signing out until the server confirms, then keeps the error on failure", async () => {
-    let resolveFetch: (value: unknown) => void = () => {}
-    fetchMock.mockReturnValue(new Promise(resolve => { resolveFetch = resolve }))
+    let resolveSignOut: (value: unknown) => void = () => {}
+    fetchMock.mockImplementation((url: string) => {
+      if (url === "/api/portal/auth/sign-out") return new Promise(resolve => { resolveSignOut = resolve })
+      return Promise.resolve(jsonResult(sessionPayload()))
+    })
     renderPortal()
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }))
     expect(await screen.findByRole("button", { name: "Signing out…" })).toBeDisabled()
     expect(router.push).not.toHaveBeenCalled()
     expect(replaceDocument).not.toHaveBeenCalled()
     expect(screen.getByRole("heading", { name: "Welcome back" })).toBeTruthy()
-    resolveFetch({ ok: false, status: 500, json: async () => ({}) })
+    resolveSignOut(jsonResult({}, false, 500))
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("We couldn't sign you out. Try again."))
+    expect(screen.getAllByRole("alert")).toHaveLength(1)
+    expect(screen.queryByText("We couldn't confirm your session. Refresh the page.")).toBeNull()
     expect(router.push).not.toHaveBeenCalled()
     expect(replaceDocument).not.toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled()

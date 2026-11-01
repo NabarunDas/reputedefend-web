@@ -9,7 +9,7 @@ import { navigationContent } from "@/lib/content"
 
 export function Header() {
   const pathname = usePathname()
-  const cinematic = pathname === "/"
+  const cinematic = true // Always use cinematic design across all routes
   const [scrolled, setScrolled] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null)
@@ -65,7 +65,7 @@ export function Header() {
     <header className={`site-header ${cinematic ? "site-header-cinematic" : "site-header-standard"} ${scrolled ? "site-header-scrolled" : ""}`}>
       <div className="container">
         <Link href="/" aria-label={brandHomeLabel} className="site-logo">
-          <TelloyaLogo variant={cinematic ? "symbol" : "dark"} priority={cinematic} />
+          <TelloyaLogo variant="symbol" priority />
         </Link>
         <nav className="site-nav" aria-label="Main navigation">
           <ul className="site-nav-links">

@@ -649,10 +649,11 @@ button, input, textarea, select { font: inherit; }
 
 /* Footer */
 .site-footer {
-  background: var(--ink);
-  color: var(--paper);
+  background: #00110e;
+  color: #f4f8ef;
   padding: 48px 0 32px;
-  margin-top: 64px;
+  margin-top: 0;
+  border-top: 1px solid rgba(176, 244, 175, .22);
 }
 
 .footer-content {
@@ -672,10 +673,9 @@ button, input, textarea, select { font: inherit; }
 .footer-brand { max-width: 280px; }
 
 .footer-tagline {
-  color: var(--paper);
+  color: rgba(244, 248, 239, 0.84);
   line-height: 1.7;
   margin: 16px 0;
-  opacity: 0.9;
 }
 
 .footer-section {
@@ -690,21 +690,20 @@ button, input, textarea, select { font: inherit; }
   text-transform: uppercase;
   letter-spacing: .08em;
   margin-bottom: 4px;
-  color: var(--lime);
+  color: #c0fc81;
 }
 
 .footer-link {
-  color: var(--paper);
-  opacity: 0.8;
+  color: rgba(244, 248, 239, 0.8);
   font-size: .9375rem;
-  transition: opacity 180ms;
+  transition: color 180ms;
 }
 
-.footer-link:hover { opacity: 1; }
+.footer-link:hover { color: #c0fc81; }
 
 .footer-bottom {
   padding-top: 32px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(176, 244, 175, .16);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -730,17 +729,15 @@ button, input, textarea, select { font: inherit; }
 }
 
 .footer-legal-link {
-  color: var(--paper);
-  opacity: 0.7;
+  color: rgba(244, 248, 239, 0.7);
   font-size: .875rem;
-  transition: opacity 180ms;
+  transition: color 180ms;
 }
 
-.footer-legal-link:hover { opacity: 1; }
+.footer-legal-link:hover { color: #c0fc81; }
 
 .footer-note {
-  color: var(--paper);
-  opacity: 0.6;
+  color: rgba(244, 248, 239, 0.6);
   font-size: .75rem;
   line-height: 1.6;
   max-width: 600px;

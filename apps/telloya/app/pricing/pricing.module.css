@@ -1,418 +1,309 @@
+/* Pricing page - cinematic design */
+@import url("../../components/cinematic-layout.module.css");
+
 .page {
-  --border: color-mix(in srgb, var(--ink) 14%, transparent);
-  --wrap: min(1180px, calc(100% - 48px));
-  font-family: var(--font-body), Arial, sans-serif;
-  color: var(--ink);
-  background: var(--paper);
+  composes: cinematicPage from "../../components/cinematic-layout.module.css";
 }
 
-.page h2,
-.page h3 {
-  font-family: var(--font-display), Arial, sans-serif;
-  text-wrap: balance;
+.hero {
+  composes: cinematicHero from "../../components/cinematic-layout.module.css";
 }
 
-.page h2 {
-  font-size: clamp(30px, 3.4vw, 44px);
-  line-height: 1.14;
-  letter-spacing: -.045em;
-  font-weight: 800;
-}
-
-.page h3 {
-  font-size: 22px;
-  line-height: 1.3;
-  letter-spacing: -.03em;
-  font-weight: 750;
+.heroContent {
+  composes: heroContent from "../../components/cinematic-layout.module.css";
 }
 
 .eyebrow {
-  font-size: 13px;
-  line-height: 1.5;
-  font-weight: 750;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--green);
-  margin-bottom: 16px;
+  composes: eyebrow from "../../components/cinematic-layout.module.css";
 }
 
-/* Hero */
-.heroBand {
-  background: var(--ink);
-  color: var(--paper);
-  padding-block: 72px 68px;
+.heroTitle {
+  composes: heroTitle from "../../components/cinematic-layout.module.css";
 }
 
-.heroBand .eyebrow { color: var(--lime); }
-
-.hero {
-  width: var(--wrap);
-  margin-inline: auto;
-  text-align: center;
-  max-width: 54rem;
+.heroLead {
+  composes: heroLead from "../../components/cinematic-layout.module.css";
 }
 
-.hero h1 {
-  font-family: var(--font-display), Arial, sans-serif;
-  font-size: clamp(32px, 3.9vw, 50px);
-  line-height: 1.06;
-  letter-spacing: -.05em;
-  font-weight: 800;
-  color: var(--paper);
-  margin-bottom: 24px;
+.body {
+  composes: cinematicBody from "../../components/cinematic-layout.module.css";
 }
 
-.lead {
-  font-size: 17px;
-  color: color-mix(in srgb, var(--paper) 78%, transparent);
-  max-width: 48rem;
-  margin-inline: auto;
+.sectionWrap {
+  composes: sectionWrap from "../../components/cinematic-layout.module.css";
 }
 
-/* Plans Section */
-.plansSection {
-  background: var(--surface);
-  padding-block: 80px;
+.section {
+  composes: section from "../../components/cinematic-layout.module.css";
 }
 
+.sectionHeader {
+  composes: sectionHeader from "../../components/cinematic-layout.module.css";
+}
+
+.sectionTitle {
+  composes: sectionTitle from "../../components/cinematic-layout.module.css";
+}
+
+.sectionLead {
+  composes: sectionLead from "../../components/cinematic-layout.module.css";
+}
+
+/* Plan cards - elegant glass with premium styling */
 .plansGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 24px;
-  max-width: 66rem;
+  max-width: 1080px;
   margin-inline: auto;
 }
 
 .planCard {
-  background: var(--paper);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  padding: 36px 32px;
+  composes: glassPanel from "../../components/cinematic-layout.module.css";
+  padding: 42px 38px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
 }
 
 .planCard h3 {
-  font-size: 28px;
-  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2.1rem;
+  font-weight: 500;
+  color: #fffdf6;
+  letter-spacing: -.035em;
+  line-height: 1.1;
+  margin-bottom: 8px;
 }
 
 .planTagline {
-  color: var(--muted);
-  font-size: 16px;
+  color: #c5ef9d;
+  font-size: 1.08rem;
   font-weight: 600;
-  margin: 0;
+  font-style: italic;
+  letter-spacing: -.015em;
+  margin-bottom: 10px;
 }
 
 .planDescription {
-  color: var(--muted-strong);
-  font-size: 15px;
-  line-height: 1.65;
-  margin: 0;
+  color: rgba(244,248,239,.78);
+  font-size: .96rem;
+  line-height: 1.62;
+  margin-bottom: 14px;
 }
 
 .planStatus {
-  display: inline-block;
+  display: inline-flex;
   align-self: flex-start;
-  padding: 8px 16px;
-  background: var(--warm);
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 750;
-  border-radius: 999px;
+  padding: 7px 16px;
+  background: rgba(150,248,119,.18);
+  color: #d0ff9c;
+  border: 1px solid rgba(180,255,145,.35);
+  border-radius: 99px;
+  font-size: .73rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
 }
 
 .planFeatures {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  composes: checkList from "../../components/cinematic-layout.module.css";
   flex-grow: 1;
-}
-
-.planFeatures li {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-.planFeatures li::before {
-  content: "✓";
-  color: var(--green);
-  font-weight: 750;
-  font-size: 16px;
-  flex-shrink: 0;
-  margin-top: 1px;
+  margin-bottom: 18px;
 }
 
 .planNotes {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  padding: 18px 20px;
+  background: rgba(11,97,60,.20);
+  border-radius: 14px;
+  border: 1px solid rgba(199,250,190,.16);
+  margin-bottom: 18px;
 }
 
 .planNote {
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.5;
-  padding: 12px 16px;
-  background: var(--surface);
-  border-radius: 8px;
-  margin: 0;
+  composes: noteText from "../../components/cinematic-layout.module.css";
+  margin-bottom: 10px;
+}
+
+.planNote:last-child {
+  margin-bottom: 0;
 }
 
 .planCta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 13px 24px;
-  border-radius: 999px;
-  background: var(--green);
-  color: var(--paper);
-  font-size: 14px;
-  font-weight: 750;
-  transition: background-color 220ms ease-out, transform 220ms ease-out;
+  composes: glassCta from "../../components/cinematic-layout.module.css";
+  width: 100%;
+  margin-top: auto;
 }
 
-@media (hover: hover) {
-  .planCta:hover {
-    background: var(--green-dark);
-    transform: translateY(-2px);
-  }
-}
-
-/* Comparison Section */
-.comparisonSection {
-  width: var(--wrap);
-  margin-inline: auto;
-  padding-block: 80px;
-}
-
-.sectionIntro {
-  max-width: 46rem;
-  margin-bottom: 48px;
-  text-align: center;
-  margin-inline: auto;
-}
-
-.sectionIntro p {
-  color: var(--muted-strong);
-  font-size: 17px;
-  margin-top: 20px;
-}
-
+/* Comparison table */
 .tableContainer {
-  max-width: 52rem;
-  margin-inline: auto;
   overflow-x: auto;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 18px;
+  border: 1px solid rgba(176, 244, 175, .22);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(11,82,54,.38), rgba(4,36,28,.62));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .comparisonTable {
   width: 100%;
   border-collapse: collapse;
+  font-size: .92rem;
 }
 
-.comparisonTable thead th {
-  text-align: left;
+.comparisonTable thead {
+  background: rgba(11,82,54,.48);
+}
+
+.comparisonTable th {
   padding: 20px 24px;
-  font-weight: 750;
-  font-size: 15px;
-  border-bottom: 1px solid var(--line);
+  text-align: left;
+  color: #eaf9e7;
+  font-weight: 700;
+  letter-spacing: -.015em;
+  border-bottom: 1px solid rgba(199,250,190,.22);
 }
 
-.comparisonTable tbody td {
-  padding: 18px 24px;
-  border-bottom: 1px solid var(--line);
-  font-size: 15px;
+.comparisonTable tbody tr {
+  border-bottom: 1px solid rgba(199,250,190,.12);
 }
 
-.comparisonTable tbody tr:last-child td {
+.comparisonTable tbody tr:last-child {
   border-bottom: none;
 }
 
-.comparisonTable tbody td:nth-child(2),
-.comparisonTable tbody td:nth-child(3) {
-  text-align: center;
+.comparisonTable td {
+  padding: 18px 24px;
+  color: #d2e4d8;
+  line-height: 1.5;
+}
+
+.comparisonTable td:first-child {
+  font-weight: 600;
+  color: #eaf9e7;
 }
 
 .checkmark {
-  color: var(--green);
-  font-weight: 750;
-  font-size: 20px;
+  color: #bafa8a;
+  font-size: 1.25rem;
+  font-weight: 800;
 }
 
 .dash {
-  color: var(--muted);
+  color: rgba(244,248,239,.32);
+  font-size: 1.1rem;
 }
 
-/* Commercial Section */
-.commercialSection {
-  background: var(--surface);
-  padding-block: 80px;
-}
-
-.commercialSection .sectionIntro {
-  text-align: center;
-}
-
+/* Commercial info cards */
 .commercialGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-  max-width: 64rem;
-  margin-inline: auto;
+  composes: grid3 from "../../components/cinematic-layout.module.css";
 }
 
 .commercialCard {
-  background: var(--paper);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 28px 24px;
+  composes: glassPanel from "../../components/cinematic-layout.module.css";
+  padding: 28px;
 }
 
 .commercialCard h3 {
-  font-size: 20px;
-  margin-bottom: 12px;
+  composes: cardTitle from "../../components/cinematic-layout.module.css";
 }
 
 .commercialCard p {
-  color: var(--muted-strong);
-  font-size: 15px;
-  line-height: 1.6;
-  margin: 0;
+  composes: cardDescription from "../../components/cinematic-layout.module.css";
 }
 
-/* FAQ Section */
-.faqSection {
-  width: var(--wrap);
-  margin-inline: auto;
-  padding-block: 80px;
-}
-
-.faqSection .sectionIntro {
-  text-align: center;
-  margin-bottom: 48px;
-}
-
+/* FAQ with premium styling */
 .faqList {
-  max-width: 52rem;
+  max-width: 920px;
   margin-inline: auto;
+  display: grid;
+  gap: 0;
 }
 
 .faqItem {
-  padding-block: 24px;
-  border-bottom: 1px solid var(--border);
+  padding: 26px 0;
+  border-bottom: 1px solid rgba(198,242,188,.20);
 }
 
 .faqItem:first-child {
-  border-top: 1px solid var(--border);
+  padding-top: 0;
+}
+
+.faqItem:last-child {
+  border-bottom: none;
 }
 
 .faqQuestion {
-  font-family: var(--font-display), Arial, sans-serif;
-  font-size: 18px;
+  font-size: 1.15rem;
   font-weight: 700;
+  color: #eaf9e7;
   line-height: 1.35;
-  margin-bottom: 12px;
+  letter-spacing: -.02em;
+  margin-bottom: 14px;
 }
 
 .faqAnswer {
-  color: var(--muted-strong);
-  font-size: 15px;
-  line-height: 1.65;
+  color: #b6d0bd;
+  font-size: .94rem;
+  line-height: 1.68;
   margin: 0;
 }
 
-/* CTA Section */
+/* Final CTA */
 .ctaSection {
-  background: var(--surface);
-  padding-block: 80px;
-  text-align: center;
+  composes: finalCtaSection from "../../components/cinematic-layout.module.css";
+  margin-top: 85px;
 }
 
-.ctaContent {
-  max-width: 46rem;
-  margin-inline: auto;
+.ctaTitle {
+  composes: finalCtaTitle from "../../components/cinematic-layout.module.css";
 }
 
-.ctaContent h2 {
-  margin-bottom: 20px;
-}
-
-.ctaContent p {
-  color: var(--muted-strong);
-  font-size: 17px;
-  line-height: 1.6;
-  margin-bottom: 32px;
+.ctaDescription {
+  composes: finalCtaDescription from "../../components/cinematic-layout.module.css";
 }
 
 .ctaButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 14px 28px;
-  border-radius: 999px;
-  background: var(--green);
-  color: var(--paper);
-  font-size: 15px;
-  font-weight: 750;
-  transition: background-color 220ms ease-out, transform 220ms ease-out;
-}
-
-@media (hover: hover) {
-  .ctaButton:hover {
-    background: var(--green-dark);
-    transform: translateY(-2px);
-  }
+  composes: primaryCta from "../../components/cinematic-layout.module.css";
 }
 
 /* Responsive */
 @media (max-width: 900px) {
-  .plansGrid,
-  .commercialGrid {
-    grid-template-columns: minmax(0, 1fr);
+  .plansGrid {
+    grid-template-columns: 1fr;
+    max-width: 620px;
+  }
+  
+  .comparisonTable {
+    font-size: .88rem;
+  }
+  
+  .comparisonTable th,
+  .comparisonTable td {
+    padding: 16px 18px;
   }
 }
 
-@media (max-width: 767px) {
-  .heroBand {
-    padding-block: 56px 52px;
-  }
-  .plansSection,
-  .comparisonSection,
-  .commercialSection,
-  .faqSection,
-  .ctaSection {
-    padding-block: 56px;
-  }
+@media (max-width: 520px) {
   .planCard {
-    padding: 28px 24px;
+    padding: 32px 26px;
   }
-}
-
-@media (max-width: 640px) {
-  .page { --wrap: calc(100% - 32px); }
-}
-
-@media (max-width: 360px) {
-  .page { --wrap: calc(100% - 24px); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .page *,
-  .page *::before,
-  .page *::after {
-    animation: none !important;
-    transition: none !important;
+  
+  .planCard h3 {
+    font-size: 1.8rem;
+  }
+  
+  .comparisonTable th,
+  .comparisonTable td {
+    padding: 14px 16px;
+  }
+  
+  .faqQuestion {
+    font-size: 1.06rem;
+  }
+  
+  .ctaSection {
+    margin-top: 60px;
   }
 }

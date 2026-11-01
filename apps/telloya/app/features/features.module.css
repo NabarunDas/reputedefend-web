@@ -1,331 +1,284 @@
+/* Features page - cinematic design */
+@import url("../../components/cinematic-layout.module.css");
+
 .page {
-  --border: color-mix(in srgb, var(--ink) 14%, transparent);
-  --wrap: min(1180px, calc(100% - 48px));
-  font-family: var(--font-body), Arial, sans-serif;
-  color: var(--ink);
-  background: var(--paper);
+  composes: cinematicPage from "../../components/cinematic-layout.module.css";
 }
 
-.page h2,
-.page h3 {
-  font-family: var(--font-display), Arial, sans-serif;
-  text-wrap: balance;
+.hero {
+  composes: cinematicHero from "../../components/cinematic-layout.module.css";
 }
 
-.page h2 {
-  font-size: clamp(30px, 3.4vw, 44px);
-  line-height: 1.14;
-  letter-spacing: -.045em;
-  font-weight: 800;
-}
-
-.page h3 {
-  font-size: 22px;
-  line-height: 1.3;
-  letter-spacing: -.03em;
-  font-weight: 750;
+.heroContent {
+  composes: heroContent from "../../components/cinematic-layout.module.css";
 }
 
 .eyebrow {
-  font-size: 13px;
-  line-height: 1.5;
-  font-weight: 750;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--green);
-  margin-bottom: 16px;
+  composes: eyebrow from "../../components/cinematic-layout.module.css";
 }
 
-/* Hero */
-.heroBand {
-  background: var(--ink);
-  color: var(--paper);
-  padding-block: 72px 68px;
+.heroTitle {
+  composes: heroTitle from "../../components/cinematic-layout.module.css";
 }
 
-.heroBand .eyebrow { color: var(--lime); }
-
-.hero {
-  width: var(--wrap);
-  margin-inline: auto;
-  text-align: center;
-  max-width: 54rem;
+.heroLead {
+  composes: heroLead from "../../components/cinematic-layout.module.css";
 }
 
-.hero h1 {
-  font-family: var(--font-display), Arial, sans-serif;
-  font-size: clamp(32px, 3.9vw, 50px);
-  line-height: 1.06;
-  letter-spacing: -.05em;
-  font-weight: 800;
-  color: var(--paper);
-  margin-bottom: 24px;
+.body {
+  composes: cinematicBody from "../../components/cinematic-layout.module.css";
 }
 
-.lead {
-  font-size: 17px;
-  color: color-mix(in srgb, var(--paper) 78%, transparent);
-  max-width: 48rem;
-  margin-inline: auto;
+.sectionWrap {
+  composes: sectionWrap from "../../components/cinematic-layout.module.css";
 }
 
-/* Features Section */
-.featuresSection {
-  background: var(--surface);
-  padding-block: 80px;
+.section {
+  composes: section from "../../components/cinematic-layout.module.css";
 }
 
+.sectionHeader {
+  composes: sectionHeader from "../../components/cinematic-layout.module.css";
+}
+
+.sectionTitle {
+  composes: sectionTitle from "../../components/cinematic-layout.module.css";
+}
+
+.sectionLead {
+  composes: sectionLead from "../../components/cinematic-layout.module.css";
+}
+
+/* Feature cards - alternating layouts for visual interest */
 .featuresList {
-  max-width: 68rem;
-  margin-inline: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 48px;
+  display: grid;
+  gap: 36px;
 }
 
 .featureCard {
-  background: var(--paper);
-  border: 1px solid var(--border);
-  border-radius: 18px;
+  composes: glassPanel from "../../components/cinematic-layout.module.css";
   padding: 36px;
 }
 
 .featureKicker {
-  font-size: 12px;
-  font-weight: 750;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 12px;
+  composes: eyebrow from "../../components/cinematic-layout.module.css";
+  margin-bottom: 10px;
 }
 
 .featureCard h3 {
-  margin-bottom: 12px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.65rem;
+  font-weight: 500;
+  color: #fffdf6;
+  letter-spacing: -.035em;
+  line-height: 1.15;
+  margin-bottom: 14px;
 }
 
 .featureStatus {
-  display: inline-block;
-  padding: 6px 14px;
-  background: var(--lime);
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 750;
-  border-radius: 999px;
-  margin-bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 14px;
+  border-radius: 99px;
+  font-size: .73rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+
+.featureStatus[data-status="available"] {
+  background: rgba(150,248,119,.18);
+  color: #d0ff9c;
+  border: 1px solid rgba(180,255,145,.35);
+}
+
+.featureStatus[data-status="planned"],
+.featureStatus[data-status="future"] {
+  background: rgba(240, 198, 116, .16);
+  color: #f0c674;
+  border: 1px solid rgba(240, 198, 116, .30);
 }
 
 .featureDescription {
-  color: var(--muted-strong);
-  font-size: 16px;
+  color: #d2e4d8;
+  font-size: .98rem;
   line-height: 1.65;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 
 .featurePoints {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.featurePoints li {
-  padding-left: 28px;
-  position: relative;
-  font-size: 15px;
-  line-height: 1.55;
-  color: var(--ink);
-}
-
-.featurePoints li::before {
-  content: "✓";
-  position: absolute;
-  left: 0;
-  color: var(--green);
-  font-weight: 750;
-  font-size: 16px;
+  composes: checkList from "../../components/cinematic-layout.module.css";
+  margin-bottom: 18px;
 }
 
 .featureNote {
-  margin-top: 20px;
+  composes: noteText from "../../components/cinematic-layout.module.css";
   padding: 16px 20px;
-  background: var(--surface);
-  border-radius: 10px;
-  font-size: 14px;
-  color: var(--muted);
-  line-height: 1.6;
+  background: rgba(11,97,60,.22);
+  border-radius: 14px;
+  border: 1px solid rgba(199,250,190,.18);
+  margin-top: 18px;
 }
 
-/* Technical Section */
-.technicalSection {
-  width: var(--wrap);
-  margin-inline: auto;
-  padding-block: 80px;
+/* Workflow visualization */
+.workflowSection {
+  composes: glassSection from "../../components/cinematic-layout.module.css";
+  padding: 48px 42px;
 }
 
-.sectionIntro {
-  max-width: 46rem;
-  margin-bottom: 48px;
-  text-align: center;
-  margin-inline: auto;
-}
-
-.sectionIntro p {
-  color: var(--muted-strong);
-  font-size: 17px;
-  margin-top: 20px;
-}
-
-.technicalGrid {
+.workflowSteps {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-  max-width: 52rem;
-  margin-inline: auto;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+  align-items: center;
+  margin-top: 32px;
+}
+
+.workflowStep {
+  text-align: center;
+  position: relative;
+}
+
+.workflowStep::after {
+  content: "→";
+  position: absolute;
+  right: -36px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #bafa8a;
+  font-size: 2rem;
+  font-weight: 300;
+}
+
+.workflowStep:last-child::after {
+  display: none;
+}
+
+.workflowIcon {
+  composes: iconBox from "../../components/cinematic-layout.module.css";
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 18px;
+}
+
+.workflowLabel {
+  font-size: .96rem;
+  font-weight: 700;
+  color: #eaf9e7;
+  margin-bottom: 8px;
+}
+
+.workflowDesc {
+  font-size: .84rem;
+  color: #b6d0bd;
+  line-height: 1.5;
+}
+
+/* Technical cards */
+.technicalGrid {
+  composes: grid3 from "../../components/cinematic-layout.module.css";
 }
 
 .technicalCard {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 24px;
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--ink);
-}
-
-/* Future Section */
-.futureSection {
-  background: var(--surface);
-  padding-block: 80px;
-}
-
-.futureSection .sectionIntro {
+  composes: glassPanel from "../../components/cinematic-layout.module.css";
+  padding: 26px;
+  font-size: .92rem;
+  color: #d2e4d8;
+  line-height: 1.62;
   text-align: center;
 }
 
+/* Future features */
 .futureGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-  max-width: 64rem;
-  margin-inline: auto;
+  composes: grid3 from "../../components/cinematic-layout.module.css";
 }
 
 .futureCard {
-  background: var(--paper);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 28px 24px;
-  min-width: 0;
+  composes: glassPanel from "../../components/cinematic-layout.module.css";
+  padding: 28px;
 }
 
 .futureCard h3 {
-  font-size: 20px;
-  margin-bottom: 12px;
+  composes: cardTitle from "../../components/cinematic-layout.module.css";
+  margin-bottom: 14px;
 }
 
 .futureCard p {
-  color: var(--muted-strong);
-  font-size: 15px;
-  line-height: 1.6;
-  margin-bottom: 16px;
+  composes: cardDescription from "../../components/cinematic-layout.module.css";
+  margin-bottom: 14px;
 }
 
 .timeline {
   display: inline-block;
-  font-size: 13px;
-  font-weight: 750;
-  color: var(--green);
   padding: 4px 12px;
-  background: color-mix(in srgb, var(--lime) 40%, transparent);
-  border-radius: 999px;
+  background: rgba(240, 198, 116, .14);
+  color: #f0c674;
+  border: 1px solid rgba(240, 198, 116, .26);
+  border-radius: 99px;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
 }
 
 .futureNote {
+  composes: noteText from "../../components/cinematic-layout.module.css";
   text-align: center;
-  color: var(--muted);
-  font-size: 14px;
-  margin-top: 32px;
-  max-width: 48rem;
-  margin-inline: auto;
+  margin-top: 28px;
+  padding-top: 28px;
+  border-top: 1px solid rgba(198,242,188,.16);
 }
 
-/* CTA Section */
+/* Final CTA */
 .ctaSection {
-  width: var(--wrap);
-  margin-inline: auto;
-  padding-block: 80px;
-  text-align: center;
+  composes: finalCtaSection from "../../components/cinematic-layout.module.css";
+  margin-top: 85px;
 }
 
-.ctaContent {
-  max-width: 46rem;
-  margin-inline: auto;
-}
-
-.ctaContent h2 {
-  margin-bottom: 32px;
+.ctaTitle {
+  composes: finalCtaTitle from "../../components/cinematic-layout.module.css";
 }
 
 .ctaButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 14px 28px;
-  border-radius: 999px;
-  background: var(--green);
-  color: var(--paper);
-  font-size: 15px;
-  font-weight: 750;
-  transition: background-color 220ms ease-out, transform 220ms ease-out;
-}
-
-@media (hover: hover) {
-  .ctaButton:hover {
-    background: var(--green-dark);
-    transform: translateY(-2px);
-  }
+  composes: primaryCta from "../../components/cinematic-layout.module.css";
 }
 
 /* Responsive */
-@media (max-width: 900px) {
-  .technicalGrid,
-  .futureGrid {
-    grid-template-columns: minmax(0, 1fr);
+@media (max-width: 760px) {
+  .workflowSteps {
+    grid-template-columns: 1fr;
+    gap: 28px;
   }
-}
-
-@media (max-width: 767px) {
-  .heroBand {
-    padding-block: 56px 52px;
+  
+  .workflowStep::after {
+    content: "↓";
+    right: auto;
+    top: auto;
+    bottom: -34px;
+    left: 50%;
+    transform: translateX(-50%);
   }
-  .featuresSection,
-  .technicalSection,
-  .futureSection,
-  .ctaSection {
-    padding-block: 56px;
-  }
+  
   .featureCard {
-    padding: 24px 20px;
+    padding: 28px 24px;
+  }
+  
+  .workflowSection {
+    padding: 36px 28px;
   }
 }
 
-@media (max-width: 640px) {
-  .page { --wrap: calc(100% - 32px); }
-}
-
-@media (max-width: 360px) {
-  .page { --wrap: calc(100% - 24px); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .page *,
-  .page *::before,
-  .page *::after {
-    animation: none !important;
-    transition: none !important;
+@media (max-width: 520px) {
+  .featureCard h3 {
+    font-size: 1.4rem;
+  }
+  
+  .workflowSection {
+    padding: 32px 24px;
+  }
+  
+  .ctaSection {
+    margin-top: 60px;
   }
 }

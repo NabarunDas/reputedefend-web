@@ -148,17 +148,6 @@
 .primaryCta:hover { box-shadow: 0 0 52px rgba(188,250,119,.5), 0 18px 38px rgba(0,0,0,.28); }
 .glassCta:hover { border-color: #c5f6ac; background: rgba(36,93,57,.50); }
 .page :is(a,button,summary):focus-visible { outline: 3px solid #d9ff94; outline-offset: 5px; }
-.previewNote {
-  position: absolute;
-  z-index: 2;
-  right: max(32px, calc((100vw - 1280px)/2));
-  bottom: 42px;
-  color: rgba(233,251,230,.75);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .045em;
-  text-shadow: 0 2px 10px #000;
-}
 .heroScroll { position: absolute; bottom: 42px; left: max(32px, calc((100vw - 1280px)/2)); display: inline-flex; align-items:center; gap:10px; font-size:.68rem; letter-spacing:.16em; text-transform:uppercase; color:rgba(230,252,218,.7); transform:rotate(0deg); }
 .heroScroll svg { transform: rotate(90deg); }
 
@@ -272,7 +261,7 @@
   .heroSubtitle{max-width:540px;}
   .worldLandscape{inset-inline:-20%;top:55%;height:49%;}
   .worldImage{object-position:center 52%;}
-  .previewNote{bottom:36px;right:22px;} .heroScroll{display:none;}
+  .heroScroll{display:none;}
   .valueRibbon{grid-template-columns:repeat(2,1fr);gap:0;padding:10px 15px;} .valueRibbon>div{border:0!important;justify-content:flex-start;padding:12px;}
   .challenge{grid-template-columns:1fr;padding-block:84px 72px;} .challengeList{max-width:none;}
   .sectionHeader{display:block;} .sectionHeader>p{margin-top:16px;max-width:630px;}
@@ -290,7 +279,6 @@
   .primaryCta,.glassCta{width:100%;min-height:49px;padding:12px 18px;font-size:.88rem;}
   .worldLandscape{top:64%;height:40%;inset-inline:-16%;}
   .worldImage{object-position:center 53%;}
-  .previewNote{font-size:10px;max-width:220px;text-align:right;bottom:25px;}
   .valueRibbon{grid-template-columns:1fr;margin-top:0;padding:11px 17px;border-radius:18px;}
   .valueRibbon>div{justify-content:flex-start;font-size:.75rem;padding:8px;}
   .challenge{padding-block:65px 55px;gap:25px;} .challengeList{grid-template-columns:1fr;}

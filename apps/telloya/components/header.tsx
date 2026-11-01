@@ -64,19 +64,12 @@ export function Header() {
   return (
     <header className={`site-header ${cinematic ? "site-header-cinematic" : "site-header-standard"} ${scrolled ? "site-header-scrolled" : ""}`}>
       <div className="container">
-        {cinematic && (
-          <nav className="site-nav-early" aria-label="Explore Telloya">
-            {navigationContent.main.slice(0, 2).map(item => (
-              <Link key={item.href} href={item.href} className="site-nav-link">{item.label}</Link>
-            ))}
-          </nav>
-        )}
         <Link href="/" aria-label={brandHomeLabel} className="site-logo">
           <TelloyaLogo variant={cinematic ? "symbol" : "dark"} priority={cinematic} />
         </Link>
         <nav className="site-nav" aria-label="Main navigation">
           <ul className="site-nav-links">
-            {(cinematic ? navigationContent.main.slice(2) : navigationContent.main).map(item => (
+            {navigationContent.main.map(item => (
               <li key={item.href}><Link href={item.href} className="site-nav-link">{item.label}</Link></li>
             ))}
           </ul>

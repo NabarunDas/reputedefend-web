@@ -88,7 +88,6 @@ export default function Home() {
             </Link>
           </div>
         </div>
-        <p className={styles.previewNote}>Illustrative product preview — actual features depend on configuration</p>
         <span className={styles.heroScroll} aria-hidden="true">Discover Telloya <ChevronRight size={14} /></span>
       </section>
 

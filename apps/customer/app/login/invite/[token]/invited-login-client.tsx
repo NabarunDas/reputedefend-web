@@ -20,8 +20,9 @@ async function postJson(path: string, body: Record<string, unknown>) {
  * First-time invitation sign-in. The token is posted to the server and is not
  * rendered. The screen never shows an email address or a business name.
  */
-export function InvitedLoginClient({ token, preview }: {
+export function InvitedLoginClient({ token, initialPhase = "start", preview }: {
   token: string
+  initialPhase?: "start" | "code"
   preview?: {
     phase?: "start" | "code" | "done"
     code?: string
@@ -30,7 +31,8 @@ export function InvitedLoginClient({ token, preview }: {
     pending?: "" | "send" | "resend" | "verify"
   }
 }) {
-  const [phase, setPhase] = useState<"start" | "code" | "done">(preview?.phase ?? "start")
+  const [secret, setSecret] = useState(token)
+  const [phase, setPhase] = useState<"start" | "code" | "done">(preview?.phase ?? initialPhase)
   const [code, setCode] = useState(preview?.code ?? "")
   const [error, setError] = useState(preview?.error ?? "")
   const [pending, setPending] = useState<"" | "send" | "resend" | "verify">(preview?.pending ?? "")
@@ -56,16 +58,24 @@ export function InvitedLoginClient({ token, preview }: {
   async function sendCode(event: FormEvent) {
     event.preventDefault()
     setError("")
+    if (!/^[a-f0-9]{64}$/.test(secret)) {
+      setError(INVITED_LOGIN_UNAVAILABLE)
+      return
+    }
     setPending("send")
     try {
-      const result = await postJson("/api/portal/auth/invite/start", { token })
+      const result = await postJson("/api/portal/auth/invite/start", { token: secret })
       if (!result.ok) {
         setError(INVITED_LOGIN_UNAVAILABLE)
         return
       }
+      setSecret("")
       setCode("")
       setPhase("code")
       setResendIn(60)
+      if (!preview) {
+        try { window.history.replaceState(null, "", "/login/invite/continue") } catch { /* Cookies already hold the challenge. */ }
+      }
     } catch {
       setError(PORTAL_UNAVAILABLE)
     } finally {

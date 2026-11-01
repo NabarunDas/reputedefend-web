@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   signInWithOtp: vi.fn(),
   verifyOtp: vi.fn(),
   signOut: vi.fn(),
+  users: [] as Array<{ id: string; email: string; email_confirmed_at: string | null }>,
 }))
 vi.mock("@/lib/backend", async original => {
   const { createHash } = await import("node:crypto")
@@ -75,15 +76,27 @@ function confirmedUser() {
 beforeEach(() => {
   enable()
   state.issued = 0
+  state.users = []
   state.rpc.mockReset()
-  state.createUser.mockReset().mockResolvedValue({
-    data: { user: { id: authUser, email: "alex@example.com", email_confirmed_at: "2026-09-28T12:00:00.000Z" } },
-    error: null,
+  state.createUser.mockReset().mockImplementation(async ({ email, email_confirm }: { email: string; email_confirm: boolean }) => {
+    const existing = state.users.find(user => user.email === email)
+    if (existing) return { data: { user: null }, error: { message: "User already registered" } }
+    const user = { id: authUser, email, email_confirmed_at: email_confirm ? "2026-09-28T12:00:00.000Z" : null }
+    state.users.push(user)
+    return { data: { user: { ...user } }, error: null }
   })
-  state.listUsers.mockReset()
+  state.listUsers.mockReset().mockImplementation(async () => ({ data: { users: state.users.map(user => ({ ...user })) }, error: null }))
   state.updateUserById.mockReset()
   state.signInWithOtp.mockReset().mockResolvedValue({ error: null })
-  state.verifyOtp.mockReset()
+  state.verifyOtp.mockReset().mockImplementation(async ({ token: code }: { token: string }) => {
+    const user = state.users[0]
+    if (!user || code !== "12345678") return { data: { user: null, session: null }, error: { message: "bad code" } }
+    user.email_confirmed_at = "2026-11-01T21:00:00.000Z"
+    return {
+      data: { user: { ...user }, session: { access_token: "provider-access" } },
+      error: null,
+    }
+  })
   state.signOut.mockReset().mockResolvedValue({ error: null })
 })
 afterEach(() => vi.unstubAllEnvs())
@@ -151,6 +164,62 @@ describe("invited portal login routes", () => {
     expect(cookies).toMatch(/HttpOnly/i)
     expect(cookies).toMatch(/SameSite=Strict/i)
     expect(response.cookies.get(portalSessionCookieName())).toBeUndefined()
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer")
+    expect(JSON.stringify(body)).not.toContain(token)
+    expect(JSON.stringify(body)).not.toContain(hash(token))
+    expect(state.createUser).toHaveBeenCalledWith({ email: "alex@example.com", email_confirm: false })
+    expect(state.updateUserById).not.toHaveBeenCalled()
+    expect(state.users).toEqual([{ id: authUser, email: "alex@example.com", email_confirmed_at: null }])
+  })
+
+  it("does not send a code when identity setup would admin-confirm the mailbox", async () => {
+    state.rpc.mockResolvedValue({ status: "ok", email: "alex@example.com", customerId })
+    state.createUser.mockResolvedValue({
+      data: { user: { id: authUser, email: "alex@example.com", email_confirmed_at: "2026-09-28T12:00:00.000Z" } },
+      error: null,
+    })
+    const response = await startPost(req("/api/portal/auth/invite/start", { token }))
+    const body = await response.json()
+    expect(response.status).toBe(401)
+    expect(body).toEqual({ message: INVITED_LOGIN_UNAVAILABLE })
+    expect(JSON.stringify(body)).not.toContain(token)
+    expect(state.createUser).toHaveBeenCalledWith({ email: "alex@example.com", email_confirm: false })
+    expect(state.updateUserById).not.toHaveBeenCalled()
+    expect(state.signInWithOtp).not.toHaveBeenCalled()
+    expect(response.headers.getSetCookie()).toEqual([])
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer")
+  })
+
+  it("confirms the auth identity only when the provider accepts the code", async () => {
+    state.rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_portal_begin_invited_login_v1" || name === "customer_portal_confirm_invited_otp_sent_v1") return { status: "ok", email: "alex@example.com", customerId }
+      if (name === "customer_portal_attempt_invited_otp_v1") return { status: "ok", email: "alex@example.com", customerId }
+      if (name === "customer_portal_finish_invited_otp_v1") return { status: "ok" }
+      if (name === "customer_portal_session_v1") return { customerId }
+      return { status: "unavailable" }
+    })
+    const started = await startPost(req("/api/portal/auth/invite/start", { token }))
+    expect(started.status).toBe(200)
+    expect(state.signInWithOtp).toHaveBeenCalledWith({ email: "alex@example.com", options: { shouldCreateUser: false } })
+    expect(state.users[0].email_confirmed_at).toBeNull()
+    expect(state.updateUserById).not.toHaveBeenCalled()
+    const cookie = `${portalPendingCookieName()}=${"a".repeat(64)}; ${portalInviteCookieName()}=${hash(token)}`
+    const abandoned = state.users[0].email_confirmed_at
+    expect(abandoned).toBeNull()
+    const rejected = await verifyPost(req("/api/portal/auth/invite/verify", { code: "00000000" }, { cookie }))
+    const rejectedBody = await rejected.json()
+    expect(rejected.status).toBe(401)
+    expect(rejectedBody).toEqual({ message: PORTAL_VERIFY_ERROR })
+    expect(JSON.stringify(rejectedBody)).not.toContain(token)
+    expect(state.users[0].email_confirmed_at).toBeNull()
+    expect(state.rpc.mock.calls.map(call => call[0])).not.toContain("customer_portal_finish_invited_otp_v1")
+    expect(rejected.cookies.get(portalSessionCookieName())).toBeUndefined()
+    const accepted = await verifyPost(req("/api/portal/auth/invite/verify", { code: "12345678" }, { cookie }))
+    expect(accepted.status).toBe(200)
+    expect(state.users[0].email_confirmed_at).toBe("2026-11-01T21:00:00.000Z")
+    expect(state.updateUserById).not.toHaveBeenCalled()
+    expect(state.rpc.mock.calls.map(call => call[0])).toContain("customer_portal_finish_invited_otp_v1")
+    expect(accepted.headers.get("referrer-policy")).toBe("no-referrer")
   })
 
   it("does not keep a pending cookie when the provider refuses the code", async () => {
@@ -190,9 +259,13 @@ describe("invited portal login routes", () => {
     state.verifyOtp.mockResolvedValue({ data: { user: null, session: null }, error: { message: "bad code" } })
     const response = await verifyPost(req("/api/portal/auth/invite/verify", { code: "12345678" }, { cookie }))
     expect(response.status).toBe(401)
-    expect(await response.json()).toEqual({ message: PORTAL_VERIFY_ERROR })
+    const body = await response.json()
+    expect(body).toEqual({ message: PORTAL_VERIFY_ERROR })
+    expect(JSON.stringify(body)).not.toContain(token)
     expect(state.rpc.mock.calls.map(call => call[0])).toEqual(["customer_portal_attempt_invited_otp_v1"])
     expect(response.cookies.get(portalSessionCookieName())).toBeUndefined()
+    expect(state.updateUserById).not.toHaveBeenCalled()
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer")
   })
 
   it("opens the ordinary portal session after a verified invited code", async () => {
@@ -222,6 +295,9 @@ describe("invited portal login routes", () => {
     expect(cookies).toMatch(new RegExp(`${portalPendingCookieName()}=;`))
     expect(cookies).toMatch(new RegExp(`${portalInviteCookieName()}=;`))
     expect(JSON.stringify(body)).not.toMatch(/alex@example.com|Bakery/)
+    expect(JSON.stringify(body)).not.toContain(token)
+    expect(state.updateUserById).not.toHaveBeenCalled()
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer")
   })
 
   it("keeps an ordinary verify call on the ordinary finish function", async () => {

@@ -42,6 +42,29 @@ async function findUserByEmail(admin: CustomerAuthAdmin, email: string) {
   }
 }
 
+/**
+ * First-time invitation identity. Creates an unconfirmed Auth user, or reuses
+ * one that already exists, and never admin-confirms it. Supabase verifyOtp is
+ * the only confirmation for this path.
+ */
+export async function ensureInvitedAuthIdentity(admin: CustomerAuthAdmin, email: string) {
+  if (!email || sameEmail(email, CUSTOMER_ADMIN_EMAIL)) return null
+  try {
+    const created = await admin.createUser({ email, email_confirm: false })
+    if (!created.error) {
+      const user = created.data?.user
+      if (!user || !usable(user, email) || user.email_confirmed_at) return null
+      return user.id
+    }
+    if (!/already|registered|exists/i.test(created.error.message)) return null
+    const existing = await findUserByEmail(admin, email)
+    if (!existing) return null
+    return existing.id
+  } catch {
+    return null
+  }
+}
+
 export async function ensureCustomerAuthIdentity(admin: CustomerAuthAdmin, email: string) {
   if (!email || sameEmail(email, CUSTOMER_ADMIN_EMAIL)) return null
   try {

@@ -21,6 +21,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -46,6 +47,7 @@ describe("invited login screen", () => {
     fetchMock
       .mockImplementationOnce(() => jsonResponse({ message: INVITED_LOGIN_MESSAGE, email: "alex@example.com", business: "Bakery" }))
       .mockImplementationOnce(() => jsonResponse({ status: "ok", email: "alex@example.com" }))
+    const replaceState = vi.spyOn(window.history, "replaceState")
     render(<InvitedLoginClient token={token} />)
     fireEvent.click(screen.getByRole("button", { name: "Email me a sign-in code" }))
     expect(await screen.findByRole("heading", { name: "Check your email" })).toBeTruthy()
@@ -55,6 +57,8 @@ describe("invited login screen", () => {
       method: "POST",
       body: JSON.stringify({ token }),
     }))
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/login/invite/continue")
+    expect(document.body.innerHTML).not.toContain(token)
     fireEvent.change(screen.getByLabelText("Eight-digit code"), { target: { value: "12345678" } })
     fireEvent.click(screen.getByRole("button", { name: "Verify and sign in" }))
     expect(await screen.findByRole("heading", { name: "You're signed in" })).toBeTruthy()
@@ -72,5 +76,16 @@ describe("invited login screen", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(INVITED_LOGIN_UNAVAILABLE)
     expect(document.body.textContent).not.toMatch(/alex@example.com/)
     expect(replaceDocument).not.toHaveBeenCalled()
+  })
+
+  it("continues from the cookie step without putting an invitation secret back on screen", async () => {
+    fetchMock.mockImplementation(() => jsonResponse({ message: INVITED_LOGIN_MESSAGE }))
+    render(<InvitedLoginClient token="" initialPhase="code" />)
+    expect(screen.getByRole("heading", { name: "Check your email" })).toBeTruthy()
+    expect(document.body.innerHTML).not.toMatch(/[a-f0-9]{64}/)
+    fireEvent.click(screen.getByRole("button", { name: "Resend code" }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/portal/auth/invite/resend", expect.objectContaining({
+      body: JSON.stringify({}),
+    })))
   })
 })

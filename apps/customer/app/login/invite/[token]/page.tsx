@@ -3,7 +3,7 @@ import { invitedLoginAvailable, portalAvailable } from "@/lib/portal/config"
 import { INVITED_LOGIN_UNAVAILABLE } from "@/lib/portal/email"
 import { InvitedLoginClient } from "./invited-login-client"
 
-export const metadata = { title: "Sign in" }
+export const metadata = { title: "Sign in", referrer: "no-referrer" as const }
 
 export default async function InvitedLoginPage({ params }: { params: Promise<{ token: string }> }) {
   if (!portalAvailable() || !invitedLoginAvailable()) {

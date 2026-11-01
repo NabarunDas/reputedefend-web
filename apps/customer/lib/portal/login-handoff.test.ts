@@ -143,15 +143,19 @@ async function expectGeneric(response: Response, cookie: "pending" | "none") {
     expect(setCookie).toEqual([])
     return ""
   }
-  expect(setCookie).toHaveLength(1)
-  const line = setCookie[0]
+  expect(setCookie).toHaveLength(2)
+  const line = setCookie.find(item => item.startsWith("pr-portal-pending-dev="))
+  const invite = setCookie.find(item => item.startsWith("pr-portal-invite-dev="))
+  expect(line).toBeTruthy()
+  expect(invite).toMatch(/^pr-portal-invite-dev=;/)
+  expect(invite).toMatch(/Max-Age=0/i)
   expect(line).toMatch(/HttpOnly/i)
   expect(line).toMatch(/SameSite=Strict/i)
   expect(line).toMatch(/Path=\//)
   expect(line).toMatch(/Max-Age=600/i)
   expect(line).not.toMatch(/Domain=/i)
   expect(line).not.toMatch(/Secure/i)
-  return cookieShape(line)
+  return cookieShape(line ?? "")
 }
 
 beforeEach(() => {

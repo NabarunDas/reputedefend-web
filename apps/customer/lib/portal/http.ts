@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { privateResponseHeaders } from "@/lib/access"
 import { backend, newToken, tokenHash, validToken } from "@/lib/backend"
-import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity } from "@/lib/action/identity"
+import { CUSTOMER_ADMIN_EMAIL, ensureCustomerAuthIdentity, ensureInvitedAuthIdentity } from "@/lib/action/identity"
 import { customerBackendConfig, customerRequestOriginAllowed } from "@/lib/config"
 import { validCustomerOtp } from "@/lib/otp"
 import {
@@ -104,10 +104,22 @@ function clearPortalCookies(response: NextResponse) {
 
 type LoginStart = { status?: string; email?: string; customerId?: string }
 
+const invitedResponseHeaders = {
+  ...privateResponseHeaders,
+  "Referrer-Policy": "no-referrer",
+} as const
+
+const invitedJson = (body: unknown, status: number) =>
+  NextResponse.json(body, { status, headers: invitedResponseHeaders })
+
 async function sendTrustedOtp(email: string, pendingHash: string, confirmRpc = "customer_portal_confirm_otp_sent_v1", invitationHash = "") {
   if (!email || email.toLowerCase() === CUSTOMER_ADMIN_EMAIL) return false
   const service = backend()
-  if (!await ensureCustomerAuthIdentity(service.database.auth.admin, email)) return false
+  const invited = confirmRpc !== "customer_portal_confirm_otp_sent_v1"
+  const identity = invited
+    ? await ensureInvitedAuthIdentity(service.database.auth.admin, email)
+    : await ensureCustomerAuthIdentity(service.database.auth.admin, email)
+  if (!identity) return false
   const { error } = await service.identity.auth.signInWithOtp({ email, options: { shouldCreateUser: false } })
   if (error) return false
   if (confirmRpc === "customer_portal_confirm_otp_sent_v1") {
@@ -196,11 +208,13 @@ export async function verifyLogin(request: NextRequest) {
   } catch { return verifyDenied() }
 }
 
-const invitedUnavailable = () =>
-  NextResponse.json({ message: INVITED_LOGIN_UNAVAILABLE }, { status: 401, headers: privateResponseHeaders })
+const invitedUnavailable = () => invitedJson({ message: INVITED_LOGIN_UNAVAILABLE }, 401)
 
-const invitedAccepted = () =>
-  NextResponse.json({ message: INVITED_LOGIN_MESSAGE }, { status: 200, headers: privateResponseHeaders })
+const invitedAccepted = () => invitedJson({ message: INVITED_LOGIN_MESSAGE }, 200)
+
+const invitedClosed = (http = 401) => invitedJson({ message: PORTAL_UNAVAILABLE }, http)
+
+const invitedVerifyDenied = () => invitedJson({ message: PORTAL_VERIFY_ERROR }, 401)
 
 function withInvite(response: NextResponse, pending: string, invitationHash: string) {
   const options = portalCookieOptions()
@@ -218,8 +232,8 @@ function invitedCookies(request: NextRequest) {
 
 /** Invitation entrance. The response never includes an email, customer, or business. */
 export async function startInvitedLogin(request: NextRequest) {
-  if (!invitedLoginAvailable()) return refused(404)
-  if (!originOk(request) || !jsonRequest(request)) return refused()
+  if (!invitedLoginAvailable()) return invitedClosed(404)
+  if (!originOk(request) || !jsonRequest(request)) return invitedClosed()
   const body = await readJson(request, 2048)
   const token = typeof body?.token === "string" ? body.token : undefined
   if (!body || !exactKeys(body, ["token"]) || !validToken(token)) return invitedUnavailable()
@@ -241,8 +255,8 @@ export async function startInvitedLogin(request: NextRequest) {
 }
 
 export async function resendInvitedLogin(request: NextRequest) {
-  if (!invitedLoginAvailable()) return refused(404)
-  if (!originOk(request) || !jsonRequest(request)) return refused()
+  if (!invitedLoginAvailable()) return invitedClosed(404)
+  if (!originOk(request) || !jsonRequest(request)) return invitedClosed()
   const body = await readJson(request, 256)
   const cookies = invitedCookies(request)
   if (!body || !exactKeys(body, []) || !cookies) return invitedUnavailable()
@@ -259,28 +273,28 @@ export async function resendInvitedLogin(request: NextRequest) {
 }
 
 export async function verifyInvitedLogin(request: NextRequest) {
-  if (!invitedLoginAvailable()) return refused(404)
-  if (!originOk(request) || !jsonRequest(request)) return refused()
+  if (!invitedLoginAvailable()) return invitedClosed(404)
+  if (!originOk(request) || !jsonRequest(request)) return invitedClosed()
   const cookies = invitedCookies(request)
   const body = await readJson(request, 1024)
-  if (!cookies || !body || !exactKeys(body, ["code"]) || !validCustomerOtp(body.code)) return verifyDenied()
+  if (!cookies || !body || !exactKeys(body, ["code"]) || !validCustomerOtp(body.code)) return invitedVerifyDenied()
   try {
     const allowed = await backend().rpc<LoginStart>("customer_portal_attempt_invited_otp_v1", {
       p_pending_hash: tokenHash(cookies.pending),
       p_invitation_hash: cookies.invitationHash,
     })
-    if (allowed.status !== "ok" || !allowed.email || allowed.email.toLowerCase() === CUSTOMER_ADMIN_EMAIL) return verifyDenied()
+    if (allowed.status !== "ok" || !allowed.email || allowed.email.toLowerCase() === CUSTOMER_ADMIN_EMAIL) return invitedVerifyDenied()
     const service = backend()
     const { data, error } = await service.identity.auth.verifyOtp({ email: allowed.email, token: body.code, type: "email" })
     const accessToken = data?.session?.access_token
-    if (typeof accessToken !== "string" || !accessToken) return verifyDenied()
+    if (typeof accessToken !== "string" || !accessToken) return invitedVerifyDenied()
     const revoked = await service.revokeProviderSession(accessToken)
-    if (!revoked || revoked.error) return verifyDenied()
+    if (!revoked || revoked.error) return invitedVerifyDenied()
     const user = data?.user
     const authEmail = user?.email
-    if (error || !user?.id || !authEmail || authEmail.toLowerCase() !== allowed.email || !user.email_confirmed_at) return verifyDenied()
+    if (error || !user?.id || !authEmail || authEmail.toLowerCase() !== allowed.email || !user.email_confirmed_at) return invitedVerifyDenied()
     const token = newToken()
-    if (token === cookies.pending) return verifyDenied()
+    if (token === cookies.pending) return invitedVerifyDenied()
     const finished = await service.rpc<{ status?: string }>("customer_portal_finish_invited_otp_v1", {
       p_pending_hash: tokenHash(cookies.pending),
       p_session_hash: tokenHash(token),
@@ -288,16 +302,16 @@ export async function verifyInvitedLogin(request: NextRequest) {
       p_email: authEmail.toLowerCase(),
       p_invitation_hash: cookies.invitationHash,
     })
-    if (finished.status !== "ok") return verifyDenied()
+    if (finished.status !== "ok") return invitedVerifyDenied()
     const session = await service.rpc<Record<string, unknown> | null>("customer_portal_session_v1", { p_token_hash: tokenHash(token) })
-    if (!session) return verifyDenied()
-    const response = NextResponse.json({ status: "ok" }, { headers: privateResponseHeaders })
+    if (!session) return invitedVerifyDenied()
+    const response = invitedJson({ status: "ok" }, 200)
     const options = portalCookieOptions()
     response.cookies.set(portalSessionCookieName(), token, { ...options, maxAge: PORTAL_SESSION_SECONDS })
     response.cookies.set(portalPendingCookieName(), "", { ...options, maxAge: 0 })
     response.cookies.set(portalInviteCookieName(), "", { ...options, maxAge: 0 })
     return response
-  } catch { return verifyDenied() }
+  } catch { return invitedVerifyDenied() }
 }
 
 export async function signOutPortal(request: NextRequest) {

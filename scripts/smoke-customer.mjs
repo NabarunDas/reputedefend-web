@@ -145,6 +145,8 @@ try {
     "/portal/account",
     "/portal/products",
     "/portal/recovery",
+    `/login/invite/${"cd".repeat(32)}`,
+    "/login/invite/continue",
   ]
   for (const path of portalPages) {
     const response = await fetch(`${origin}${path}`, { redirect: "manual" })
@@ -167,6 +169,9 @@ try {
     ["/api/portal/auth/start", { email: "alex@example.com" }],
     ["/api/portal/auth/resend", {}],
     ["/api/portal/auth/verify", { code: "000000" }],
+    ["/api/portal/auth/invite/start", { token: "d".repeat(64) }],
+    ["/api/portal/auth/invite/resend", {}],
+    ["/api/portal/auth/invite/verify", { code: "00000000" }],
     ["/api/portal/auth/sign-out", {}],
     ["/api/portal/evidence", { operation: "begin" }],
     ["/api/portal/service", { operation: "accept_quote" }],

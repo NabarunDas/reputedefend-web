@@ -7,6 +7,10 @@ BEGIN;
 -- ADMIN_RECORDED. This file does not mark an unverified customer verified,
 -- does not send an invitation, and does not grant a membership, entitlement,
 -- subscription, or payment. send_count stays 0.
+-- An invitation can be stored or redeemed only while the onboarding request
+-- still has a current Admin mark_ready decision, a matched customer, business
+-- and location, and a membership that has not been revoked. Pending authority
+-- stays pending.
 
 ALTER TABLE public.customer_contact_verifications
   ADD COLUMN proof_kind text NOT NULL DEFAULT 'ADMIN_RECORDED';
@@ -126,6 +130,53 @@ ALTER TABLE admin_private.onboarding_invitations
     )
   );
 
+-- The same decision the Admin read model calls invitation-ready.
+-- Email verification is deliberately not required. Pending membership is
+-- allowed. Revoked membership, a missing match, or a later matching or
+-- location change is not.
+CREATE FUNCTION admin_private.customer_portal_invitation_ready_v1(p_request uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.onboarding_requests AS req
+    JOIN public.customers AS customer ON customer.id = req.customer_id
+    JOIN public.businesses AS business ON business.id = req.business_id
+    JOIN public.business_memberships AS membership
+      ON membership.customer_id = req.customer_id
+     AND membership.business_id = req.business_id
+    WHERE req.id = p_request
+      AND req.state NOT IN ('DECLINED', 'CLOSED')
+      AND lower(customer.email) = req.email_snapshot
+      AND lower(customer.email) <> 'admin@profilerelaunch.com'
+      AND membership.status IS DISTINCT FROM 'revoked'
+      AND EXISTS (
+        SELECT 1
+        FROM admin_private.onboarding_request_locations AS selected
+        JOIN public.locations AS location ON location.id = selected.location_id
+        WHERE selected.onboarding_request_id = req.id
+          AND location.business_id = req.business_id
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM admin_private.onboarding_request_events AS ready
+        WHERE ready.onboarding_request_id = req.id
+          AND ready.operation = 'mark_ready'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM admin_private.onboarding_request_events AS later
+            WHERE later.onboarding_request_id = req.id
+              AND later.id > ready.id
+              AND later.operation IN ('match_customer', 'match_business', 'select_locations', 'decline')
+          )
+      )
+  );
+$$;
+
 CREATE OR REPLACE FUNCTION admin_private.guard_onboarding_invitation_v1()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -179,6 +230,9 @@ BEGIN
   END IF;
   IF NEW.consumed_at IS NOT NULL AND NEW.expires_at <= now() THEN
     RAISE EXCEPTION 'invitation is expired';
+  END IF;
+  IF NOT admin_private.customer_portal_invitation_ready_v1(NEW.onboarding_request_id) THEN
+    RAISE EXCEPTION 'invitation is not ready';
   END IF;
   RETURN NEW;
 END;
@@ -236,6 +290,11 @@ BEGIN
     RETURN NULL;
   END IF;
   IF admin_private.verified_current_email_v1(customer.id) IS NOT NULL THEN
+    RETURN NULL;
+  END IF;
+  -- Begin, resend, confirm, and finish all come through here. A stale or
+  -- missing Admin approval is the same public miss as an unknown token.
+  IF NOT admin_private.customer_portal_invitation_ready_v1(request.id) THEN
     RETURN NULL;
   END IF;
   RETURN invitation;
@@ -737,11 +796,12 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION public.customer_portal_begin_invited_login_v1(text, text) IS
-  'Starts one Customer Portal OTP for an unconsumed invitation. An invitation hash alone does not create a session. Unknown, expired, consumed, mismatched, declined, and already-verified invitations return unavailable.';
+  'Starts one Customer Portal OTP for an unconsumed, currently approved invitation. An invitation hash alone does not create a session. Unknown, expired, consumed, mismatched, unready, declined, and already-verified invitations return unavailable.';
 
 COMMENT ON FUNCTION public.customer_portal_finish_invited_otp_v1(text, text, uuid, text, text) IS
   'After Supabase verifyOtp, records MAILBOX_OTP, consumes that invitation, and inserts a normal Customer Portal session. It does not verify a membership or grant a product.';
 
+REVOKE ALL ON FUNCTION admin_private.customer_portal_invitation_ready_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.customer_portal_open_invitation_v1(text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.customer_portal_invited_challenge_v1(text, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.customer_portal_begin_invited_login_v1(text, text) FROM PUBLIC, anon, authenticated, service_role;

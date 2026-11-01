@@ -79,13 +79,55 @@ async function membership(customer: string, businessId: string, status: "pending
   )
 }
 
-async function invite(customer: string, email: string, options: { createdAt?: string; expiresAt?: string } = {}) {
-  const request = randomUUID()
+async function markReady(request: string) {
   await db.query(
-    `insert into public.onboarding_requests(id, customer_id, email_snapshot, product_code, plan_family, state)
-     values ($1, $2, $3, 'TELLOYA', 'VOICE', 'MAILBOX_REQUIRED')`,
-    [request, customer, email],
+    `insert into admin_private.onboarding_request_events(
+       onboarding_request_id, actor_id, operation, to_state, reason, details
+     ) values ($1, $2, 'mark_ready', 'MAILBOX_REQUIRED', 'Admin marked this request ready for invitation.', '{"invitationSent":false}'::jsonb)`,
+    [request, admin],
   )
+}
+
+async function draft(customer: string, email: string, shape: {
+  business?: boolean
+  location?: boolean
+  membership?: "pending" | "verified" | "revoked" | "none"
+  ready?: boolean
+  later?: "select_locations" | "match_customer" | "match_business" | "decline"
+} = {}) {
+  const request = randomUUID()
+  const shop = shape.business === false ? null : await business(`Shop ${request.slice(0, 8)}`)
+  const location = randomUUID()
+  if (shop && shape.location !== false) {
+    await db.query(
+      "insert into public.locations(id, business_id, country) values ($1, $2, 'United Kingdom')",
+      [location, shop],
+    )
+  }
+  if (shop && shape.membership !== "none") await membership(customer, shop, shape.membership ?? "pending")
+  await db.query(
+    `insert into public.onboarding_requests(id, customer_id, business_id, email_snapshot, product_code, plan_family, state)
+     values ($1, $2, $3, $4, 'TELLOYA', 'VOICE', 'MAILBOX_REQUIRED')`,
+    [request, customer, shop, email],
+  )
+  if (shop && shape.location !== false) {
+    await db.query(
+      "insert into admin_private.onboarding_request_locations(onboarding_request_id, location_id) values ($1, $2)",
+      [request, location],
+    )
+  }
+  if (shape.ready !== false) await markReady(request)
+  if (shape.later) {
+    await db.query(
+      `insert into admin_private.onboarding_request_events(onboarding_request_id, actor_id, operation, to_state, reason)
+       values ($1, $2, $3, 'MAILBOX_REQUIRED', 'A later matching change invalidated the previous approval.')`,
+      [request, admin, shape.later],
+    )
+  }
+  return { request, businessId: shop, location }
+}
+
+async function insertInvitation(customer: string, email: string, request: string, options: { createdAt?: string; expiresAt?: string } = {}) {
   const secret = token()
   const invitationHash = hash(secret)
   if (options.createdAt && options.expiresAt) {
@@ -103,7 +145,13 @@ async function invite(customer: string, email: string, options: { createdAt?: st
       [invitationHash, request, email, customer],
     )
   }
-  return { request, secret, invitationHash }
+  return { secret, invitationHash }
+}
+
+async function invite(customer: string, email: string, options: { createdAt?: string; expiresAt?: string } = {}) {
+  const opened = await draft(customer, email)
+  const stored = await insertInvitation(customer, email, opened.request, options)
+  return { ...opened, ...stored }
 }
 
 async function begin(invitationHash: string) {
@@ -166,6 +214,9 @@ describe("invited mailbox OTP", () => {
     expect(sql).not.toMatch(/UPDATE\s+public\.customer_contact_verifications/i)
     expect(sql).not.toContain("SEND_EMAIL")
     expect(sql).not.toMatch(/stripe|retell/i)
+    expect(sql).toContain("customer_portal_invitation_ready_v1")
+    expect(sql).toContain("mark_ready")
+    expect(sql).not.toMatch(/UPDATE\s+public\.business_memberships/i)
     expect(sql).not.toContain("INSERT INTO public.communications")
     const preservedProof = await rows<{ proof_kind: string; verified_by: string }>(
       "select proof_kind, verified_by from public.customer_contact_verifications where customer_id = $1",
@@ -380,6 +431,10 @@ describe("invited mailbox OTP", () => {
     expect(await count("select count(*)::int as n from admin_private.customer_portal_sessions where customer_id = $1", [guest.id])).toBe(1)
     expect(await rows(
       "select status from public.business_memberships where customer_id = $1 and business_id = $2",
+      [guest.id, open.businessId],
+    )).toEqual([{ status: "pending" }])
+    expect(await rows(
+      "select status from public.business_memberships where customer_id = $1 and business_id = $2",
       [guest.id, pendingBusiness],
     )).toEqual([{ status: "pending" }])
     expect(await rows(
@@ -448,6 +503,90 @@ describe("invited mailbox OTP", () => {
     expect((await rpc<Status>("customer_portal_begin_login_v1", [guest.email, ordinaryPending])).status).toBe("ok")
   })
 
+  it("accepts only a current Admin approval and leaves pending authority pending", async () => {
+    const guest = await person("approval")
+    const unavailable = { status: "unavailable" }
+    const attempt = async (shape: Parameters<typeof draft>[2]) => {
+      const opened = await draft(guest.id, guest.email, shape)
+      return fails(
+        `insert into admin_private.onboarding_invitations(
+           token_hash, onboarding_request_id, email_snapshot, customer_id, expires_at
+         ) values ($1, $2, $3, $4, now() + interval '7 days')`,
+        [hash(token()), opened.request, guest.email, guest.id],
+      )
+    }
+    expect(await attempt({ ready: false })).toMatch(/invitation is not ready/i)
+    expect(await attempt({ business: false })).toMatch(/invitation is not ready/i)
+    expect(await attempt({ location: false })).toMatch(/invitation is not ready/i)
+    expect(await attempt({ membership: "none" })).toMatch(/invitation is not ready/i)
+    expect(await attempt({ membership: "revoked" })).toMatch(/invitation is not ready/i)
+    expect(await attempt({ later: "select_locations" })).toMatch(/invitation is not ready/i)
+    expect(await attempt({ later: "match_business" })).toMatch(/invitation is not ready/i)
+    expect(await attempt({ later: "decline" })).toMatch(/invitation is not ready/i)
+
+    const stale = await invite(guest.id, guest.email)
+    await db.query(
+      `insert into admin_private.onboarding_request_events(onboarding_request_id, actor_id, operation, to_state, reason)
+       values ($1, $2, 'select_locations', 'MAILBOX_REQUIRED', 'Locations changed after the approval.')`,
+      [stale.request, admin],
+    )
+    expect((await begin(stale.invitationHash)).started).toEqual(unavailable)
+    await markReady(stale.request)
+    const renewed = await begin(stale.invitationHash)
+    expect(renewed.started.status).toBe("ok")
+    expect(await confirm(renewed.pending, stale.invitationHash)).toEqual({ status: "ok" })
+    await db.query(
+      "update public.business_memberships set status = 'revoked' where customer_id = $1 and business_id = $2",
+      [guest.id, stale.businessId],
+    )
+    expect(await rpc<Status>("customer_portal_begin_invited_resend_v1", [renewed.pending, stale.invitationHash])).toEqual(unavailable)
+    expect((await finish(renewed.pending, stale.invitationHash, guest.auth, guest.email)).finished).toEqual(unavailable)
+    expect(await count("select count(*)::int as n from public.customer_contact_verifications where customer_id = $1", [guest.id])).toBe(0)
+    expect(await count("select count(*)::int as n from admin_private.customer_portal_sessions where customer_id = $1", [guest.id])).toBe(0)
+    expect(await rows(
+      "select status from public.business_memberships where customer_id = $1 and business_id = $2",
+      [guest.id, stale.businessId],
+    )).toEqual([{ status: "revoked" }])
+    expect(await count(
+      "select count(*)::int as n from admin_private.onboarding_invitations where token_hash = $1 and consumed_at is null",
+      [stale.invitationHash],
+    )).toBe(1)
+  })
+
+  it("does not record mailbox proof until the provider has confirmed the auth identity", async () => {
+    const id = randomUUID()
+    const auth = randomUUID()
+    const email = `unconfirmed.${id.slice(0, 8)}@example.com`
+    await db.query("insert into public.customers(id, full_name, email) values ($1, 'Alex Customer', $2)", [id, email])
+    await db.query("insert into auth.users(id, email) values ($1, $2)", [auth, email])
+    const open = await invite(id, email)
+    const started = await begin(open.invitationHash)
+    expect(started.started.status).toBe("ok")
+    expect(await confirm(started.pending, open.invitationHash)).toEqual({ status: "ok" })
+    const confirmedAt = async () => (await rows<{ email_confirmed_at: string | null }>(
+      "select email_confirmed_at from auth.users where id = $1",
+      [auth],
+    ))[0].email_confirmed_at
+    expect(await confirmedAt()).toBeNull()
+    expect(await count("select count(*)::int as n from public.customer_contact_verifications where customer_id = $1", [id])).toBe(0)
+    expect(await count("select count(*)::int as n from admin_private.customer_portal_sessions where customer_id = $1", [id])).toBe(0)
+    expect((await finish(started.pending, open.invitationHash, auth, email)).finished).toEqual({ status: "unavailable" })
+    expect(await confirmedAt()).toBeNull()
+    expect(await count("select count(*)::int as n from public.customer_contact_verifications where customer_id = $1", [id])).toBe(0)
+    expect(await count("select count(*)::int as n from admin_private.customer_portal_sessions where customer_id = $1", [id])).toBe(0)
+    await db.query("update auth.users set email_confirmed_at = now() where id = $1", [auth])
+    expect((await finish(started.pending, open.invitationHash, auth, email)).finished).toEqual({ status: "ok" })
+    expect(await count(
+      "select count(*)::int as n from public.customer_contact_verifications where customer_id = $1 and proof_kind = 'MAILBOX_OTP' and verified_by is null",
+      [id],
+    )).toBe(1)
+    expect(await count("select count(*)::int as n from admin_private.customer_portal_sessions where customer_id = $1", [id])).toBe(1)
+    expect(await rows(
+      "select status from public.business_memberships where customer_id = $1 and business_id = $2",
+      [id, open.businessId],
+    )).toEqual([{ status: "pending" }])
+  })
+
   it("grants the public invited functions to service_role only", async () => {
     const names = [
       "customer_portal_begin_invited_login_v1(text,text)",
@@ -468,6 +607,9 @@ describe("invited mailbox OTP", () => {
     )).toEqual([{ anon_ok: false }])
     expect(await rows<{ service_ok: boolean }>(
       "select has_function_privilege('service_role', 'admin_private.customer_portal_open_invitation_v1(text)', 'EXECUTE') as service_ok",
+    )).toEqual([{ service_ok: false }])
+    expect(await rows<{ service_ok: boolean }>(
+      "select has_function_privilege('service_role', 'admin_private.customer_portal_invitation_ready_v1(uuid)', 'EXECUTE') as service_ok",
     )).toEqual([{ service_ok: false }])
   })
 })

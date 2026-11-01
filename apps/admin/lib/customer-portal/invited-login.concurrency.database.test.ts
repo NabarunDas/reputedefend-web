@@ -20,6 +20,8 @@ const customer = "22222222-2222-4222-8222-222222222222"
 const authUser = "66666666-6666-4666-8666-666666666666"
 const pendingBusiness = "33333333-3333-4333-8333-333333333333"
 const revokedBusiness = "44444444-4444-4444-8444-444444444444"
+const location = "55555555-5555-4555-8555-555555555555"
+const actor = "77777777-7777-4777-8777-777777777777"
 const email = "invited.concurrent@example.com"
 const secret = "a".repeat(64)
 const invitation = createHash("sha256").update(secret).digest("hex")
@@ -82,8 +84,13 @@ describe.skipIf(!pgBin)("simultaneous invited OTP completion", () => {
       insert into public.business_memberships(customer_id, business_id, status, evidence) values
         ('${customer}', '${pendingBusiness}', 'pending', 'Membership is waiting for an ownership check.'),
         ('${customer}', '${revokedBusiness}', 'revoked', 'Membership is waiting for an ownership check.');
-      insert into public.onboarding_requests(id, customer_id, email_snapshot, product_code, plan_family, state)
-        values ('${request}', '${customer}', '${email}', 'TELLOYA', 'VOICE', 'MAILBOX_REQUIRED');
+      insert into public.locations(id, business_id, country) values ('${location}', '${pendingBusiness}', 'United Kingdom');
+      insert into public.onboarding_requests(id, customer_id, business_id, email_snapshot, product_code, plan_family, state)
+        values ('${request}', '${customer}', '${pendingBusiness}', '${email}', 'TELLOYA', 'VOICE', 'MAILBOX_REQUIRED');
+      insert into admin_private.onboarding_request_locations(onboarding_request_id, location_id)
+        values ('${request}', '${location}');
+      insert into admin_private.onboarding_request_events(onboarding_request_id, actor_id, operation, to_state, reason, details)
+        values ('${request}', '${actor}', 'mark_ready', 'MAILBOX_REQUIRED', 'Admin marked this request ready for invitation.', '{"invitationSent":false}'::jsonb);
       insert into admin_private.onboarding_invitations(token_hash, onboarding_request_id, email_snapshot, customer_id, expires_at)
         values ('${invitation}', '${request}', '${email}', '${customer}', now() + interval '7 days');
     `)

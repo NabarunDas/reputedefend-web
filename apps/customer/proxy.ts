@@ -10,9 +10,14 @@ function withPrivate(response: NextResponse) {
   return response
 }
 
+/** Invitation secrets stay out of the internal path header and later logs. */
+export function customerFacingPath(pathname: string) {
+  return /^\/login\/invite\/[a-f0-9]{64}$/i.test(pathname) ? "/login/invite/[token]" : pathname
+}
+
 function proceed(request: NextRequest) {
   const headers = new Headers(request.headers)
-  headers.set("x-customer-pathname", request.nextUrl.pathname)
+  headers.set("x-customer-pathname", customerFacingPath(request.nextUrl.pathname))
   return NextResponse.next({ request: { headers } })
 }
 
@@ -34,7 +39,8 @@ export async function proxy(request: NextRequest) {
   const actionPost = method === "POST" && /^\/api\/action\/(exchange|otp|verify|command)$/.test(pathname)
   const portalPreAuth = method === "POST" && /^\/api\/portal\/auth\/(start|resend|verify)$/.test(pathname)
   const invitedPreAuth = method === "POST" && /^\/api\/portal\/auth\/invite\/(start|resend|verify)$/.test(pathname)
-  const invitedRead = /^\/login\/invite\/[a-f0-9]{64}$/.test(pathname) && (method === "GET" || method === "HEAD")
+  const invitedRead = (pathname === "/login/invite/continue" || /^\/login\/invite\/[a-f0-9]{64}$/.test(pathname)) && (method === "GET" || method === "HEAD")
+  const invitedSurface = pathname === "/login/invite/continue" || /^\/login\/invite\/[a-f0-9]{64}$/i.test(pathname) || pathname.startsWith("/api/portal/auth/invite/")
   const portalSignOut = method === "POST" && pathname === "/api/portal/auth/sign-out"
   const portalMutation = method === "POST" && (
     pathname === "/api/portal/auth/activity"
@@ -83,6 +89,7 @@ export async function proxy(request: NextRequest) {
   } else {
     response = redirectTo(request, "/")
   }
+  if (invitedSurface) response.headers.set("Referrer-Policy", "no-referrer")
   return withPrivate(response)
 }
 export const config = { matcher: "/:path*" }

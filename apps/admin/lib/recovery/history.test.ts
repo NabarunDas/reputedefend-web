@@ -30,7 +30,9 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([])
+    expect(pending.map(entry => entry.filename)).toEqual([
+      "20261101170000_commercial_foundation_v1.sql",
+    ])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261031160000",
       name: "customer_portal_idle_timeout_v1",

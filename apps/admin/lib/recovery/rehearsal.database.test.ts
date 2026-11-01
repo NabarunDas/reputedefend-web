@@ -48,7 +48,7 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(94)
+    expect(migrationChain).toHaveLength(95)
     // A clean rebuild includes the seven historical DEV statements, Step 10B,
     // Step 12A, DEV-applied E2E-02, E2E-03 and E2E-04, and the DEV mail claim.
     // It does not replay applied statements on a live database
@@ -58,9 +58,9 @@ describe("rebuilding the whole schema from zero", () => {
     // It was applied once and must not be replayed. 20261031150000, 20261031140000
     // and 20261031120000 were applied once and must not be replayed.
     // Production stays at SEC-08.
-    expect(migrationHead.filename).toBe("20261031160000_customer_portal_idle_timeout_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.containsDataChange).toBe(true)
+    expect(migrationHead.filename).toBe("20261101170000_commercial_foundation_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.version).toBe("20261031160000")
     expect(appliedMigrationHead.safeToReplay).toBe(false)

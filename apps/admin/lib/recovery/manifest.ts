@@ -1247,6 +1247,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Customer Portal idle timeout", probe: "public.customer_portal_touch_session_v1" },
   },
+  {
+    // Commercial foundation for Telloya and Complete. Schema only.
+    // Not applied to DEV. Do not apply it to Production. No seed rows and no
+    // replay. It does not update customers, cases, Guard, Stripe, or sessions.
+    version: "20261101170000",
+    filename: "20261101170000_commercial_foundation_v1.sql",
+    step: "Multi-product commercial schema",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Commercial foundation", probe: "public.product_catalogue" },
+  },
 ]
 
 /**
@@ -1272,7 +1285,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `20261101170000_commercial_foundation_v1.sql`
+ * is in the repository and is not applied to DEV. `pendingMigrations()` returns
+ * that file only.
  * The repository chain is longer than the live ledger because it still records the
  * three foundation files that live DEV omits (issue #190).
  * Production remains on its own historical migration head `20261014170000`.

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { customerBackendConfig, customerConfig } from "@/lib/config"
 import { portalAvailable, portalCookieOptions, portalPendingCookieName, portalSessionCookieName } from "./config"
+import { productsHubEnabled } from "./products-hub"
 
 const origin = "https://customer.profilerelaunch.com"
 
@@ -103,5 +104,23 @@ describe("portal feature gate", () => {
     expect(proxy).toContain("portalSessionFromToken")
     expect(proxy).toContain("actionSessionFromToken")
     expect(proxy).not.toMatch(/getSession\(|localStorage|@supabase\/ssr/)
+  })
+
+  it("keeps My Products closed unless its own flag is exactly true", () => {
+    expect(productsHubEnabled()).toBe(false)
+    expect(portalAvailable()).toBe(false)
+    for (const value of ["", "false", "1", "yes", "on", "TRUE", "true "]) {
+      vi.stubEnv("CUSTOMER_PRODUCTS_HUB_ENABLED", value)
+      expect(productsHubEnabled()).toBe(false)
+    }
+    vi.stubEnv("VERCEL_ENV", "preview")
+    expect(productsHubEnabled()).toBe(false)
+    vi.stubEnv("VERCEL_ENV", "production")
+    expect(productsHubEnabled()).toBe(false)
+    vi.stubEnv("CUSTOMER_PRODUCTS_HUB_ENABLED", "true")
+    expect(productsHubEnabled()).toBe(true)
+    expect(portalAvailable()).toBe(false)
+    vi.stubEnv("VERCEL_ENV", "production")
+    expect(productsHubEnabled()).toBe(true)
   })
 })

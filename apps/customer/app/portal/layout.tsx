@@ -1,3 +1,4 @@
+import { productsHubEnabled } from "@/lib/portal/products-hub"
 import { PortalIdleGuard } from "./idle-guard"
 import { PortalNav } from "./portal-nav"
 import { SignOutButton } from "./sign-out-button"
@@ -14,7 +15,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           <p className="portal-context-title">My ProfileRelaunch</p>
           <SignOutButton />
         </div>
-        <PortalNav />
+        <PortalNav productsHub={productsHubEnabled()} />
       </div>
       <PortalIdleGuard />
       <div className="portal-private">{children}</div>

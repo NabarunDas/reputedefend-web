@@ -58,6 +58,8 @@ export const PORTAL_ROUTES: readonly PortalRoute[] = [
     ["/messages", "app/portal/messages/page.tsx", "loadCustomerMessages"],
     ["/messages/[selector]", "app/portal/messages/[selector]/page.tsx", "loadCustomerMessage"],
     ["/account", "app/portal/account/page.tsx", "loadCustomerAccount"],
+    ["/products", "app/portal/products/page.tsx", "loadProductHub"],
+    ["/recovery", "app/portal/recovery/page.tsx", "loadCustomerDashboard"],
   ].map(([suffix, file, loader]): PortalRoute => ({
     path: `/portal${suffix === "/" ? "" : suffix}`,
     file,
@@ -69,7 +71,7 @@ export const PORTAL_ROUTES: readonly PortalRoute[] = [
     origin: "none",
     contentType: "none",
     effect: "read",
-    authority: `${loader} re-reads the portal session and returns only that customer's rows. The layout is not the boundary.`,
+    authority: `${loader} re-reads the portal session and returns only that customer's rows. The layout is not the boundary.${suffix === "/products" || suffix === "/recovery" ? " CUSTOMER_PRODUCTS_HUB_ENABLED must be exactly true. Otherwise a valid session is redirected to /portal and this page does not render." : ""}`,
     unauthenticated: "Gate off redirects to /. Gate on without a portal session redirects to /login. A portal cookie that fails server validation redirects to /login?ended=security. An action session is not accepted.",
     proxyClass: "portal-page",
   })),
@@ -323,4 +325,5 @@ export const PORTAL_NAV_HREFS = [
   "/portal/guard",
   "/portal/messages",
   "/portal/account",
+  "/portal/products",
 ] as const

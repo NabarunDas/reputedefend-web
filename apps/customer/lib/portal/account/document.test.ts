@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
-import { authenticatedDocumentPath, replaceAuthenticatedDocument } from "./document"
+import { authenticatedDocumentPath, expiredPortalLoginPath, replaceAuthenticatedDocument, replaceExpiredPortalDocument } from "./document"
 
 describe("authenticated document boundary", () => {
   it("replaces the current document with the portal or the login page", () => {
@@ -10,7 +10,11 @@ describe("authenticated document boundary", () => {
     replaceAuthenticatedDocument("login", navigate)
     expect(authenticatedDocumentPath("portal")).toBe("/portal")
     expect(authenticatedDocumentPath("login")).toBe("/login")
-    expect(navigate.mock.calls).toEqual([["/portal"], ["/login"]])
+    replaceExpiredPortalDocument(navigate)
+    expect(authenticatedDocumentPath("portal")).toBe("/portal")
+    expect(authenticatedDocumentPath("login")).toBe("/login")
+    expect(expiredPortalLoginPath()).toBe("/login?ended=security")
+    expect(navigate.mock.calls).toEqual([["/portal"], ["/login"], ["/login?ended=security"]])
   })
 
   it("keeps identity on the server document instead of the client router or storage", () => {

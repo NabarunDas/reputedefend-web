@@ -144,7 +144,7 @@ describe("customer portal authentication migration", () => {
       "pending_hash", "customer_id", "expected_email_snapshot", "requested_at", "sent_at", "attempts", "expires_at", "consumed_at",
     ])
     expect(byTable.get("customer_portal_sessions")).toEqual([
-      "token_hash", "customer_id", "auth_user_id", "email_snapshot", "authenticated_at", "created_at", "expires_at", "revoked_at", "revocation_reason",
+      "token_hash", "customer_id", "auth_user_id", "email_snapshot", "authenticated_at", "created_at", "expires_at", "revoked_at", "revocation_reason", "last_activity_at",
     ])
   })
 
@@ -430,6 +430,7 @@ describe("portal privileges", () => {
     "public.customer_portal_finish_otp_v1(text,text,uuid,text)",
     "public.customer_portal_session_v1(text)",
     "public.customer_portal_sign_out_v1(text)",
+    "public.customer_portal_touch_session_v1(text)",
   ]
   const cores = [
     "admin_private.customer_portal_email_current_v1(uuid,text)",
@@ -488,6 +489,9 @@ describe("portal privileges", () => {
        where n.nspname = 'admin_private' and c.relname like 'customer_portal_%'`,
     )
     expect(policies).toBe(0)
+    for (const role of ["anon", "authenticated", "service_role"]) {
+      expect(await canExecute(role, "admin_private.customer_portal_session_activity_row_v1()")).toBe(false)
+    }
     await db.exec("set role service_role")
     try {
       await expect(db.query("select * from admin_private.customer_portal_sessions")).rejects.toThrow(/permission denied/)
@@ -496,5 +500,185 @@ describe("portal privileges", () => {
     } finally {
       await db.exec("reset role")
     }
+  })
+})
+
+describe("customer portal idle timeout", () => {
+  async function mint(email: string, authUser: string) {
+    await releaseCooldown(email)
+    const pending = hash(token())
+    const started = await rpc<{ status: string }>("customer_portal_begin_login_v1", [email, pending])
+    expect(started.status).toBe("ok")
+    expect((await rpc<{ status: string }>("customer_portal_confirm_otp_sent_v1", [pending])).status).toBe("ok")
+    const sessionHash = hash(token())
+    expect((await rpc<{ status: string }>("customer_portal_finish_otp_v1", [pending, sessionHash, authUser, email])).status).toBe("ok")
+    return sessionHash
+  }
+
+  async function stamp(sessionHash: string, authenticatedMinutes: number, idleMinutes: number) {
+    await db.query(
+      `update admin_private.customer_portal_sessions
+       set authenticated_at = now() - ($2 * interval '1 minute'),
+           created_at = now() - ($2 * interval '1 minute'),
+           expires_at = now() - ($2 * interval '1 minute') + interval '8 hours',
+           last_activity_at = now() - ($3 * interval '1 minute'),
+           revoked_at = null,
+           revocation_reason = ''
+       where token_hash = $1`,
+      [sessionHash, authenticatedMinutes, idleMinutes],
+    )
+  }
+
+  const ms = (value: string | Date) => new Date(value).getTime()
+
+  async function stored(sessionHash: string) {
+    return (await rows<{
+      authenticated_at: string
+      expires_at: string
+      last_activity_at: string
+      revoked_at: string | null
+    }>(
+      `select authenticated_at, expires_at, last_activity_at, revoked_at
+       from admin_private.customer_portal_sessions where token_hash = $1`,
+      [sessionHash],
+    ))[0]
+  }
+
+  it("starts activity at OTP verification and keeps the eight-hour absolute lifetime", async () => {
+    const sessionHash = await mint("casey@example.com", caseyAuth)
+    const row = await stored(sessionHash)
+    expect(new Date(row.expires_at).getTime() - new Date(row.authenticated_at).getTime()).toBe(8 * 60 * 60 * 1000)
+    expect(Math.abs(new Date(row.last_activity_at).getTime() - new Date(row.authenticated_at).getTime())).toBeLessThan(1000)
+    const before = row.last_activity_at
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toMatchObject({ customerId: casey })
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toMatchObject({ customerId: casey })
+    expect(ms((await stored(sessionHash)).last_activity_at)).toBe(ms(before))
+  })
+
+  it("accepts 29 minutes of inactivity and rejects 30 minutes even though the cookie hash is unchanged", async () => {
+    const sessionHash = await mint("alex@example.com", alexAuth)
+    await stamp(sessionHash, 29, 29)
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toMatchObject({ customerId: alex, email: "alex@example.com" })
+    await stamp(sessionHash, 30, 30)
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toBeNull()
+    const before = await stored(sessionHash)
+    expect(await rpc<{ status: string }>("customer_portal_touch_session_v1", [sessionHash])).toEqual({ status: "expired" })
+    const after = await stored(sessionHash)
+    expect(ms(after.last_activity_at)).toBe(ms(before.last_activity_at))
+    expect(ms(after.expires_at)).toBe(ms(before.expires_at))
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toBeNull()
+  })
+
+  it("moves idle activity without moving the eight-hour absolute expiry, and a second call inside a minute does not write", async () => {
+    const sessionHash = await mint("sam@example.com", samAuth)
+    await stamp(sessionHash, 60, 20)
+    const before = await stored(sessionHash)
+    const touched = await rpc<{ status: string; unchanged: boolean; expiresAt: string; authenticatedAt: string }>(
+      "customer_portal_touch_session_v1",
+      [sessionHash],
+    )
+    expect(touched.status).toBe("ok")
+    expect(touched.unchanged).toBe(false)
+    expect(new Date(touched.expiresAt).getTime()).toBe(new Date(before.expires_at).getTime())
+    expect(new Date(touched.authenticatedAt).getTime()).toBe(new Date(before.authenticated_at).getTime())
+    const after = await stored(sessionHash)
+    expect(new Date(after.expires_at).getTime() - new Date(after.authenticated_at).getTime()).toBe(8 * 60 * 60 * 1000)
+    expect(new Date(after.last_activity_at).getTime()).toBeGreaterThan(new Date(before.last_activity_at).getTime())
+    const again = await rpc<{ status: string; unchanged: boolean }>("customer_portal_touch_session_v1", [sessionHash])
+    expect(again).toMatchObject({ status: "ok", unchanged: true })
+    expect(ms((await stored(sessionHash)).last_activity_at)).toBe(ms(after.last_activity_at))
+    expect(ms((await stored(sessionHash)).expires_at)).toBe(ms(after.expires_at))
+  })
+
+  it("rejects a session older than eight hours even when activity is recent, and does not revive it", async () => {
+    const sessionHash = await mint("casey@example.com", caseyAuth)
+    await db.query(
+      `update admin_private.customer_portal_sessions
+       set authenticated_at = now() - interval '8 hours',
+           created_at = now() - interval '8 hours',
+           expires_at = now() - interval '1 second',
+           last_activity_at = now() - interval '1 second',
+           revoked_at = null
+       where token_hash = $1`,
+      [sessionHash],
+    )
+    const before = await stored(sessionHash)
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toBeNull()
+    expect(await rpc("customer_portal_touch_session_v1", [sessionHash])).toEqual({ status: "expired" })
+    const after = await stored(sessionHash)
+    expect(ms(after.expires_at)).toBe(ms(before.expires_at))
+    expect(ms(after.last_activity_at)).toBe(ms(before.last_activity_at))
+    expect(new Date(after.expires_at).getTime()).toBeLessThan(Date.now())
+  })
+
+  it("invalidates a signed-out token immediately and keeps a second use failed", async () => {
+    const sessionHash = await mint("alex@example.com", alexAuth)
+    expect(await rpc<{ status: string }>("customer_portal_sign_out_v1", [sessionHash])).toEqual({ status: "ok" })
+    expect((await stored(sessionHash)).revoked_at).not.toBeNull()
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toBeNull()
+    expect(await rpc("customer_portal_touch_session_v1", [sessionHash])).toEqual({ status: "expired" })
+    expect(await rpc("customer_portal_session_v1", [sessionHash])).toBeNull()
+    expect(await rpc<{ status: string }>("customer_portal_sign_out_v1", [sessionHash])).toEqual({ status: "ok" })
+    expect(await rpc("customer_portal_touch_session_v1", [hash(token())])).toEqual({ status: "expired" })
+    expect(await rpc("customer_portal_touch_session_v1", ["not-a-hash"])).toEqual({ status: "unavailable" })
+  })
+
+  it("makes case, document, message, payment, and handover reads fail closed after idle expiry", async () => {
+    const sessionHash = await mint("sam@example.com", samAuth)
+    expect(await rpc("customer_portal_case_v1", [sessionHash, "PR-26-AAAAAA"])).toMatchObject({ found: false })
+    expect(await rpc("customer_portal_documents_v1", [sessionHash])).not.toBeNull()
+    expect(await rpc("customer_portal_messages_v1", [sessionHash, null, null])).not.toBeNull()
+    expect(await rpc("customer_portal_payments_v1", [sessionHash])).not.toBeNull()
+    expect(await rpc("customer_portal_document_resolve_v1", [sessionHash, "PR-26-AAAAAA", "pd-1"])).toMatchObject({ found: false })
+    const openHandover = await rows<{ value: { status?: string } | null }>(
+      `select public.customer_portal_guided_handover_v1($1, null, 'PR-26-AAAAAA', 'report_submission', '{}'::jsonb) as value`,
+      [sessionHash],
+    )
+    expect(openHandover[0].value).toMatchObject({ status: "invalid" })
+
+    await stamp(sessionHash, 30, 30)
+    expect(await rpc("customer_portal_case_v1", [sessionHash, "PR-26-AAAAAA"])).toBeNull()
+    expect(await rpc("customer_portal_documents_v1", [sessionHash])).toBeNull()
+    expect(await rpc("customer_portal_messages_v1", [sessionHash, null, null])).toBeNull()
+    expect(await rpc("customer_portal_payments_v1", [sessionHash])).toBeNull()
+    expect(await rpc("customer_portal_document_resolve_v1", [sessionHash, "PR-26-AAAAAA", "pd-1"])).toBeNull()
+    const closedHandover = await rows<{ value: unknown }>(
+      `select public.customer_portal_guided_handover_v1($1, null, 'PR-26-AAAAAA', 'report_submission', '{}'::jsonb) as value`,
+      [sessionHash],
+    )
+    expect(closedHandover[0].value).toBeNull()
+    expect(await rpc("customer_action_session_v1", [sessionHash])).toBeNull()
+  })
+
+  it("does not let one customer revive or read another customer's session", async () => {
+    const alexHash = await mint("alex@example.com", alexAuth)
+    const caseyHash = await mint("casey@example.com", caseyAuth)
+    await stamp(alexHash, 30, 30)
+    const caseyBefore = await stored(caseyHash)
+    expect(await rpc("customer_portal_session_v1", [alexHash])).toBeNull()
+    expect(await rpc("customer_portal_touch_session_v1", [alexHash])).toEqual({ status: "expired" })
+    expect(await rpc("customer_portal_session_v1", [caseyHash])).toMatchObject({ customerId: casey, email: "casey@example.com" })
+    expect(ms((await stored(caseyHash)).last_activity_at)).toBe(ms(caseyBefore.last_activity_at))
+    expect(await rpc<{ customerId: string } | null>("customer_portal_session_v1", [alexHash])).toBeNull()
+  })
+
+  it("keeps session validation stable and touch volatile, with no absolute-expiry assignment", async () => {
+    const volatility = await rows<{ proname: string; provolatile: string; prosrc: string }>(
+      `select p.proname, p.provolatile, p.prosrc
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'admin_private'
+         and p.proname in ('customer_portal_session_v1', 'customer_portal_touch_session_v1')`,
+    )
+    const session = volatility.find(row => row.proname === "customer_portal_session_v1")
+    const touch = volatility.find(row => row.proname === "customer_portal_touch_session_v1")
+    expect(session?.provolatile).toBe("s")
+    expect(session?.prosrc.toLowerCase()).not.toContain("update")
+    expect(touch?.provolatile).toBe("v")
+    expect(touch?.prosrc).toContain("FOR UPDATE")
+    expect(touch?.prosrc).toContain("SET last_activity_at = touched")
+    expect(touch?.prosrc).not.toContain("expires_at =")
+    const sql = migrationSql("20261031160000_customer_portal_idle_timeout_v1.sql")
+    expect(sql).toContain("SET last_activity_at = authenticated_at")
+    expect(sql).not.toContain("SET last_activity_at = now()")
   })
 })

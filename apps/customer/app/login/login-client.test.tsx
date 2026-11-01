@@ -42,6 +42,13 @@ describe("portal login screen", () => {
     expect(window.sessionStorage.length).toBe(0)
   })
 
+  it("explains that the session ended for security and still asks for an email code", () => {
+    render(<LoginClient sessionEnded />)
+    expect(screen.getByRole("status")).toHaveTextContent("Your session ended for security. Sign in again with a new email code.")
+    expect(screen.getByRole("heading", { name: "Sign in to your ProfileRelaunch account" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Send code" })).toBeEnabled()
+  })
+
   it("shows sending copy and blocks a second submit while the code request is in progress", async () => {
     let resolveFetch: (value: unknown) => void = () => {}
     fetchMock.mockReturnValue(new Promise(resolve => { resolveFetch = resolve }))

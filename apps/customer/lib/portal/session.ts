@@ -19,6 +19,8 @@ export type PortalSession = {
   email: string
   authenticatedAt: string
   expiresAt: string
+  lastActivityAt?: string
+  idleExpiresAt?: string
 }
 
 function asPortalSession(value: unknown): PortalSession | null {
@@ -26,12 +28,16 @@ function asPortalSession(value: unknown): PortalSession | null {
   const row = value as Record<string, unknown>
   if (typeof row.customerId !== "string" || typeof row.authUserId !== "string" || typeof row.email !== "string") return null
   if (typeof row.authenticatedAt !== "string" || typeof row.expiresAt !== "string") return null
+  const lastActivityAt = typeof row.lastActivityAt === "string" ? row.lastActivityAt : undefined
+  const idleExpiresAt = typeof row.idleExpiresAt === "string" ? row.idleExpiresAt : undefined
   return {
     customerId: row.customerId,
     authUserId: row.authUserId,
     email: row.email,
     authenticatedAt: row.authenticatedAt,
     expiresAt: row.expiresAt,
+    ...(lastActivityAt ? { lastActivityAt } : {}),
+    ...(idleExpiresAt ? { idleExpiresAt } : {}),
   }
 }
 

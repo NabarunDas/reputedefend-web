@@ -1,3 +1,4 @@
+import { PortalIdleGuard } from "./idle-guard"
 import { PortalNav } from "./portal-nav"
 import { SignOutButton } from "./sign-out-button"
 
@@ -15,7 +16,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         </div>
         <PortalNav />
       </div>
-      {children}
+      <PortalIdleGuard />
+      <div className="portal-private">{children}</div>
     </div>
   )
 }

@@ -20,7 +20,8 @@ async function postJson(path: string, body: Record<string, unknown>) {
  * `preview` holds a painted sign-in phase for a local visual fixture.
  * The login page does not pass it, and it is not read from the request.
  */
-export function LoginClient({ preview }: {
+export function LoginClient({ preview, sessionEnded = false }: {
+  sessionEnded?: boolean
   preview?: {
     phase?: "email" | "code" | "done"
     email?: string
@@ -133,6 +134,7 @@ export function LoginClient({ preview }: {
       <SignInSteps current="email" />
       <p className="eyebrow">CUSTOMER PORTAL</p>
       <h1>Sign in to your ProfileRelaunch account</h1>
+      {sessionEnded && !preview ? <p className="notice-danger" role="status">Your session ended for security. Sign in again with a new email code.</p> : null}
       <p className="lead">Use the email address verified with ProfileRelaunch. We&apos;ll send you an eight-digit code. You do not need a password.</p>
       <form onSubmit={sendCode} aria-busy={pending === "send"}>
         <label htmlFor="portal-email">Email address</label>

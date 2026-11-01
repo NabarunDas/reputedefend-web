@@ -1,15 +1,14 @@
 /**
  * Telloya Logo Component
  * 
- * Uses approved emerald-glass logo featuring telephone handset, AI sparkle and orbital speech emblem.
+ * Uses owner-approved emerald-glass logo featuring telephone handset, AI sparkle and orbital speech emblem.
  * 
  * Assets from: apps/telloya/public/brand/
- * - telloya-mark-approved.webp — Glass logo symbol for dark surfaces
- * - telloya-logo-approved.webp — Full logo for light surfaces
+ * - telloya-mark-approved.webp (697×697) — Glass emblem for dark surfaces
+ * - telloya-logo-approved.webp (1961×580) — Full lockup for light backgrounds ONLY
  * 
- * IMPORTANT: The dark-green full wordmark must NOT be placed on dark backgrounds
- * where it becomes unreadable. For dark surfaces, use the glass symbol with
- * ivory-colored HTML text.
+ * CRITICAL: The dark-green full wordmark has LOW CONTRAST on dark backgrounds.
+ * For dark surfaces, use the glass emblem with ivory-colored HTML text.
  */
 
 import Image from "next/image"
@@ -22,47 +21,42 @@ interface TelloyaLogoProps {
   priority?: boolean
 }
 
-export function TelloyaLogo({ variant = "light", className = "", priority = false }: TelloyaLogoProps) {
+export function TelloyaLogo({ variant = "dark", className = "", priority = false }: TelloyaLogoProps) {
   if (variant === "symbol") {
-    // Glass symbol for dark surfaces
+    // Glass emblem for dark surfaces with HTML wordmark
     return (
-      <div className={`telloya-logo-symbol ${className}`}>
+      <div className={`telloya-logo-symbol ${className}`} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
         <Image
           src="/brand/telloya-mark-approved.webp"
-          alt="Telloya"
-          width={40}
-          height={40}
+          alt=""
+          width={32}
+          height={32}
           priority={priority}
-          className="telloya-mark"
+          style={{ display: "block" }}
         />
-        <span className="telloya-wordmark-light">Telloya</span>
+        <span style={{ 
+          fontFamily: "var(--font-display), Arial, sans-serif",
+          fontSize: "20px",
+          fontWeight: 800,
+          letterSpacing: "-0.02em",
+          color: "#f7f8f3"
+        }}>
+          Telloya
+        </span>
       </div>
     )
   }
 
-  if (variant === "dark") {
-    // For light backgrounds - uses dark wordmark
-    return (
-      <Image
-        src="/brand/telloya-logo-approved.webp"
-        alt="Telloya"
-        width={160}
-        height={40}
-        priority={priority}
-        className={`telloya-logo ${className}`}
-      />
-    )
-  }
-
-  // Default: light variant for dark backgrounds
+  // Full approved logo - ONLY for light backgrounds
   return (
     <Image
       src="/brand/telloya-logo-approved.webp"
       alt="Telloya"
       width={160}
-      height={40}
+      height={47}
       priority={priority}
       className={`telloya-logo ${className}`}
+      style={{ display: "block", height: "auto" }}
     />
   )
 }

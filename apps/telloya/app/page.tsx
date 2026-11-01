@@ -27,14 +27,21 @@ function CinematicConsole() {
   return (
     <div className={styles.consoleVisual}>
       <div className={styles.consoleWrapper}>
-        <Image
-          src="/brand/telloya-cinematic-console.svg"
-          alt="AI receptionist dashboard interface"
-          width={600}
-          height={400}
-          priority
-          className={styles.consoleImage}
-        />
+        <picture>
+          <source 
+            media="(min-width: 768px)" 
+            srcSet="/brand/telloya-cinematic-console.webp"
+          />
+          <Image
+            src="/brand/telloya-cinematic-console-mobile.webp"
+            alt="AI receptionist call handling dashboard interface"
+            width={925}
+            height={604}
+            priority
+            className={styles.consoleImage}
+            sizes="(min-width: 768px) 600px, 100vw"
+          />
+        </picture>
       </div>
       <p className={styles.consoleCaption}>Illustrative product preview</p>
     </div>

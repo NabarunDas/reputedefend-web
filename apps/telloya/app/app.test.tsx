@@ -68,12 +68,15 @@ describe("Legal Disclosure", () => {
     expect(footerText).toContain("WC2H 9JQ")
   })
 
-  it("footer logo uses light variant for contrast", () => {
+  it("footer logo uses symbol variant for dark background", () => {
     const { container } = render(<Footer />)
-    const logo = container.querySelector('.site-logo-footer img')
-    expect(logo).toBeInTheDocument()
-    // Light variant should be used on dark footer background
-    expect(logo?.getAttribute('alt')).toBe("Telloya")
+    // Footer uses symbol variant (emblem + HTML text) for dark background
+    const logoContainer = container.querySelector('.site-logo-footer .telloya-logo-symbol')
+    expect(logoContainer).toBeInTheDocument()
+    const img = logoContainer?.querySelector('img')
+    const text = logoContainer?.querySelector('span')
+    expect(img).toBeInTheDocument()
+    expect(text?.textContent).toBe("Telloya")
   })
 
   it("includes legal terms disclosure about missing product-specific policies", () => {

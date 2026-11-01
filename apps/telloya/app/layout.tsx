@@ -31,6 +31,16 @@ export const metadata: Metadata = {
     template: titleTemplate,
   },
   description: brandDescription,
+  icons: {
+    icon: [
+      { url: "/brand/telloya-icon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/brand/telloya-icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [
+      { url: "/brand/telloya-icon-180.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
+  manifest: "/manifest.json",
   openGraph: {
     type: "website",
     locale: "en_GB",
@@ -47,6 +57,12 @@ export const metadata: Metadata = {
   robots: isSitePublicForMetadata()
     ? { index: true, follow: true }
     : { index: false, follow: false, noarchive: true },
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#0a6e3c",
 }
 
 export const viewport: Viewport = {

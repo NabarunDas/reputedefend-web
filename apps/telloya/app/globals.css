@@ -6,13 +6,14 @@
   --paper: #f7f8f3;
   --surface: #fff;
   --line: #dfe5dc;
-  /* ProfileRelaunch design system colors (shared) */
-  --green: #0A6E3C;
+  --green: #0a6e3c;
   --green-dark: #085330;
   --accent: #009838;
-  --lime: #C5E8B4;
+  --lime: #c5e8b4;
   --warm: #f0e8da;
   --edge: color-mix(in srgb, var(--ink) 14%, transparent);
+  --muted-strong: #52615b;
+  --control-border: color-mix(in srgb, var(--ink) 42%, var(--paper));
 }
 
 * { box-sizing: border-box; }

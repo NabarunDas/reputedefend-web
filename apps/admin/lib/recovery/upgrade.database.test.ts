@@ -59,8 +59,8 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The repository tail is the unapplied Admin onboarding migration.
-    // It awaits a separate DEV application and must not be applied to Production.
+    // The repository tail is the Admin onboarding migration.
+    // It is already applied on DEV and must not be replayed or applied to Production.
     // The commercial foundation file before it is already on DEV and must not be replayed.
     // The idle-timeout file is already applied on DEV and must not be replayed.
     // The case-reference, Guided customer outcome and pack-ready dispatch files
@@ -68,7 +68,7 @@ describe("upgrading a database that is already running", () => {
     // request 20261030200000 is applied on DEV and must not be replayed. This
     // disposable rebuild is not a live apply. Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261101180000_admin_commercial_onboarding_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261101170000_commercial_foundation_v1.sql")

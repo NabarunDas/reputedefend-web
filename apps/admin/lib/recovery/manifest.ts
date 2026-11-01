@@ -1248,7 +1248,7 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Customer Portal idle timeout", probe: "public.customer_portal_touch_session_v1" },
   },
   {
-    // Commercial foundation for Telloya and Complete. Verified DEV ledger head.
+    // Commercial foundation for Telloya and Complete. Previous DEV ledger head.
     // Applied once to profilerelaunch-dev (rmzozuiamjcclvtgutgd). Do not replay
     // it and do not apply it to Production. Schema only: no customer,
     // subscription, entitlement, or payment rows were created. All 15
@@ -1265,14 +1265,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Commercial foundation", probe: "public.product_catalogue" },
   },
   {
-    // Admin Telloya and Complete onboarding commands. Not applied to DEV.
-    // Do not apply it to Production. It does not send invitation email, verify
-    // a mailbox, create a portal session, or seed a price.
+    // Admin Telloya and Complete onboarding commands. Verified DEV ledger head.
+    // Applied once to profilerelaunch-dev (rmzozuiamjcclvtgutgd) from merged
+    // commit 63be6422bc8dd22fe1a2b678d7cb54d4ee6d9f6f. Do not replay it and do
+    // not apply it to Production. Schema only: no customer, invitation,
+    // subscription, or payment rows were created. Both new onboarding history
+    // tables have RLS enabled. The new Admin commands are service-role-only.
+    // containsDataChange stays false. The ledger statement is one statement of
+    // 45,724 characters. SHA-256
+    // 8f242ef5bdf65d01833e7b06fb1b7110d1aaaf12e341fa90eb70ed820192e494.
     version: "20261101180000",
     filename: "20261101180000_admin_commercial_onboarding_v1.sql",
     step: "Admin commercial onboarding commands",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Commercial onboarding", probe: "public.admin_commercial_command_v1" },
@@ -1288,12 +1294,20 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261101170000`. The verified live DEV ledger contains 92 entries and ends
- * there. The commercial foundation file is schema only, so containsDataChange
- * stays false. Do not replay `20261101170000`. It is not applied to Production.
- * No customer, subscription, entitlement, or payment rows were created. All 15
- * commercial tables exist and have RLS enabled. The ledger statement is one
- * statement of 51,901 characters. SHA-256
+ * `20261101180000`. The verified live DEV ledger contains 93 entries and ends
+ * there. The onboarding file is schema only, so containsDataChange stays
+ * false. Do not replay `20261101180000`. It is not applied to Production.
+ * No customer, invitation, subscription, or payment rows were created. Both
+ * new onboarding history tables have RLS enabled. The new Admin commands are
+ * service-role-only. The ledger statement is one statement of 45,724
+ * characters. SHA-256
+ * 8f242ef5bdf65d01833e7b06fb1b7110d1aaaf12e341fa90eb70ed820192e494.
+ * The previous head `20261101170000` remains applied. The commercial foundation
+ * file is schema only, so containsDataChange stays false. Do not replay
+ * `20261101170000`. It is not applied to Production. No customer, subscription,
+ * entitlement, or payment rows were created. All 15 commercial tables exist
+ * and have RLS enabled. The ledger statement is one statement of 51,901
+ * characters. SHA-256
  * 5e293cf4091c12096e7cba65e59e450e660d529d739ec8cdfc83a03bf2b2e7fb.
  * The previous head `20261031160000` remains applied. The idle-timeout file
  * updates existing session rows outside a function body, so containsDataChange
@@ -1309,9 +1323,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` returns
- * `20261101180000_admin_commercial_onboarding_v1.sql` only. That file is not
- * applied to DEV and must not be applied to Production.
+ * applied and must not be replayed. `pendingMigrations()` is empty.
  * The repository chain is longer than the live ledger because it still records the
  * three foundation files that live DEV omits (issue #190).
  * Production remains on its own historical migration head `20261014170000`.

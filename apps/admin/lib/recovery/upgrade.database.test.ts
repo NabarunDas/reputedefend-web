@@ -96,7 +96,7 @@ describe("upgrading a database that is already running", () => {
     expect(pending.at(-6)?.safeToReplay).toBe(false)
     expect(pending.at(-7)?.filename).toBe("20261031160000_customer_portal_idle_timeout_v1.sql")
     expect(pending.at(-7)?.appliedToDev).toBe(true)
-    expect(pending.at(-7)?.containsDataChange).toBe(false)
+    expect(pending.at(-7)?.containsDataChange).toBe(true)
     expect(pending.at(-7)?.safeToReplay).toBe(false)
     expect(pending.at(-8)?.filename).toBe("20261031150000_customer_case_reference_subjects_v1.sql")
     expect(pending.at(-8)?.appliedToDev).toBe(true)

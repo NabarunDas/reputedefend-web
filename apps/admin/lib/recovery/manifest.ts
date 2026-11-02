@@ -1324,18 +1324,24 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Customer products projection", probe: "public.customer_portal_products_v1" },
   },
   {
-    // Customer invitation dispatch. Not applied to DEV or Production.
-    // Do not apply it from this pull request and do not replay it.
-    // Top-level DML inserts one communication template catalogue row and
-    // updates that row to APPROVED. That INSERT and UPDATE are outside a
-    // function body, so containsDataChange is true. The catalogue row is
-    // not a customer, payment, subscription, invitation, communication,
-    // entitlement, session, or provision record.
+    // Customer invitation dispatch. Applied once to profilerelaunch-dev from
+    // merged commit ae7d7e29a1fb879356b4e9974eb59978ced620c2. Do not replay
+    // it and do not apply it to Production. Top-level DML inserts one
+    // communication template catalogue row and updates that row to APPROVED.
+    // That INSERT and UPDATE are outside a function body, so
+    // containsDataChange is true. The catalogue row is not a customer,
+    // payment, subscription, invitation, communication, entitlement, session,
+    // or provision record. The ledger statement is one statement of 53,986
+    // characters. The repository file SHA-256 is
+    // 2576c03b855fbe7238d7cf8bae5e9eb0649a5fdf72de26ff87b08d86967fa44f.
+    // Exactly one APPROVED CUSTOMER_PORTAL_INVITATION template exists.
+    // Invitations, commercial subscriptions and product entitlements are 0.
+    // The command, view and dispatch-claim functions are service-role-only.
     version: "20261102110000",
     filename: "20261102110000_customer_invitation_dispatch_v1.sql",
     step: "Customer invitation dispatch",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: true,
     safeToReplay: false,
     verification: { category: "Customer invitation dispatch", probe: "public.admin_customer_invitation_command_v1" },
@@ -1351,8 +1357,22 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261101200000`. The verified live DEV ledger contains 95 entries and ends
- * there. The products file is schema only, so containsDataChange stays false.
+ * `20261102110000`. The verified live DEV ledger contains 96 entries and ends
+ * there. The invitation file performs catalogue DML outside a function body,
+ * so containsDataChange stays true. Do not replay `20261102110000`. It is not
+ * applied to Production. The ledger statement is one statement of 53,986
+ * characters. The repository file SHA-256 is
+ * 2576c03b855fbe7238d7cf8bae5e9eb0649a5fdf72de26ff87b08d86967fa44f.
+ * Exactly one APPROVED CUSTOMER_PORTAL_INVITATION template exists.
+ * Invitations, commercial subscriptions and product entitlements are 0.
+ * The three public invitation functions are service-role-only.
+ * `CUSTOMER_INVITED_LOGIN_ENABLED` and `CUSTOMER_INVITATION_DISPATCH_ENABLED`
+ * stay disabled. Telloya marketing and enquiry pull request 398 stays
+ * separate. Any migration it adds must be reconciled against `20261102110000`
+ * before a later merge.
+ * The previous head `20261101200000` remains applied. The verified live DEV
+ * ledger previously contained 95 entries and ended there. The products file is
+ * schema only, so containsDataChange stays false.
  * Do not replay `20261101200000`. It is not applied to Production. It created
  * no customer, subscription, entitlement, provision, allocation, or invitation
  * rows. public.customer_portal_products_v1(text) is service-role-only. The
@@ -1395,9 +1415,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` returns only
- * `20261102110000_customer_invitation_dispatch_v1.sql`. That file has not been
- * applied on DEV or Production. Do not apply `20261102110000`.
+ * applied and must not be replayed. `pendingMigrations()` is empty.
+ * `20261102110000` is already applied on DEV and must not be replayed.
+ * Do not apply `20261102110000` to Production.
  * containsDataChange is true because the file inserts one communication
  * template catalogue row and updates it to APPROVED outside a function body.
  * That catalogue row is not a customer, payment, subscription, invitation,

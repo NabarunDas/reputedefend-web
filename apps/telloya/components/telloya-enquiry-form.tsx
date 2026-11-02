@@ -65,7 +65,7 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
   const [statusText, setStatusText] = useState("")
   const [enquiryRef, setEnquiryRef] = useState("")
   const [copySuccess, setCopySuccess] = useState(false)
-  const [receiptEmailStatus, setReceiptEmailStatus] = useState<"sent" | "unavailable" | "">("")
+  const [receiptEmailStatus, setReceiptEmailStatus] = useState<"sent" | "suppressed" | "unavailable" | "">("")
   const headingRef = useRef<HTMLHeadingElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
   const successRef = useRef<HTMLHeadingElement>(null)
@@ -254,9 +254,11 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
   if (status === "success") {
     const emailStatusMessage = receiptEmailStatus === "sent"
       ? "A confirmation email is on its way. Please check your inbox and, if needed, your spam folder."
-      : receiptEmailStatus === "unavailable"
-        ? "We could not send a confirmation email just now, but your request is safely recorded. Please keep this enquiry reference."
-        : ""
+      : receiptEmailStatus === "suppressed"
+        ? "You do not need to submit your enquiry again. Please keep this reference for your records."
+        : receiptEmailStatus === "unavailable"
+          ? "We could not send a confirmation email just now, but your request is safely recorded. Please keep this enquiry reference."
+          : ""
     
     return (
       <div className={styles.success} role="status">

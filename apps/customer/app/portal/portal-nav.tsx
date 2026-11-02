@@ -17,7 +17,7 @@ const account = { label: "Account", href: "/portal/account" } as const
 const legacyMore = [messages, payments, guardItem, account] as const
 const recoveryMore = [messages, payments, account] as const
 
-export type PortalNavMode = "legacy" | "recovery" | "guard"
+export type PortalNavMode = "legacy" | "recovery" | "guard" | "account"
 
 function current(pathname: string, href: string) {
   if (href === "/portal") return pathname === "/portal"
@@ -33,10 +33,12 @@ export function PortalNav({ defaultOpen = false, mode = "legacy" }: { defaultOpe
   const [open, setOpen] = useState(defaultOpen)
   const primary = mode === "guard"
     ? [productsItem, guardItem, account]
-    : mode === "recovery"
-      ? [productsItem, recoveryDashboard, cases, documents]
-      : [dashboard, cases, documents]
-  const more = mode === "guard" ? [] : mode === "recovery" ? recoveryMore : legacyMore
+    : mode === "account"
+      ? [productsItem, account]
+      : mode === "recovery"
+        ? [productsItem, recoveryDashboard, cases, documents]
+        : [dashboard, cases, documents]
+  const more = mode === "guard" || mode === "account" ? [] : mode === "recovery" ? recoveryMore : legacyMore
   const activeMore = more.find(item => current(pathname, item.href))
 
   useEffect(() => {

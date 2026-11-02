@@ -54,6 +54,8 @@ describe("My Products commercial read", () => {
     expect(loaded.products.map(product => product.key)).toEqual(["recovery", "guard", "telloya"])
     expect(loaded.products[2].unavailableReason).toBe("Telloya is not open in your portal yet.")
     expect(loaded.products[2].statusLabel).toBeUndefined()
+    expect(loaded.products[2].actions).toEqual([{ label: "Email us about Telloya", href: "mailto:contact@profilerelaunch.com" }])
+    expect(loaded.products[2].actions.map(action => action.href).join(" ")).not.toMatch(/\/portal\/telloya|telloya\.com\/enquire/)
     expect(loaded.products[1].actions).toContainEqual({ label: "Open dashboard", href: "/portal/guard" })
     expect(loaded.products[0].actions).toContainEqual({ label: "Open dashboard", href: "/portal/recovery" })
     expect(rpc).not.toHaveBeenCalled()

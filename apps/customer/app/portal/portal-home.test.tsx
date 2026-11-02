@@ -8,6 +8,9 @@ import "@testing-library/jest-dom/vitest"
 import PortalLayout from "./layout"
 import { PortalHome } from "./portal-home"
 import { PortalNav } from "./portal-nav"
+import { AccountView } from "./account/account-view"
+import { ProductsView } from "./products/products-view"
+import { presentProducts } from "@/lib/portal/products/present"
 
 const router = vi.hoisted(() => ({ push: vi.fn() }))
 const replaceDocument = vi.hoisted(() => vi.fn())
@@ -229,5 +232,56 @@ describe("portal shell", () => {
     expect(screen.queryByRole("link", { name: "Payments" })).toBeNull()
     expect(screen.queryByRole("button", { name: "More" })).toBeNull()
     vi.unstubAllEnvs()
+  })
+
+  it("keeps Account on the original navigation while the hub is off", () => {
+    nav.pathname = "/portal/account"
+    render(<PortalLayout><AccountView account={{ name: "Alex Customer", email: "alex@example.com", phone: null, emailVerified: true, phoneVerified: false }} /></PortalLayout>)
+    expect(screen.getByText("My ProfileRelaunch").tagName).not.toBe("H1")
+    const labels = [...screen.getByRole("navigation", { name: "Customer portal" }).querySelectorAll("a")].map(item => item.textContent?.trim())
+    expect(labels).toEqual(["Dashboard", "Cases", "Documents", "Messages", "Payments", "Relaunch Guard", "Account"])
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("heading", { level: 1, name: "Account" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Cases" })).toHaveAttribute("href", "/portal/cases")
+    expect(screen.queryByRole("link", { name: "Back to My Products" })).toBeNull()
+  })
+
+  it("uses a neutral Account shell when the hub is on", () => {
+    vi.stubEnv("CUSTOMER_PRODUCTS_HUB_ENABLED", "true")
+    nav.pathname = "/portal/account"
+    render(<PortalLayout><AccountView account={{ name: "Alex Customer", email: "alex@example.com", phone: null, emailVerified: true, phoneVerified: false }} /></PortalLayout>)
+    expect(document.querySelector(".portal-context-title")).toHaveTextContent("Account")
+    expect(document.querySelector(".portal-context-title")?.tagName).not.toBe("H1")
+    const labels = [...screen.getByRole("navigation", { name: "Customer portal" }).querySelectorAll("a")].map(item => item.textContent?.trim())
+    expect(labels).toEqual(["Back to My Products", "Account"])
+    expect(screen.getByRole("link", { name: "Back to My Products" })).toHaveAttribute("href", "/portal/products")
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("heading", { level: 1, name: "Account" })).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Cases" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Messages" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Payments" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Relaunch Guard" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "More" })).toBeNull()
+    expect(screen.getAllByRole("button", { name: "Sign out" }).length).toBeGreaterThan(0)
+  })
+
+  it("signs out from My Products and still checks the idle session", async () => {
+    vi.stubEnv("CUSTOMER_PRODUCTS_HUB_ENABLED", "true")
+    nav.pathname = "/portal/products"
+    render(<PortalLayout><ProductsView products={presentProducts({
+      recovery: { status: "unavailable" },
+      guard: { status: "unavailable" },
+    })} /></PortalLayout>)
+    expect(screen.queryByRole("navigation", { name: "Customer portal" })).toBeNull()
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/portal/account")
+    expect(screen.queryByText("Ada Okonkwo")).toBeNull()
+    await waitFor(() => expect(fetchMock.mock.calls.some(call => call[0] === "/api/portal/auth/session")).toBe(true))
+    const session = fetchMock.mock.calls.find(call => call[0] === "/api/portal/auth/session")
+    expect(session?.[1]).toEqual(expect.objectContaining({ method: "GET" }))
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }))
+    await waitFor(() => expect(replaceDocument).toHaveBeenCalledWith("login"))
+    const signOut = fetchMock.mock.calls.find(call => call[0] === "/api/portal/auth/sign-out")
+    expect(signOut?.[1]).toEqual(expect.objectContaining({ method: "POST", body: "{}" }))
   })
 })

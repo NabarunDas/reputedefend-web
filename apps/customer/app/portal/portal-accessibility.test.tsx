@@ -85,7 +85,7 @@ describe("assembled portal accessibility", () => {
   it("keeps one My Products heading and hides workspace navigation on the launcher", () => {
     vi.stubEnv("CUSTOMER_PRODUCTS_HUB_ENABLED", "true")
     nav.pathname = "/portal/products"
-    render(<PortalLayout><ProductsView accountName="Ada Okonkwo" products={presentProducts({
+    render(<PortalLayout><ProductsView products={presentProducts({
       recovery: { status: "unavailable" },
       guard: { status: "unavailable" },
     })} /></PortalLayout>)
@@ -94,6 +94,8 @@ describe("assembled portal accessibility", () => {
     expect(screen.queryByRole("link", { name: "Dashboard" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Cases" })).toBeNull()
     expect(screen.queryByText("My ProfileRelaunch")).toBeNull()
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/portal/account")
+    expect(screen.queryByText("Ada Okonkwo")).toBeNull()
     expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled()
     cleanup()
     nav.pathname = "/portal/products"
@@ -113,9 +115,18 @@ describe("assembled portal accessibility", () => {
     expect(screen.queryByRole("link", { name: "Relaunch Guard" })).toBeNull()
     recovery.unmount()
     nav.pathname = "/portal/guard"
-    render(<PortalLayout><GuardView locations={[]} focused={false} /></PortalLayout>)
+    const guard = render(<PortalLayout><GuardView locations={[]} focused={false} /></PortalLayout>)
     expect(screen.getByRole("link", { name: "Relaunch Guard" })).toHaveAttribute("aria-current", "page")
     expect(screen.queryByRole("link", { name: "Cases" })).toBeNull()
+    guard.unmount()
+    nav.pathname = "/portal/account"
+    render(<PortalLayout><AccountView account={{ name: "Alex Customer", email: "alex@example.com", phone: null, emailVerified: true, phoneVerified: false }} /></PortalLayout>)
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("link", { name: "Back to My Products" })).toHaveAttribute("href", "/portal/products")
+    expect(screen.queryByRole("link", { name: "Cases" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Messages" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Payments" })).toBeNull()
     vi.unstubAllEnvs()
   })
 })

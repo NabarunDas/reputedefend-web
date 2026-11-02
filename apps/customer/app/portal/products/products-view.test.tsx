@@ -24,13 +24,15 @@ function tile(name: string) {
 
 describe("My Products", () => {
   it("uses one heading and does not render the legacy dashboard navigation", () => {
-    render(<ProductsView accountName="Ada Okonkwo" products={cards} />)
+    render(<ProductsView products={cards} />)
     const headings = screen.getAllByRole("heading", { level: 1 })
     expect(headings).toHaveLength(1)
     expect(headings[0]).toHaveTextContent("My Products")
     expect(screen.getByText("Customer portal")).toBeTruthy()
     expect(screen.getByText("Manage your services from ProfileRelaunch")).toBeTruthy()
-    expect(screen.getByText("Ada Okonkwo")).toBeTruthy()
+    expect(screen.queryByText("Ada Okonkwo")).toBeNull()
+    expect(screen.queryByText("My account")).toBeNull()
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/portal/account")
     expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled()
     expect(screen.getByRole("heading", { name: "Explore more services" })).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Status unavailable" })).toBeTruthy()
@@ -52,6 +54,7 @@ describe("My Products", () => {
     expect(screen.queryByText("Not subscribed")).toBeNull()
     expect(screen.queryByRole("link", { name: "Open dashboard" })).toBeNull()
     expect(screen.getByText("Telloya is not open in your portal yet.")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Email us about Telloya" })).toHaveAttribute("href", "mailto:contact@profilerelaunch.com")
     expect(document.body.textContent).not.toMatch(/\b(Active|Paid|Trial|Subscribed)\b/)
     for (const control of document.querySelectorAll("a, button")) {
       expect((control.textContent || "").trim().length).toBeGreaterThan(0)
@@ -60,7 +63,7 @@ describe("My Products", () => {
   })
 
   it("links Recovery and Guard only where a real workspace is available", () => {
-    render(<ProductsView accountName={null} products={presentProducts({
+    render(<ProductsView products={presentProducts({
       recovery: {
         status: "ready",
         dashboard: {
@@ -82,7 +85,8 @@ describe("My Products", () => {
       },
       guard: { status: "ready", locations: [{ businessName: "Harbour Bakery", monitoringActive: true }] },
     })} />)
-    expect(screen.getByText("My account")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/portal/account")
+    expect(screen.queryByText("My account")).toBeNull()
     expect(screen.getByRole("heading", { name: "Your services" })).toBeTruthy()
     const recovery = tile("Recovery & Review Support")
     expect(recovery.querySelector("a")).toHaveAttribute("href", "/portal/recovery")
@@ -94,12 +98,15 @@ describe("My Products", () => {
     expect(screen.getByText("1 case needs your attention")).toBeTruthy()
     expect(document.body.textContent).not.toContain("A case is not a subscription")
     expect(screen.getByText(/Monitoring is recorded for 1 location\./)).toBeTruthy()
-    expect(tile("Telloya").querySelector("a")).toBeNull()
+    const telloya = tile("Telloya")
+    expect(telloya.querySelector("a")).toHaveAttribute("href", "mailto:contact@profilerelaunch.com")
+    expect(telloya.querySelector("a")).toHaveTextContent("Email us about Telloya")
+    expect(telloya.textContent).not.toContain("Open dashboard")
     expect(screen.queryByRole("navigation", { name: "Customer portal" })).toBeNull()
   })
 
   it("shows a projection status without a subscribe link or a Telloya route", () => {
-    render(<ProductsView accountName="Ada Okonkwo" products={presentProducts({
+    render(<ProductsView products={presentProducts({
       recovery: { status: "unavailable" },
       guard: { status: "ready", locations: [{ businessName: "Harbour Bakery", monitoringActive: true }] },
       commercial: {
@@ -133,7 +140,7 @@ describe("My Products", () => {
   })
 
   it("offers assessment and contact actions without opening a dashboard that does not exist", () => {
-    render(<ProductsView accountName="Ada Okonkwo" products={presentProducts({
+    render(<ProductsView products={presentProducts({
       recovery: {
         status: "ready",
         dashboard: {
@@ -161,6 +168,7 @@ describe("My Products", () => {
     render(<ProductsLoading />)
     expect(screen.getByRole("status")).toHaveTextContent("Loading your products")
     expect(screen.getByRole("heading", { name: "My Products" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/portal/account")
     expect(screen.queryByRole("navigation", { name: "Customer portal" })).toBeNull()
     expect(screen.queryByText("My ProfileRelaunch")).toBeNull()
     const css = readFileSync(join(process.cwd(), "app/globals.css"), "utf8")

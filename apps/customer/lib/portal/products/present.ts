@@ -309,7 +309,7 @@ function telloyaTile(commercial?: CommercialProjection): ProductCard {
       group: "explore",
       status: "exploring",
       context: null,
-      actions: [],
+      actions: requestAccessAction.telloya ? [requestAccessAction.telloya] : [],
       attention: null,
       unavailableReason: TELLOYA_CLOSED,
     }

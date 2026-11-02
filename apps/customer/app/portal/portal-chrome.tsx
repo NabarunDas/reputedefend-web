@@ -19,7 +19,10 @@ export function PortalChrome({ hub, children }: { hub: boolean; children: ReactN
     ? "Relaunch Guard"
     : shell === "recovery"
       ? "Recovery & Review Support"
-      : "My ProfileRelaunch"
+      : shell === "account"
+        ? "Account"
+        : "My ProfileRelaunch"
+  const navMode = shell === "guard" || shell === "recovery" || shell === "account" ? shell : "legacy"
 
   return (
     <div className={shell === "launcher" ? "portal-shell portal-shell-launcher" : "portal-shell"}>
@@ -29,7 +32,7 @@ export function PortalChrome({ hub, children }: { hub: boolean; children: ReactN
             <p className="portal-context-title">{title}</p>
             <SignOutButton />
           </div>
-          <PortalNav mode={shell === "guard" ? "guard" : shell === "recovery" ? "recovery" : "legacy"} />
+          <PortalNav mode={navMode} />
         </div>
       )}
       <PortalIdleGuard />

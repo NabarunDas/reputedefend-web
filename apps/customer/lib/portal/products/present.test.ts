@@ -76,7 +76,7 @@ describe("product launcher", () => {
     expect(tile(cards, "guard").actions).toEqual([guardEnquiry])
     expect(tile(cards, "guard").statusLabel).toBeUndefined()
     expect(tile(cards, "telloya").group).toBe("explore")
-    expect(tile(cards, "telloya").actions).toEqual([])
+    expect(tile(cards, "telloya").actions).toEqual([telloyaEmail])
     expect(tile(cards, "telloya").unavailableReason).toBe("Telloya is not open in your portal yet.")
     expect(text(cards)).not.toMatch(/\b(Active|Paid|Trial|Subscribed|Not subscribed)\b/)
     expect(text(cards)).not.toContain("/portal/telloya")
@@ -186,6 +186,7 @@ describe("product launcher", () => {
   it("leaves commercial labels off when no projection is supplied", () => {
     const cards = presentProducts(sources())
     expect(cards.map(card => card.statusLabel)).toEqual(["Cases open", undefined, undefined])
+    expect(tile(cards, "telloya").actions).toEqual([telloyaEmail])
     expect(tile(cards, "telloya").unavailableReason).toBe("Telloya is not open in your portal yet.")
     expect(text(cards)).not.toMatch(/Not subscribed|Status temporarily unavailable|Subscribe/)
   })

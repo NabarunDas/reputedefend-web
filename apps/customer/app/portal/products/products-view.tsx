@@ -72,7 +72,7 @@ function ServiceSection({ id, title, products }: { id: string; title: string; pr
   )
 }
 
-function LauncherIntro({ accountName, loading = false }: { accountName: string | null; loading?: boolean }) {
+function LauncherIntro({ loading = false }: { loading?: boolean }) {
   return (
     <header className="products-intro">
       <div className="products-intro-copy">
@@ -81,20 +81,20 @@ function LauncherIntro({ accountName, loading = false }: { accountName: string |
         {loading ? null : <p className="lead">Manage your services from ProfileRelaunch</p>}
       </div>
       <div className="products-account">
-        {loading ? null : <p className="products-account-name">{accountName ?? "My account"}</p>}
+        <a className="products-account-link" href="/portal/account">Account</a>
         <SignOutButton />
       </div>
     </header>
   )
 }
 
-export function ProductsView({ accountName, products }: { accountName: string | null; products: readonly ProductCard[] }) {
+export function ProductsView({ products }: { products: readonly ProductCard[] }) {
   const yours = products.filter(product => product.group === "yours")
   const explore = products.filter(product => product.group === "explore")
   const unconfirmed = products.filter(product => product.group === "unconfirmed")
   return (
     <div className="products-hub">
-      <LauncherIntro accountName={accountName} />
+      <LauncherIntro />
       {yours.length === 0 ? (
         <p className="products-empty">
           {explore.length === 0
@@ -113,7 +113,7 @@ export function ProductsView({ accountName, products }: { accountName: string | 
 export function ProductsLoading() {
   return (
     <div className="products-hub products-state">
-      <LauncherIntro accountName={null} loading />
+      <LauncherIntro loading />
       <p role="status" aria-live="polite">Loading your products.</p>
     </div>
   )

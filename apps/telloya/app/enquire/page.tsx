@@ -29,14 +29,14 @@ export default function EnquirePage() {
   
   return (
     <div className={styles.page}>
-      <section className={styles.heroBand} aria-labelledby="enquire-title">
-        <div className={styles.hero}>
+      <section className={styles.hero} aria-labelledby="enquire-title">
+        <div className={styles.heroContent}>
           <p className={styles.eyebrow}>Get started</p>
-          <h1 id="enquire-title">
+          <h1 id="enquire-title" className={styles.heroTitle}>
             <span className={styles.titleMain}>Enquire about Telloya</span>
             <span>for your business</span>
           </h1>
-          <p className={styles.lead}>
+          <p className={styles.heroLead}>
             Tell us a bit about your business and requirements. We&apos;ll review your enquiry and get in touch to discuss how Telloya can help.
           </p>
           <p className={styles.heroNote}>No payment is taken at this stage. This is a no-obligation enquiry.</p>
@@ -55,35 +55,35 @@ export default function EnquirePage() {
       <div className={styles.main}>
         <div className={styles.formColumn}>
           <TelloyaEnquiryForm capabilities={capabilities} />
+          <aside className={styles.aside}>
+            <section className={styles.process} aria-labelledby="next-title">
+              <h2 id="next-title">What happens next</h2>
+              <ol>
+                <li>
+                  <span className={styles.step} aria-hidden="true">1</span>
+                  <p>We review your enquiry</p>
+                </li>
+                <li>
+                  <span className={styles.step} aria-hidden="true">2</span>
+                  <p>We contact you to discuss your requirements</p>
+                </li>
+                <li>
+                  <span className={styles.step} aria-hidden="true">3</span>
+                  <p>We explain pricing and help you decide if Telloya is right for you</p>
+                </li>
+                <li>
+                  <span className={styles.step} aria-hidden="true">4</span>
+                  <p>If you proceed, we help you set up call forwarding and test the service</p>
+                </li>
+              </ol>
+            </section>
+            <section className={styles.info} aria-labelledby="info-title">
+              <h2 id="info-title">Important to know</h2>
+              <p>Telloya is not currently available for self-service purchase. We&apos;re finalising pricing and packaging before public launch.</p>
+              <p>This enquiry helps us understand your requirements and determine if Telloya is a good fit for your business setup.</p>
+            </section>
+          </aside>
         </div>
-        <aside className={styles.aside}>
-          <section className={styles.process} aria-labelledby="next-title">
-            <h2 id="next-title">What happens next</h2>
-            <ol>
-              <li>
-                <span className={styles.step} aria-hidden="true">1</span>
-                <p>We review your enquiry</p>
-              </li>
-              <li>
-                <span className={styles.step} aria-hidden="true">2</span>
-                <p>We contact you to discuss your requirements</p>
-              </li>
-              <li>
-                <span className={styles.step} aria-hidden="true">3</span>
-                <p>We explain pricing and help you decide if Telloya is right for you</p>
-              </li>
-              <li>
-                <span className={styles.step} aria-hidden="true">4</span>
-                <p>If you proceed, we help you set up call forwarding and test the service</p>
-              </li>
-            </ol>
-          </section>
-          <section className={styles.info} aria-labelledby="info-title">
-            <h2 id="info-title">Important to know</h2>
-            <p>Telloya is not currently available for self-service purchase. We&apos;re finalising pricing and packaging before public launch.</p>
-            <p>This enquiry helps us understand your requirements and determine if Telloya is a good fit for your business setup.</p>
-          </section>
-        </aside>
       </div>
     </div>
   )

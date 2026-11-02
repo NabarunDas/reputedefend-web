@@ -115,7 +115,7 @@ describe("DEV-HISTORY-01 recovered statements", () => {
     expect(manifestVersions().at(-18)).toBe("20261028160000")
     expect(manifestVersions().at(-19)).toBe("20261028120000")
     expect(manifestVersions().at(-20)).toBe("20261027120000")
-    expect(manifestVersions().at(-20)).toBe("20261026190000")
+    expect(manifestVersions().at(-21)).toBe("20261026190000")
     expect(manifestVersions().at(-21)).toBe("20261026180000")
     expect(manifestVersions().at(-22)).toBe("20261026170000")
     expect(manifestVersions().at(-23)).toBe("20261026140000")

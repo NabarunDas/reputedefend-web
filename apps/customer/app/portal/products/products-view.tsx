@@ -19,7 +19,7 @@ function ProductCardView({ product }: { product: ProductCard }) {
     <article className={`products-card products-card-${product.status}`} aria-labelledby={`product-${product.key}`}>
       <div className="products-card-top">
         <ProductMark mark={product.mark} />
-        <p className={`products-status products-status-${product.status}`}>{productStatusLabel(product.status)}</p>
+        <p className={`products-status products-status-${product.status}`}>{product.statusLabel ?? productStatusLabel(product.status)}</p>
       </div>
       <h2 id={`product-${product.key}`}>{product.name}</h2>
       <p className="products-description">{product.description}</p>

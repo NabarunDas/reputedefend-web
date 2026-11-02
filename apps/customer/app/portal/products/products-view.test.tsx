@@ -70,6 +70,33 @@ describe("My Products", () => {
     expect(telloya?.querySelector("a")).toBeNull()
   })
 
+  it("shows a projection status without a subscribe link or a Telloya route", () => {
+    render(<ProductsView accountName="Ada Okonkwo" products={presentProducts({
+      recovery: { status: "unavailable" },
+      guard: { status: "ready", locations: [{ businessName: "Harbour Bakery", monitoringActive: true }] },
+      commercial: {
+        reads: { telloya: "ok", guard: "unavailable" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: {
+            status: "ready_for_provider",
+            locations: [
+              { locationName: "High Street", status: "active", nextStep: null },
+              { locationName: "Dock", status: "ready_for_provider", nextStep: "This location is waiting for provider verification." },
+            ],
+          },
+          guard: { status: "unavailable", locations: [] },
+        }],
+      },
+    })} />)
+    expect(screen.getByText("Ready for provider verification")).toBeTruthy()
+    expect(screen.getByText("Status temporarily unavailable")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Open Relaunch Guard" })).toHaveAttribute("href", "/portal/guard")
+    expect(screen.queryByRole("link", { name: /subscribe/i })).toBeNull()
+    expect(document.body.innerHTML).not.toContain("/portal/telloya")
+    expect(document.body.textContent).not.toMatch(/\bPaid\b/)
+  })
+
   it("has a loading state and comfortable touch, focus, and responsive rules", () => {
     render(<ProductsLoading />)
     expect(screen.getByRole("status")).toHaveTextContent("Loading your products")

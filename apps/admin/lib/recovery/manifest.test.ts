@@ -95,8 +95,11 @@ describe("the migration chain manifest", () => {
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
-    expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(true)
+    expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(true)
+    expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
+    // Check that the pending repository head (Telloya) is correctly marked as unapplied
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
+    expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     const onboardingSql = readFileSync(new URL("20261101180000_admin_commercial_onboarding_v1.sql", directory), "utf8")
     expect(onboardingSql.length).toBe(45724)

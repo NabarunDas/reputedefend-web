@@ -53,13 +53,14 @@ afterAll(async () => { await db.close() })
 describe("upgrading a database that is already running", () => {
   it("starts from a real earlier checkpoint rather than an empty schema", () => {
     expect(chainThrough(checkpoint)).toHaveLength(15)
-    expect(chainAfter(checkpoint)).toHaveLength(84)
+    expect(chainAfter(checkpoint)).toHaveLength(85)
   })
 
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The repository tail 20261102110000 is already applied on DEV and must not be replayed or applied to Production.
+    // The repository head is 20261102200000 telloya_enquiry_infrastructure_v1 (pending, not applied to DEV).
+    // The DEV head is 20261102110000 customer_invitation_dispatch_v1 (already applied, must not be replayed).
     // 20261101200000 remains applied on DEV and must not be replayed.
     // 20261101190000 remains applied on DEV and must not be replayed.
     // The Admin onboarding migration before it is already applied on DEV and must not be replayed.
@@ -69,12 +70,16 @@ describe("upgrading a database that is already running", () => {
     // stay before the commercial foundation and must not be replayed on the live database. Payment
     // request 20261030200000 is applied on DEV and must not be replayed. This
     // disposable rebuild is not a live apply. Production remains at SEC-08.
-    expect(pending.at(-1)?.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(true)
-    expect(pending.at(-1)?.containsDataChange).toBe(true)
+    expect(pending.at(-1)?.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")
+    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
-    expect(pending.at(-2)?.filename).toBe("20261101200000_customer_portal_products_v1.sql")
+    expect(pending.at(-2)?.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")
     expect(pending.at(-2)?.appliedToDev).toBe(true)
+    expect(pending.at(-2)?.containsDataChange).toBe(true)
+    expect(pending.at(-2)?.safeToReplay).toBe(false)
+    expect(pending.at(-3)?.filename).toBe("20261101200000_customer_portal_products_v1.sql")
+    expect(pending.at(-3)?.appliedToDev).toBe(true)
     expect(pending.at(-2)?.containsDataChange).toBe(false)
     expect(pending.at(-2)?.safeToReplay).toBe(false)
     expect(pending.at(-3)?.filename).toBe("20261101190000_customer_invited_mailbox_otp_v1.sql")

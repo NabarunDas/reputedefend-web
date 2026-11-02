@@ -70,8 +70,12 @@ describe("My Products commercial read", () => {
     })
     expect(Object.keys(rpc.mock.calls[0][1])).toEqual(["p_token_hash"])
     expect(failed.products[0].status).toBe("open")
-    expect(failed.products[1].action?.href).toBe("/portal/guard")
-    expect(failed.products[1].statusLabel).toBe("Status temporarily unavailable")
+    expect(failed.products[1].status).toBe("open")
+    expect(failed.products[1].statusLabel).toBeUndefined()
+    expect(failed.products[1].action).toEqual({ label: "Open Relaunch Guard", href: "/portal/guard" })
+    expect(failed.products[1].context).toContain("Monitoring is recorded for 1 location.")
+    expect(failed.products[1].unavailableReason).toBe("Some extra details are temporarily unavailable. Monitoring already recorded is unchanged.")
+    expect(JSON.stringify(failed.products[1])).not.toMatch(/stopped|no longer/)
     expect(failed.products[2].statusLabel).toBe("Status temporarily unavailable")
     expect(JSON.stringify(failed.products)).not.toMatch(/Not subscribed/)
 
@@ -93,5 +97,21 @@ describe("My Products commercial read", () => {
       businesses: [],
       stripeCustomerId: "cus_leak",
     })).toBeNull()
+    const scoped = parseCommercialProducts({
+      reads: { telloya: "ok", guard: "ok" },
+      businesses: [{
+        businessId: "a020d000-0000-4000-8000-000000000041",
+        businessName: "Harbour Bakery",
+        telloya: { status: "pending", locations: [] },
+        guard: { status: "not_subscribed", locations: [] },
+      }],
+    })
+    expect(scoped?.businesses).toEqual([{
+      businessName: "Harbour Bakery",
+      telloya: { status: "pending", locations: [] },
+      guard: { status: "not_subscribed", locations: [] },
+    }])
+    expect(JSON.stringify(scoped)).not.toContain("businessId")
+    expect(JSON.stringify(scoped)).not.toContain("a020d000-0000-4000-8000-000000000041")
   })
 })

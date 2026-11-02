@@ -8,6 +8,12 @@ BEGIN;
 -- subscription, payment, entitlement, allocation, or provision rows.
 -- It does not grant or activate a service. containsDataChange is false.
 -- safeToReplay is false.
+--
+-- Businesses and locations are assembled by business_id and location_id.
+-- Those ids are used only while building the JSON and are not returned.
+-- Display names are labels. An accepted or payment-pending Telloya
+-- subscription with no entitlement row is pending. An offered quote, a
+-- draft, and an enquiry are not a purchase and are not projected.
 
 CREATE FUNCTION admin_private.customer_portal_products_rank_v1(p_status text)
 RETURNS integer
@@ -168,26 +174,29 @@ BEGIN
   customer := (sess ->> 'customerId')::uuid;
 
   BEGIN
-    SELECT COALESCE(jsonb_agg(row_value ORDER BY row_value ->> 'businessName'), '[]'::jsonb)
+    SELECT COALESCE(jsonb_agg(row_value ORDER BY row_value ->> 'businessName', row_value ->> 'businessId'), '[]'::jsonb)
       INTO telloya_rows
     FROM (
       SELECT jsonb_build_object(
+        'businessId', grouped.business_id::text,
         'businessName', grouped.business_name,
         'telloya', jsonb_build_object(
-          'status', (array_agg(grouped.location_status ORDER BY admin_private.customer_portal_products_rank_v1(grouped.location_status), grouped.location_name))[1],
+          'status', (array_agg(grouped.location_status ORDER BY admin_private.customer_portal_products_rank_v1(grouped.location_status), grouped.location_id))[1],
           'locations', jsonb_agg(
             jsonb_build_object(
               'locationName', grouped.location_name,
               'status', grouped.location_status,
               'nextStep', step.next_step
             )
-            ORDER BY grouped.location_name
+            ORDER BY grouped.location_name, grouped.location_id
           )
         )
       ) AS row_value
       FROM (
-        SELECT DISTINCT ON (business.display_name, location.location_name, entitlement.location_id)
+        SELECT DISTINCT ON (entitlement.business_id, entitlement.location_id)
+          entitlement.business_id,
           business.display_name AS business_name,
+          entitlement.location_id,
           COALESCE(NULLIF(btrim(location.location_name), ''), 'This location') AS location_name,
           admin_private.customer_portal_telloya_location_status_v1(
             plan.status,
@@ -257,7 +266,7 @@ BEGIN
         JOIN public.plan_versions plan ON plan.id = subscription.plan_version_id
         LEFT JOIN public.service_provisions provision ON provision.entitlement_id = entitlement.id
         WHERE entitlement.component_code = 'TELLOYA'
-        ORDER BY business.display_name, location.location_name, entitlement.location_id,
+        ORDER BY entitlement.business_id, entitlement.location_id,
           CASE entitlement.state WHEN 'ELIGIBLE' THEN 0 WHEN 'PENDING' THEN 1 WHEN 'EXPIRED' THEN 2 ELSE 3 END,
           entitlement.created_at DESC
       ) grouped
@@ -275,7 +284,31 @@ BEGIN
           ELSE NULL
         END AS next_step
       ) step
-      GROUP BY grouped.business_name
+      GROUP BY grouped.business_id, grouped.business_name
+      UNION ALL
+      SELECT jsonb_build_object(
+        'businessId', subscription.business_id::text,
+        'businessName', business.display_name,
+        'telloya', jsonb_build_object('status', 'pending', 'locations', '[]'::jsonb)
+      )
+      FROM public.commercial_subscriptions subscription
+      JOIN public.businesses business ON business.id = subscription.business_id
+      JOIN public.business_memberships membership
+        ON membership.business_id = subscription.business_id
+       AND membership.customer_id = customer
+       AND membership.status = 'verified'
+      JOIN public.commercial_subscription_items item
+        ON item.subscription_id = subscription.id
+       AND item.component_code = 'TELLOYA'
+      JOIN public.plan_versions plan ON plan.id = subscription.plan_version_id
+      WHERE subscription.state IN ('ACCEPTED', 'PAYMENT_PENDING')
+        AND plan.status = 'APPROVED'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.product_entitlements entitlement
+          WHERE entitlement.business_id = subscription.business_id
+            AND entitlement.component_code = 'TELLOYA'
+        )
     ) built;
   EXCEPTION WHEN OTHERS THEN
     telloya_rows := '[]'::jsonb;
@@ -283,13 +316,14 @@ BEGIN
   END;
 
   BEGIN
-    SELECT COALESCE(jsonb_agg(row_value ORDER BY row_value ->> 'businessName'), '[]'::jsonb)
+    SELECT COALESCE(jsonb_agg(row_value ORDER BY row_value ->> 'businessName', row_value ->> 'businessId'), '[]'::jsonb)
       INTO guard_rows
     FROM (
       SELECT jsonb_build_object(
+        'businessId', grouped.business_id::text,
         'businessName', grouped.business_name,
         'guard', jsonb_build_object(
-          'status', (array_agg(grouped.location_status ORDER BY admin_private.customer_portal_products_rank_v1(grouped.location_status), grouped.location_name))[1],
+          'status', (array_agg(grouped.location_status ORDER BY admin_private.customer_portal_products_rank_v1(grouped.location_status), grouped.location_id))[1],
           'locations', jsonb_agg(
             jsonb_build_object(
               'locationName', grouped.location_name,
@@ -298,13 +332,15 @@ BEGIN
               'allocation', grouped.allocation_kind,
               'nextStep', grouped.next_step
             )
-            ORDER BY grouped.location_name
+            ORDER BY grouped.location_name, grouped.location_id
           )
         )
       ) AS row_value
       FROM (
-        SELECT
+        SELECT DISTINCT ON (visible.business_id, visible.location_id)
+          visible.business_id,
           business.display_name AS business_name,
+          visible.location_id,
           COALESCE(NULLIF(btrim(location.location_name), ''), 'This location') AS location_name,
           COALESCE(
             coverage.state = 'ACTIVE'
@@ -369,8 +405,9 @@ BEGIN
           ON allocation.location_id = visible.location_id
          AND allocation.business_id = visible.business_id
          AND allocation.state IN ('RESERVED', 'PREVIEW')
+        ORDER BY visible.business_id, visible.location_id
       ) grouped
-      GROUP BY grouped.business_name
+      GROUP BY grouped.business_id, grouped.business_name
     ) built;
   EXCEPTION WHEN OTHERS THEN
     guard_rows := '[]'::jsonb;
@@ -389,30 +426,31 @@ BEGIN
         ELSE COALESCE(guard_match.guard, jsonb_build_object('status', 'not_subscribed', 'locations', '[]'::jsonb))
       END
     )
-    ORDER BY names.business_name
+    ORDER BY names.business_name, names.business_id
   ), '[]'::jsonb)
   INTO businesses
   FROM (
-    SELECT DISTINCT business_name
+    SELECT DISTINCT ON (business_id) business_id, business_name
     FROM (
-      SELECT value ->> 'businessName' AS business_name
+      SELECT value ->> 'businessId' AS business_id, value ->> 'businessName' AS business_name
       FROM jsonb_array_elements(CASE WHEN telloya_read = 'ok' THEN telloya_rows ELSE '[]'::jsonb END) value
-      UNION
-      SELECT value ->> 'businessName'
+      UNION ALL
+      SELECT value ->> 'businessId', value ->> 'businessName'
       FROM jsonb_array_elements(CASE WHEN guard_read = 'ok' THEN guard_rows ELSE '[]'::jsonb END) value
     ) found
-    WHERE business_name IS NOT NULL
+    WHERE business_id IS NOT NULL
+    ORDER BY business_id
   ) names
   LEFT JOIN LATERAL (
     SELECT value -> 'telloya' AS telloya
     FROM jsonb_array_elements(telloya_rows) value
-    WHERE telloya_read = 'ok' AND value ->> 'businessName' = names.business_name
+    WHERE telloya_read = 'ok' AND value ->> 'businessId' = names.business_id
     LIMIT 1
   ) telloya_match ON true
   LEFT JOIN LATERAL (
     SELECT value -> 'guard' AS guard
     FROM jsonb_array_elements(guard_rows) value
-    WHERE guard_read = 'ok' AND value ->> 'businessName' = names.business_name
+    WHERE guard_read = 'ok' AND value ->> 'businessId' = names.business_id
     LIMIT 1
   ) guard_match ON true;
 

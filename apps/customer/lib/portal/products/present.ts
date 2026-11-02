@@ -88,6 +88,8 @@ export type ProductSources = {
 
 const UNAVAILABLE = "We couldn't confirm this service just now. Refresh the page. This does not say whether it has been set up."
 const STATUS_UNAVAILABLE = "Status temporarily unavailable"
+const GUARD_DETAILS_UNAVAILABLE = "Some extra details are temporarily unavailable. Monitoring already recorded is unchanged."
+const TELLOYA_NOT_ACTIVE = "Telloya is not active yet."
 
 const STATUS_LABEL: Record<CommercialStatus, string> = {
   not_subscribed: "Not subscribed",
@@ -177,7 +179,7 @@ function guardCard(source: ProductSources["guard"], commercial?: CommercialProje
   }
   if (!commercial) return card
   if (commercial.reads.guard !== "ok") {
-    return { ...card, status: "unavailable", statusLabel: STATUS_UNAVAILABLE, unavailableReason: UNAVAILABLE }
+    return { ...card, unavailableReason: GUARD_DETAILS_UNAVAILABLE }
   }
   return enrichGuard(card, commercial)
 }
@@ -233,7 +235,10 @@ function telloyaCard(commercial?: CommercialProjection): ProductCard {
     businessName: business.businessName,
     ...location,
   })))
-  if (locations.length === 0) {
+  const businessStatuses = commercial.businesses
+    .filter(business => business.telloya.locations.length === 0 && business.telloya.status !== "not_subscribed")
+    .map(business => business.telloya.status)
+  if (locations.length === 0 && businessStatuses.length === 0) {
     return {
       ...base,
       status: "exploring",
@@ -243,13 +248,20 @@ function telloyaCard(commercial?: CommercialProjection): ProductCard {
       unavailableReason: null,
     }
   }
-  const status = worstStatus(locations.map(location => location.status))
-  const next = locations.find(location => location.nextStep)?.nextStep ?? null
+  const status = worstStatus([...locations.map(location => location.status), ...businessStatuses])
+  const next = locations.find(location => location.nextStep)?.nextStep
+    ?? (businessStatuses.includes("pending") ? TELLOYA_NOT_ACTIVE : null)
+  const context = [
+    ...locations.map(location => `${location.businessName}, ${location.locationName}: ${STATUS_LABEL[location.status]}`),
+    ...commercial.businesses
+      .filter(business => business.telloya.locations.length === 0 && business.telloya.status !== "not_subscribed")
+      .map(business => `${business.businessName}: ${STATUS_LABEL[business.telloya.status]}`),
+  ].join(". ")
   return {
     ...base,
     status: status === "unavailable" ? "unavailable" : status === "active" ? "open" : "exploring",
     statusLabel: STATUS_LABEL[status],
-    context: locations.map(location => `${location.businessName}, ${location.locationName}: ${STATUS_LABEL[location.status]}`).join(". "),
+    context,
     attention: next,
     unavailableReason: status === "unavailable" ? UNAVAILABLE : null,
   }

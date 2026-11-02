@@ -248,19 +248,87 @@ describe("product presentation", () => {
     expect(preview.action).toEqual({ label: "Open Relaunch Guard", href: "/portal/guard" })
   })
 
-  it("says status is temporarily unavailable when a product read fails", () => {
+  it("keeps known Guard monitoring open when only the extra commercial read fails", () => {
     const cards = presentProducts(sources({
+      guard: { status: "ready", locations: [{ businessName: "Harbour Bakery", monitoringActive: true }] },
       commercial: {
         reads: { telloya: "unavailable", guard: "unavailable" },
         businesses: [],
       },
     }))
+    const guard = cards[1]
     expect(cards[0].action).toEqual({ label: "Open Recovery & Reviews", href: "/portal/recovery" })
     expect(cards[0].statusLabel).toBeUndefined()
-    expect(cards[1].action).toEqual({ label: "Open Relaunch Guard", href: "/portal/guard" })
-    expect(cards[1].statusLabel).toBe("Status temporarily unavailable")
+    expect(guard.status).toBe("open")
+    expect(guard.statusLabel).toBeUndefined()
+    expect(guard.action).toEqual({ label: "Open Relaunch Guard", href: "/portal/guard" })
+    expect(guard.context).toContain("Monitoring is recorded for 1 location.")
+    expect(guard.unavailableReason).toBe("Some extra details are temporarily unavailable. Monitoring already recorded is unchanged.")
+    expect(text([guard])).not.toMatch(/stopped|no longer|not active|Status temporarily unavailable/)
     expect(cards[2].statusLabel).toBe("Status temporarily unavailable")
     expect(cards[2].action).toBeNull()
     expect(text(cards)).not.toMatch(/Not subscribed/)
+
+    const operational = presentProducts(sources({
+      guard: { status: "unavailable" },
+      commercial: { reads: { telloya: "ok", guard: "unavailable" }, businesses: [] },
+    }))[1]
+    expect(operational.status).toBe("unavailable")
+    expect(operational.action).toBeNull()
+    expect(operational.unavailableReason).toMatch(/does not say whether it has been set up/)
+    expect(text([operational])).not.toMatch(/stopped|no longer/)
+  })
+
+  it("shows an accepted subscription with no locations as pending rather than purchased or absent", () => {
+    const pending = presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "pending", locations: [] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      },
+    }))[2]
+    expect(pending.status).toBe("exploring")
+    expect(pending.statusLabel).toBe("Pending")
+    expect(pending.context).toBe("Harbour Bakery: Pending")
+    expect(pending.attention).toBe("Telloya is not active yet.")
+    expect(pending.action).toBeNull()
+    expect(text([pending])).not.toMatch(/Not subscribed|\b(Active|Paid)\b/)
+
+    const absent = presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [],
+      },
+    }))[2]
+    expect(absent.statusLabel).toBe("Not subscribed")
+    expect(absent.attention).toBeNull()
+
+    const mixed = presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [
+          {
+            businessName: "Harbour Bakery",
+            telloya: {
+              status: "active",
+              locations: [{ locationName: "High Street", status: "active", nextStep: null }],
+            },
+            guard: { status: "not_subscribed", locations: [] },
+          },
+          {
+            businessName: "North Yard",
+            telloya: { status: "pending", locations: [] },
+            guard: { status: "not_subscribed", locations: [] },
+          },
+        ],
+      },
+    }))[2]
+    expect(mixed.statusLabel).toBe("Pending")
+    expect(mixed.statusLabel).not.toBe("Active")
+    expect(mixed.context).toContain("Harbour Bakery, High Street: Active")
+    expect(mixed.context).toContain("North Yard: Pending")
   })
 })

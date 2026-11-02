@@ -612,6 +612,196 @@ describe("customer_portal_products_v1", () => {
     const empty = await products(alexSession)
     expect(empty?.reads).toEqual({ telloya: "ok", guard: "ok" })
   })
+
+  it("keeps identical business and location names as separate businesses", async () => {
+    const liveBusiness = "a020d000-0000-4000-8000-000000000041"
+    const waitingBusiness = "a020d000-0000-4000-8000-000000000042"
+    const liveLocation = "a020d000-0000-4000-8000-000000000051"
+    const waitingLocation = "a020d000-0000-4000-8000-000000000052"
+    await db.exec(`
+      insert into public.businesses(id, display_name) values
+        ('${liveBusiness}', 'Harbour Bakery'),
+        ('${waitingBusiness}', 'Harbour Bakery');
+      insert into public.locations(id, business_id, country, location_name) values
+        ('${liveLocation}', '${liveBusiness}', 'GB', 'High Street'),
+        ('${waitingLocation}', '${waitingBusiness}', 'GB', 'High Street');
+      insert into public.business_memberships(customer_id, business_id, status, verified_at, verified_by, evidence) values
+        ('${alex}', '${liveBusiness}', 'verified', now(), '${actor}', 'Mailbox already proved for the live twin'),
+        ('${alex}', '${waitingBusiness}', 'verified', now(), '${actor}', 'Mailbox already proved for the waiting twin');
+    `)
+    const liveSub = randomUUID()
+    await billable(liveSub, "VC-26-NN2346", liveBusiness, "ACTIVE", true)
+    const liveEntitlement = randomUUID()
+    await db.exec("set local session_replication_role = replica")
+    await entitlement(liveEntitlement, liveBusiness, liveLocation, liveSub, "COMMERCIAL_SUBSCRIPTION")
+    await db.exec("set local session_replication_role = origin")
+    expect(await rejected(
+      `insert into public.service_provisions(entitlement_id, business_id, location_id, state) values ($1, $2, $3, 'LIVE')`,
+      [liveEntitlement, liveBusiness, liveLocation],
+    )).toMatch(/LIVE|check constraint/i)
+    await allowLive()
+    await db.exec(
+      `insert into public.service_provisions(
+        entitlement_id, business_id, location_id, state,
+        profile_ready_at, agent_configured_at, number_allocated_at, forwarding_instructed_at,
+        customer_confirmed_at, provider_binding_ref, provider_test_call_ref, provider_test_outcome,
+        agent_test_passed_at, live_at
+      ) values (
+        '${liveEntitlement}', '${liveBusiness}', '${liveLocation}', 'LIVE',
+        now(), now(), now(), now(), now(), '${binding}', '${testCall}', 'PASSED', now(), now()
+      )`,
+    )
+    const liveGuard = await guardCoverage({
+      active: true,
+      location: liveLocation,
+      business: liveBusiness,
+      paidThrough: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(),
+    })
+    const waitingSub = randomUUID()
+    await pilotSubscription(waitingSub, "VC-26-PQ2346", waitingBusiness, completePlan, 1, "BOTH")
+    const waitingEntitlement = randomUUID()
+    await entitlement(waitingEntitlement, waitingBusiness, waitingLocation, waitingSub, "NON_BILLABLE_PILOT")
+    await readyProvision(waitingEntitlement, waitingBusiness, waitingLocation, "READY_FOR_PROVIDER_VERIFICATION", false)
+    const waitingGuard = await guardCoverage({
+      active: false,
+      location: waitingLocation,
+      business: waitingBusiness,
+      paidThrough: new Date().toISOString(),
+    })
+    await db.query(
+      `insert into public.bundle_guard_allocations(
+        subscription_id, customer_id, business_id, location_id, state, standalone_guard_subscription_id
+      ) values ($1, $2, $3, $4, 'PREVIEW', $5)`,
+      [waitingSub, alex, waitingBusiness, waitingLocation, waitingGuard.guardSub],
+    )
+    const guardBefore = await rows<{ state: string; paid: string }>(
+      `select c.state, b.paid_through_at::text as paid
+       from public.guard_coverages c
+       join public.guard_billing b on b.coverage_id = c.id
+       where c.id = $1`,
+      [liveGuard.coverage],
+    )
+
+    const seen = await products(alexSession)
+    const twins = (seen?.businesses ?? []).filter(business => business.businessName === "Harbour Bakery" && business.telloya.locations.length === 1 && business.telloya.locations[0]?.locationName === "High Street" && business.guard.locations.length === 1)
+    expect(twins).toHaveLength(2)
+    const live = twins.find(business => business.telloya.locations[0]?.status === "active")
+    const waiting = twins.find(business => business.telloya.locations[0]?.status === "ready_for_provider")
+    expect(live?.telloya.status).toBe("active")
+    expect(live?.telloya.locations).toHaveLength(1)
+    expect(live?.guard.status).toBe("active")
+    expect(live?.guard.locations[0]).toMatchObject({
+      locationName: "High Street",
+      status: "active",
+      monitoringRecorded: true,
+    })
+    expect(waiting?.telloya.locations).toHaveLength(1)
+    expect(waiting?.telloya.status).not.toBe("active")
+    expect(waiting?.guard.locations[0]).toMatchObject({
+      locationName: "High Street",
+      status: "pending",
+      monitoringRecorded: false,
+      allocation: "preview",
+      nextStep: "Guard monitoring is not active from this bundle.",
+    })
+    expect(waiting?.guard.status).not.toBe("active")
+    const serialised = JSON.stringify(seen)
+    expect(serialised).not.toContain("businessId")
+    expect(serialised).not.toContain(liveBusiness)
+    expect(serialised).not.toContain(waitingBusiness)
+    expect(serialised).not.toContain(liveLocation)
+    expect(serialised).not.toContain(waitingLocation)
+    expect(serialised).not.toMatch(/cus_|sub_|si_/)
+    expect(serialised).not.toContain(binding)
+    expect(serialised).not.toContain(testCall)
+    expect(serialised).not.toContain(providerEvent)
+    expect(serialised).not.toContain("4900")
+    expect(await rows(
+      `select c.state, b.paid_through_at::text as paid
+       from public.guard_coverages c
+       join public.guard_billing b on b.coverage_id = c.id
+       where c.id = $1`,
+      [liveGuard.coverage],
+    )).toEqual(guardBefore)
+
+    await db.exec("alter table public.product_entitlements rename to product_entitlements_hidden")
+    const telloyaDown = await products(alexSession)
+    expect(telloyaDown?.reads).toEqual({ telloya: "unavailable", guard: "ok" })
+    const guardTwins = (telloyaDown?.businesses ?? []).filter(business => business.businessName === "Harbour Bakery")
+    expect(guardTwins).toHaveLength(2)
+    expect(guardTwins.map(business => business.telloya.status)).toEqual(["unavailable", "unavailable"])
+    expect(guardTwins.map(business => business.guard.locations[0]?.monitoringRecorded).sort()).toEqual([false, true])
+    expect(guardTwins.find(business => business.guard.locations[0]?.allocation === "preview")?.guard.locations[0]?.status).not.toBe("active")
+    expect(JSON.stringify(telloyaDown)).not.toContain(liveBusiness)
+    await db.exec("alter table public.product_entitlements_hidden rename to product_entitlements")
+
+    await db.exec("alter table public.guard_coverages rename to guard_coverages_hidden")
+    const guardDown = await products(alexSession)
+    expect(guardDown?.reads).toEqual({ telloya: "ok", guard: "unavailable" })
+    const telloyaTwins = (guardDown?.businesses ?? []).filter(business => business.telloya.locations.some(location => location.locationName === "High Street" && (location.status === "active" || location.status === "ready_for_provider")))
+    expect(telloyaTwins).toHaveLength(2)
+    expect(telloyaTwins.map(business => business.guard.status)).toEqual(["unavailable", "unavailable"])
+    expect(telloyaTwins.map(business => business.telloya.locations[0]?.status).sort()).toEqual(["active", "ready_for_provider"])
+    expect(JSON.stringify(guardDown?.businesses.map(business => business.guard))).not.toContain("not_subscribed")
+    await db.exec("alter table public.guard_coverages_hidden rename to guard_coverages")
+  })
+
+  it("projects an accepted or payment-pending subscription with no entitlement as pending", async () => {
+    const before = await counts()
+    const offered = randomUUID()
+    await db.query(
+      `insert into public.commercial_subscriptions(
+        id, public_ref, customer_id, business_id, plan_family, plan_version_id, grant_kind, state,
+        amount_minor, currency, cadence_snapshot, terms_ref, pilot_ends_at
+      ) values ($1, 'VC-26-RS2346', $2, $3, 'VOICE', $4, 'NON_BILLABLE_PILOT', 'DRAFT', null, 'GBP', 'MONTH', 'TELLOYA-TERMS-1', now() + interval '14 days')`,
+      [offered, alex, bakery, telloyaPlan],
+    )
+    await db.exec(
+      `insert into public.commercial_subscription_items(subscription_id, component_code, quantity, quantity_limit_snapshot)
+       values ('${offered}', 'TELLOYA', 1, 5)`,
+    )
+    await db.query("update public.commercial_subscriptions set state = 'OFFERED' where id = $1", [offered])
+    const quoted = await products(alexSession)
+    expect(quoted?.businesses ?? []).toEqual([])
+    expect(JSON.stringify(quoted)).not.toContain("pending")
+    expect(JSON.stringify(quoted)).not.toContain("active")
+
+    await db.query("update public.commercial_subscriptions set state = 'ACCEPTED' where id = $1", [offered])
+    const accepted = await products(alexSession)
+    expect(telloyaLocations(accepted, "Harbour Bakery")).toEqual({ status: "pending", locations: [] })
+    expect(accepted?.businesses).toHaveLength(1)
+    expect(guardBusiness(accepted, "Harbour Bakery")?.status).toBe("not_subscribed")
+    expect(JSON.stringify(accepted)).not.toMatch(/cus_|sub_|si_/)
+    expect(JSON.stringify(accepted)).not.toContain("4900")
+    expect(JSON.stringify(accepted)).not.toContain("businessId")
+
+    const paying = randomUUID()
+    await db.query(
+      `insert into public.commercial_subscriptions(
+        id, public_ref, customer_id, business_id, plan_family, plan_version_id, grant_kind, state,
+        amount_minor, currency, tax_behaviour, cadence_snapshot, terms_ref
+      ) values ($1, 'VC-26-TU2346', $2, $3, 'VOICE', $4, 'BILLABLE', 'DRAFT', 4900, 'GBP', 'NOT_APPLICABLE', 'MONTH', 'TELLOYA-TERMS-1')`,
+      [paying, alex, yard, telloyaPlan],
+    )
+    await db.exec(
+      `insert into public.commercial_subscription_items(subscription_id, component_code, quantity, quantity_limit_snapshot)
+       values ('${paying}', 'TELLOYA', 1, 5)`,
+    )
+    await db.query("update public.commercial_subscriptions set state = 'PAYMENT_PENDING' where id = $1", [paying])
+    const pending = await products(alexSession)
+    expect(telloyaLocations(pending, "Harbour Bakery")).toEqual({ status: "pending", locations: [] })
+    expect(telloyaLocations(pending, "North Yard")).toEqual({ status: "pending", locations: [] })
+    expect(pending?.businesses).toHaveLength(2)
+    expect(pending?.businesses.every(business => business.telloya.status !== "active")).toBe(true)
+    expect(pending?.businesses.every(business => business.guard.status === "not_subscribed")).toBe(true)
+    expect(JSON.stringify(pending)).not.toContain("4900")
+    expect(JSON.stringify(pending)).not.toMatch(/cus_|sub_|si_/)
+    expect(await rows<{ entitlements: number }>(
+      "select count(*)::int as entitlements from public.product_entitlements where commercial_subscription_id in ($1, $2)",
+      [offered, paying],
+    )).toEqual([{ entitlements: 0 }])
+    expect(await counts()).toEqual({ ...before, subscriptions: before.subscriptions + 2 })
+  })
 })
 
 async function rejected(query: string, params: unknown[] = []): Promise<string> {

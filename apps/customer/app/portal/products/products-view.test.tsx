@@ -90,8 +90,12 @@ describe("My Products", () => {
       },
     })} />)
     expect(screen.getByText("Ready for provider verification")).toBeTruthy()
-    expect(screen.getByText("Status temporarily unavailable")).toBeTruthy()
+    expect(screen.getByText("You can open this")).toBeTruthy()
+    expect(screen.getByText("Harbour Bakery. Monitoring is recorded for 1 location.")).toBeTruthy()
+    expect(screen.getByText("Some extra details are temporarily unavailable. Monitoring already recorded is unchanged.")).toBeTruthy()
+    expect(screen.queryByText("Status temporarily unavailable")).toBeNull()
     expect(screen.getByRole("link", { name: "Open Relaunch Guard" })).toHaveAttribute("href", "/portal/guard")
+    expect(document.body.textContent).not.toMatch(/stopped|no longer/)
     expect(screen.queryByRole("link", { name: /subscribe/i })).toBeNull()
     expect(document.body.innerHTML).not.toContain("/portal/telloya")
     expect(document.body.textContent).not.toMatch(/\bPaid\b/)

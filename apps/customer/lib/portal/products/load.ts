@@ -2,6 +2,8 @@ import "server-only"
 import { loadPortalHeaderName } from "@/lib/portal/account/header"
 import { loadCustomerDashboard } from "@/lib/portal/cases/queries"
 import { loadCustomerGuard } from "@/lib/portal/guard/queries"
+import { productsReadEnabled } from "@/lib/portal/products-read"
+import { loadCommercialProducts } from "./queries"
 import { presentProducts, type ProductCard } from "./present"
 
 export type ProductHubLoad =
@@ -21,6 +23,8 @@ export async function loadProductHub(): Promise<ProductHubLoad> {
   if (dashboard.status === "unauthenticated" || guard.status === "unauthenticated") {
     return { status: "unauthenticated" }
   }
+  const commercial = productsReadEnabled() ? await loadCommercialProducts() : undefined
+  if (commercial === "unauthenticated") return { status: "unauthenticated" }
   return {
     status: "ready",
     accountName,
@@ -37,6 +41,7 @@ export async function loadProductHub(): Promise<ProductHubLoad> {
           })),
         }
         : { status: "unavailable" },
+      commercial,
     }),
   }
 }

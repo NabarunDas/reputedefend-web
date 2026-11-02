@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { customerBackendConfig, customerConfig } from "@/lib/config"
 import { invitedLoginAvailable, portalAvailable, portalCookieOptions, portalInviteCookieName, portalPendingCookieName, portalSessionCookieName } from "./config"
 import { productsHubEnabled } from "./products-hub"
+import { productsReadEnabled } from "./products-read"
 
 const origin = "https://customer.profilerelaunch.com"
 
@@ -141,5 +142,18 @@ describe("portal feature gate", () => {
     expect(portalAvailable()).toBe(false)
     vi.stubEnv("VERCEL_ENV", "production")
     expect(productsHubEnabled()).toBe(true)
+  })
+
+  it("keeps the entitlement projection closed unless its own flag is exactly true", () => {
+    expect(productsReadEnabled()).toBe(false)
+    expect(productsHubEnabled()).toBe(false)
+    for (const value of ["", "false", "1", "yes", "on", "TRUE", "true "]) {
+      vi.stubEnv("CUSTOMER_PRODUCTS_READ_ENABLED", value)
+      expect(productsReadEnabled()).toBe(false)
+    }
+    vi.stubEnv("CUSTOMER_PRODUCTS_READ_ENABLED", "true")
+    expect(productsReadEnabled()).toBe(true)
+    expect(productsHubEnabled()).toBe(false)
+    expect(portalAvailable()).toBe(false)
   })
 })

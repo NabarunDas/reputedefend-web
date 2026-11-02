@@ -10,7 +10,9 @@ const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // at the observed DEV ledger head 20261101190000. The verified live ledger
 // has 94 entries. This synthetic chain includes the three foundation files,
 // so it is longer than the live ledger. The invited mailbox file is applied
-// and must not be replayed.
+// and must not be replayed. The repository tail
+// 20261101200000_customer_portal_products_v1.sql is unapplied and is not part
+// of this synthetic remote. Do not apply it to Production.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
@@ -32,7 +34,7 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([])
+    expect(pending.map(entry => entry.filename)).toEqual(["20261101200000_customer_portal_products_v1.sql"])
     expect(pending.every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261101190000",

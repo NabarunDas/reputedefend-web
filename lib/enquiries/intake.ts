@@ -63,18 +63,48 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
   if (receipt.status !== "created" && receipt.status !== "existing") return { ok: false, message: ENQUIRY_UNAVAILABLE }
   const success = { ok: true, persisted: true, message: "Your enquiry has been received.", enquiryRef: receipt.enquiryRef }
   
-  // For existing enquiries, return success without adding new fields
+  // For existing enquiries, return success with actual stored email status
   // Legacy ProfileRelaunch enquiries have no enquiryRef and expect minimal response
   if (receipt.status === "existing") {
-    // Only include enquiryRef if it exists (Telloya), omit undefined to preserve legacy contract
     const result: EnquiryResult = {
       ok: true,
       persisted: true,
       message: "Your enquiry has been received.",
     }
+    
+    // Include reference if available (Telloya enquiries)
     if (receipt.enquiryRef) {
       result.enquiryRef = receipt.enquiryRef
     }
+    
+    // Fetch stored email status for existing enquiries
+    try {
+      const { data: storedEnquiry } = await createSupabaseServerClient()
+        .from("enquiries")
+        .select("ack_status")
+        .eq("submission_key", key)
+        .single()
+      
+      if (storedEnquiry) {
+        // Map stored ack_status to response fields
+        const ackStatus = storedEnquiry.ack_status as string
+        if (ackStatus === "SENT") {
+          result.receiptEmailSent = true
+          result.receiptEmailStatus = "sent"
+        } else if (ackStatus === "SKIPPED") {
+          result.receiptEmailSent = false
+          result.receiptEmailStatus = "suppressed"
+        } else {
+          // FAILED, UNKNOWN, SENDING
+          result.receiptEmailSent = false
+          result.receiptEmailStatus = "unavailable"
+        }
+      }
+    } catch {
+      // If we can't fetch the status, omit it rather than returning incorrect data
+      // The enquiry itself exists and was received, which is the most important fact
+    }
+    
     return result
   }
   

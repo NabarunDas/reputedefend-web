@@ -105,7 +105,7 @@ async function entitlement(id: string, business: string, location: string, subsc
   await db.query(
     `insert into public.product_entitlements(
       id, business_id, location_id, component_code, source_kind, commercial_subscription_id, state, eligible_from, eligible_to
-    ) values ($1, $2, $3, 'TELLOYA', $4, $5, $6, now(), now() + interval '14 days')`,
+    ) values ($1, $2, $3, 'TELLOYA', $4, $5, $6, now() - interval '20 days', now() + interval '14 days')`,
     [id, business, location, kind, subscription, state],
   )
 }

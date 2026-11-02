@@ -99,7 +99,8 @@ BEGIN
   term_open := p_plan_status = 'APPROVED'
     AND p_subscription_state IN ('ACTIVE', 'PAST_DUE', 'CANCEL_AT_PERIOD_END')
     AND p_entitlement_state = 'ELIGIBLE'
-    AND (p_eligible_to IS NULL OR p_eligible_to > pg_catalog.now())
+    AND p_eligible_to IS NOT NULL
+    AND p_eligible_to > pg_catalog.now()
     AND (
       (
         p_grant_kind = 'BILLABLE'

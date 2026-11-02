@@ -21,10 +21,14 @@ export const brandColors = {
   lime: "#C5E8B4",
   paper: "#F7F8F3",
   muted: "#5D6D66",
+  mist: "#A8B8B0", // Added for email template compatibility
 } as const
 
 export const brandOperator = "ProfileRelaunch Ltd"
 export const operatorSiteUrl = "https://profilerelaunch.com"
+
+// Logo dimensions for email rendering (Connected T lockup approximate dimensions)
+export const logoSize = { width: 1932, height: 446 } as const
 
 /** Original design reproduced from user-approved pixels, with transparent mattes. */
 export const brandAssets = {

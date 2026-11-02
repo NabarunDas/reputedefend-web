@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { validateTelloyaEnquiry } from "../../../lib/telloya-enquiry"
-import { persistTelloyaEnquiry } from "../../../lib/telloya-enquiry-intake"
+import { validateTelloyaEnquiry } from "@/lib/telloya-enquiry"
+import { persistTelloyaEnquiry } from "@/lib/telloya-enquiry-intake"
 import { getEnquiryCapabilities } from "@/lib/enquiry-contract"
 import { legalIdentity } from "@/lib/legal"
 

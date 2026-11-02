@@ -37,13 +37,39 @@ describe("product hub routes", () => {
     loadName.mockClear()
   })
 
-  it("keeps /portal on the original Recovery dashboard", () => {
+  it("keeps the Recovery dashboard at /portal until the hub flag is on", async () => {
     const source = readFileSync(new URL("../page.tsx", import.meta.url), "utf8")
     expect(source).toContain("loadCustomerDashboard()")
+    expect(source).toContain("unauthenticated")
+    expect(source).toContain("productsHubEnabled()")
+    expect(source).toContain('redirect("/portal/products")')
     expect(source).toContain("<PortalHome")
-    expect(source).not.toContain("productsHubEnabled")
-    expect(source).not.toContain("/portal/products")
-    expect(source).not.toContain("/portal/recovery")
+    const casePage = readFileSync(new URL("../cases/[reference]/page.tsx", import.meta.url), "utf8")
+    expect(casePage).not.toContain("/portal/products")
+    expect(casePage).toContain("unauthenticated")
+    const { default: Page } = await import("../page")
+
+    hub.mockReturnValue(false)
+    gate.mockReturnValue(false)
+    await expect(Page()).rejects.toThrow("REDIRECT:/")
+
+    gate.mockReturnValue(true)
+    loadDashboard.mockResolvedValueOnce({ status: "unauthenticated" })
+    await expect(Page()).rejects.toThrow("REDIRECT:/login")
+
+    loadDashboard.mockResolvedValueOnce(readyDashboard)
+    const dashboard = await Page()
+    expect(dashboard.props.productsReturn).toBeFalsy()
+
+    hub.mockReturnValue(true)
+    loadDashboard.mockClear()
+    await expect(Page()).rejects.toThrow("REDIRECT:/login")
+    expect(loadDashboard).not.toHaveBeenCalled()
+
+    session.mockResolvedValueOnce({ customerId: "customer-1" })
+    await expect(Page()).rejects.toThrow("REDIRECT:/portal/products")
+    expect(loadDashboard).not.toHaveBeenCalled()
+    hub.mockReturnValue(false)
   })
 
   it("closes My Products when the flag is off and refuses a missing session", async () => {
@@ -94,7 +120,8 @@ describe("product hub routes", () => {
     expect(await Page()).toBeTruthy()
     loadDashboard.mockResolvedValueOnce(readyDashboard)
     const view = await Page()
-    expect(view).toBeTruthy()
+    expect(view.props.productsReturn).toBe(true)
     expect(loadName).toHaveBeenCalled()
+    expect(readFileSync(new URL("../recovery/page.tsx", import.meta.url), "utf8")).toContain("productsReturn")
   })
 })

@@ -61,12 +61,18 @@ export async function proxy(request: NextRequest) {
     || pathname === "/api/portal/documents/archive"
   )
   const loginRead = portalOn && pathname === "/login" && (method === "GET" || method === "HEAD")
+  const rootRead = pathname === "/" && (method === "GET" || method === "HEAD")
   const portalPage = pathname === "/portal" || pathname.startsWith("/portal/")
   const portalApi = pathname === "/api/portal" || pathname.startsWith("/api/portal/")
 
   let response: NextResponse
   if (invitedRead) {
-    response = invitedLoginAvailable() ? proceed(request) : redirectTo(request, "/")
+    response = invitedLoginAvailable() ? proceed(request) : redirectTo(request, "/", portalOn ? "?unavailable=1" : "")
+  } else if (rootRead) {
+    const unavailableLink = request.nextUrl.searchParams.get("unavailable") === "1"
+    if (!portalOn || unavailableLink) response = proceed(request)
+    else if (await portalSessionFromToken(request.cookies.get(portalSessionCookieName())?.value)) response = redirectTo(request, "/portal")
+    else response = redirectTo(request, "/login")
   } else if (isPublicRead(pathname, method) || loginRead || actionPost || portalPreAuth || portalSignOut || invitedPreAuth) {
     response = proceed(request)
   } else if (portalPage) {
@@ -87,7 +93,7 @@ export async function proxy(request: NextRequest) {
   } else if (pathname === "/api" || pathname.startsWith("/api/") || !["GET", "HEAD"].includes(method)) {
     response = NextResponse.json({ message: ACTION_UNAVAILABLE }, { status: 401 })
   } else {
-    response = redirectTo(request, "/")
+    response = redirectTo(request, "/", portalOn ? "?unavailable=1" : "")
   }
   if (invitedSurface) response.headers.set("Referrer-Policy", "no-referrer")
   return withPrivate(response)

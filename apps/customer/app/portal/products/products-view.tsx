@@ -3,8 +3,7 @@ import { productStatusLabel, type ProductCard } from "@/lib/portal/products/pres
 
 function ProductMark({ mark }: { mark: ProductCard["mark"] }) {
   const paths = {
-    recovery: "M6 7h12v12H6zM9 7V5h6v2M9 12h6M9 15h4",
-    guard: "M12 3l7 3v6c0 4.2-2.8 7.2-7 9-4.2-1.8-7-4.8-7-9V6z",
+    profilerelaunch: "M6 7h12v12H6zM9 7V5h6v2M9 12h6M9 15h4",
     telloya: "M8 5h8v10H8zM10 19h4M9 8h6M9 11h6",
   } as const
   return (
@@ -14,20 +13,44 @@ function ProductMark({ mark }: { mark: ProductCard["mark"] }) {
   )
 }
 
+function badgeText(product: ProductCard): string | null {
+  if (product.statusLabel) return product.statusLabel
+  if (product.status === "unavailable") return productStatusLabel(product.status)
+  return null
+}
+
 function ProductCardView({ product }: { product: ProductCard }) {
+  const badge = badgeText(product)
   return (
     <article className={`products-card products-card-${product.status}`} aria-labelledby={`product-${product.key}`}>
       <div className="products-card-top">
         <ProductMark mark={product.mark} />
-        <p className={`products-status products-status-${product.status}`}>{product.statusLabel ?? productStatusLabel(product.status)}</p>
+        {badge ? <p className={`products-status products-status-${product.status}`}>{badge}</p> : null}
       </div>
       <h2 id={`product-${product.key}`}>{product.name}</h2>
       <p className="products-description">{product.description}</p>
+      <ul className="products-services" aria-label={`${product.name} services`}>
+        {product.services.map(service => <li key={service}>{service}</li>)}
+      </ul>
       {product.context ? <p className="products-context">{product.context}</p> : null}
       {product.attention ? <p className="products-attention">{product.attention}</p> : null}
       {product.unavailableReason ? <p className="products-note">{product.unavailableReason}</p> : null}
-      {product.action ? (
-        <a className="products-action" href={product.action.href}>{product.action.label}</a>
+      {product.actions.length > 0 ? (
+        <div className="products-actions">
+          {product.actions.map(action => {
+            const external = action.href.startsWith("http") || action.href.startsWith("mailto:")
+            return (
+              <a
+                key={`${action.label}-${action.href}`}
+                className={external ? "products-action products-action-secondary" : "products-action"}
+                href={action.href}
+                {...(external ? { rel: "noopener noreferrer" } : {})}
+              >
+                {action.label}
+              </a>
+            )
+          })}
+        </div>
       ) : null}
     </article>
   )
@@ -39,7 +62,7 @@ export function ProductsView({ accountName, products }: { accountName: string | 
       <header className="portal-page-head">
         <p className="products-welcome">{welcomeHeading(accountName)}</p>
         <h1>My Products</h1>
-        <p className="lead">Manage your services in one place.</p>
+        <p className="lead">Here are the services on your account.</p>
       </header>
       <section aria-label="Your products">
         <ul className="products-grid">

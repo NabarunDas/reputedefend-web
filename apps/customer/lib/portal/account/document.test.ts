@@ -20,6 +20,7 @@ describe("authenticated document boundary", () => {
   it("keeps identity on the server document instead of the client router or storage", () => {
     const documentSource = readFileSync(join(process.cwd(), "lib/portal/account/document.ts"), "utf8")
     const login = readFileSync(join(process.cwd(), "app/login/login-client.tsx"), "utf8")
+    const invited = readFileSync(join(process.cwd(), "app/login/invite/[token]/invited-login-client.tsx"), "utf8")
     const signOut = readFileSync(join(process.cwd(), "app/portal/sign-out-button.tsx"), "utf8")
     const header = readFileSync(join(process.cwd(), "components/customer-header.tsx"), "utf8")
     const navigation = readFileSync(join(process.cwd(), "app/portal/portal-nav.tsx"), "utf8")
@@ -29,7 +30,9 @@ describe("authenticated document boundary", () => {
     expect(documentSource).toContain("window.location.reload()")
     expect(documentSource).not.toMatch(/localStorage|sessionStorage|router/)
     expect(login).toContain('replaceAuthenticatedDocument("portal")')
+    expect(invited).toContain('replaceAuthenticatedDocument("portal")')
     expect(login).not.toMatch(/router\.(push|replace)|localStorage|sessionStorage/)
+    expect(invited).not.toMatch(/router\.(push|replace)|localStorage|sessionStorage/)
     expect(signOut).toContain('replaceAuthenticatedDocument("login")')
     expect(signOut).not.toMatch(/router\.(push|replace)|localStorage|sessionStorage/)
     expect(header).toContain("reloadAuthenticatedDocument()")

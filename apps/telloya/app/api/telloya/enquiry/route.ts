@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server"
-import { validateTelloyaEnquiry, type TelloyaEnquiryInput } from "@/lib/telloya-enquiry"
-import { persistTelloyaEnquiry } from "@/lib/telloya-enquiry-intake"
+import { validateTelloyaEnquiry } from "../../../lib/telloya-enquiry"
+import { persistTelloyaEnquiry } from "../../../lib/telloya-enquiry-intake"
 import { getEnquiryCapabilities } from "@/lib/enquiry-contract"
 import { legalIdentity } from "@/lib/legal"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
+
+// UUID validation pattern
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 async function readJsonBody(request: Request): Promise<{ ok: boolean; value?: unknown; status: number }> {
   try {
@@ -60,13 +63,13 @@ export async function POST(request: Request) {
 
     const data = validation.data
 
-    // Extract submission key
-    const input = body.value as any
+    // Extract and validate submission key
+    const input = body.value as Record<string, unknown>
     const submissionKey = typeof input.submissionKey === "string" 
       ? input.submissionKey.trim() 
       : ""
 
-    if (!submissionKey || submissionKey.length < 10) {
+    if (!submissionKey || !UUID_PATTERN.test(submissionKey)) {
       return NextResponse.json(
         { ok: false, message: "Invalid submission. Please reload the page and try again." },
         { status: 400 }
@@ -79,7 +82,16 @@ export async function POST(request: Request) {
     if (!result.ok) {
       return NextResponse.json(
         { ok: false, message: result.message },
-        { status: result.simulated ? 200 : 503 }
+        { status: 503 }
+      )
+    }
+
+    // Successful submission must have a real enquiry reference
+    if (!result.enquiryRef) {
+      console.error("[telloya-enquiry] Success without reference", { simulated: result.simulated })
+      return NextResponse.json(
+        { ok: false, message: "Unable to complete this enquiry right now." },
+        { status: 500 }
       )
     }
 
@@ -89,7 +101,6 @@ export async function POST(request: Request) {
         ok: true, 
         message: result.message,
         enquiryRef: result.enquiryRef,
-        simulated: result.simulated,
       },
       { status: 200 }
     )

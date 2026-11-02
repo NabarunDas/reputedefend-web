@@ -1,20 +1,25 @@
 import "server-only"
-import { readEnquiryEmailConfig, runtimeAllowsSimulation, runtimeMayUseLiveProvider, type EnquiryEmailConfig } from "@/lib/enquiry-config"
+import { readEnquiryEmailConfig, runtimeAllowsSimulation, runtimeMayUseLiveProvider, type EnquiryEmailConfig, formattedFromAddress } from "@/lib/enquiry-config"
 import { buildInternalEnquiryMessage, buildCustomerAcknowledgementMessage, ENQUIRY_UNAVAILABLE } from "@/lib/enquiry-delivery"
 import type { EnquiryInput, EnquiryResult } from "@/lib/enquiry"
-import type { EnquiryProvider } from "@/lib/enquiry-provider"
+import type { EnquiryProvider, EnquiryEmailMessage } from "@/lib/enquiry-provider"
 import { createResendEnquiryProvider } from "@/lib/providers/resend-enquiry-provider"
 import { readSupabaseConfig } from "@/lib/supabase/config"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import type { Json } from "@/lib/supabase/database"
 export type EnquiryReceipt = { status: "created" | "existing" | "conflict" | "invalid"; id?: string; attempt?: string; sendAck?: boolean; enquiryRef?: string }
 type DeliveryStatus = "SENT" | "FAILED" | "UNKNOWN" | "SKIPPED"
+export type CustomEmailBuilder = {
+  buildInternal: (data: EnquiryInput, config: EnquiryEmailConfig, submittedAt: Date, ref?: string) => EnquiryEmailMessage
+  buildCustomerAck?: (data: EnquiryInput, config: EnquiryEmailConfig, ref?: string) => EnquiryEmailMessage
+}
 export type GeneralIntakeOptions = {
   create?: (key: string, data: EnquiryInput, ack: boolean) => Promise<EnquiryReceipt>
   finish?: (id: string, attempt: string, internal: DeliveryStatus, ack: DeliveryStatus) => Promise<void>
   provider?: EnquiryProvider
   config?: EnquiryEmailConfig
   nodeEnv?: string
+  customEmailBuilder?: CustomEmailBuilder
 }
 async function create(key: string, payload: EnquiryInput, ack: boolean): Promise<EnquiryReceipt> {
   const { data, error } = await createSupabaseServerClient().rpc("create_general_enquiry_v1", { p_key: key, p_data: payload as unknown as Json, p_ack: ack }).abortSignal(AbortSignal.timeout(8000))
@@ -56,9 +61,18 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
   try {
     const provider = options.provider ?? (config.ready && runtimeMayUseLiveProvider(nodeEnv) ? createResendEnquiryProvider(config.apiKey) : undefined)
     if (provider && config.ready) {
-      internal = await send(provider, buildInternalEnquiryMessage(data, config, new Date()))
-      if (receipt.sendAck && config.sendCustomerAck) ack = await send(provider, buildCustomerAcknowledgementMessage(data, config))
-      else ack = "SKIPPED"
+      const submittedAt = new Date()
+      // Use custom email builder if provided, otherwise use default
+      const internalMessage = options.customEmailBuilder 
+        ? options.customEmailBuilder.buildInternal(data, config, submittedAt, receipt.enquiryRef)
+        : buildInternalEnquiryMessage(data, config, submittedAt)
+      internal = await send(provider, internalMessage)
+      if (receipt.sendAck && config.sendCustomerAck) {
+        const ackMessage = options.customEmailBuilder?.buildCustomerAck
+          ? options.customEmailBuilder.buildCustomerAck(data, config, receipt.enquiryRef)
+          : buildCustomerAcknowledgementMessage(data, config)
+        ack = await send(provider, ackMessage)
+      } else ack = "SKIPPED"
     }
   } catch { /* The saved enquiry remains actionable in the admin queue. */ }
   try { await (options.finish ?? finish)(receipt.id, receipt.attempt, internal, ack) }

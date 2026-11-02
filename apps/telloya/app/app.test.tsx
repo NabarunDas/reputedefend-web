@@ -15,27 +15,29 @@ import {
 } from "../../../lib/customer-portal-href"
 
 describe("Telloya Branding", () => {
-  it("renders the Telloya logo with correct brand name", () => {
-    render(<TelloyaLogo />)
-    expect(screen.getByAltText(brandName)).toBeInTheDocument()
+  it("renders the Telloya wordmark alongside the approved decorative icon", () => {
+    const { container } = render(<TelloyaLogo />)
+    expect(screen.getByText(brandName)).toBeInTheDocument()
+    const icon = container.querySelector("img")
+    expect(icon).toBeInTheDocument()
+    expect(icon).toHaveAttribute("alt", "")
+    expect(icon?.getAttribute("src")).toContain("telloya-amber-glass-icon.webp")
   })
 
   it("uses the correct brand name", () => {
     expect(brandName).toBe("Telloya")
   })
 
-  it("supports dark variant for light backgrounds", () => {
+  it("supports dark wordmark for light backgrounds", () => {
     const { container } = render(<TelloyaLogo variant="dark" />)
-    const img = container.querySelector('img')
-    expect(img).toBeInTheDocument()
-    expect(img?.getAttribute('alt')).toBe("Telloya")
+    expect(screen.getByText(brandName)).toHaveStyle({ color: "#082e24" })
+    expect(container.querySelector("img")).toHaveAttribute("alt", "")
   })
 
-  it("supports light variant for dark backgrounds", () => {
+  it("supports ivory wordmark for dark backgrounds", () => {
     const { container } = render(<TelloyaLogo variant="light" />)
-    const img = container.querySelector('img')
-    expect(img).toBeInTheDocument()
-    expect(img?.getAttribute('alt')).toBe("Telloya")
+    expect(screen.getByText(brandName)).toHaveStyle({ color: "#f7f8f3" })
+    expect(container.querySelector("img")).toHaveAttribute("alt", "")
   })
 })
 

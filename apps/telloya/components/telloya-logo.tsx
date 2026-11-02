@@ -30,7 +30,7 @@ export function TelloyaLogo({ variant = "symbol", className = "", priority = fal
         fontSize: "20px",
         fontWeight: 800,
         letterSpacing: "-0.02em",
-        color: variant === "light" ? "#082e24" : "#f7f8f3",
+        color: variant === "dark" ? "#082e24" : "#f7f8f3",
       }}>
         Telloya
       </span>

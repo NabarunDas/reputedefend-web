@@ -42,6 +42,7 @@ export async function getInvitationMail(id: string): Promise<InvitationMail | nu
       detail: "Invitation sending is not available yet.",
       canSend: false,
       canResend: false,
+      canProcess: false,
       canRevoke: false,
     }
   }

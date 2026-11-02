@@ -562,6 +562,151 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION admin_private.customer_invitation_mail_gate_v1(p_row admin_private.onboarding_invitations)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  comm public.communications;
+  live boolean := false;
+  dead boolean := false;
+  expired boolean := false;
+  confirmed_failure boolean := false;
+  uncertain boolean := false;
+  active_queue boolean := false;
+  replaceable boolean := false;
+  processable boolean := false;
+  status text;
+  detail text;
+  block text;
+BEGIN
+  IF p_row.token_hash IS NULL THEN
+    RETURN jsonb_build_object(
+      'status', 'none',
+      'detail', 'No customer invitation has been sent.',
+      'replaceable', false,
+      'processable', false,
+      'block', 'missing'
+    );
+  END IF;
+  expired := p_row.expires_at <= pg_catalog.now();
+  SELECT * INTO comm FROM public.communications WHERE id = p_row.communication_id;
+  IF comm.id IS NULL THEN
+    RETURN jsonb_build_object(
+      'status', 'attention',
+      'detail', 'The invitation email needs review. It has not been sent again.',
+      'replaceable', false,
+      'processable', false,
+      'block', 'review'
+    );
+  END IF;
+  SELECT EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    JOIN admin_private.job_outbox o ON o.id = j.outbox_id
+    WHERE o.event_key = 'send-email:' || comm.id::text || ':v' || comm.content_version::text
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'RUNNING'
+      AND j.lease_expires_at IS NOT NULL
+      AND j.lease_expires_at >= pg_catalog.now()
+  ) INTO live;
+  SELECT EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    JOIN admin_private.job_outbox o ON o.id = j.outbox_id
+    WHERE o.event_key = 'send-email:' || comm.id::text || ':v' || comm.content_version::text
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'DEAD_LETTER'
+  ) INTO dead;
+  confirmed_failure := comm.delivery_status IN ('FAILED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'PROVIDER_REJECTED');
+  uncertain := comm.delivery_status = 'ACCEPTANCE_UNKNOWN'
+    OR comm.delivery_status IN ('TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE')
+    OR (comm.first_provider_attempt_at IS NOT NULL AND coalesce(comm.delivery_status, 'NONE') = 'NONE');
+  active_queue := comm.lifecycle = 'QUEUED'
+    AND coalesce(comm.delivery_status, 'NONE') = 'NONE'
+    AND comm.first_provider_attempt_at IS NULL
+    AND NOT live
+    AND NOT dead;
+  replaceable := NOT live
+    AND NOT uncertain
+    AND NOT active_queue
+    AND (
+      confirmed_failure
+      OR comm.lifecycle = 'CANCELLED'
+      OR (dead AND comm.first_provider_attempt_at IS NULL AND coalesce(comm.delivery_status, 'NONE') = 'NONE')
+      OR (expired AND comm.delivery_status IN ('PROVIDER_ACCEPTED', 'DELIVERED', 'FAILED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'PROVIDER_REJECTED'))
+      OR (expired AND comm.lifecycle = 'CANCELLED')
+      OR (expired AND dead AND comm.first_provider_attempt_at IS NULL)
+    );
+  processable := p_row.consumed_at IS NULL
+    AND p_row.revoked_at IS NULL
+    AND NOT expired
+    AND active_queue;
+  IF p_row.consumed_at IS NOT NULL THEN
+    status := 'used';
+  ELSIF p_row.revoked_at IS NOT NULL THEN
+    status := 'revoked';
+  ELSIF uncertain THEN
+    status := 'unknown';
+  ELSIF live THEN
+    status := 'processing';
+  ELSIF expired THEN
+    status := 'expired';
+  ELSIF comm.delivery_status = 'DELIVERED' THEN
+    status := 'delivered';
+  ELSIF comm.delivery_status = 'PROVIDER_ACCEPTED' THEN
+    status := 'accepted';
+  ELSIF confirmed_failure OR comm.lifecycle = 'CANCELLED' OR dead THEN
+    status := 'attention';
+  ELSIF comm.lifecycle = 'QUEUED' THEN
+    status := 'queued';
+  ELSE
+    status := 'attention';
+  END IF;
+  detail := CASE status
+    WHEN 'used' THEN 'This invitation has been used. Mailbox proof is separate from business authority.'
+    WHEN 'revoked' THEN 'This invitation was withdrawn. The link can no longer be used.'
+    WHEN 'unknown' THEN CASE
+      WHEN comm.delivery_status IN ('TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE')
+        THEN 'The invitation email needs review. It has not been sent again.'
+      ELSE 'Provider acceptance is unknown. Another invitation was not sent.'
+    END
+    WHEN 'processing' THEN 'This invitation email is already being sent.'
+    WHEN 'expired' THEN 'This invitation has expired. The link can no longer be used.'
+    WHEN 'delivered' THEN 'Delivered.'
+    WHEN 'accepted' THEN 'Accepted by the email provider. Accepted by the provider is not delivered.'
+    WHEN 'queued' THEN 'Queued for sending. The email provider has not accepted it, and queued is not delivered.'
+    ELSE CASE
+      WHEN replaceable THEN 'The invitation email was not accepted. You can send a replacement. The previous link will stop working.'
+      ELSE 'The invitation email needs review. It has not been sent again.'
+    END
+  END;
+  block := CASE
+    WHEN live THEN 'processing'
+    WHEN comm.delivery_status = 'ACCEPTANCE_UNKNOWN'
+      OR (comm.first_provider_attempt_at IS NOT NULL AND coalesce(comm.delivery_status, 'NONE') = 'NONE')
+      THEN 'acceptance_unknown'
+    WHEN comm.delivery_status IN ('TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE') THEN 'uncertain'
+    WHEN comm.delivery_status = 'DELIVERED' THEN 'delivered'
+    WHEN comm.delivery_status = 'PROVIDER_ACCEPTED' THEN 'already_accepted'
+    WHEN dead AND NOT replaceable THEN 'dead_letter'
+    WHEN active_queue THEN 'queued'
+    WHEN confirmed_failure OR comm.lifecycle = 'CANCELLED' THEN 'failed'
+    ELSE 'review'
+  END;
+  RETURN jsonb_build_object(
+    'status', status,
+    'detail', detail,
+    'replaceable', replaceable,
+    'processable', processable,
+    'block', block
+  );
+END;
+$$;
+
 CREATE FUNCTION public.admin_customer_invitation_command_v1(
   p_token text,
   p_request uuid,
@@ -599,12 +744,14 @@ DECLARE
   mailbox text;
   comm_id uuid;
   result jsonb;
+  gate jsonb;
+  original_request uuid;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
   actor := (s->>'userId')::uuid;
   IF p_request IS NULL OR p_enquiry IS NULL OR p_version IS NULL OR p_version < 0
-    OR p_operation NOT IN ('issue_invitation', 'resend_invitation', 'revoke_invitation')
+    OR p_operation NOT IN ('issue_invitation', 'resend_invitation', 'revoke_invitation', 'process_invitation')
     OR p_reason IS NULL OR char_length(btrim(p_reason)) NOT BETWEEN 10 AND 1000
   THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
   note := btrim(p_reason);
@@ -650,6 +797,16 @@ BEGIN
   SELECT * INTO open_row FROM admin_private.onboarding_invitations
   WHERE onboarding_request_id = req.id AND consumed_at IS NULL AND revoked_at IS NULL
   FOR UPDATE;
+  IF open_row.communication_id IS NOT NULL THEN
+    PERFORM 1 FROM public.communications WHERE id = open_row.communication_id FOR UPDATE;
+    PERFORM 1
+    FROM admin_private.jobs j
+    JOIN admin_private.job_outbox o ON o.id = j.outbox_id
+    WHERE o.aggregate_id = open_row.communication_id
+      AND o.topic = 'SEND_EMAIL'
+      AND j.job_type = 'SEND_EMAIL'
+    FOR UPDATE OF j;
+  END IF;
   IF p_operation = 'revoke_invitation' THEN
     IF open_row.token_hash IS NULL THEN
       RETURN jsonb_build_object('status', 'denied', 'reason', 'missing');
@@ -664,6 +821,34 @@ BEGIN
     );
     UPDATE public.onboarding_requests SET updated_at = pg_catalog.now() WHERE id = req.id RETURNING * INTO req;
     result := jsonb_build_object('status', 'success', 'operation', 'revoke_invitation', 'generation', open_row.generation, 'replay', false);
+    INSERT INTO admin_private.customer_invitation_command_receipts(request_id, actor_id, fingerprint, response)
+    VALUES (p_request, actor, fingerprint, result);
+    RETURN result;
+  END IF;
+  IF p_operation = 'process_invitation' THEN
+    IF open_row.token_hash IS NULL THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'missing');
+    END IF;
+    gate := admin_private.customer_invitation_mail_gate_v1(open_row);
+    IF coalesce((gate->>'processable')::boolean, false) IS NOT TRUE THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', coalesce(gate->>'block', 'queued'));
+    END IF;
+    SELECT r.request_id INTO original_request
+    FROM admin_private.customer_invitation_command_receipts r
+    WHERE r.response->>'status' = 'success'
+      AND r.response->>'id' = open_row.communication_id::text
+      AND r.response->>'operation' IN ('issue_invitation', 'resend_invitation')
+    ORDER BY r.created_at
+    LIMIT 1;
+    IF original_request IS NULL THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
+    END IF;
+    result := jsonb_build_object(
+      'status', 'success',
+      'operation', 'process_invitation',
+      'originalRequest', original_request,
+      'replay', false
+    );
     INSERT INTO admin_private.customer_invitation_command_receipts(request_id, actor_id, fingerprint, response)
     VALUES (p_request, actor, fingerprint, result);
     RETURN result;
@@ -705,6 +890,10 @@ BEGIN
   chosen_hash := p_hashes[next_generation];
   IF chosen_hash IS NULL THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
   IF p_operation = 'resend_invitation' THEN
+    gate := admin_private.customer_invitation_mail_gate_v1(open_row);
+    IF coalesce((gate->>'replaceable')::boolean, false) IS NOT TRUE THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', coalesce(gate->>'block', 'queued'));
+    END IF;
     PERFORM set_config('admin.invitation_maintenance', 'on', true);
     UPDATE admin_private.onboarding_invitations SET revoked_at = now() WHERE token_hash = open_row.token_hash;
     PERFORM set_config('admin.invitation_maintenance', 'off', true);
@@ -744,10 +933,12 @@ AS $$
 DECLARE
   req public.onboarding_requests;
   row admin_private.onboarding_invitations;
-  comm public.communications;
+  gate jsonb;
   ready boolean := false;
   verified boolean := false;
   holding boolean := false;
+  replaceable boolean := false;
+  processable boolean := false;
   max_generation integer := 0;
   status text := 'none';
   detail text := 'No customer invitation has been sent.';
@@ -764,7 +955,7 @@ BEGIN
   END IF;
   IF req.id IS NULL THEN
     RETURN jsonb_build_object(
-      'status', 'none', 'detail', detail, 'canSend', false, 'canResend', false, 'canRevoke', false
+      'status', 'none', 'detail', detail, 'canSend', false, 'canResend', false, 'canProcess', false, 'canRevoke', false
     );
   END IF;
   ready := admin_private.customer_portal_invitation_ready_v1(req.id);
@@ -781,37 +972,18 @@ BEGIN
   ORDER BY generation DESC, created_at DESC
   LIMIT 1;
   IF row.token_hash IS NOT NULL THEN
-    SELECT * INTO comm FROM public.communications WHERE id = row.communication_id;
-    IF row.consumed_at IS NOT NULL THEN
-      status := 'used';
-      detail := 'This invitation has been used. Mailbox proof is separate from business authority.';
-    ELSIF row.revoked_at IS NOT NULL THEN
-      status := 'revoked';
-      detail := 'This invitation was withdrawn. The link can no longer be used.';
-    ELSIF row.expires_at <= now() THEN
-      status := 'expired';
-      detail := 'This invitation has expired. The link can no longer be used.';
-    ELSIF comm.delivery_status = 'DELIVERED' THEN
-      status := 'delivered';
-      detail := 'Delivered.';
-    ELSIF comm.delivery_status = 'PROVIDER_ACCEPTED' THEN
-      status := 'accepted';
-      detail := 'Accepted by the email provider. Accepted by the provider is not delivered.';
-    ELSIF comm.delivery_status IN ('FAILED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'PROVIDER_REJECTED')
-      OR comm.lifecycle = 'CANCELLED'
-    THEN
-      status := 'attention';
-      detail := 'The invitation email needs review. It has not been sent again.';
-    ELSE
-      status := 'queued';
-      detail := 'Queued for sending. The email provider has not accepted it, and queued is not delivered.';
-    END IF;
+    gate := admin_private.customer_invitation_mail_gate_v1(row);
+    status := gate->>'status';
+    detail := gate->>'detail';
+    replaceable := coalesce((gate->>'replaceable')::boolean, false);
+    processable := coalesce((gate->>'processable')::boolean, false);
   END IF;
   RETURN jsonb_build_object(
     'status', status,
     'detail', detail,
     'canSend', ready AND NOT verified AND NOT holding AND max_generation < 3,
-    'canResend', ready AND NOT verified AND holding AND max_generation < 3,
+    'canResend', ready AND NOT verified AND holding AND max_generation < 3 AND replaceable,
+    'canProcess', ready AND NOT verified AND holding AND processable,
     'canRevoke', holding
   );
 END;
@@ -966,6 +1138,13 @@ BEGIN
   THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM admin_private.onboarding_invitations i
+    WHERE i.communication_id = comm.id
+      AND (i.revoked_at IS NOT NULL OR i.consumed_at IS NOT NULL OR i.expires_at <= pg_catalog.now())
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
+  END IF;
   placeholder := p_customer_origin || '/login/invite/ready';
   IF position('#t=' IN coalesce(comm.body_text, '')) > 0
     OR position('#t=' IN coalesce(comm.body_html, '')) > 0
@@ -1069,6 +1248,7 @@ REVOKE ALL ON FUNCTION admin_private.invitation_placeholder_count_v1(text),
   admin_private.invitation_body_reason_v1(text, text, text, text, text),
   admin_private.revoke_unusable_invitations_v1(uuid),
   admin_private.customer_invitation_cancel_queued_v1(uuid),
+  admin_private.customer_invitation_mail_gate_v1(admin_private.onboarding_invitations),
   admin_private.customer_invitation_queue_v1(uuid, uuid, uuid, uuid, uuid, text, integer, text, text, text, text, text, text, integer)
   FROM PUBLIC, anon, authenticated, service_role;
 

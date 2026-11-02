@@ -105,8 +105,12 @@ export function OnboardingPanel({ view, enquiryId, open, businessName, country, 
           <p>This queues one invitation to the Customer Portal. It does not verify the email, confirm business authority, take a payment, or activate Telloya or Guard. Queued is not delivered.</p>
           <Reason label="Why is this invitation being sent?" />
         </CommandForm>}
+        {invitationMail.canProcess && <CommandForm endpoint="invitation" actionUrl="/api/enquiries/invitation" submitLabel="Process queued invitation now" payload={form => ({ operation: "process_invitation", version, enquiryId, reason: form.get("reason") })}>
+          <p>This sends the invitation that is already queued. It does not create another invitation or another link. Queued is not delivered until the provider accepts it.</p>
+          <Reason label="Why is this queued invitation being sent now?" />
+        </CommandForm>}
         {invitationMail.canResend && <CommandForm endpoint="invitation" actionUrl="/api/enquiries/invitation" submitLabel="Send a new invitation" payload={form => ({ operation: "resend_invitation", version, enquiryId, reason: form.get("reason") })}>
-          <p>This withdraws the current invitation and queues a new one. It does not verify the email or activate a product.</p>
+          <p>This withdraws the current invitation and queues a replacement. The previous link stops working. It does not verify the email or activate a product.</p>
           <Reason label="Why is a new invitation needed?" />
         </CommandForm>}
         {invitationMail.canRevoke && <CommandForm endpoint="invitation" actionUrl="/api/enquiries/invitation" submitLabel="Withdraw the invitation" payload={form => ({ operation: "revoke_invitation", version, enquiryId, reason: form.get("reason") })}>

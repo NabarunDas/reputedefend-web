@@ -42,11 +42,21 @@ export function invitationMessage(input: { origin: string; reference?: string | 
   return { ...composed, sender, origin: input.origin, linkKeyVersion: version }
 }
 
-/** Claims one queued invitation and settles it with the existing email handler. */
+export type InvitationDispatchOutcome =
+  | "accepted"
+  | "queued"
+  | "unavailable"
+  | "processing"
+  | "unknown"
+  | "already"
+  | "rejected"
+  | "closed"
+
+/** Claims the original queued invitation and settles it with the existing email handler. */
 export async function dispatchQueuedInvitation(input: {
   requestId: string
   provider?: OutgoingMailProvider
-}): Promise<"accepted" | "queued" | "unavailable"> {
+}): Promise<InvitationDispatchOutcome> {
   if (!invitationDispatchEnabled()) return "unavailable"
   if (!input.provider && !centralDispatchLaneOpen()) return "queued"
   const origin = devCustomerPortalOrigin()
@@ -60,6 +70,11 @@ export async function dispatchQueuedInvitation(input: {
   } catch {
     return "unavailable"
   }
+  if (claim.reason === "acceptance_unknown") return "unknown"
+  if (claim.reason === "already_processed") return "already"
+  if (claim.status === "conflict" && (claim.reason === "leased" || claim.reason === "locked")) return "processing"
+  if (claim.reason === "dead_letter") return "rejected"
+  if (claim.reason === "not_queued" || claim.reason === "suppressed") return "closed"
   if (claim.status !== "success" || claim.replay === true || claim.jobType !== "SEND_EMAIL") return "queued"
   try {
     const settled = await settleDevSendEmailClaim({
@@ -67,7 +82,10 @@ export async function dispatchQueuedInvitation(input: {
       claim,
       provider: input.provider,
     })
-    return settled === "succeeded" ? "accepted" : "queued"
+    if (settled === "succeeded") return "accepted"
+    if (settled === "retry") return "queued"
+    if (settled === "dead_letter") return "rejected"
+    return "unavailable"
   } catch {
     return "unavailable"
   }

@@ -15,11 +15,28 @@ import {
   invitationDispatchReady,
   invitationMessage,
   prepareInvitationHashes,
+  type InvitationDispatchOutcome,
 } from "./invitation-dispatch"
 
 const reply = (message: string, status: number) => NextResponse.json({ message }, { status, headers: privateResponseHeaders })
 const referencePattern = /^(PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/
-const operations = ["issue_invitation", "resend_invitation", "revoke_invitation"] as const
+const operations = ["issue_invitation", "resend_invitation", "revoke_invitation", "process_invitation"] as const
+
+function dispatchMessage(sent: InvitationDispatchOutcome): string {
+  if (sent === "accepted") return "Accepted by the email provider. Accepted by the provider is not delivered."
+  if (sent === "already") return "The email provider already accepted this invitation. It was not sent again."
+  if (sent === "processing") return "This invitation email is already being sent."
+  if (sent === "unknown") return "Provider acceptance is unknown. Another invitation was not sent."
+  if (sent === "rejected") return "The invitation email was not accepted. It was not sent again."
+  if (sent === "closed") return "That invitation is no longer queued. It was not sent again."
+  return "The customer invitation is queued. Queued is not delivered."
+}
+
+function dispatchStatus(sent: InvitationDispatchOutcome): number {
+  if (sent === "unavailable") return 503
+  if (sent === "processing" || sent === "unknown" || sent === "rejected" || sent === "closed") return 409
+  return 200
+}
 
 export async function invitationCommand(request: NextRequest) {
   if (!invitationDispatchEnabled()) return reply("Invitation sending is switched off.", 404)
@@ -65,10 +82,11 @@ export async function invitationCommand(request: NextRequest) {
     const requestId = onboarding && onboarding.supported ? onboarding.request?.id : null
     if (!requestId) return reply("This onboarding request is not ready for an invitation.", 403)
     const reference = detail.caseRef && referencePattern.test(detail.caseRef) ? detail.caseRef : null
-    const message = operation === "revoke_invitation" ? null : invitationMessage({ origin: portalOrigin, reference })
-    const hashes = operation === "revoke_invitation" ? null : prepareInvitationHashes(requestId)
-    if (operation !== "revoke_invitation" && (!message || !hashes)) return reply("Invitation sending is not available yet.", 503)
-    const result = await backend().rpc<{ status: string; reason?: string; operation?: string }>("admin_customer_invitation_command_v1", {
+    const preparesMail = operation === "issue_invitation" || operation === "resend_invitation"
+    const message = preparesMail ? invitationMessage({ origin: portalOrigin, reference }) : null
+    const hashes = preparesMail ? prepareInvitationHashes(requestId) : null
+    if (preparesMail && (!message || !hashes)) return reply("Invitation sending is not available yet.", 503)
+    const result = await backend().rpc<{ status: string; reason?: string; operation?: string; originalRequest?: string }>("admin_customer_invitation_command_v1", {
       p_token: tokenHash(token),
       p_request: key,
       p_operation: operation,
@@ -84,10 +102,14 @@ export async function invitationCommand(request: NextRequest) {
       p_link_key_version: message?.linkKeyVersion ?? null,
       p_reference: reference,
     })
-    if (result.status === "success" && operation !== "revoke_invitation") {
+    if (result.status === "success" && (operation === "issue_invitation" || operation === "resend_invitation")) {
       const sent = await dispatchQueuedInvitation({ requestId: key })
-      if (sent === "accepted") return reply("Accepted by the email provider. Accepted by the provider is not delivered.", 200)
-      return reply("The customer invitation is queued. Queued is not delivered.", 200)
+      return reply(dispatchMessage(sent), dispatchStatus(sent))
+    }
+    if (result.status === "success" && operation === "process_invitation") {
+      if (!isUuid(result.originalRequest)) return reply("The queued invitation could not be processed. Reload the enquiry before trying again.", 503)
+      const sent = await dispatchQueuedInvitation({ requestId: result.originalRequest })
+      return reply(dispatchMessage(sent), dispatchStatus(sent))
     }
     switch (result.status) {
       case "success": return reply("The invitation was withdrawn. The link can no longer be used.", 200)
@@ -100,6 +122,14 @@ export async function invitationCommand(request: NextRequest) {
         if (result.reason === "already_verified") return reply("This email is already verified. The existing login remains available. No invitation is sent.", 403)
         if (result.reason === "cap") return reply("No further invitation can be sent for this request.", 403)
         if (result.reason === "reference") return reply("This enquiry has no matching reference to include.", 403)
+        if (result.reason === "queued") return reply("An invitation email is already queued. It has not been sent again.", 409)
+        if (result.reason === "processing") return reply("This invitation email is already being sent. Another invitation was not created.", 409)
+        if (result.reason === "acceptance_unknown") return reply("Provider acceptance is unknown. Another invitation was not sent.", 409)
+        if (result.reason === "uncertain") return reply("The invitation email needs review. It has not been sent again.", 409)
+        if (result.reason === "already_accepted") return reply("The email provider already accepted this invitation. Another invitation was not sent.", 409)
+        if (result.reason === "delivered") return reply("This invitation was delivered. Another invitation was not sent.", 409)
+        if (result.reason === "dead_letter") return reply("The invitation email was not accepted. It was not sent again.", 409)
+        if (result.reason === "missing") return reply("There is no invitation waiting to be sent.", 404)
         return reply("This onboarding request is not ready for an invitation.", 403)
       case "invalid": return reply("Check the note before saving.", 400)
       default: return reply("We couldn’t confirm the change. Reload the enquiry before trying again.", 503)

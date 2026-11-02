@@ -14,7 +14,17 @@ const origin = "https://profilerelaunch-customer-git-develop-preview.vercel.app"
 const linkEnv = { COMMUNICATIONS_LINK_SECRET: "invitation-link-secret-at-least-32" }
 const message = composeCustomerInvitationEmail({ origin })!
 
-type Result = { status: string; reason?: string; version?: number; generation?: number; replay?: boolean; id?: string }
+type Result = {
+  status: string
+  reason?: string
+  version?: number
+  generation?: number
+  replay?: boolean
+  id?: string
+  operation?: string
+  originalRequest?: string
+  lifecycle?: string
+}
 
 async function rpc<T>(name: string, args: unknown[]): Promise<T> {
   const params = args.map((_, index) => `$${index + 1}`).join(",")
@@ -110,8 +120,8 @@ describe("admin customer invitation dispatch", () => {
     const duplicate = await invite(row, "issue_invitation", randomUUID(), current.request.version)
     expect(duplicate).toMatchObject({ status: "conflict", reason: "duplicate" })
     expect(await count("admin_private.onboarding_invitations", "onboarding_request_id = $1", [row.requestId])).toBe(1)
-    const view = await rpc<{ status: string; detail: string; canSend: boolean; canRevoke: boolean }>("admin_customer_invitation_view_v1", [token, row.id])
-    expect(view).toMatchObject({ status: "queued", canSend: false, canRevoke: true })
+    const view = await rpc<{ status: string; detail: string; canSend: boolean; canResend: boolean; canProcess: boolean; canRevoke: boolean }>("admin_customer_invitation_view_v1", [token, row.id])
+    expect(view).toMatchObject({ status: "queued", canSend: false, canResend: false, canProcess: true, canRevoke: true })
     expect(view.detail).toContain("queued is not delivered")
     expect(JSON.stringify(view)).not.toContain(stored.token_hash)
   })
@@ -305,8 +315,225 @@ describe("admin customer invitation dispatch", () => {
     )).rows[0]
     expect(delivery.delivery_status).toBe("PROVIDER_ACCEPTED")
     expect(delivery.body_text).toContain("/login/invite/ready")
-    const viewed = await rpc<{ status: string; detail: string }>("admin_customer_invitation_view_v1", [token, row.id])
+    const viewed = await rpc<{ status: string; detail: string; canResend: boolean; canProcess: boolean }>("admin_customer_invitation_view_v1", [token, row.id])
     expect(viewed.status).toBe("accepted")
     expect(viewed.detail).toContain("not delivered")
+    expect(viewed.canResend).toBe(false)
+    expect(viewed.canProcess).toBe(false)
+    const current = await rpc<{ request: { version: number } }>("admin_commercial_onboarding_v1", [token, row.id])
+    expect(await invite(row, "resend_invitation", randomUUID(), current.request.version)).toMatchObject({ status: "denied", reason: "already_accepted" })
+    expect(await invite(row, "process_invitation", randomUUID(), current.request.version)).toMatchObject({ status: "denied", reason: "already_accepted" })
+    expect(await rpc("dev_mail_dispatch_claim_invitation_v1", [key, origin])).toMatchObject({ status: "denied", reason: "already_processed" })
+    expect(await count("public.communications", "invitation_request_id = $1", [row.requestId])).toBe(1)
+  })
+
+  it("recovers one queued invitation after a temporary failure and ignores a second claim", async () => {
+    const row = await ready("recover@example.com")
+    const key = randomUUID()
+    const issued = await invite(row, "issue_invitation", key)
+    expect(await invite(row, "resend_invitation", randomUUID(), (await rpc<{ request: { version: number } }>("admin_commercial_onboarding_v1", [token, row.id])).request.version)).toMatchObject({ status: "denied", reason: "queued" })
+    const first = await rpc<{ status: string; jobId: string; leaseToken: string; idempotencyKey: string; jobType: string; payload: Record<string, unknown> }>("dev_mail_dispatch_claim_invitation_v1", [key, origin])
+    expect(first.status).toBe("success")
+    const processing = await rpc<{ status: string; detail: string; canResend: boolean; canProcess: boolean }>("admin_customer_invitation_view_v1", [token, row.id])
+    expect(processing).toMatchObject({ status: "processing", canResend: false, canProcess: false })
+    expect(processing.detail).toContain("already being sent")
+    const processingVersion = (await rpc<{ request: { version: number } }>("admin_commercial_onboarding_v1", [token, row.id])).request.version
+    expect(await invite(row, "process_invitation", randomUUID(), processingVersion)).toMatchObject({ status: "denied", reason: "processing" })
+    expect(await invite(row, "resend_invitation", randomUUID(), processingVersion)).toMatchObject({ status: "denied", reason: "processing" })
+    const second = await rpc<{ status: string; reason: string }>("dev_mail_dispatch_claim_invitation_v1", [key, origin])
+    expect(second).toMatchObject({ status: "conflict", reason: "leased" })
+    expect(await count("public.communications", "invitation_request_id = $1", [row.requestId])).toBe(1)
+    const retried = await settleDevSendEmailClaim({
+      rpc: dbRpc(),
+      claim: first,
+      env: linkEnv,
+    })
+    expect(retried).toBe("retry")
+    const held = (await db.query<{ delivery_status: string; first_provider_attempt_at: string | null; token_hash: string }>(
+      `select c.delivery_status, c.first_provider_attempt_at, i.token_hash
+       from public.communications c
+       join admin_private.onboarding_invitations i on i.communication_id = c.id
+       where c.id = $1`,
+      [issued.id],
+    )).rows[0]
+    expect(held.delivery_status).toBe("NONE")
+    expect(held.first_provider_attempt_at).toBeNull()
+    const during = await rpc<{ canResend: boolean; canProcess: boolean; status: string }>("admin_customer_invitation_view_v1", [token, row.id])
+    expect(during).toMatchObject({ status: "queued", canResend: false, canProcess: true })
+    const version = (await rpc<{ request: { version: number } }>("admin_commercial_onboarding_v1", [token, row.id])).request.version
+    const processed = await invite(row, "process_invitation", randomUUID(), version)
+    expect(processed).toMatchObject({ status: "success", operation: "process_invitation", originalRequest: key })
+    expect(processed.id).toBeUndefined()
+    const recovered = await rpc<{ status: string; jobType: string; idempotencyKey: string; payload: { communicationId: string }; leaseToken: string }>("dev_mail_dispatch_claim_invitation_v1", [processed.originalRequest, origin])
+    expect(recovered).toMatchObject({ status: "success", jobType: "SEND_EMAIL" })
+    expect(recovered.payload.communicationId).toBe(issued.id)
+    expect(recovered.idempotencyKey).toBe(`send-email:${issued.id}:v1`)
+    const sent: string[] = []
+    expect(await settleDevSendEmailClaim({
+      rpc: dbRpc(),
+      claim: recovered,
+      provider: { async send(input) { sent.push(input.text); return { ok: true, providerMessageId: "msg_recover", replay: false } } },
+      env: linkEnv,
+    })).toBe("succeeded")
+    expect(sent).toHaveLength(1)
+    const after = (await db.query<{ delivery_status: string; token_hash: string; n: number }>(
+      `select c.delivery_status, i.token_hash, (select count(*)::int from public.communications where invitation_request_id = $2) as n
+       from public.communications c
+       join admin_private.onboarding_invitations i on i.communication_id = c.id
+       where c.id = $1`,
+      [issued.id, row.requestId],
+    )).rows[0]
+    expect(after.delivery_status).toBe("PROVIDER_ACCEPTED")
+    expect(after.token_hash).toBe(held.token_hash)
+    expect(after.n).toBe(1)
+    expect(await count("admin_private.onboarding_invitations", "onboarding_request_id = $1", [row.requestId])).toBe(1)
+  })
+
+  it("does not send again when provider acceptance is unknown", async () => {
+    const row = await ready("unknown@example.com")
+    const key = randomUUID()
+    const issued = await invite(row, "issue_invitation", key)
+    const claim = await rpc<{ status: string; idempotencyKey: string; jobId: string; leaseToken: string }>("dev_mail_dispatch_claim_invitation_v1", [key, origin])
+    expect(claim.status).toBe("success")
+    expect(await rpc("communication_begin_provider_attempt_v1", [issued.id, 1, claim.idempotencyKey])).toMatchObject({ status: "success" })
+    expect(await rpc("communication_mark_acceptance_unknown_v1", [issued.id, claim.idempotencyKey])).toMatchObject({ deliveryStatus: "ACCEPTANCE_UNKNOWN" })
+    expect(await rpc("job_complete_v1", [claim.jobId, claim.leaseToken])).toMatchObject({ status: "success" })
+    const view = await rpc<{ status: string; detail: string; canResend: boolean; canProcess: boolean }>("admin_customer_invitation_view_v1", [token, row.id])
+    expect(view.status).toBe("unknown")
+    expect(view.detail).toContain("Provider acceptance is unknown")
+    expect(view.canResend).toBe(false)
+    expect(view.canProcess).toBe(false)
+    const version = (await rpc<{ request: { version: number } }>("admin_commercial_onboarding_v1", [token, row.id])).request.version
+    expect(await invite(row, "resend_invitation", randomUUID(), version)).toMatchObject({ status: "denied", reason: "acceptance_unknown" })
+    expect(await invite(row, "process_invitation", randomUUID(), version)).toMatchObject({ status: "denied", reason: "acceptance_unknown" })
+    expect(await rpc("dev_mail_dispatch_claim_invitation_v1", [key, origin])).toMatchObject({ status: "denied", reason: "acceptance_unknown" })
+    expect(await count("public.communications", "invitation_request_id = $1", [row.requestId])).toBe(1)
+  })
+
+  it("replaces a failed invitation, stops at three generations, and cancels a revoked queue", async () => {
+    const row = await ready("replace@example.com")
+    let current = row.version
+    let openId = ""
+    for (const generation of [1, 2, 3]) {
+      const issued = await invite(row, generation === 1 ? "issue_invitation" : "resend_invitation", randomUUID(), current)
+      expect(issued).toMatchObject({ status: "success", generation })
+      openId = issued.id!
+      expect(await rpc("communication_mark_provider_rejected_v1", [openId, "The provider rejected this invitation.", false, `send-email:${openId}:v1`])).toMatchObject({ deliveryStatus: "FAILED" })
+      current = (await rpc<{ request: { version: number } }>("admin_commercial_onboarding_v1", [token, row.id])).request.version
+      const view = await rpc<{ canResend: boolean; canProcess: boolean; status: string; detail: string }>("admin_customer_invitation_view_v1", [token, row.id])
+      if (generation < 3) {
+        expect(view.canResend).toBe(true)
+        expect(view.canProcess).toBe(false)
+        expect(view.detail).toContain("send a replacement")
+      }
+    }
+    expect(await invite(row, "resend_invitation", randomUUID(), current)).toMatchObject({ status: "denied", reason: "cap" })
+    expect(await count("admin_private.onboarding_invitations", "onboarding_request_id = $1", [row.requestId])).toBe(3)
+    expect(await count("admin_private.onboarding_invitations", "onboarding_request_id = $1 and revoked_at is null", [row.requestId])).toBe(1)
+    const firstHash = (await db.query<{ token_hash: string }>(
+      "select token_hash from admin_private.onboarding_invitations where onboarding_request_id = $1 and generation = 1",
+      [row.requestId],
+    )).rows[0].token_hash
+    expect((await rpc<{ status: string }>("customer_portal_begin_invited_login_v1", [firstHash, createHash("sha256").update("old-link").digest("hex")])).status).toBe("unavailable")
+
+    const queued = await ready("cancel-queue@example.com")
+    const queuedKey = randomUUID()
+    const queuedMail = await invite(queued, "issue_invitation", queuedKey)
+    const queuedVersion = (await rpc<{ request: { version: number } }>("admin_commercial_onboarding_v1", [token, queued.id])).request.version
+    expect(await rpc<Result>("admin_customer_invitation_command_v1", [
+      token, randomUUID(), "revoke_invitation", queued.id, queuedVersion, reason, null, null, null, null, null, null, null, null,
+    ])).toMatchObject({ status: "success" })
+    expect((await db.query<{ lifecycle: string }>("select lifecycle from public.communications where id = $1", [queuedMail.id])).rows[0].lifecycle).toBe("CANCELLED")
+    expect(await rpc("dev_mail_dispatch_claim_invitation_v1", [queuedKey, origin])).toMatchObject({ status: "denied", reason: "not_queued" })
+    expect(await count("public.communications", "invitation_request_id = $1", [queued.requestId])).toBe(1)
+    const revokedHash = (await db.query<{ token_hash: string }>(
+      "select token_hash from admin_private.onboarding_invitations where communication_id = $1",
+      [queuedMail.id],
+    )).rows[0].token_hash
+    expect((await rpc<{ status: string }>("customer_portal_begin_invited_login_v1", [revokedHash, createHash("sha256").update("revoked-queue").digest("hex")])).status).toBe("unavailable")
+  })
+
+  it("replaces an expired invitation without leaving the old link usable", async () => {
+    const row = await ready("expired-replace@example.com")
+    const issued = await invite(row)
+    const replacement = randomUUID()
+    await db.query(
+      `insert into public.communications(
+         id, customer_id, business_id, invitation_request_id, invitation_generation, channel, communication_type,
+         direction, recipient, subject, body_text, status, lifecycle, delivery_status, template_key, template_version,
+         content_version, record_version, content_locked, link_key_version, sender_address
+       ) values (
+         $1, $2, $3, $4, 2, 'EMAIL', 'CUSTOMER_PORTAL_INVITATION', 'OUTBOUND', $5, $6, 'placeholder',
+         'PENDING', 'CANCELLED', 'NONE', 'CUSTOMER_PORTAL_INVITATION', 1, 1, 1, true, 1, 'ops@example.com'
+       )`,
+      [replacement, row.customerId, row.businessId, row.requestId, row.email, message.subject],
+    )
+    const expiredHash = "12".repeat(32)
+    await db.exec(`
+      DO $$
+      BEGIN
+        PERFORM set_config('admin.invitation_maintenance', 'on', true);
+        UPDATE admin_private.onboarding_invitations SET revoked_at = now() WHERE communication_id = '${issued.id}';
+        PERFORM set_config('admin.invitation_maintenance', 'off', true);
+        PERFORM admin_private.customer_invitation_cancel_queued_v1('${issued.id}'::uuid);
+        PERFORM set_config('admin.invitation_dispatch', 'on', true);
+        INSERT INTO admin_private.onboarding_invitations(
+          token_hash, onboarding_request_id, email_snapshot, created_at, expires_at, customer_id,
+          send_count, generation, link_key_version, communication_id
+        ) VALUES (
+          '${expiredHash}', '${row.requestId}', '${row.email}', now() - interval '8 days', now() - interval '1 day',
+          '${row.customerId}', 1, 2, 1, '${replacement}'
+        );
+        PERFORM set_config('admin.invitation_dispatch', 'off', true);
+      END $$;
+    `)
+    const before = await rpc<{ status: string; canResend: boolean; canProcess: boolean }>("admin_customer_invitation_view_v1", [token, row.id])
+    expect(before).toMatchObject({ status: "expired", canResend: true, canProcess: false })
+    const version = (await rpc<{ request: { version: number } }>("admin_commercial_onboarding_v1", [token, row.id])).request.version
+    const replaced = await invite(row, "resend_invitation", randomUUID(), version)
+    expect(replaced).toMatchObject({ status: "success", generation: 3, lifecycle: "QUEUED" })
+    expect((await rpc<{ status: string }>("customer_portal_begin_invited_login_v1", [expiredHash, createHash("sha256").update("expired-link").digest("hex")])).status).toBe("unavailable")
+    expect(await count("admin_private.onboarding_invitations", "onboarding_request_id = $1 and revoked_at is null", [row.requestId])).toBe(1)
+    expect(await count("public.communications", "invitation_request_id = $1 and lifecycle = 'QUEUED'", [row.requestId])).toBe(1)
+  })
+
+  it("leaves quotation and case email dispatch unchanged", async () => {
+    const defs = (await db.query<{ proname: string; def: string }>(`
+      select p.proname, pg_get_functiondef(p.oid) as def
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public'
+        and p.proname in ('dev_mail_dispatch_candidates_v1', 'dev_mail_dispatch_claim_v1', 'dev_mail_dispatch_claim_request_v1')
+    `)).rows
+    expect(defs.map(item => item.proname).sort()).toEqual([
+      "dev_mail_dispatch_candidates_v1",
+      "dev_mail_dispatch_claim_request_v1",
+      "dev_mail_dispatch_claim_v1",
+    ])
+    for (const item of defs) expect(item.def).not.toContain("CUSTOMER_PORTAL_INVITATION")
+    const shared = defs.find(item => item.proname === "dev_mail_dispatch_claim_v1")
+    const sweep = defs.find(item => item.proname === "dev_mail_dispatch_candidates_v1")
+    expect(shared?.def).toContain("QUOTE_OFFER")
+    expect(shared?.def).toContain("CASE_UPDATE")
+    expect(sweep?.def).toContain("QUOTE_OFFER")
+    expect(sweep?.def).toContain("CASE_UPDATE")
+    const row = await ready("unchanged-mail@example.com")
+    const issued = await invite(row)
+    expect(await rpc("dev_mail_dispatch_claim_v1", [issued.id, origin])).toMatchObject({ status: "denied", reason: "not_send_email" })
+    const listed = await rpc<unknown>("dev_mail_dispatch_candidates_v1", [20, origin])
+    expect(JSON.stringify(listed)).not.toContain(issued.id!)
+    expect(await count("public.communications", "template_key = 'QUOTE_OFFER'")).toBe(0)
+    expect(await count("public.communications", "template_key = 'CASE_UPDATE'")).toBe(0)
+    expect(await count("public.communications", "invitation_request_id = $1", [row.requestId])).toBe(1)
   })
 })
+
+function dbRpc() {
+  return {
+    async rpc<T>(name: string, args: Record<string, unknown> = {}): Promise<T> {
+      const names = Object.keys(args)
+      const params = names.map((_, index) => `$${index + 1}`).join(",")
+      return (await db.query<{ value: T }>(`select public.${name}(${params}) as value`, names.map(item => args[item]))).rows[0].value
+    },
+  }
+}

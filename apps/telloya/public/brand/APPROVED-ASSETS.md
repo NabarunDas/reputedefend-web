@@ -6,7 +6,7 @@ The **user-selected exact 3D Connected T** is the final Telloya brand.
 The letter itself is sculpted emerald-green glass and champagne-gold glass with two
 golden connection points and a short golden voicewave above the joined arms.
 The original white, rounded Telloya wordmark from the source image is also final.
-A gentle warm golden shadow is part of the presentation.
+The **original natural golden light/reflection under the T** is extracted from the approved\nsource image and embedded into the transparent lockup, not simulated with CSS.
 
 **Do not redraw a new T, change the letter shape, substitute a generic font,
 reintroduce a headset/chat icon, or place the T inside a glass-square button.**
@@ -16,7 +16,7 @@ The approved original source is retained in the delivered brand archive
 
 ## Current website assets
 
-- `telloya-connected-t-lockup.webp` — transparent, exact approved wordmark and emblem; active website header/footer, dark backgrounds
+- `telloya-connected-t-lockup.webp` — transparent, exact approved wordmark and emblem **with original source-extracted golden reflection beneath the T**; active website header/footer, dark backgrounds
 - `telloya-connected-t-lockup-dark.webp` — same exact contours with dark text for light backgrounds
 - `telloya-connected-t-icon.webp` — transparent standalone 3D T, extracted without redrawing
 - `telloya-icon-16.png`, `telloya-icon-32.png` — dark-emerald favicon derivatives
@@ -38,3 +38,13 @@ The approved original source is retained in the delivered brand archive
 
 Previous emerald-orbit and amber-headset logo files are **historical only**.
 Do not use them as active Telloya identity.
+
+## Natural reflection approved after visual comparison
+
+The owner approved the natural reflection image preview on 2026-11-02. The active
+lockup is 1416×695 including the vertical lighting fade, with the sculpted T
+and wordmark contours unmodified. The header container reserves the original
+60px logo height; the transparent glow is allowed to extend below that visual
+baseline. Do **not** add CSS pseudo-element glows or yellow ovals, and do not
+crop the bottom of the image. The previous 3D emblem-only/favicon files are
+unchanged.

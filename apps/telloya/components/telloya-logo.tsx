@@ -26,8 +26,8 @@ export function TelloyaLogo({ variant = "symbol", className = "", priority = fal
       <Image
         src={src}
         alt="Telloya"
-        width={1388}
-        height={510}
+        width={1416}
+        height={695}
         priority={priority}
         sizes="(max-width: 520px) 142px, 164px"
         style={{ display: "block", width: "100%", height: "auto", objectFit: "contain" }}

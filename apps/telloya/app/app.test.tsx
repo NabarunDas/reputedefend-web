@@ -30,13 +30,15 @@ describe("Telloya Branding", () => {
 
   it("supports dark wordmark for light backgrounds", () => {
     const { container } = render(<TelloyaLogo variant="dark" />)
-    expect(screen.getByText(brandName)).toHaveStyle({ color: "#082e24" })
+    expect(container.querySelector(".telloya-logo-symbol > span")).toHaveTextContent(brandName)
+    expect(container.querySelector(".telloya-logo-symbol > span")).toHaveStyle({ color: "#082e24" })
     expect(container.querySelector("img")).toHaveAttribute("alt", "")
   })
 
   it("supports ivory wordmark for dark backgrounds", () => {
     const { container } = render(<TelloyaLogo variant="light" />)
-    expect(screen.getByText(brandName)).toHaveStyle({ color: "#f7f8f3" })
+    expect(container.querySelector(".telloya-logo-symbol > span")).toHaveTextContent(brandName)
+    expect(container.querySelector(".telloya-logo-symbol > span")).toHaveStyle({ color: "#f7f8f3" })
     expect(container.querySelector("img")).toHaveAttribute("alt", "")
   })
 })

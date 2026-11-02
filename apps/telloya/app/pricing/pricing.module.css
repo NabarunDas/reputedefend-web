@@ -258,8 +258,8 @@
 .hero {
   position: relative;
   isolation: isolate;
-  min-height: 500px;
-  padding: clamp(120px, 15vh, 160px) 0 clamp(75px, 10vh, 95px);
+  min-height: 385px;
+  padding: clamp(116px, 13vh, 145px) 0 clamp(38px, 5vh, 54px);
   text-align: center;
   background:
     radial-gradient(ellipse 45% 35% at 50% 25%, rgba(5, 72, 42, .52), transparent 100%),
@@ -294,3 +294,15 @@
 .sectionTitle em { color: #c5ef9d; font-weight: 400; font-style: italic; }
 .sectionLead { color: rgba(244,248,239,.78); font-size: 1.05rem; line-height: 1.65; max-width: 680px; margin-inline: auto; }
 @keyframes atmosphericBreathe { from { transform: translateX(-1.2%) scale(1); } to { transform: translateX(1.2%) scale(1.05); } }
+
+/* Bring the first informative section close to the cinematic intro. */
+.body > .section:first-child { padding-top: clamp(46px, 6vh, 62px); }
+
+/* Match the compact How It Works handoff at tablet and mobile sizes.
+   Keep clear of the fixed glass navigation and avoid artificial hero height. */
+@media (max-width: 760px) {
+  .hero { min-height: 0; padding: clamp(108px, 12vh, 124px) 0 46px; }
+}
+@media (max-width: 520px) {
+  .hero { min-height: 0; padding: 102px 0 40px; }
+}

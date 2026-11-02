@@ -17,8 +17,8 @@
 .page :is(a,button,summary):focus-visible { outline: 3px solid #d9ff94; outline-offset: 5px; }
 
 .hero {
-  min-height: 440px;
-  padding: clamp(110px, 13vh, 145px) 0 clamp(65px, 8vh, 80px);
+  min-height: 385px;
+  padding: clamp(116px, 13vh, 145px) 0 clamp(38px, 5vh, 54px);
 }
 
 .heroTitle {
@@ -92,7 +92,7 @@
     radial-gradient(ellipse 38% 15% at 95% 20%, rgba(29,105,70,.14), transparent),
     radial-gradient(ellipse 32% 22% at 5% 70%, rgba(31,105,71,.12), transparent),
     linear-gradient(180deg, #00110e, #042219 42%, #001713 74%, #00110d);
-  padding: clamp(70px, 9vh, 95px) 0 clamp(80px, 10vh, 100px);
+  padding: clamp(46px, 6vh, 62px) 0 clamp(80px, 10vh, 100px);
 }
 
 .main::before {
@@ -180,7 +180,7 @@
 /* Responsive layout */
 @media (min-width: 1100px) {
   .main {
-    padding: clamp(80px, 10vh, 105px) 0;
+    padding: clamp(48px, 6vh, 66px) 0 clamp(80px, 10vh, 105px);
   }
   
   .formColumn {
@@ -201,7 +201,7 @@
 
 @media (max-width: 760px) {
   .main {
-    padding: clamp(55px, 7vh, 70px) 0 clamp(60px, 8vh, 75px);
+    padding: clamp(38px, 5vh, 52px) 0 clamp(60px, 8vh, 75px);
   }
   
   .formColumn,
@@ -273,8 +273,8 @@
 .hero {
   position: relative;
   isolation: isolate;
-  min-height: 500px;
-  padding: clamp(120px, 15vh, 160px) 0 clamp(75px, 10vh, 95px);
+  min-height: 385px;
+  padding: clamp(116px, 13vh, 145px) 0 clamp(38px, 5vh, 54px);
   text-align: center;
   background:
     radial-gradient(ellipse 45% 35% at 50% 25%, rgba(5, 72, 42, .52), transparent 100%),
@@ -309,3 +309,12 @@
 .sectionTitle em { color: #c5ef9d; font-weight: 400; font-style: italic; }
 .sectionLead { color: rgba(244,248,239,.78); font-size: 1.05rem; line-height: 1.65; max-width: 680px; margin-inline: auto; }
 @keyframes atmosphericBreathe { from { transform: translateX(-1.2%) scale(1); } to { transform: translateX(1.2%) scale(1.05); } }
+
+/* Match the compact How It Works handoff at tablet and mobile sizes.
+   Keep clear of the fixed glass navigation and avoid artificial hero height. */
+@media (max-width: 760px) {
+  .hero { min-height: 0; padding: clamp(108px, 12vh, 124px) 0 46px; }
+}
+@media (max-width: 520px) {
+  .hero { min-height: 0; padding: 102px 0 40px; }
+}

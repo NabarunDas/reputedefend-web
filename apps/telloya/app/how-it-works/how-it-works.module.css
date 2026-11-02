@@ -19,8 +19,8 @@
 .hero {
   position: relative;
   isolation: isolate;
-  min-height: 500px;
-  padding: clamp(120px, 15vh, 160px) 0 clamp(75px, 10vh, 95px);
+  min-height: 385px;
+  padding: clamp(116px, 13vh, 145px) 0 clamp(38px, 5vh, 54px);
   text-align: center;
   background:
     radial-gradient(ellipse 45% 35% at 50% 25%, rgba(5, 72, 42, .52), transparent 100%),
@@ -118,6 +118,12 @@
 
 .section:last-child {
   border-bottom: none;
+}
+
+/* Subpage introductions need a faster handoff to the first actual section.
+   Keep generous spacing on later content sections. */
+.body > .section:first-child {
+  padding-top: clamp(46px, 6vh, 62px);
 }
 
 .sectionHeader {
@@ -464,7 +470,7 @@
 
 @media (max-width: 760px) {
   .sectionWrap { width: calc(100% - 38px); }
-  .hero { padding: clamp(100px, 12vh, 130px) 0 clamp(60px, 8vh, 75px); }
+  .hero { min-height: 0; padding: clamp(108px, 12vh, 124px) 0 46px; }
   .heroTitle { font-size: clamp(2.3rem, 6.5vw, 3.5rem); }
   .sectionTitle { font-size: clamp(1.9rem, 5vw, 3rem); }
   .exampleBox, .limitationsBox { padding: 26px; }
@@ -472,7 +478,7 @@
 
 @media (max-width: 520px) {
   .sectionWrap { width: calc(100% - 32px); }
-  .hero { min-height: 420px; padding: 95px 0 55px; }
+  .hero { min-height: 0; padding: 102px 0 40px; }
   .heroContent { width: calc(100% - 32px); }
   .heroTitle { font-size: clamp(2rem, 8vw, 2.8rem); }
   .heroLead { font-size: .94rem; }

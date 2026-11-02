@@ -56,15 +56,15 @@ export interface TelloyaEnquiryCapabilities {
 }
 
 /**
- * Check if online enquiry submission is enabled
- * Returns false during prelaunch to prevent form submission
- * Server-side only - requires process.env
+ * Check if online enquiry submission is enabled.
+ * Returns false during prelaunch to prevent form submission.
+ * 
+ * Server-side only - do not call from client components.
+ * 
+ * @param env - Environment object, defaults to process.env
  */
-export function getEnquiryCapabilities(): TelloyaEnquiryCapabilities {
+export function getEnquiryCapabilities(env: Record<string, string | undefined> = process.env): TelloyaEnquiryCapabilities {
   // OFF by default until database persistence is deployed
-  const enabled =
-    typeof process !== "undefined" &&
-    process.env &&
-    process.env.NEXT_PUBLIC_TELLOYA_ENQUIRY_ENABLED === "true"
+  const enabled = env.TELLOYA_ENQUIRY_ENABLED?.trim() === "true"
   return { submissionEnabled: enabled }
 }

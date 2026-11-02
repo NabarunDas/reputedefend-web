@@ -255,11 +255,11 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
 
   if (status === "success") {
     const emailStatusMessage = receiptEmailStatus === "sent"
-      ? "A confirmation email is on its way. Please check your inbox and, if needed, your spam folder."
+      ? "A confirmation email has been accepted by the email provider. Please check your inbox and, if needed, your spam folder. Provider acceptance does not guarantee inbox delivery."
       : receiptEmailStatus === "suppressed"
-        ? "You do not need to submit your enquiry again. Please keep this reference for your records."
+        ? "No confirmation email was requested. Your enquiry is safely recorded."
         : receiptEmailStatus === "unavailable"
-          ? "We could not send a confirmation email just now, but your request is safely recorded. Please keep this enquiry reference."
+          ? "We could not send a confirmation email, but your enquiry is safely recorded. Please keep this reference."
           : ""
     
     return (

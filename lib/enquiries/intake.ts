@@ -56,7 +56,7 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
     if (runtimeAllowsSimulation(nodeEnv)) {
       // Generate mock reference for Telloya in simulation mode
       const mockRef = data.source === "telloya" 
-        ? `TY-${new Date().getFullYear().toString().slice(-2)}-SIM${Math.random().toString(36).slice(2, 8).toUpperCase().replace(/[IL01]/g, 'X')}`
+        ? `TY-${new Date().getFullYear().toString().slice(-2)}-${Math.random().toString(36).slice(2, 8).toUpperCase().replace(/[IL01O]/g, "X")}`
         : undefined
       return { 
         ok: true, 

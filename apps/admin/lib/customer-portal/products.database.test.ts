@@ -518,7 +518,7 @@ describe("customer_portal_products_v1", () => {
 
   it("does not show LIVE billable Telloya as active without a bounded eligible_to", async () => {
     const sub = randomUUID()
-    await billable(sub, "VC-26-EL2031", bakery, "ACTIVE", true)
+    await billable(sub, "VC-26-EL2345", bakery, "ACTIVE", true)
     const entitlementId = randomUUID()
     await db.exec("set local session_replication_role = replica")
     await entitlement(entitlementId, bakery, high, sub, "COMMERCIAL_SUBSCRIPTION")
@@ -553,7 +553,7 @@ describe("customer_portal_products_v1", () => {
 
   it("does not show LIVE pilot Telloya as pilot without a bounded eligible_to", async () => {
     const sub = randomUUID()
-    await pilotSubscription(sub, "VC-26-EL2032", bakery, telloyaPlan, 1, "TELLOYA")
+    await pilotSubscription(sub, "VC-26-EL2346", bakery, telloyaPlan, 1, "TELLOYA")
     const entitlementId = randomUUID()
     await entitlement(entitlementId, bakery, high, sub, "NON_BILLABLE_PILOT")
     await allowLive()

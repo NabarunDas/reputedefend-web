@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { persistGeneralEnquiry, type EnquiryReceipt } from "@shared/enquiries/intake"
+import { persistGeneralEnquiry } from "@shared/enquiries/intake"
 import type { EnquiryInput } from "@shared/enquiry"
 
 describe("Telloya enquiry simulation mode", () => {
@@ -167,7 +167,7 @@ describe("Email delivery status mapping", () => {
         }),
         finish: async () => {},
         provider: {
-          send: async (message) => {
+          send: async (_message) => {
             // Simulate successful email send
             return Promise.resolve({ ok: true })
           },

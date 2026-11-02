@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
   validateTelloyaEnquiry,
-  collectTelloyaEnquiryErrors,
   telloyaEnquiryToPayload,
   type TelloyaEnquiryInput,
 } from "../apps/telloya/lib/telloya-enquiry"
@@ -186,7 +185,7 @@ describe("Telloya enquiry validation", () => {
 
   it("rejects wrong source", () => {
     const enquiry = { ...validEnquiry, source: "contact" }
-    const result = validateTelloyaEnquiry(enquiry as any)
+    const result = validateTelloyaEnquiry(enquiry as unknown as TelloyaEnquiryInput)
     expect(result.valid).toBe(false)
   })
 

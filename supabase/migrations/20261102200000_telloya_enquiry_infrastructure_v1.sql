@@ -19,6 +19,28 @@ CREATE UNIQUE INDEX IF NOT EXISTS enquiries_public_ref_unique_idx
   ON public.enquiries(public_ref) 
   WHERE public_ref IS NOT NULL;
 
+-- Add immutability trigger to prevent changes to assigned references
+-- Once a public_ref is assigned, it cannot be modified (only NULL can become non-NULL)
+CREATE OR REPLACE FUNCTION admin_private.enforce_enquiry_ref_immutability()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF OLD.public_ref IS NOT NULL AND NEW.public_ref IS DISTINCT FROM OLD.public_ref THEN
+    RAISE EXCEPTION 'enquiry reference cannot be modified once assigned';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS enquiry_ref_immutability_check ON public.enquiries;
+CREATE TRIGGER enquiry_ref_immutability_check
+  BEFORE UPDATE ON public.enquiries
+  FOR EACH ROW
+  EXECUTE FUNCTION admin_private.enforce_enquiry_ref_immutability();
+
 -- Step 2: Create generic reference generation function
 -- Uses same secure algorithm as generate_case_public_ref
 CREATE OR REPLACE FUNCTION public.generate_enquiry_public_ref(p_source text)
@@ -73,14 +95,21 @@ $$;
 
 -- Step 3: Extend source constraint to include telloya
 -- This is backwards-compatible - adds a value, doesn't remove any
+-- Check and drop existing constraint explicitly, then add new one
 DO $$ 
 BEGIN
-  ALTER TABLE public.enquiries DROP CONSTRAINT IF EXISTS enquiries_source_check;
-  ALTER TABLE public.enquiries ADD CONSTRAINT enquiries_source_check 
-    CHECK(source IN ('contact','homepage','phone','telloya'));
-EXCEPTION
-  WHEN OTHERS THEN NULL; -- Ignore if constraint doesn't exist
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE constraint_name = 'enquiries_source_check' 
+    AND table_name = 'enquiries' 
+    AND table_schema = 'public'
+  ) THEN
+    ALTER TABLE public.enquiries DROP CONSTRAINT enquiries_source_check;
+  END IF;
 END $$;
+
+ALTER TABLE public.enquiries ADD CONSTRAINT enquiries_source_check 
+  CHECK(source IN ('contact','homepage','phone','telloya'));
 
 -- Step 4: Replace validation function to support Telloya fields
 -- This preserves the exact same interface and behavior for existing sources

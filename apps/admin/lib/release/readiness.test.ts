@@ -152,12 +152,15 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations()).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261101200000_customer_portal_products_v1.sql",
+      "20261102200000_telloya_enquiry_infrastructure_v1.sql",
+    ])
     expect(appliedMigrationHead.version).toBe("20261102110000")
     expect(appliedMigrationHead.containsDataChange).toBe(true)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")

@@ -536,8 +536,19 @@ textarea.control {
   color: #b9ec8a;
 }
 
-.refValue {
+.refGroup {
+  margin-top: 4px;
+}
+
+.refRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-top: 8px;
+}
+
+.refValue {
+  flex: 1;
   font-family: var(--font-display), Arial, sans-serif;
   font-size: clamp(1.35rem, 3vw, 1.85rem);
   line-height: 1.2;
@@ -547,11 +558,48 @@ textarea.control {
   color: #fffdf6;
 }
 
-.success p {
+.copyButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 10px 16px;
+  border: 1px solid rgba(219,255,207,.36);
+  border-radius: 999px;
+  background: rgba(13,54,41,.38);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #f6fff4;
+  font-size: 13px;
+  font-weight: 750;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 180ms ease-out, border-color 180ms ease-out;
+}
+
+.copyButton:hover {
+  background: rgba(36,93,57,.45);
+  border-color: #c5f6ac;
+}
+
+.copyButton:focus-visible {
+  outline: 3px solid #d9ff94;
+  outline-offset: 3px;
+}
+
+.successBody {
   margin-top: 16px;
-  color: #b6d0bd;
+  color: #d2e4d8;
   font-size: 16px;
   line-height: 1.6;
+}
+
+.successNote {
+  margin-top: 12px;
+  color: #b6d0bd;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .visuallyHidden {

@@ -24,8 +24,19 @@ export const metadata: Metadata = {
   },
 }
 
-export default function EnquirePage() {
+export default async function EnquirePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ product?: string | string[] }>
+}) {
   const capabilities = getEnquiryCapabilities()
+  const params = await searchParams
+  
+  // Parse product preselection from URL (e.g., ?product=telloya or ?product=complete)
+  const productParam = Array.isArray(params.product) ? params.product[0] : params.product
+  const initialProduct = productParam === "telloya" || productParam === "complete" 
+    ? productParam 
+    : ""
   
   return (
     <div className={styles.page}>
@@ -54,7 +65,7 @@ export default function EnquirePage() {
 
       <div className={styles.main}>
         <div className={styles.formColumn}>
-          <TelloyaEnquiryForm capabilities={capabilities} />
+          <TelloyaEnquiryForm capabilities={capabilities} initialProduct={initialProduct} />
           <aside className={styles.aside}>
             <section className={styles.process} aria-labelledby="next-title">
               <h2 id="next-title">What happens next</h2>

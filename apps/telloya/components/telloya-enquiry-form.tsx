@@ -55,15 +55,16 @@ const STEP_TITLES = {
   4: "Review and submit",
 } as const
 
-export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnquiryCapabilities }) {
+export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capabilities?: TelloyaEnquiryCapabilities; initialProduct?: ProductInterest }) {
   const submissionEnabled = capabilities?.submissionEnabled ?? false
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
-  const [values, setValues] = useState<EnquiryValues>(INITIAL_VALUES)
+  const [values, setValues] = useState<EnquiryValues>({ ...INITIAL_VALUES, product: initialProduct })
   const [errors, setErrors] = useState<EnquiryFieldErrors>({})
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle")
   const [deliveryError, setDeliveryError] = useState(false)
   const [statusText, setStatusText] = useState("")
   const [enquiryRef, setEnquiryRef] = useState("")
+  const [copySuccess, setCopySuccess] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
   const successRef = useRef<HTMLHeadingElement>(null)
@@ -82,6 +83,29 @@ export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnq
   function requestFocus(target: "heading" | "summary" | "success") {
     focusWhat.current = target
     setFocusKey((key) => key + 1)
+  }
+
+  async function copyReference() {
+    if (!enquiryRef) return
+    try {
+      await navigator.clipboard.writeText(enquiryRef)
+      setCopySuccess(true)
+      setTimeout(() => setCopySuccess(false), 2000)
+    } catch {
+      // Fallback for browsers without clipboard API
+      const input = document.createElement("input")
+      input.value = enquiryRef
+      document.body.appendChild(input)
+      input.select()
+      try {
+        document.execCommand("copy")
+        setCopySuccess(true)
+        setTimeout(() => setCopySuccess(false), 2000)
+      } catch {
+        // Silently fail
+      }
+      document.body.removeChild(input)
+    }
   }
 
   function update<K extends keyof EnquiryValues>(key: K, value: EnquiryValues[K]) {
@@ -228,14 +252,37 @@ export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnq
   if (status === "success") {
     return (
       <div className={styles.success} role="status">
-        <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>Thank you — we have received your enquiry</h2>
+        <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>
+          Thank you — we have received your enquiry
+        </h2>
         {enquiryRef && (
-          <>
+          <div className={styles.refGroup}>
             <p className={styles.refLabel}>Enquiry reference</p>
-            <p className={styles.refValue}>{enquiryRef}</p>
-          </>
+            <div className={styles.refRow}>
+              <p className={styles.refValue}>{enquiryRef}</p>
+              <button 
+                type="button" 
+                onClick={copyReference}
+                className={styles.copyButton}
+                aria-label={copySuccess ? "Reference copied" : "Copy reference"}
+              >
+                {copySuccess ? (
+                  <>
+                    <Check size={16} aria-hidden="true" /> Copied
+                  </>
+                ) : (
+                  <>Copy</>
+                )}
+              </button>
+            </div>
+          </div>
         )}
-        <p>Your request is safely recorded. Our team will review the details and get in touch soon.</p>
+        <p className={styles.successBody}>
+          Your request is safely recorded. Our team will review the details and get in touch soon.
+        </p>
+        <p className={styles.successNote}>
+          Please keep this reference handy so we can find your enquiry quickly if you contact us.
+        </p>
       </div>
     )
   }

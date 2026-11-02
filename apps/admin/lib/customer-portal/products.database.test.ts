@@ -104,8 +104,8 @@ async function pilotSubscription(id: string, ref: string, business: string, plan
 async function entitlement(id: string, business: string, location: string, subscription: string, kind: "NON_BILLABLE_PILOT" | "COMMERCIAL_SUBSCRIPTION", state = "ELIGIBLE") {
   await db.query(
     `insert into public.product_entitlements(
-      id, business_id, location_id, component_code, source_kind, commercial_subscription_id, state
-    ) values ($1, $2, $3, 'TELLOYA', $4, $5, $6)`,
+      id, business_id, location_id, component_code, source_kind, commercial_subscription_id, state, eligible_from, eligible_to
+    ) values ($1, $2, $3, 'TELLOYA', $4, $5, $6, now(), now() + interval '14 days')`,
     [id, business, location, kind, subscription, state],
   )
 }
@@ -514,6 +514,66 @@ describe("customer_portal_products_v1", () => {
     expect(telloyaLocations(seen, "Harbour Bakery")?.status).not.toBe("active")
     expect(JSON.stringify(seen)).not.toContain(stripeCustomer)
     expect(JSON.stringify(seen)).not.toContain(stripeSubscription)
+  })
+
+  it("does not show LIVE billable Telloya as active without a bounded eligible_to", async () => {
+    const sub = randomUUID()
+    await billable(sub, "VC-26-EL2031", bakery, "ACTIVE", true)
+    const entitlementId = randomUUID()
+    await db.exec("set local session_replication_role = replica")
+    await entitlement(entitlementId, bakery, high, sub, "COMMERCIAL_SUBSCRIPTION")
+    await db.exec("set local session_replication_role = origin")
+    await allowLive()
+    await db.exec(
+      `insert into public.service_provisions(
+        entitlement_id, business_id, location_id, state,
+        profile_ready_at, agent_configured_at, number_allocated_at, forwarding_instructed_at,
+        customer_confirmed_at, provider_binding_ref, provider_test_call_ref, provider_test_outcome,
+        agent_test_passed_at, live_at
+      ) values (
+        '${entitlementId}', '${bakery}', '${high}', 'LIVE',
+        now(), now(), now(), now(), now(), '${binding}', '${testCall}', 'PASSED', now(), now()
+      )`,
+    )
+    expect(telloyaLocations(await products(alexSession), "Harbour Bakery")?.locations[0]?.status).toBe("active")
+
+    await db.query("update public.product_entitlements set eligible_to = null where id = $1", [entitlementId])
+    const missing = telloyaLocations(await products(alexSession), "Harbour Bakery")
+    expect(missing?.locations[0]?.status).toBe("pending")
+    expect(missing?.status).not.toBe("active")
+
+    await db.query(
+      "update public.product_entitlements set eligible_to = now() - interval '1 minute' where id = $1",
+      [entitlementId],
+    )
+    const expired = telloyaLocations(await products(alexSession), "Harbour Bakery")
+    expect(expired?.locations[0]?.status).toBe("expired")
+    expect(expired?.status).not.toBe("active")
+  })
+
+  it("does not show LIVE pilot Telloya as pilot without a bounded eligible_to", async () => {
+    const sub = randomUUID()
+    await pilotSubscription(sub, "VC-26-EL2032", bakery, telloyaPlan, 1, "TELLOYA")
+    const entitlementId = randomUUID()
+    await entitlement(entitlementId, bakery, high, sub, "NON_BILLABLE_PILOT")
+    await allowLive()
+    await db.exec(
+      `insert into public.service_provisions(
+        entitlement_id, business_id, location_id, state,
+        profile_ready_at, agent_configured_at, number_allocated_at, forwarding_instructed_at,
+        customer_confirmed_at, provider_binding_ref, provider_test_call_ref, provider_test_outcome,
+        agent_test_passed_at, live_at
+      ) values (
+        '${entitlementId}', '${bakery}', '${high}', 'LIVE',
+        now(), now(), now(), now(), now(), '${binding}', '${testCall}', 'PASSED', now(), now()
+      )`,
+    )
+    expect(telloyaLocations(await products(alexSession), "Harbour Bakery")?.locations[0]?.status).toBe("pilot")
+    await db.query("update public.product_entitlements set eligible_to = null where id = $1", [entitlementId])
+    const missing = telloyaLocations(await products(alexSession), "Harbour Bakery")
+    expect(missing?.locations[0]?.status).toBe("pending")
+    expect(missing?.status).not.toBe("pilot")
+    expect(missing?.status).not.toBe("active")
   })
 
   it("does not let a preview allocation replace standalone Guard monitoring", async () => {

@@ -77,5 +77,14 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
   } catch { /* The saved enquiry remains actionable in the admin queue. */ }
   try { await (options.finish ?? finish)(receipt.id, receipt.attempt, internal, ack) }
   catch { console.error("[enquiry-intake] notification outcome could not be confirmed") }
-  return success
+  
+  // Return success with email delivery status
+  const customerAckSent = ack === "SENT"
+  const receiptEmailStatus: "sent" | "unavailable" = customerAckSent ? "sent" : "unavailable"
+  
+  return {
+    ...success,
+    receiptEmailSent: customerAckSent,
+    receiptEmailStatus,
+  }
 }

@@ -65,6 +65,8 @@ export type TelloyaEnquiryResult = {
   simulated?: boolean
   persisted?: boolean
   enquiryRef?: string
+  receiptEmailSent?: boolean
+  receiptEmailStatus?: "sent" | "unavailable"
 }
 
 const PROCESS_ERROR = "Unable to process this enquiry."

@@ -95,12 +95,14 @@ export async function POST(request: Request) {
       )
     }
 
-    // Return success with enquiry reference
+    // Return success with enquiry reference and email status
     return NextResponse.json(
       { 
         ok: true, 
         message: result.message,
         enquiryRef: result.enquiryRef,
+        receiptEmailSent: result.receiptEmailSent,
+        receiptEmailStatus: result.receiptEmailStatus,
       },
       { status: 200 }
     )

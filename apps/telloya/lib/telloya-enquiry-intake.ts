@@ -117,5 +117,7 @@ export async function persistTelloyaEnquiry(
     simulated: result.simulated,
     persisted: result.persisted,
     enquiryRef: result.enquiryRef,
+    receiptEmailSent: result.receiptEmailSent,
+    receiptEmailStatus: result.receiptEmailStatus,
   }
 }

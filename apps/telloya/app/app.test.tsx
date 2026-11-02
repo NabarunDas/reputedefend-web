@@ -28,13 +28,13 @@ describe("Telloya Branding", () => {
   })
 
   it("uses the matching dark-wordmark variant on light surfaces", () => {
-    render(<TelloyaLogo variant="dark" />)
-    expect(screen.getByAltText(brandName).getAttribute("src")).toContain("telloya-connected-t-lockup-dark.webp")
+    const { container } = render(<TelloyaLogo variant="dark" />)
+    expect(container.querySelector(".telloya-logo-lockup img")?.getAttribute("src")).toContain("telloya-connected-t-lockup-dark.webp")
   })
 
   it("uses the original white wordmark on dark surfaces", () => {
-    render(<TelloyaLogo variant="light" />)
-    expect(screen.getByAltText(brandName).getAttribute("src")).toContain("telloya-connected-t-lockup.webp")
+    const { container } = render(<TelloyaLogo variant="light" />)
+    expect(container.querySelector(".telloya-logo-lockup img")?.getAttribute("src")).toContain("telloya-connected-t-lockup.webp")
   })
 })
 

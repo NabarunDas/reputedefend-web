@@ -2,18 +2,20 @@ import type { CustomerDashboard } from "@/lib/portal/cases/parse"
 import { requestAccessAction } from "./enquiry"
 
 /**
- * My Products presentation.
+ * My Products launcher.
  *
- * ProfileRelaunch covers Recovery, Review Protection and Relaunch Guard.
- * Telloya is the AI receptionist. A card is not a purchase. A case is not a subscription.
- * Signing in does not start a subscription. Those rules stay in
- * the presenter and out of the customer-facing sentences. A failed authoritative
- * read stays unavailable and is not treated as unpurchased. Guard subscription
- * state is labelled as Relaunch Guard, not as a ProfileRelaunch verdict. No
- * purchase path and no Telloya workspace are linked.
+ * ProfileRelaunch is the company. Recovery & Review Support, Relaunch Guard
+ * and Telloya are three services under that brand. A case is not a subscription.
+ * Signing in does not start a subscription. Those rules stay in the presenter
+ * and out of the customer-facing sentences. A failed authoritative read stays
+ * unavailable and is not treated as unpurchased. A Guard query that succeeds
+ * is not coverage and does not open a dashboard. No purchase path and no
+ * Telloya workspace are linked.
  */
 
-export type ProductKey = "profilerelaunch" | "telloya"
+export type ProductKey = "recovery" | "guard" | "telloya"
+
+export type ProductGroup = "yours" | "explore" | "unconfirmed"
 
 export type ProductPresentationStatus = "open" | "exploring" | "unavailable"
 
@@ -26,8 +28,8 @@ export type ProductCard = {
   key: ProductKey
   name: string
   description: string
-  services: readonly string[]
   mark: ProductKey
+  group: ProductGroup
   status: ProductPresentationStatus
   /** Customer phrase. Absent when no authoritative commercial state is shown. */
   statusLabel?: string
@@ -87,12 +89,16 @@ export type ProductSources = {
 }
 
 const UNAVAILABLE = "We couldn't confirm this service just now. Refresh the page. This does not say whether it has been set up."
+const GUARD_UNCONFIRMED = "We couldn't confirm Relaunch Guard just now. This does not say whether it has been set up."
+const GUARD_WORKSPACE_UNCONFIRMED = "We couldn't open Relaunch Guard just now. This does not say whether coverage has changed."
 const STATUS_UNAVAILABLE = "Status temporarily unavailable"
 const GUARD_DETAILS_UNAVAILABLE = "Some extra details are temporarily unavailable. Monitoring already recorded is unchanged."
 const TELLOYA_NOT_ACTIVE = "Telloya is not active yet."
 const TELLOYA_NO_WORKSPACE = "There is no Telloya workspace to open yet."
+const TELLOYA_CLOSED = "Telloya is not open in your portal yet."
 const PARTIALLY_ACTIVE = "Partially active"
 const STATUS_VARIES = "Status varies by location"
+const OPEN_DASHBOARD: ProductAction = { label: "Open dashboard", href: "" }
 
 const STATUS_LABEL: Record<CommercialStatus, string> = {
   not_subscribed: "Not subscribed",
@@ -106,18 +112,6 @@ const STATUS_LABEL: Record<CommercialStatus, string> = {
   cancelled: "Cancelled",
   unavailable: STATUS_UNAVAILABLE,
 }
-
-const PROFILE_SERVICES = [
-  "Recovery: cases, documents, messages and payments.",
-  "Review Protection: help when a review needs attention.",
-  "Relaunch Guard: monitoring for covered Google Business Profile locations.",
-] as const
-
-const TELLOYA_SERVICES = [
-  "Missed-call handling.",
-  "Customer enquiries.",
-  "Callback follow-up.",
-] as const
 
 function businessContext(names: readonly string[]): string | null {
   const unique = [...new Set(names.map(name => name.trim()).filter(name => name.length > 0))]
@@ -172,143 +166,199 @@ function joinParts(parts: readonly (string | null | undefined)[]): string | null
   return text.length > 0 ? text : null
 }
 
-function profileCard(sources: ProductSources): ProductCard {
-  const actions: ProductAction[] = []
-  const context: string[] = []
-  let attention: string | null = null
-  let unavailableReason: string | null = null
-  let status: ProductPresentationStatus = "exploring"
+function openDashboard(href: "/portal/recovery" | "/portal/guard"): ProductAction {
+  return { label: OPEN_DASHBOARD.label, href }
+}
 
-  if (sources.recovery.status === "ready") {
-    const dashboard = sources.recovery.dashboard
-    if (hasCases(dashboard)) {
-      actions.push({ label: "Open Recovery dashboard", href: "/portal/recovery" })
-      const rows = [...dashboard.attentionCases, ...dashboard.recentCases]
-      const names = businessContext(rows.map(row => row.businessName))
-      if (names) context.push(sentence(names))
-      const attentionCount = dashboard.summary.attentionCases
-      if (attentionCount > 0) {
-        attention = `${attentionCount} ${attentionCount === 1 ? "case needs" : "cases need"} your attention`
-      }
+function recoveryTile(sources: ProductSources): ProductCard {
+  const base = {
+    key: "recovery" as const,
+    name: "Recovery & Review Support",
+    description: "Cases, documents and review help for your Google Business Profile.",
+    mark: "recovery" as const,
+  }
+  if (sources.recovery.status !== "ready") {
+    return {
+      ...base,
+      group: "unconfirmed",
+      status: "unavailable",
+      statusLabel: STATUS_UNAVAILABLE,
+      context: null,
+      actions: [],
+      attention: null,
+      unavailableReason: UNAVAILABLE,
     }
-  } else {
-    unavailableReason = UNAVAILABLE
-    status = "unavailable"
   }
-
-  if (sources.guard.status === "ready") {
-    actions.push({ label: "Open Relaunch Guard", href: "/portal/guard" })
-    const locations = sources.guard.locations
-    const names = businessContext(locations.map(location => location.businessName))
-    const recorded = locations.filter(location => location.monitoringActive).length
-    if (locations.length === 0) context.push("No covered locations are on file.")
-    else if (recorded > 0) {
-      const recordedText = `Monitoring is recorded for ${recorded} ${recorded === 1 ? "location" : "locations"}.`
-      context.push(names ? `${names}. ${recordedText}` : recordedText)
-    } else if (names) context.push(sentence(names))
-    if (status === "unavailable" && sources.recovery.status === "unavailable") status = "open"
-    else if (sources.recovery.status === "ready") status = "open"
-  } else if (sources.recovery.status === "ready") {
-    status = actions.length > 0 ? "open" : "exploring"
-    unavailableReason = unavailableReason ?? "We couldn't confirm Relaunch Guard just now. This does not say whether it has been set up."
+  const dashboard = sources.recovery.dashboard
+  if (!hasCases(dashboard)) {
+    return {
+      ...base,
+      group: "explore",
+      status: "exploring",
+      context: "No cases are open on this account.",
+      actions: [requestAccessAction.recovery],
+      attention: null,
+      unavailableReason: null,
+    }
   }
+  const rows = [...dashboard.attentionCases, ...dashboard.recentCases]
+  const names = businessContext(rows.map(row => row.businessName))
+  const attentionCount = dashboard.summary.attentionCases
+  const active = dashboard.summary.activeCases > 0 || dashboard.summary.attentionCases > 0
+  return {
+    ...base,
+    group: "yours",
+    status: "open",
+    statusLabel: active ? "Cases open" : "Previous cases",
+    context: names ? sentence(names) : null,
+    actions: [openDashboard("/portal/recovery")],
+    attention: attentionCount > 0
+      ? `${attentionCount} ${attentionCount === 1 ? "case needs" : "cases need"} your attention`
+      : null,
+    unavailableReason: null,
+  }
+}
 
+function recordedMonitoring(sources: ProductSources): number {
+  if (sources.guard.status !== "ready") return 0
+  return sources.guard.locations.filter(location => location.monitoringActive).length
+}
+
+function operationalGuardContext(sources: ProductSources): string | null {
+  if (sources.guard.status !== "ready") return null
+  const locations = sources.guard.locations
+  const names = businessContext(locations.map(location => location.businessName))
+  const recorded = locations.filter(location => location.monitoringActive).length
+  if (locations.length === 0) return "No covered locations are on file."
+  const recordedText = recorded > 0
+    ? `Monitoring is recorded for ${recorded} ${recorded === 1 ? "location" : "locations"}.`
+    : null
+  if (recordedText) return names ? `${names}. ${recordedText}` : recordedText
+  return names ? sentence(names) : null
+}
+
+function guardTile(sources: ProductSources): ProductCard {
+  const base = {
+    key: "guard" as const,
+    name: "Relaunch Guard",
+    description: "Monitoring for covered Google Business Profile locations.",
+    mark: "guard" as const,
+  }
   const commercial = sources.commercial
-  if (commercial && commercial.reads.guard !== "ok") {
-    context.push("Relaunch Guard: Status temporarily unavailable.")
-    if (sources.guard.status === "ready") {
-      unavailableReason = sources.recovery.status === "unavailable" && unavailableReason
-        ? `${unavailableReason} ${GUARD_DETAILS_UNAVAILABLE}`
-        : GUARD_DETAILS_UNAVAILABLE
-      status = "open"
-    }
-  } else if (commercial) {
-    const statuses = contributingStatuses(commercial.businesses, "guard")
-    const label = summaryLabel(statuses)
-    context.push(sentence(`Relaunch Guard: ${label}`))
+  const readFailed = !!commercial && commercial.reads.guard !== "ok"
+  const commercialOk = !!commercial && commercial.reads.guard === "ok"
+  const statuses = commercialOk ? contributingStatuses(commercial.businesses, "guard") : []
+  const label = commercialOk ? summaryLabel(statuses) : null
+  const recorded = recordedMonitoring(sources)
+  const verifiedActive = statuses.includes("active")
+  const canOpen = sources.guard.status === "ready" && (verifiedActive || recorded > 0)
+  const knownAbsence = label === STATUS_LABEL.not_subscribed
+  const recordedEntitlement = label !== null && label !== STATUS_LABEL.not_subscribed && label !== STATUS_UNAVAILABLE
+  const group: ProductGroup = recorded > 0 || recordedEntitlement
+    ? "yours"
+    : label === STATUS_UNAVAILABLE || (!knownAbsence && (readFailed || sources.guard.status === "unavailable"))
+      ? "unconfirmed"
+      : "explore"
+
+  const context: string[] = []
+  if (commercialOk) {
     const detail = detailLines(commercial.businesses, "guard")
     if (detail) context.push(sentence(detail))
+    else if (knownAbsence) context.push("There is no Relaunch Guard coverage on this account.")
     const locations = commercial.businesses.flatMap(business => business.guard.locations)
     if (locations.some(location => location.allocation === "preview" && location.monitoringRecorded)) {
       context.push("Your existing Guard monitoring is unchanged.")
     }
-    const next = locations.find(location => location.nextStep)?.nextStep ?? null
-    if (next && !attention) attention = next
-    if (label === STATUS_LABEL.not_subscribed && requestAccessAction.profile) actions.push(requestAccessAction.profile)
+    if (recorded > 0) context.push(`Monitoring is recorded for ${recorded} ${recorded === 1 ? "location" : "locations"}.`)
+  } else if (sources.guard.status === "ready") {
+    const operational = operationalGuardContext(sources)
+    if (operational) context.push(operational)
   }
+  if (readFailed) context.push("Status temporarily unavailable.")
 
-  if (sources.recovery.status === "ready" && hasCases(sources.recovery.dashboard) && status === "unavailable") {
-    status = "open"
-  }
+  const locations = commercialOk ? commercial.businesses.flatMap(business => business.guard.locations) : []
+  const next = locations.find(location => location.nextStep)?.nextStep ?? null
+  let unavailableReason: string | null = null
+  if (readFailed && recorded > 0) unavailableReason = GUARD_DETAILS_UNAVAILABLE
+  else if (readFailed || (sources.guard.status === "unavailable" && !commercialOk)) unavailableReason = GUARD_UNCONFIRMED
+  else if (sources.guard.status === "unavailable" && group === "yours") unavailableReason = GUARD_WORKSPACE_UNCONFIRMED
 
+  const showLabel = label !== null && !(knownAbsence && recorded > 0) && label !== STATUS_UNAVAILABLE
   return {
-    key: "profilerelaunch",
-    name: "ProfileRelaunch",
-    description: "Recovery, Review Protection and Relaunch Guard sit under ProfileRelaunch.",
-    services: PROFILE_SERVICES,
-    mark: "profilerelaunch",
-    status,
+    ...base,
+    group,
+    status: group === "unconfirmed" ? "unavailable" : canOpen ? "open" : "exploring",
+    statusLabel: label === STATUS_UNAVAILABLE || group === "unconfirmed" ? STATUS_UNAVAILABLE : showLabel ? label : undefined,
     context: joinParts(context),
-    actions,
-    attention,
+    actions: canOpen ? [openDashboard("/portal/guard")] : group === "explore" ? [requestAccessAction.guard] : [],
+    attention: label === STATUS_UNAVAILABLE ? null : next,
     unavailableReason,
   }
 }
 
-function telloyaCard(commercial?: CommercialProjection): ProductCard {
+function telloyaTile(commercial?: CommercialProjection): ProductCard {
   const base = {
     key: "telloya" as const,
     name: "Telloya",
-    description: "Your AI receptionist for missed-call handling, customer enquiries and callback follow-up.",
-    services: TELLOYA_SERVICES,
+    description: "AI receptionist for missed calls, enquiries and callback follow-up.",
     mark: "telloya" as const,
-    actions: [] as ProductAction[],
   }
   if (!commercial) {
     return {
       ...base,
+      group: "explore",
       status: "exploring",
       context: null,
+      actions: requestAccessAction.telloya ? [requestAccessAction.telloya] : [],
       attention: null,
-      unavailableReason: "Telloya is not open in your portal yet.",
+      unavailableReason: TELLOYA_CLOSED,
     }
   }
   if (commercial.reads.telloya !== "ok") {
     return {
       ...base,
+      group: "unconfirmed",
       status: "unavailable",
       statusLabel: STATUS_UNAVAILABLE,
       context: null,
+      actions: [],
       attention: null,
       unavailableReason: UNAVAILABLE,
     }
   }
   const statuses = contributingStatuses(commercial.businesses, "telloya")
   const label = summaryLabel(statuses)
+  const lines = detailLines(commercial.businesses, "telloya")
+  if (label === STATUS_UNAVAILABLE) {
+    return {
+      ...base,
+      group: "unconfirmed",
+      status: "unavailable",
+      statusLabel: STATUS_UNAVAILABLE,
+      context: lines ? sentence(lines) : null,
+      actions: [],
+      attention: null,
+      unavailableReason: UNAVAILABLE,
+    }
+  }
   const locations = commercial.businesses.flatMap(business => business.telloya.locations)
   const next = locations.find(location => location.nextStep)?.nextStep
     ?? (statuses.includes("pending") ? TELLOYA_NOT_ACTIVE : null)
-  const lines = detailLines(commercial.businesses, "telloya")
-  const context = label === STATUS_LABEL.not_subscribed
-    ? "There is no Telloya subscription on this account."
-    : lines
+  const subscribed = label !== STATUS_LABEL.not_subscribed
   return {
     ...base,
-    status: label === STATUS_UNAVAILABLE ? "unavailable" : "exploring",
+    group: subscribed ? "yours" : "explore",
+    status: "exploring",
     statusLabel: label,
-    context: context ? sentence(context) : context,
-    actions: label === STATUS_LABEL.not_subscribed && requestAccessAction.telloya ? [requestAccessAction.telloya] : [],
-    attention: label === STATUS_UNAVAILABLE ? null : next,
-    unavailableReason: label === STATUS_UNAVAILABLE ? UNAVAILABLE : TELLOYA_NO_WORKSPACE,
+    context: label === STATUS_LABEL.not_subscribed
+      ? "There is no Telloya subscription on this account."
+      : lines ? sentence(lines) : null,
+    actions: !subscribed && requestAccessAction.telloya ? [requestAccessAction.telloya] : [],
+    attention: next,
+    unavailableReason: TELLOYA_NO_WORKSPACE,
   }
 }
 
 export function presentProducts(sources: ProductSources): ProductCard[] {
-  return [profileCard(sources), telloyaCard(sources.commercial)]
-}
-
-export function productStatusLabel(status: ProductPresentationStatus): string {
-  if (status === "open") return "You can open this"
-  if (status === "exploring") return "Being explored"
-  return "Unavailable right now"
+  return [recoveryTile(sources), guardTile(sources), telloyaTile(sources.commercial)]
 }

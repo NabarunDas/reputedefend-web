@@ -15,5 +15,5 @@ export default async function ProductsPage() {
   }
   const loaded = await loadProductHub()
   if (loaded.status === "unauthenticated") redirect("/login")
-  return <ProductsView accountName={loaded.accountName} products={loaded.products} />
+  return <ProductsView products={loaded.products} />
 }

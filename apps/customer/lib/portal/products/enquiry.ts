@@ -13,7 +13,8 @@ export const telloyaContactHref = legalIdentity.contactEmail
   : null
 
 export const requestAccessAction = {
-  profile: { label: "Enquire about Relaunch Guard", href: profileRelaunchEnquiryHref },
+  recovery: { label: "Start an assessment", href: profileRelaunchEnquiryHref },
+  guard: { label: "Enquire about Relaunch Guard", href: profileRelaunchEnquiryHref },
   telloya: telloyaContactHref
     ? { label: "Email us about Telloya", href: telloyaContactHref }
     : null,

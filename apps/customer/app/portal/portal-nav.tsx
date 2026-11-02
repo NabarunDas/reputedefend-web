@@ -5,33 +5,40 @@ import { usePathname } from "next/navigation"
 
 const dashboard = { label: "Dashboard", href: "/portal" } as const
 const recoveryDashboard = { label: "Dashboard", href: "/portal/recovery" } as const
-const productsHubItem = { label: "My Products", href: "/portal/products" } as const
+const productsItem = { label: "Back to My Products", href: "/portal/products" } as const
 
-const sharedPrimary = [
-  { label: "Cases", href: "/portal/cases" },
-  { label: "Documents", href: "/portal/documents" },
-] as const
+const cases = { label: "Cases", href: "/portal/cases" } as const
+const documents = { label: "Documents", href: "/portal/documents" } as const
+const messages = { label: "Messages", href: "/portal/messages" } as const
+const payments = { label: "Payments", href: "/portal/payments" } as const
+const guardItem = { label: "Relaunch Guard", href: "/portal/guard" } as const
+const account = { label: "Account", href: "/portal/account" } as const
 
-const more = [
-  { label: "Messages", href: "/portal/messages" },
-  { label: "Payments", href: "/portal/payments" },
-  { label: "Relaunch Guard", href: "/portal/guard" },
-  { label: "Account", href: "/portal/account" },
-] as const
+const legacyMore = [messages, payments, guardItem, account] as const
+const recoveryMore = [messages, payments, account] as const
+
+export type PortalNavMode = "legacy" | "recovery" | "guard" | "account"
 
 function current(pathname: string, href: string) {
   if (href === "/portal") return pathname === "/portal"
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 
-export function PortalNav({ defaultOpen = false, productsHub = false }: { defaultOpen?: boolean; productsHub?: boolean } = {}) {
+export function PortalNav({ defaultOpen = false, mode = "legacy" }: { defaultOpen?: boolean; mode?: PortalNavMode } = {}) {
   const pathname = usePathname()
   const menuId = useId()
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLUListElement>(null)
   const seenPath = useRef(pathname)
   const [open, setOpen] = useState(defaultOpen)
-  const primary = productsHub ? [productsHubItem, recoveryDashboard, ...sharedPrimary] : [dashboard, ...sharedPrimary]
+  const primary = mode === "guard"
+    ? [productsItem, guardItem, account]
+    : mode === "account"
+      ? [productsItem, account]
+      : mode === "recovery"
+        ? [productsItem, recoveryDashboard, cases, documents]
+        : [dashboard, cases, documents]
+  const more = mode === "guard" || mode === "account" ? [] : mode === "recovery" ? recoveryMore : legacyMore
   const activeMore = more.find(item => current(pathname, item.href))
 
   useEffect(() => {
@@ -88,44 +95,46 @@ export function PortalNav({ defaultOpen = false, productsHub = false }: { defaul
         {primary.map(item => {
           const active = current(pathname, item.href)
           return (
-            <li key={item.label}>
+            <li key={item.href}>
               <a className="portal-nav-link" href={item.href} {...(active ? { "aria-current": "page" as const } : {})}>
                 {item.label}
               </a>
             </li>
           )
         })}
-        <li className="portal-nav-more">
-          <button
-            ref={buttonRef}
-            type="button"
-            className="portal-nav-more-button"
-            aria-expanded={open}
-            aria-controls={menuId}
-            {...(activeMore ? { "aria-current": "true" as const } : {})}
-            onClick={() => setOpen(value => !value)}
-          >
-            More
-            {activeMore ? <span className="sr-only">, {activeMore.label}</span> : null}
-          </button>
-          <ul
-            ref={menuRef}
-            id={menuId}
-            className={open ? "portal-more-menu is-open" : "portal-more-menu"}
-            aria-label="More destinations"
-          >
-            {more.map(item => {
-              const active = current(pathname, item.href)
-              return (
-                <li key={item.label}>
-                  <a className="portal-nav-link" href={item.href} {...(active ? { "aria-current": "page" as const } : {})}>
-                    {item.label}
-                  </a>
-                </li>
-              )
-            })}
-          </ul>
-        </li>
+        {more.length > 0 ? (
+          <li className="portal-nav-more">
+            <button
+              ref={buttonRef}
+              type="button"
+              className="portal-nav-more-button"
+              aria-expanded={open}
+              aria-controls={menuId}
+              {...(activeMore ? { "aria-current": "true" as const } : {})}
+              onClick={() => setOpen(value => !value)}
+            >
+              More
+              {activeMore ? <span className="sr-only">, {activeMore.label}</span> : null}
+            </button>
+            <ul
+              ref={menuRef}
+              id={menuId}
+              className={open ? "portal-more-menu is-open" : "portal-more-menu"}
+              aria-label="More destinations"
+            >
+              {more.map(item => {
+                const active = current(pathname, item.href)
+                return (
+                  <li key={item.href}>
+                    <a className="portal-nav-link" href={item.href} {...(active ? { "aria-current": "page" as const } : {})}>
+                      {item.label}
+                    </a>
+                  </li>
+                )
+              })}
+            </ul>
+          </li>
+        ) : null}
       </ul>
     </nav>
   )

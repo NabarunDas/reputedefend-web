@@ -1,24 +1,11 @@
 import { productsHubEnabled } from "@/lib/portal/products-hub"
-import { PortalIdleGuard } from "./idle-guard"
-import { PortalNav } from "./portal-nav"
-import { SignOutButton } from "./sign-out-button"
+import { PortalChrome } from "./portal-chrome"
 
 /**
  * Visual shell for /portal. Later data pages must still check the portal
  * session and their own authorisation. This layout is not that boundary.
+ * My Products does not inherit Recovery or Guard navigation.
  */
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="portal-shell">
-      <div className="portal-bar">
-        <div className="portal-context">
-          <p className="portal-context-title">My ProfileRelaunch</p>
-          <SignOutButton />
-        </div>
-        <PortalNav productsHub={productsHubEnabled()} />
-      </div>
-      <PortalIdleGuard />
-      <div className="portal-private">{children}</div>
-    </div>
-  )
+  return <PortalChrome hub={productsHubEnabled()}>{children}</PortalChrome>
 }

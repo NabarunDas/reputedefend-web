@@ -1,9 +1,10 @@
-import { welcomeHeading } from "@/components/portal-ui"
-import { productStatusLabel, type ProductCard } from "@/lib/portal/products/present"
+import { SignOutButton } from "../sign-out-button"
+import type { ProductCard } from "@/lib/portal/products/present"
 
 function ProductMark({ mark }: { mark: ProductCard["mark"] }) {
   const paths = {
-    profilerelaunch: "M6 7h12v12H6zM9 7V5h6v2M9 12h6M9 15h4",
+    recovery: "M6 7h12v12H6zM9 7V5h6v2M9 12h6M9 15h4",
+    guard: "M12 3.5l6.5 2.8v5.4c0 4.2-2.7 6.6-6.5 8.8-3.8-2.2-6.5-4.6-6.5-8.8V6.3L12 3.5z",
     telloya: "M8 5h8v10H8zM10 19h4M9 8h6M9 11h6",
   } as const
   return (
@@ -13,75 +14,107 @@ function ProductMark({ mark }: { mark: ProductCard["mark"] }) {
   )
 }
 
-function badgeText(product: ProductCard): string | null {
-  if (product.statusLabel) return product.statusLabel
-  if (product.status === "unavailable") return productStatusLabel(product.status)
-  return null
+function badgeClass(product: ProductCard): string {
+  if (product.statusLabel === "Active" || product.statusLabel === "Partially active" || product.statusLabel === "Cases open") {
+    return "products-status products-status-live"
+  }
+  if (product.status === "unavailable" || product.statusLabel === "Status temporarily unavailable") {
+    return "products-status products-status-unavailable"
+  }
+  return "products-status products-status-exploring"
 }
 
-function ProductCardView({ product }: { product: ProductCard }) {
-  const badge = badgeText(product)
+function ServiceTile({ product }: { product: ProductCard }) {
   return (
-    <article className={`products-card products-card-${product.status}`} aria-labelledby={`product-${product.key}`}>
-      <div className="products-card-top">
+    <article className={`products-tile products-tile-${product.status}`} aria-labelledby={`product-${product.key}`}>
+      <div className="products-tile-main">
         <ProductMark mark={product.mark} />
-        {badge ? <p className={`products-status products-status-${product.status}`}>{badge}</p> : null}
-      </div>
-      <h2 id={`product-${product.key}`}>{product.name}</h2>
-      <p className="products-description">{product.description}</p>
-      <ul className="products-services" aria-label={`${product.name} services`}>
-        {product.services.map(service => <li key={service}>{service}</li>)}
-      </ul>
-      {product.context ? <p className="products-context">{product.context}</p> : null}
-      {product.attention ? <p className="products-attention">{product.attention}</p> : null}
-      {product.unavailableReason ? <p className="products-note">{product.unavailableReason}</p> : null}
-      {product.actions.length > 0 ? (
-        <div className="products-actions">
-          {product.actions.map(action => {
-            const external = action.href.startsWith("http") || action.href.startsWith("mailto:")
-            return (
-              <a
-                key={`${action.label}-${action.href}`}
-                className={external ? "products-action products-action-secondary" : "products-action"}
-                href={action.href}
-                {...(external ? { rel: "noopener noreferrer" } : {})}
-              >
-                {action.label}
-              </a>
-            )
-          })}
+        <div className="products-tile-copy">
+          <h3 id={`product-${product.key}`}>{product.name}</h3>
+          <p className="products-description">{product.description}</p>
+          {product.context ? <p className="products-context">{product.context}</p> : null}
+          {product.attention ? <p className="products-attention">{product.attention}</p> : null}
+          {product.unavailableReason ? <p className="products-note">{product.unavailableReason}</p> : null}
         </div>
-      ) : null}
+      </div>
+      <div className="products-tile-aside">
+        {product.statusLabel ? <p className={badgeClass(product)}>{product.statusLabel}</p> : null}
+        {product.actions.map(action => {
+          const external = action.href.startsWith("http") || action.href.startsWith("mailto:")
+          return (
+            <a
+              key={`${action.label}-${action.href}`}
+              className={external ? "products-action products-action-secondary" : "products-action"}
+              href={action.href}
+              {...(external ? { rel: "noopener noreferrer" } : {})}
+            >
+              {action.label}
+            </a>
+          )
+        })}
+      </div>
     </article>
   )
 }
 
-export function ProductsView({ accountName, products }: { accountName: string | null; products: readonly ProductCard[] }) {
+function ServiceSection({ id, title, products }: { id: string; title: string; products: readonly ProductCard[] }) {
+  return (
+    <section className="products-section" aria-labelledby={id}>
+      <h2 id={id}>{title}</h2>
+      <ul className="products-grid">
+        {products.map(product => (
+          <li key={product.key}>
+            <ServiceTile product={product} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function LauncherIntro({ loading = false }: { loading?: boolean }) {
+  return (
+    <header className="products-intro">
+      <div className="products-intro-copy">
+        <p className="products-identity">Customer portal</p>
+        <h1>My Products</h1>
+        {loading ? null : <p className="lead">Manage your services from ProfileRelaunch</p>}
+      </div>
+      <div className="products-account">
+        <a className="products-account-link" href="/portal/account">Account</a>
+        <SignOutButton />
+      </div>
+    </header>
+  )
+}
+
+export function ProductsView({ products }: { products: readonly ProductCard[] }) {
+  const yours = products.filter(product => product.group === "yours")
+  const explore = products.filter(product => product.group === "explore")
+  const unconfirmed = products.filter(product => product.group === "unconfirmed")
   return (
     <div className="products-hub">
-      <header className="portal-page-head">
-        <p className="products-welcome">{welcomeHeading(accountName)}</p>
-        <h1>My Products</h1>
-        <p className="lead">Here are the services on your account.</p>
-      </header>
-      <section aria-label="Your products">
-        <ul className="products-grid">
-          {products.map(product => (
-            <li key={product.key}>
-              <ProductCardView product={product} />
-            </li>
-          ))}
-        </ul>
-      </section>
+      <LauncherIntro />
+      {yours.length === 0 ? (
+        <p className="products-empty">
+          {explore.length === 0
+            ? "We couldn't confirm your services just now. This does not say whether they have been set up."
+            : "Nothing is ready to open yet."}
+        </p>
+      ) : (
+        <ServiceSection id="your-services" title="Your services" products={yours} />
+      )}
+      {explore.length > 0 ? <ServiceSection id="explore-services" title="Explore more services" products={explore} /> : null}
+      {unconfirmed.length > 0 ? <ServiceSection id="unconfirmed-services" title="Status unavailable" products={unconfirmed} /> : null}
     </div>
   )
 }
 
 export function ProductsLoading() {
   return (
-    <div className="products-hub products-state" role="status" aria-live="polite">
-      <h1>My Products</h1>
-      <p>Loading your products.</p>
+    <div className="products-hub products-state">
+      <LauncherIntro loading />
+      <p role="status" aria-live="polite">Loading your products.</p>
     </div>
   )
 }

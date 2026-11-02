@@ -20,6 +20,11 @@ export type GeneralIntakeOptions = {
   config?: EnquiryEmailConfig
   nodeEnv?: string
   customEmailBuilder?: CustomEmailBuilder
+  /**
+   * Source-specific override for customer acknowledgement.
+   * When provided, overrides the global config.sendCustomerAck setting.
+   */
+  sendCustomerAck?: boolean
 }
 async function create(key: string, payload: EnquiryInput, ack: boolean): Promise<EnquiryReceipt> {
   const { data, error } = await createSupabaseServerClient().rpc("create_general_enquiry_v1", { p_key: key, p_data: payload as unknown as Json, p_ack: ack }).abortSignal(AbortSignal.timeout(8000))
@@ -44,17 +49,29 @@ async function send(provider: EnquiryProvider, message: Parameters<EnquiryProvid
 /** Persist first. Duplicate submissions never trigger another notification attempt. */
 export async function persistGeneralEnquiry(data: EnquiryInput, key: string, options: GeneralIntakeOptions = {}): Promise<EnquiryResult> {
   const config = options.config ?? readEnquiryEmailConfig(), nodeEnv = options.nodeEnv ?? process.env.NODE_ENV
+  // Use source-specific acknowledgement policy if provided, otherwise fall back to global config
+  const shouldSendAck = options.sendCustomerAck !== undefined ? options.sendCustomerAck : config.sendCustomerAck
+  
   if (!options.create && !readSupabaseConfig().ready) {
     if (runtimeAllowsSimulation(nodeEnv)) return { ok: true, simulated: true, message: "Development simulation only. No enquiry has been saved or sent." }
     return { ok: false, message: ENQUIRY_UNAVAILABLE }
   }
   let receipt: EnquiryReceipt
-  try { receipt = await (options.create ?? create)(key, data, config.sendCustomerAck) }
+  try { receipt = await (options.create ?? create)(key, data, shouldSendAck) }
   catch { return { ok: false, message: ENQUIRY_UNAVAILABLE } }
   if (receipt.status === "conflict" || receipt.status === "invalid") return { ok: false, message: "Please reload the form and submit your enquiry again." }
   if (receipt.status !== "created" && receipt.status !== "existing") return { ok: false, message: ENQUIRY_UNAVAILABLE }
   const success = { ok: true, persisted: true, message: "Your enquiry has been received.", enquiryRef: receipt.enquiryRef }
-  if (receipt.status === "existing") return success
+  
+  // For existing enquiries, return accurate status based on what was requested
+  if (receipt.status === "existing") {
+    return {
+      ...success,
+      receiptEmailSent: receipt.sendAck === true,
+      receiptEmailStatus: receipt.sendAck === true ? "sent" : "unavailable",
+    }
+  }
+  
   // Any failure after the commit must leave the customer with a truthful receipt.
   if (!receipt.id || !receipt.attempt) return success
   let internal: DeliveryStatus = "FAILED", ack: DeliveryStatus = receipt.sendAck ? "FAILED" : "SKIPPED"
@@ -62,29 +79,39 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
     const provider = options.provider ?? (config.ready && runtimeMayUseLiveProvider(nodeEnv) ? createResendEnquiryProvider(config.apiKey) : undefined)
     if (provider && config.ready) {
       const submittedAt = new Date()
+      // Generate stable idempotency keys based on enquiry ID and message type
+      const internalIdempotencyKey = receipt.id ? `${receipt.id}-internal` : undefined
+      const ackIdempotencyKey = receipt.id ? `${receipt.id}-customer-ack` : undefined
+      
       // Use custom email builder if provided, otherwise use default
       const internalMessage = options.customEmailBuilder 
         ? options.customEmailBuilder.buildInternal(data, config, submittedAt, receipt.enquiryRef)
         : buildInternalEnquiryMessage(data, config, submittedAt)
-      internal = await send(provider, internalMessage)
-      if (receipt.sendAck && config.sendCustomerAck) {
+      
+      // Add idempotency key to internal message
+      internal = await send(provider, { ...internalMessage, idempotencyKey: internalIdempotencyKey })
+      
+      if (receipt.sendAck && shouldSendAck) {
         const ackMessage = options.customEmailBuilder?.buildCustomerAck
           ? options.customEmailBuilder.buildCustomerAck(data, config, receipt.enquiryRef)
           : buildCustomerAcknowledgementMessage(data, config)
-        ack = await send(provider, ackMessage)
+        // Add idempotency key to acknowledgement message
+        ack = await send(provider, { ...ackMessage, idempotencyKey: ackIdempotencyKey })
       } else ack = "SKIPPED"
     }
   } catch { /* The saved enquiry remains actionable in the admin queue. */ }
   try { await (options.finish ?? finish)(receipt.id, receipt.attempt, internal, ack) }
   catch { console.error("[enquiry-intake] notification outcome could not be confirmed") }
   
-  // Return success with email delivery status
-  const customerAckSent = ack === "SENT"
-  const receiptEmailStatus: "sent" | "unavailable" = customerAckSent ? "sent" : "unavailable"
+  // Return success with accurate email delivery status
+  const receiptEmailStatus: "sent" | "suppressed" | "unavailable" = 
+    ack === "SENT" ? "sent" 
+    : ack === "SKIPPED" ? "suppressed"
+    : "unavailable"
   
   return {
     ...success,
-    receiptEmailSent: customerAckSent,
+    receiptEmailSent: ack === "SENT",
     receiptEmailStatus,
   }
 }

@@ -105,9 +105,11 @@ export async function persistTelloyaEnquiry(
   // Convert Telloya fields to database payload format
   const payload = telloyaEnquiryToPayload(data)
 
-  // Use existing enquiry persistence infrastructure with Telloya-specific email builders
+  // Use existing enquiry persistence infrastructure with Telloya-specific settings
   const result = await persistGeneralEnquiry(payload as unknown as EnquiryInput, key, {
     customEmailBuilder: telloyaEmailBuilder,
+    // Enable customer acknowledgement for Telloya (source-specific policy)
+    sendCustomerAck: true,
   })
 
   // Return result in Telloya format

@@ -38,7 +38,7 @@ function ProductCardView({ product }: { product: ProductCard }) {
       {product.actions.length > 0 ? (
         <div className="products-actions">
           {product.actions.map(action => {
-            const external = action.href.startsWith("http")
+            const external = action.href.startsWith("http") || action.href.startsWith("mailto:")
             return (
               <a
                 key={`${action.label}-${action.href}`}
@@ -62,7 +62,7 @@ export function ProductsView({ accountName, products }: { accountName: string | 
       <header className="portal-page-head">
         <p className="products-welcome">{welcomeHeading(accountName)}</p>
         <h1>My Products</h1>
-        <p className="lead">Choose ProfileRelaunch or Telloya. A sign-in does not start a subscription.</p>
+        <p className="lead">Here are the services on your account.</p>
       </header>
       <section aria-label="Your products">
         <ul className="products-grid">

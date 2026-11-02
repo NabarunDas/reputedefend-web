@@ -207,6 +207,14 @@
   margin: 0;
 }
 
+.stepDetail {
+  font-size: .82rem;
+  color: #9bb8a3;
+  line-height: 1.58;
+  margin-top: 14px;
+  font-style: italic;
+}
+
 /* Example box */
 .exampleBox {
   position: relative;

@@ -16,42 +16,6 @@
 .page :is(h1,h2,h3,p,ul,ol,dl) { margin-block-start: 0; }
 .page :is(a,button,summary):focus-visible { outline: 3px solid #d9ff94; outline-offset: 5px; }
 
-.page {
-}
-
-.hero {
-}
-
-.heroContent {
-}
-
-.eyebrow {
-}
-
-.heroTitle {
-}
-
-.heroLead {
-}
-
-.body {
-}
-
-.sectionWrap {
-}
-
-.section {
-}
-
-.sectionHeader {
-}
-
-.sectionTitle {
-}
-
-.sectionLead {
-}
-
 /* Industry sections with alternating layouts */
 .industrySection {
   padding-block: clamp(70px, 9vh, 90px);
@@ -168,15 +132,9 @@
   letter-spacing: -.02em;
 }
 
-.benefitsList {
-}
-
 /* Universal section */
 .universalSection {
   padding-block: clamp(85px, 11vh, 105px);
-}
-
-.universalContent {
 }
 
 .universalGrid {
@@ -198,12 +156,6 @@
 /* Final CTA */
 .ctaSection {
   margin-top: 85px;
-}
-
-.ctaTitle {
-}
-
-.ctaButton {
 }
 
 /* Responsive */

@@ -70,7 +70,15 @@ export function Header() {
         <nav className="site-nav" aria-label="Main navigation">
           <ul className="site-nav-links">
             {navigationContent.main.map(item => (
-              <li key={item.href}><Link href={item.href} className="site-nav-link">{item.label}</Link></li>
+              <li key={item.href}>
+                <Link 
+                  href={item.href} 
+                  className="site-nav-link"
+                  aria-current={pathname === item.href ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              </li>
             ))}
           </ul>
           <div className="site-nav-cta">
@@ -102,7 +110,14 @@ export function Header() {
           <ul className="mobile-menu-links">
             {navigationContent.main.map(item => (
               <li key={item.href}>
-                <Link href={item.href} className="mobile-menu-link" onClick={closeMenu}>{item.label}</Link>
+                <Link 
+                  href={item.href} 
+                  className="mobile-menu-link" 
+                  onClick={closeMenu}
+                  aria-current={pathname === item.href ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
               </li>
             ))}
           </ul>

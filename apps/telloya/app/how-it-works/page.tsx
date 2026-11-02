@@ -51,6 +51,7 @@ export default function HowItWorks() {
                 <div className={styles.stepNumber}>{step.number}</div>
                 <h3 className={styles.stepTitle}>{step.title}</h3>
                 <p className={styles.stepDescription}>{step.description}</p>
+                <p className={styles.stepDetail}>{step.detail}</p>
               </article>
             ))}
           </div>

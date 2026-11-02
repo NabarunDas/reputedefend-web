@@ -1,16 +1,11 @@
 /**
- * Telloya Logo Component
- * 
- * Uses owner-approved emerald-glass logo featuring telephone handset, AI sparkle and orbital speech emblem.
- * 
- * Assets from: apps/telloya/public/brand/
- * - telloya-mark-approved.webp (697×697) — Glass emblem for dark surfaces
- * - telloya-logo-approved.webp (1961×580) — Full lockup for light backgrounds ONLY
- * 
- * CRITICAL: The dark-green full wordmark has LOW CONTRAST on dark backgrounds.
- * For dark surfaces, use the glass emblem with ivory-colored HTML text.
+ * Telloya's final owner-selected "Connected T" logo, 2026-11-02.
+ * The image contains the exact 3D emerald-and-champagne-gold sculpted T
+ * and the original approved wordmark; no substitute font or redrawing.
+ *
+ * Logo alternatives use the same exact glyphs on light/dark surfaces.
+ * There is no rounded-square background button in the master design.
  */
-
 import Image from "next/image"
 
 export type TelloyaLogoVariant = "light" | "dark" | "symbol"
@@ -21,42 +16,22 @@ interface TelloyaLogoProps {
   priority?: boolean
 }
 
-export function TelloyaLogo({ variant = "dark", className = "", priority = false }: TelloyaLogoProps) {
-  if (variant === "symbol") {
-    // Glass emblem for dark surfaces with HTML wordmark
-    return (
-      <div className={`telloya-logo-symbol ${className}`} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        <Image
-          src="/brand/telloya-mark-approved.webp"
-          alt=""
-          width={32}
-          height={32}
-          priority={priority}
-          style={{ display: "block" }}
-        />
-        <span style={{ 
-          fontFamily: "var(--font-display), Arial, sans-serif",
-          fontSize: "20px",
-          fontWeight: 800,
-          letterSpacing: "-0.02em",
-          color: "#f7f8f3"
-        }}>
-          Telloya
-        </span>
-      </div>
-    )
-  }
+export function TelloyaLogo({ variant = "symbol", className = "", priority = false }: TelloyaLogoProps) {
+  const src = variant === "dark"
+    ? "/brand/telloya-connected-t-lockup-dark.webp"
+    : "/brand/telloya-connected-t-lockup.webp"
 
-  // Full approved logo - ONLY for light backgrounds
   return (
-    <Image
-      src="/brand/telloya-logo-approved.webp"
-      alt="Telloya"
-      width={160}
-      height={47}
-      priority={priority}
-      className={`telloya-logo ${className}`}
-      style={{ display: "block", height: "auto" }}
-    />
+    <span className={`telloya-logo-lockup ${className}`}>
+      <Image
+        src={src}
+        alt="Telloya"
+        width={1416}
+        height={695}
+        priority={priority}
+        sizes="(max-width: 520px) 142px, 164px"
+        style={{ display: "block", width: "100%", height: "auto", objectFit: "contain" }}
+      />
+    </span>
   )
 }

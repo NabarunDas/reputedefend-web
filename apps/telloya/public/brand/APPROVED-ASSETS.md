@@ -1,28 +1,50 @@
-# Telloya — approved cinematic brand assets (2026-11-01)
+# FINAL Tello​ya brand — approved 2 November 2026
 
-The Telloya owner approved the exact emerald-glass handset + sparkle logo and cinematic forest-green call-console scene. These are actual optimized image files, committed to this branch by ChatGPT. Preserve them; do not regenerate or substitute artwork.
+## Canonical visual (no reinterpretations)
 
-| File | Dimensions | Intended use |
-|---|---:|---|
-| `telloya-logo-approved.webp` | 1961 × 580, RGBA | Approved full lockup; **use on light backgrounds only**: its dark wordmark is low-contrast over the dark hero. |
-| `telloya-mark-approved.webp` | 697 × 697, RGBA | Approved glass phone/sparkle/orbit emblem; dark header alongside accessible ivory HTML “Telloya” text. |
-| `telloya-cinematic-console.webp` | 1672 × 604 | Cropped console illustration, desktop hero. |
-| `telloya-cinematic-console-mobile.webp` | 925 × 604 | Responsive console illustration, mobile hero. |
-| `telloya-cinematic-approved.webp` | 1672 × 941 | Complete owner-approved composition / art-direction reference only. **Contains baked-in heading and CTA; do not use as the entire homepage.** |
-| `telloya-icon-32.png` | 32 × 32 | Favicon |
-| `telloya-icon-180.png` | 180 × 180 | Apple touch icon |
-| `telloya-icon-192.png` | 192 × 192 | PWA icon |
-| `telloya-icon-512.png` | 512 × 512 | PWA icon |
+The **user-selected exact 3D Connected T** is the final Telloya brand.
+The letter itself is sculpted emerald-green glass and champagne-gold glass with two
+golden connection points and a short golden voicewave above the joined arms.
+The original white, rounded Telloya wordmark from the source image is also final.
+The **original natural golden light/reflection under the T** is extracted from the approved\nsource image and embedded into the transparent lockup, not simulated with CSS.
 
-All images are optimizer-produced derivatives of the owner-approved source, not unapproved replacements. Nine image blobs were verified by exact Git blob SHA against the local originals.
+**Do not redraw a new T, change the letter shape, substitute a generic font,
+reintroduce a headset/chat icon, or place the T inside a glass-square button.**
 
-### Implementation requirements
+The approved original source is retained in the delivered brand archive
+`Telloya_Final_Logo_Assets.zip`; it is a raster design, **not a vector master**.
 
-- Keep the actual hero heading, introductory copy, and CTA buttons as DOM elements with working links; use `console.webp` as **illustrative** backdrop/graphic, not a baked-in fake UI.
-- Retain the contrast-safe readable site name on dark surfaces and light background for the full approved lockup.
-- Progressive image delivery through `next/image` / correct `sizes`, no layout shift; responsive `<picture>` if necessary.
-- Subtle glassmorphism, immersive forest-green/emerald gradient/mist, restrained lime-glow buttons; reduced-motion, keyboard focus, high contrast, responsive 320–1440px.
-- Never describe imagery as a live dashboard or operational customer call record. Label as illustrative.
-- These are **marketing-only assets**; no DB/API, Supabase, Stripe, DNS or Production changes needed.
+## Current website assets
 
-PR #389's enquiry endpoint **currently returns random mock `TY-...` success without persistence**; do not allow it to deploy until it fails closed or genuinely saves a record through a separately approved backend migration.
+- `telloya-connected-t-lockup.webp` — transparent, exact approved wordmark and emblem **with original source-extracted golden reflection beneath the T**; active website header/footer, dark backgrounds
+- `telloya-connected-t-lockup-dark.webp` — same exact contours with dark text for light backgrounds
+- `telloya-connected-t-icon.webp` — transparent standalone 3D T, extracted without redrawing
+- `telloya-icon-16.png`, `telloya-icon-32.png` — dark-emerald favicon derivatives
+- `telloya-favicon.ico` — multi-size legacy browser favicon
+- `telloya-icon-180.png` — Apple touch icon
+- `telloya-icon-192.png`, `telloya-icon-512.png` — application icons
+- `telloya-social-share.webp` — social sharing card from the exact approved original background
+- Existing `telloya-cinematic-console*.webp` — approved homepage hero artwork; unchanged
+
+## Branding and environment boundaries
+
+- Operator: **ProfileRelaunch Ltd**; use legal disclosure in marketing and email.
+- Use the current approved assets in marketing, future Telloya-specific emails, and the Telloya product surface.
+- Do not change ProfileRelaunch logos, emails, sender verification, customer/admin apps, Supabase, pricing or enquiries.
+- Do not embed protected Vercel Preview URLs in outgoing email image tags; use a public domain asset only after verified availability, otherwise use safe text fallback.
+- At 16px the favicon is a legibility-optimised resize of the same source T, not a redesigned symbol.
+
+## Superseded reference assets (may remain in /brand)
+
+Previous emerald-orbit and amber-headset logo files are **historical only**.
+Do not use them as active Telloya identity.
+
+## Natural reflection approved after visual comparison
+
+The owner approved the natural reflection image preview on 2026-11-02. The active
+lockup is 1416×695 including the vertical lighting fade, with the sculpted T
+and wordmark contours unmodified. The header container reserves the original
+60px logo height; the transparent glow is allowed to extend below that visual
+baseline. Do **not** add CSS pseudo-element glows or yellow ovals, and do not
+crop the bottom of the image. The previous 3D emblem-only/favicon files are
+unchanged.

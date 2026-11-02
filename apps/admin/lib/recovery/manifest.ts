@@ -1304,16 +1304,21 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Invited mailbox proof", probe: "public.customer_portal_finish_invited_otp_v1" },
   },
   {
-    // Customer Portal products projection. Repository source only.
-    // Not applied to DEV. Do not apply it to Production. Do not replay it.
-    // Schema and one read-only function. containsDataChange stays false.
-    // It creates no customer, subscription, payment, entitlement, or provision rows.
-    // safeToReplay stays false.
+    // Customer Portal products projection. Verified DEV ledger head.
+    // Applied once to profilerelaunch-dev (rmzozuiamjcclvtgutgd) from merged
+    // commit bc0e60e5d37d7800cbbccd06e922e27ed75d328e. Do not replay it and do
+    // not apply it to Production. Schema and one read-only function.
+    // containsDataChange stays false. It created no customer, subscription,
+    // entitlement, provision, allocation, or invitation rows.
+    // public.customer_portal_products_v1(text) is service-role-only.
+    // safeToReplay stays false. The ledger statement is one statement of
+    // 20,248 characters. SHA-256
+    // 2f55788a3b73e817c357c02716308fcdca974401dec948b0611e5baf27dd2148.
     version: "20261101200000",
     filename: "20261101200000_customer_portal_products_v1.sql",
     step: "Customer Portal products projection",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Customer products projection", probe: "public.customer_portal_products_v1" },
@@ -1329,9 +1334,16 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261101190000`. The verified live DEV ledger contains 94 entries and ends
- * there. The invited mailbox file is schema only, so containsDataChange stays
- * false. Do not replay `20261101190000`. It is not applied to Production.
+ * `20261101200000`. The verified live DEV ledger contains 95 entries and ends
+ * there. The products file is schema only, so containsDataChange stays false.
+ * Do not replay `20261101200000`. It is not applied to Production. It created
+ * no customer, subscription, entitlement, provision, allocation, or invitation
+ * rows. public.customer_portal_products_v1(text) is service-role-only. The
+ * ledger statement is one statement of 20,248 characters. SHA-256
+ * 2f55788a3b73e817c357c02716308fcdca974401dec948b0611e5baf27dd2148.
+ * The previous head `20261101190000` remains applied. The invited mailbox file
+ * is schema only, so containsDataChange stays false. Do not replay
+ * `20261101190000`. It is not applied to Production.
  * Existing contact verifications remain 4, all ADMIN_RECORDED. MAILBOX_OTP
  * records are 0. Invitations are 0. Commercial subscriptions are 0. The five
  * new public invited OTP functions are service-role-only. The ledger statement
@@ -1366,10 +1378,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` returns only
- * `20261101200000_customer_portal_products_v1.sql`. Do not apply
- * `20261101200000` to Production. `20261101190000` remains the verified DEV
- * head, with 94 ledger entries, and must not be replayed or applied to Production.
+ * applied and must not be replayed. `pendingMigrations()` is empty.
+ * `20261101200000` must not be replayed or applied to Production.
+ * `20261101190000` remains applied, with the previous ledger at 94 entries,
+ * and must not be replayed or applied to Production.
  * The repository chain is longer than the live ledger because it still records the
  * three foundation files that live DEV omits (issue #190).
  * Production remains on its own historical migration head `20261014170000`.

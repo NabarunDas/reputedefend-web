@@ -18,12 +18,12 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261101190000_customer_invited_mailbox_otp_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261101200000_customer_portal_products_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     expect(migrationHead.filename).toBe("20261101200000_customer_portal_products_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
@@ -38,7 +38,7 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261101200000_customer_portal_products_v1.sql"])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
@@ -92,7 +92,7 @@ describe("the migration chain manifest", () => {
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     const onboardingSql = readFileSync(new URL("20261101180000_admin_commercial_onboarding_v1.sql", directory), "utf8")
@@ -102,6 +102,14 @@ describe("the migration chain manifest", () => {
     expect(invitedSql.length).toBe(33172)
     expect(createHash("sha256").update(invitedSql).digest("hex")).toBe("807ab187aa5044a9d4cf0e9c64b1bf1ea0b669f57ffb763e73eb40ad273ead67")
     expect(findMigration("20261101190000_customer_invited_mailbox_otp_v1.sql")).toMatchObject({
+      appliedToDev: true,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
+    const productsSql = readFileSync(new URL("20261101200000_customer_portal_products_v1.sql", directory), "utf8")
+    expect(productsSql.length).toBe(20248)
+    expect(createHash("sha256").update(productsSql).digest("hex")).toBe("2f55788a3b73e817c357c02716308fcdca974401dec948b0611e5baf27dd2148")
+    expect(findMigration("20261101200000_customer_portal_products_v1.sql")).toMatchObject({
       appliedToDev: true,
       containsDataChange: false,
       safeToReplay: false,

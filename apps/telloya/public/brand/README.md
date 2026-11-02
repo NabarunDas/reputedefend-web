@@ -1,41 +1,7 @@
-# Telloya Brand Assets
+# Telloya brand assets
 
-This directory contains the approved Telloya brand assets.
+Owner-selected active logo: **sage glass rounded-square button containing an amber-gold headset, phone handset, and chat bubble.**
 
-## Current Status
+See `APPROVED-ASSETS.md` for filenames and usage. Active site assets: `telloya-amber-glass-icon.webp`, `telloya-icon-16.png`, `telloya-icon-32.png`, `telloya-icon-180.png`, `telloya-icon-192.png`, `telloya-icon-512.png`. The old emerald mark and lockup remain as historical assets only. Cinematic console artwork is unchanged.
 
-⚠️ **Placeholder assets are currently in use**. Awaiting ZIP upload with approved assets:
-
-- Emerald-glass Telloya logo (telephone handset, AI sparkle, orbital speech emblem)
-- Cinematic forest-green landscape with floating AI receptionist dashboard
-- Optimized WebP variants and favicon assets
-
-## Expected Assets
-
-Once the approved ZIP is provided, these files will be added:
-
-### Logo Assets
-- `telloya-mark-approved.webp` — Glass logo symbol for dark surfaces
-- `telloya-logo-approved.webp` — Full logo for light surfaces (DO NOT use on dark backgrounds)
-- `telloya-logo-approved.svg` — Vector version
-
-### Cinematic Artwork
-- `telloya-cinematic-console.webp` — Main homepage console artwork
-- `telloya-cinematic-console-mobile.webp` — Mobile-optimized crop
-- `telloya-cinematic-approved.webp` — Full approved design reference
-
-### Favicon Assets
-- PNG sizes (16x16, 32x32, 180x180, 512x512) for app icons
-
-## Temporary Placeholders
-
-Current SVG placeholders indicate asset locations and maintain layout during development.
-
-**These placeholders must be replaced before production deployment.**
-
-## Usage Guidelines
-
-1. **Dark surfaces**: Use `telloya-mark-approved.webp` (glass symbol) with ivory HTML wordmark
-2. **Light surfaces**: Use `telloya-logo-approved.webp` (full logo)
-3. **Console artwork**: Use with "Illustrative product preview" caption
-4. **DO NOT**: Place dark-green wordmark on dark backgrounds (readability issue)
+Use an actual HTML wordmark beside the symbol for contrast and accessibility; do not flatten the entire header into a large bitmap. Do not add another rounded CSS tile behind the new emblem, since it already has one.

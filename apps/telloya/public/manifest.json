@@ -4,7 +4,7 @@
   "description": "AI receptionist service for tradespeople and local services",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f7f8f3",
+  "background_color": "#001a15",
   "theme_color": "#0a6e3c",
   "icons": [
     {

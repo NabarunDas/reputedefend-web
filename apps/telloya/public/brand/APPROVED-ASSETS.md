@@ -1,28 +1,27 @@
-# Telloya — approved cinematic brand assets (2026-11-01)
+# Telloya — approved brand assets (updated 2026-11-02)
 
-The Telloya owner approved the exact emerald-glass handset + sparkle logo and cinematic forest-green call-console scene. These are actual optimized image files, committed to this branch by ChatGPT. Preserve them; do not regenerate or substitute artwork.
+## Current logo / favicon — owner-approved November 2
 
-| File | Dimensions | Intended use |
-|---|---:|---|
-| `telloya-logo-approved.webp` | 1961 × 580, RGBA | Approved full lockup; **use on light backgrounds only**: its dark wordmark is low-contrast over the dark hero. |
-| `telloya-mark-approved.webp` | 697 × 697, RGBA | Approved glass phone/sparkle/orbit emblem; dark header alongside accessible ivory HTML “Telloya” text. |
-| `telloya-cinematic-console.webp` | 1672 × 604 | Cropped console illustration, desktop hero. |
-| `telloya-cinematic-console-mobile.webp` | 925 × 604 | Responsive console illustration, mobile hero. |
-| `telloya-cinematic-approved.webp` | 1672 × 941 | Complete owner-approved composition / art-direction reference only. **Contains baked-in heading and CTA; do not use as the entire homepage.** |
-| `telloya-icon-32.png` | 32 × 32 | Favicon |
-| `telloya-icon-180.png` | 180 × 180 | Apple touch icon |
-| `telloya-icon-192.png` | 192 × 192 | PWA icon |
-| `telloya-icon-512.png` | 512 × 512 | PWA icon |
+The **sage glass button with amber-gold headset + telephone/chat bubble** replaces the previous emerald orbital phone emblem for the Telloya brand. Use the approved image, do not redraw it, recolor it or substitute another brand icon without approval.
 
-All images are optimizer-produced derivatives of the owner-approved source, not unapproved replacements. Nine image blobs were verified by exact Git blob SHA against the local originals.
+- `telloya-amber-glass-icon.webp` — optimized new transparent 512px logo tile, used beside the ivory HTML wordmark in Telloya header and footer.
+- `telloya-icon-16.png` and `telloya-icon-32.png` — browser favicon versions of the new icon.
+- `telloya-icon-180.png` — Apple touch icon.
+- `telloya-icon-192.png` and `telloya-icon-512.png` — PWA application icons.
 
-### Implementation requirements
+The button shape and sage background are **part of the artwork**; do not wrap in additional CSS-generated glass tiles. Use a clear, real-text ivory `Telloya` wordmark on the dark marketing website. The gold accent is intentionally the brand distinction over the site's cinematic emerald atmosphere.
 
-- Keep the actual hero heading, introductory copy, and CTA buttons as DOM elements with working links; use `console.webp` as **illustrative** backdrop/graphic, not a baked-in fake UI.
-- Retain the contrast-safe readable site name on dark surfaces and light background for the full approved lockup.
-- Progressive image delivery through `next/image` / correct `sizes`, no layout shift; responsive `<picture>` if necessary.
-- Subtle glassmorphism, immersive forest-green/emerald gradient/mist, restrained lime-glow buttons; reduced-motion, keyboard focus, high contrast, responsive 320–1440px.
-- Never describe imagery as a live dashboard or operational customer call record. Label as illustrative.
-- These are **marketing-only assets**; no DB/API, Supabase, Stripe, DNS or Production changes needed.
+## Historical assets (retain for reference)
 
-PR #389's enquiry endpoint **currently returns random mock `TY-...` success without persistence**; do not allow it to deploy until it fails closed or genuinely saves a record through a separately approved backend migration.
+- `telloya-logo-approved.webp` — superseded 2026-11-01 full green lockup; not used by active site header/footer.
+- `telloya-mark-approved.webp` — superseded 2026-11-01 green phone/orbit symbol; not used by active site header/footer.
+
+## Cinematic artwork (unchanged)
+
+- `telloya-cinematic-console.webp` — desktop hero console backdrop.
+- `telloya-cinematic-console-mobile.webp` — mobile hero console backdrop.
+- `telloya-cinematic-approved.webp` — the full design reference only; baked-in text should not replace semantic HTML copy.
+
+## Boundaries
+
+Only Telloya brand assets are updated. The ProfileRelaunch brand, customer/admin application logos, Supabase, payments, the voice system, and the enquiry backend are unchanged. Future Telloya-branded emails should use the new icon with the existing shared verified sender and email infrastructure, without changing unrelated ProfileRelaunch emails.

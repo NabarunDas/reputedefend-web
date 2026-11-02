@@ -33,6 +33,7 @@ export const metadata: Metadata = {
   description: brandDescription,
   icons: {
     icon: [
+      { url: "/brand/telloya-icon-16.png", sizes: "16x16", type: "image/png" },
       { url: "/brand/telloya-icon-32.png", sizes: "32x32", type: "image/png" },
       { url: "/brand/telloya-icon-192.png", sizes: "192x192", type: "image/png" },
     ],

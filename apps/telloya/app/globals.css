@@ -917,14 +917,15 @@ button, input, textarea, select { font: inherit; }
   gap: 11px !important;
 }
 .site-header-cinematic .site-logo .telloya-logo-symbol img {
-  width: 42px !important;
-  height: 42px !important;
-  padding: 3px;
-  background: radial-gradient(circle at 40% 34%, rgba(199,255,149,.29), rgba(22,85,55,.42) 67%, rgba(7,34,25,.75));
-  border: 1px solid rgba(215,255,175,.37);
-  border-radius: 15px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 0 25px rgba(147,255,121,.25);
-  filter: brightness(1.14) saturate(1.16);
+  width: 48px !important;
+  height: 48px !important;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  filter: none;
+  object-fit: contain;
 }
 .site-header-cinematic .site-logo .telloya-logo-symbol span {
   font-family: var(--font-display), Arial, sans-serif;
@@ -1000,6 +1001,14 @@ button, input, textarea, select { font: inherit; }
 }
 @media (max-width: 520px) {
   .site-header-cinematic > .container { width: calc(100% - 28px); margin-top: 10px; padding-inline: 16px; min-height: 62px; }
-  .site-header-cinematic .site-logo .telloya-logo-symbol img { width: 36px !important; height: 36px !important; border-radius: 13px; }
+  .site-header-cinematic .site-logo .telloya-logo-symbol img { width: 40px !important; height: 40px !important; }
   .site-header-cinematic .site-logo .telloya-logo-symbol span { font-size: 22px !important; }
+}
+
+/* The sage-and-amber icon is itself a beveled glass button. Do not add
+   another background, border, glow or bevel outside the approved tile. */
+.site-logo-footer .telloya-logo-symbol img {
+  width: 44px !important;
+  height: 44px !important;
+  object-fit: contain;
 }

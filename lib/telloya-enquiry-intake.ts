@@ -22,25 +22,38 @@ import {
 } from "@/lib/telloya-enquiry-email"
 import type { EnquiryInput } from "@/lib/enquiry"
 
+// Type for the Telloya payload that includes extra fields beyond EnquiryInput
+type TelloyaPayload = EnquiryInput & {
+  trade: string
+  locations: string
+  product: string
+  missedCallProblem: string
+  phoneSetup: string
+  contactPreference: string
+}
+
 // Telloya-specific email builders that integrate with the shared infrastructure
 const telloyaEmailBuilder: CustomEmailBuilder = {
   buildInternal: (data: EnquiryInput, config: EnquiryEmailConfig, submittedAt: Date, ref?: string): EnquiryEmailMessage => {
     if (!ref) throw new Error("Telloya enquiry must have a reference")
     
-    // Extract Telloya data from the payload
+    // Cast to TelloyaPayload since we know this came from telloyaEnquiryToPayload()
+    const payload = data as unknown as TelloyaPayload
+    
+    // Extract Telloya data for the email template
     const telloyaData = {
-      fullName: data.fullName,
-      email: data.email,
-      phone: data.phone,
-      businessName: data.businessName,
-      country: data.country,
-      trade: (data as any).trade || "",
-      locations: (data as any).locations,
-      websiteUrl: data.websiteUrl,
-      product: (data as any).product || "",
-      missedCallProblem: (data as any).missedCallProblem,
-      phoneSetup: (data as any).phoneSetup,
-      contactPreference: (data as any).contactPreference,
+      fullName: payload.fullName,
+      email: payload.email,
+      phone: payload.phone,
+      businessName: payload.businessName,
+      country: payload.country,
+      trade: payload.trade,
+      locations: payload.locations,
+      websiteUrl: payload.websiteUrl,
+      product: payload.product,
+      missedCallProblem: payload.missedCallProblem,
+      phoneSetup: payload.phoneSetup,
+      contactPreference: payload.contactPreference,
     }
 
     return {

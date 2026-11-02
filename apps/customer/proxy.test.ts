@@ -34,12 +34,12 @@ afterEach(() => vi.unstubAllEnvs())
 
 describe("customer portal proxy isolation", () => {
   it("keeps existing public reads and action pre-auth posts", async () => {
-    for (const path of ["/", "/robots.txt", "/pay/return", "/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "/icon.png", "/apple-icon.png", "/brand/profile-relaunch-logo.png", "/brand/profile-relaunch-logo-light.png"]) {
+    for (const path of ["/robots.txt", "/pay/return", "/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "/icon.png", "/apple-icon.png", "/brand/profile-relaunch-logo.png", "/brand/profile-relaunch-logo-light.png"]) {
       expect((await ask(path)).headers.get("x-middleware-next")).toBe("1")
     }
     const otherBrand = await ask("/brand/profile-relaunch-source.png")
     expect(otherBrand.status).toBe(303)
-    expect(otherBrand.headers.get("location")).toBe(`${origin}/`)
+    expect(otherBrand.headers.get("location")).toBe(`${origin}/?unavailable=1`)
     for (const path of ["/api/action/exchange", "/api/action/otp", "/api/action/verify", "/api/action/command"]) {
       expect((await ask(path, "POST")).headers.get("x-middleware-next")).toBe("1")
     }
@@ -56,14 +56,14 @@ describe("customer portal proxy isolation", () => {
       const blocked = await ask(path)
       expect(blocked.headers.get("x-middleware-next")).toBeNull()
       expect(blocked.status).toBe(303)
-      expect(blocked.headers.get("location")).toBe(`${origin}/`)
+      expect(blocked.headers.get("location")).toBe(`${origin}/?unavailable=1`)
     }
     const portal = await ask("/portal")
     expect(portal.status).toBe(303)
     expect(portal.headers.get("location")).toBe(`${origin}/login`)
     const casePage = await ask("/case")
     expect(casePage.status).toBe(303)
-    expect(casePage.headers.get("location")).toBe(`${origin}/`)
+    expect(casePage.headers.get("location")).toBe(`${origin}/?unavailable=1`)
     expect((await ask("/api/action/payment", "POST")).status).toBe(401)
     expect((await ask("/api/action/exchange", "GET")).status).toBe(401)
     expect((await ask("/api/portal/auth/start", "GET")).status).toBe(401)
@@ -103,7 +103,7 @@ describe("customer portal proxy isolation", () => {
   it("does not let a portal session open /case or an action-scoped API", async () => {
     const page = await ask("/case", "GET", `${portalSessionCookieName()}=${portalToken}`)
     expect(page.status).toBe(303)
-    expect(page.headers.get("location")).toBe(`${origin}/`)
+    expect(page.headers.get("location")).toBe(`${origin}/?unavailable=1`)
     expect(sessions.portal).not.toHaveBeenCalled()
     expect(sessions.action).toHaveBeenCalledWith(undefined)
     const upload = await ask("/api/case/evidence/upload", "POST", `${portalSessionCookieName()}=${portalToken}`)
@@ -181,5 +181,29 @@ describe("customer portal proxy isolation", () => {
     expect(sessions.portal).not.toHaveBeenCalled()
     const home = await ask("/action/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     expect(home.headers.get("x-middleware-next")).toBe("1")
+    const root = await ask("/")
+    expect(root.headers.get("x-middleware-next")).toBe("1")
+    const invalid = await ask("/case")
+    expect(invalid.status).toBe(303)
+    expect(invalid.headers.get("location")).toBe(`${origin}/`)
+  })
+
+  it("sends the site root to My Products through /portal, or to login when there is no portal session", async () => {
+    const anonymous = await ask("/")
+    expect(anonymous.status).toBe(303)
+    expect(anonymous.headers.get("location")).toBe(`${origin}/login`)
+    const actionOnly = await ask("/", "GET", `${sessionCookie}=${actionToken}`)
+    expect(actionOnly.headers.get("location")).toBe(`${origin}/login`)
+    const stale = await ask("/", "GET", `${portalSessionCookieName()}=${"c".repeat(64)}`)
+    expect(stale.headers.get("location")).toBe(`${origin}/login`)
+    const signedIn = await ask("/", "GET", `${portalSessionCookieName()}=${portalToken}`)
+    expect(signedIn.status).toBe(303)
+    expect(signedIn.headers.get("location")).toBe(`${origin}/portal`)
+    const unavailable = await ask("/?unavailable=1")
+    expect(unavailable.headers.get("x-middleware-next")).toBe("1")
+    const direct = await ask("/portal/cases/PR-26-ABCDEF", "GET", `${portalSessionCookieName()}=${portalToken}`)
+    expect(direct.headers.get("x-middleware-next")).toBe("1")
+    const recovery = await ask("/portal/recovery", "GET", `${portalSessionCookieName()}=${portalToken}`)
+    expect(recovery.headers.get("x-middleware-next")).toBe("1")
   })
 })

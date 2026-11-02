@@ -29,7 +29,7 @@ export function PortalUnavailable() {
   )
 }
 
-export function PortalHome({ dashboard, accountName = null }: { dashboard: CustomerDashboard; accountName?: string | null }) {
+export function PortalHome({ dashboard, accountName = null, productsReturn = false }: { dashboard: CustomerDashboard; accountName?: string | null; productsReturn?: boolean }) {
   const attention = dashboard.attentionCases.map(presentCase)
   const attentionRefs = new Set(attention.map(item => item.reference))
   const recent = dashboard.recentCases.map(presentCase).filter(item => !attentionRefs.has(item.reference))
@@ -43,6 +43,7 @@ export function PortalHome({ dashboard, accountName = null }: { dashboard: Custo
   const hasBelow = showOtherActive || previousRecent.length > 0 || showUnplacedActive
   return (
     <div className="portal-dashboard">
+      {productsReturn ? <p className="portal-products-return"><a href="/portal/products">Back to My Products</a></p> : null}
       <PageHeading
         title={welcomeHeading(accountName)}
         lede="Here is where your cases stand, and the one step that needs you when there is one."

@@ -2593,6 +2593,7 @@ button.guided-submit { margin: 0.25rem 0 0; }
     align-items: start;
   }
 
+  .portal-dashboard > .portal-products-return,
   .portal-dashboard > .portal-page-head { grid-column: 1 / -1; }
 
   .portal-page-head .lead { max-width: 52rem; }
@@ -2699,7 +2700,32 @@ button.guided-submit { margin: 0.25rem 0 0; }
 .products-description,
 .products-context,
 .products-attention,
-.products-note { margin: 0; }
+.products-note,
+.products-services { margin: 0; }
+
+.products-services {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0;
+  list-style: none;
+  color: var(--ink);
+}
+
+.products-services li {
+  padding-left: 0.85rem;
+  position: relative;
+}
+
+.products-services li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: var(--green);
+}
 
 .products-description { color: var(--ink); }
 
@@ -2708,13 +2734,20 @@ button.guided-submit { margin: 0.25rem 0 0; }
 
 .products-attention { color: var(--ink); font-weight: 700; }
 
+.products-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
 .products-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 44px;
-  margin-top: auto;
   padding: 0.55rem 1rem;
+  border: 1px solid transparent;
   border-radius: var(--radius-pill);
   background: var(--green);
   color: var(--paper);
@@ -2730,6 +2763,34 @@ button.guided-submit { margin: 0.25rem 0 0; }
   color: var(--paper);
 }
 
+.products-action-secondary {
+  background: transparent;
+  color: var(--green-dark);
+  border-color: var(--line);
+}
+
+.products-action-secondary:hover,
+.products-action-secondary:focus-visible {
+  background: var(--green-dark);
+  color: var(--paper);
+  border-color: var(--green-dark);
+}
+
+.portal-products-return { margin: 0 0 var(--space-4); }
+
+.portal-products-return a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 700;
+  color: var(--green-dark);
+}
+
+.portal-products-return a:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
 .products-state {
   padding: 0.25rem 0 1rem;
 }
@@ -2739,5 +2800,5 @@ button.guided-submit { margin: 0.25rem 0 0; }
 }
 
 @media (min-width: 1024px) {
-  .products-grid { grid-template-columns: 1fr 1fr 1fr; }
+  .products-grid { grid-template-columns: 1fr 1fr; }
 }

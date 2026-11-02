@@ -3,8 +3,11 @@
 import { useEffect, useId, useRef, useState } from "react"
 import { usePathname } from "next/navigation"
 
-const primary = [
-  { label: "Dashboard", href: "/portal" },
+const dashboard = { label: "Dashboard", href: "/portal" } as const
+const recoveryDashboard = { label: "Dashboard", href: "/portal/recovery" } as const
+const productsHubItem = { label: "My Products", href: "/portal/products" } as const
+
+const sharedPrimary = [
   { label: "Cases", href: "/portal/cases" },
   { label: "Documents", href: "/portal/documents" },
 ] as const
@@ -15,8 +18,6 @@ const more = [
   { label: "Relaunch Guard", href: "/portal/guard" },
   { label: "Account", href: "/portal/account" },
 ] as const
-
-const productsHubItem = { label: "My Products", href: "/portal/products" } as const
 
 function current(pathname: string, href: string) {
   if (href === "/portal") return pathname === "/portal"
@@ -30,8 +31,8 @@ export function PortalNav({ defaultOpen = false, productsHub = false }: { defaul
   const menuRef = useRef<HTMLUListElement>(null)
   const seenPath = useRef(pathname)
   const [open, setOpen] = useState(defaultOpen)
-  const moreItems = productsHub ? [productsHubItem, ...more] : more
-  const activeMore = moreItems.find(item => current(pathname, item.href))
+  const primary = productsHub ? [productsHubItem, recoveryDashboard, ...sharedPrimary] : [dashboard, ...sharedPrimary]
+  const activeMore = more.find(item => current(pathname, item.href))
 
   useEffect(() => {
     if (seenPath.current === pathname) return
@@ -113,7 +114,7 @@ export function PortalNav({ defaultOpen = false, productsHub = false }: { defaul
             className={open ? "portal-more-menu is-open" : "portal-more-menu"}
             aria-label="More destinations"
           >
-            {moreItems.map(item => {
+            {more.map(item => {
               const active = current(pathname, item.href)
               return (
                 <li key={item.label}>

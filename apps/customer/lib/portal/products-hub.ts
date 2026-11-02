@@ -1,10 +1,10 @@
 /**
- * My Products and /portal/recovery.
+ * My Products landing.
  *
- * Exactly "true" opens those routes. Every other value, including an empty
- * string, leaves them closed. Preview and Production are separate deployments,
- * so an enabled DEV value is not copied here and Production does not inherit it.
- * This flag does not replace /portal and does not enable Telloya or a purchase.
+ * Exactly "true" opens /portal/products and /portal/recovery, and sends a
+ * valid session from /portal to My Products. Every other value leaves those
+ * routes closed and keeps /portal on the Recovery dashboard. This flag does
+ * not enable Telloya, send mail, or record a purchase.
  */
 export function productsHubEnabled() {
   return process.env.CUSTOMER_PRODUCTS_HUB_ENABLED === "true"

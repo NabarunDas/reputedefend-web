@@ -168,7 +168,7 @@ async function proxyOutcome(route: PortalRoute, path: string, portalCookie: stri
   if (route.proxyClass === "invited-login") {
     const closed = await ask(path, "GET")
     expect(closed.status).toBe(303)
-    expect(closed.headers.get("location")).toBe(`${origin}/`)
+    expect(closed.headers.get("location")).toBe(`${origin}/?unavailable=1`)
     expect(closed.headers.get("referrer-policy")).toBe("no-referrer")
     vi.stubEnv("CUSTOMER_INVITED_LOGIN_ENABLED", "true")
     const open = await ask(path, "GET")

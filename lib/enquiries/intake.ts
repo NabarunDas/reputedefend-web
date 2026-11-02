@@ -63,13 +63,19 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
   if (receipt.status !== "created" && receipt.status !== "existing") return { ok: false, message: ENQUIRY_UNAVAILABLE }
   const success = { ok: true, persisted: true, message: "Your enquiry has been received.", enquiryRef: receipt.enquiryRef }
   
-  // For existing enquiries, return accurate status based on what was requested
+  // For existing enquiries, return success without adding new fields
+  // Legacy ProfileRelaunch enquiries have no enquiryRef and expect minimal response
   if (receipt.status === "existing") {
-    return {
-      ...success,
-      receiptEmailSent: receipt.sendAck === true,
-      receiptEmailStatus: receipt.sendAck === true ? "sent" : "unavailable",
+    // Only include enquiryRef if it exists (Telloya), omit undefined to preserve legacy contract
+    const result: EnquiryResult = {
+      ok: true,
+      persisted: true,
+      message: "Your enquiry has been received.",
     }
+    if (receipt.enquiryRef) {
+      result.enquiryRef = receipt.enquiryRef
+    }
+    return result
   }
   
   // Any failure after the commit must leave the customer with a truthful receipt.
@@ -109,9 +115,19 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
     : ack === "SKIPPED" ? "suppressed"
     : "unavailable"
   
-  return {
-    ...success,
+  // Build result, only including properties that have values
+  const result: EnquiryResult = {
+    ok: true,
+    persisted: true,
+    message: "Your enquiry has been received.",
     receiptEmailSent: ack === "SENT",
     receiptEmailStatus,
   }
+  
+  // Only include enquiryRef if it exists (Telloya)
+  if (receipt.enquiryRef) {
+    result.enquiryRef = receipt.enquiryRef
+  }
+  
+  return result
 }

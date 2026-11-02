@@ -71,6 +71,7 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
   const successRef = useRef<HTMLHeadingElement>(null)
   const formId = useId()
   const submissionKeyRef = useRef("")
+  const lastPayloadRef = useRef("")
   const [focusKey, setFocusKey] = useState(0)
   const focusWhat = useRef<"heading" | "summary" | "success">("heading")
 
@@ -195,31 +196,51 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
     setDeliveryError(false)
     setStatusText("Submitting your enquiry.")
 
-    // Generate or reuse submission key - regenerate if payload changed since last attempt
-    if (!submissionKeyRef.current || status === "idle") {
-      submissionKeyRef.current = crypto.randomUUID()
+    // Create payload to check if it has changed
+    const payload: TelloyaEnquiryRequest = {
+      product: values.product,
+      businessName: values.businessName,
+      country: values.country,
+      trade: values.trade,
+      locations: values.locations,
+      websiteUrl: values.websiteUrl,
+      fullName: values.fullName,
+      email: values.email,
+      phone: values.phone,
+      missedCallProblem: values.missedCallProblem,
+      phoneSetup: values.phoneSetup,
+      contactPreference: values.contactPreference,
+      privacyAccepted: values.privacyAccepted,
+      source: "telloya",
+      submissionKey: "", // Will be set below
     }
 
-    try {
-      const payload: TelloyaEnquiryRequest = {
-        product: values.product,
-        businessName: values.businessName,
-        country: values.country,
-        trade: values.trade,
-        locations: values.locations,
-        websiteUrl: values.websiteUrl,
-        fullName: values.fullName,
-        email: values.email,
-        phone: values.phone,
-        missedCallProblem: values.missedCallProblem,
-        phoneSetup: values.phoneSetup,
-        contactPreference: values.contactPreference,
-        privacyAccepted: values.privacyAccepted,
-        source: "telloya",
-        submissionKey: submissionKeyRef.current,
-      }
+    // Generate canonical payload fingerprint (without submissionKey)
+    const payloadFingerprint = JSON.stringify({
+      product: payload.product,
+      businessName: payload.businessName,
+      country: payload.country,
+      trade: payload.trade,
+      locations: payload.locations,
+      websiteUrl: payload.websiteUrl,
+      fullName: payload.fullName,
+      email: payload.email,
+      phone: payload.phone,
+      missedCallProblem: payload.missedCallProblem,
+      phoneSetup: payload.phoneSetup,
+      contactPreference: payload.contactPreference,
+      privacyAccepted: payload.privacyAccepted,
+    })
 
-      const res = await fetch("/api/telloya/enquiry", {
+    // Generate new submission key only if payload changed, otherwise reuse for retry
+    if (!submissionKeyRef.current || lastPayloadRef.current !== payloadFingerprint) {
+      submissionKeyRef.current = crypto.randomUUID()
+      lastPayloadRef.current = payloadFingerprint
+    }
+
+    payload.submissionKey = submissionKeyRef.current
+
+    try {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -228,12 +249,22 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
       const json = await res.json() as TelloyaEnquiryResponse
 
       if (json.ok) {
-        setEnquiryRef(json.enquiryRef || "")
-        setReceiptEmailStatus(json.receiptEmailStatus || "")
-        setStatus("success")
-        setStatusText("Your enquiry has been received.")
-        requestFocus("success")
-        return
+        // Require actual TY reference before showing success
+        if (json.enquiryRef && /^TY-\d\d-[A-HJ-NP-Z2-9]{6}$/.test(json.enquiryRef)) {
+          setEnquiryRef(json.enquiryRef)
+          setReceiptEmailStatus(json.receiptEmailStatus || "")
+          setStatus("success")
+          setStatusText("Your enquiry has been received.")
+          requestFocus("success")
+          return
+        } else {
+          // Success response without valid TY reference - treat as error
+          setStatus("idle")
+          setDeliveryError(true)
+          setStatusText("Unable to complete this enquiry right now.")
+          requestFocus("summary")
+          return
+        }
       }
 
       if (json.errors && Object.keys(json.errors).length) {

@@ -15,31 +15,26 @@ import {
 } from "../../../lib/customer-portal-href"
 
 describe("Telloya Branding", () => {
-  it("renders the Telloya wordmark alongside the approved decorative icon", () => {
+  it("uses the exact approved 3D Connected T lockup and original wordmark", () => {
     const { container } = render(<TelloyaLogo />)
-    expect(screen.getByText(brandName)).toBeInTheDocument()
-    const icon = container.querySelector("img")
-    expect(icon).toBeInTheDocument()
-    expect(icon).toHaveAttribute("alt", "")
-    expect(icon?.getAttribute("src")).toContain("telloya-amber-glass-icon.webp")
+    const logo = screen.getByAltText(brandName)
+    expect(logo).toBeInTheDocument()
+    expect(logo.getAttribute("src")).toContain("telloya-connected-t-lockup.webp")
+    expect(container.querySelector(".telloya-logo-lockup")).toBeInTheDocument()
   })
 
   it("uses the correct brand name", () => {
     expect(brandName).toBe("Telloya")
   })
 
-  it("supports dark wordmark for light backgrounds", () => {
-    const { container } = render(<TelloyaLogo variant="dark" />)
-    expect(container.querySelector(".telloya-logo-symbol > span")).toHaveTextContent(brandName)
-    expect(container.querySelector(".telloya-logo-symbol > span")).toHaveStyle({ color: "#082e24" })
-    expect(container.querySelector("img")).toHaveAttribute("alt", "")
+  it("uses the matching dark-wordmark variant on light surfaces", () => {
+    render(<TelloyaLogo variant="dark" />)
+    expect(screen.getByAltText(brandName).getAttribute("src")).toContain("telloya-connected-t-lockup-dark.webp")
   })
 
-  it("supports ivory wordmark for dark backgrounds", () => {
-    const { container } = render(<TelloyaLogo variant="light" />)
-    expect(container.querySelector(".telloya-logo-symbol > span")).toHaveTextContent(brandName)
-    expect(container.querySelector(".telloya-logo-symbol > span")).toHaveStyle({ color: "#f7f8f3" })
-    expect(container.querySelector("img")).toHaveAttribute("alt", "")
+  it("uses the original white wordmark on dark surfaces", () => {
+    render(<TelloyaLogo variant="light" />)
+    expect(screen.getByAltText(brandName).getAttribute("src")).toContain("telloya-connected-t-lockup.webp")
   })
 })
 
@@ -72,15 +67,13 @@ describe("Legal Disclosure", () => {
     expect(footerText).toContain("WC2H 9JQ")
   })
 
-  it("footer logo uses symbol variant for dark background", () => {
+  it("footer uses the final approved Connected T logo on the dark background", () => {
     const { container } = render(<Footer />)
-    // Footer uses symbol variant (emblem + HTML text) for dark background
-    const logoContainer = container.querySelector('.site-logo-footer .telloya-logo-symbol')
+    const logoContainer = container.querySelector('.site-logo-footer .telloya-logo-lockup')
     expect(logoContainer).toBeInTheDocument()
     const img = logoContainer?.querySelector('img')
-    const text = logoContainer?.querySelector('span')
-    expect(img).toBeInTheDocument()
-    expect(text?.textContent).toBe("Telloya")
+    expect(img).toHaveAttribute("alt", brandName)
+    expect(img?.getAttribute("src")).toContain("telloya-connected-t-lockup.webp")
   })
 
   it("includes legal terms disclosure about missing product-specific policies", () => {

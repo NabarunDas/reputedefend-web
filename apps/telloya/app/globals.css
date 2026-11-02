@@ -911,28 +911,17 @@ button, input, textarea, select { font: inherit; }
   color: #fffdf4;
   text-shadow: none;
 }
-.site-header-cinematic .site-logo .telloya-logo-symbol {
+.site-header-cinematic .site-logo .telloya-logo-lockup {
   display: inline-flex;
   align-items: center;
-  gap: 11px !important;
+  width: 164px;
+  flex-shrink: 0;
 }
-.site-header-cinematic .site-logo .telloya-logo-symbol img {
-  width: 48px !important;
-  height: 48px !important;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  filter: none;
+.site-header-cinematic .site-logo .telloya-logo-lockup img {
+  width: 100%;
+  height: auto;
   object-fit: contain;
-}
-.site-header-cinematic .site-logo .telloya-logo-symbol span {
-  font-family: var(--font-display), Arial, sans-serif;
-  color: #f9fff3 !important;
-  font-size: 24px !important;
-  font-weight: 800;
-  letter-spacing: -.045em;
+  filter: drop-shadow(0 1px 5px rgba(225,178,75,.16));
 }
 .site-header-cinematic .site-nav {
   display: flex;
@@ -1001,14 +990,21 @@ button, input, textarea, select { font: inherit; }
 }
 @media (max-width: 520px) {
   .site-header-cinematic > .container { width: calc(100% - 28px); margin-top: 10px; padding-inline: 16px; min-height: 62px; }
-  .site-header-cinematic .site-logo .telloya-logo-symbol img { width: 40px !important; height: 40px !important; }
-  .site-header-cinematic .site-logo .telloya-logo-symbol span { font-size: 22px !important; }
+  .site-header-cinematic .site-logo .telloya-logo-lockup { width: 142px; }
 }
 
-/* The sage-and-amber icon is itself a beveled glass button. Do not add
-   another background, border, glow or bevel outside the approved tile. */
-.site-logo-footer .telloya-logo-symbol img {
-  width: 44px !important;
-  height: 44px !important;
+/* Final brand: the glass is sculpted into the T itself.
+   No additional rounded-square icon tile. */
+.site-logo-footer .telloya-logo-lockup {
+  display: inline-flex;
+  width: 176px;
+  max-width: 100%;
+  align-items: center;
+}
+.site-logo-footer .telloya-logo-lockup img {
+  display: block;
+  width: 100%;
+  height: auto;
   object-fit: contain;
+  filter: drop-shadow(0 1px 5px rgba(225,178,75,.13));
 }

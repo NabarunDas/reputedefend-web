@@ -33,6 +33,7 @@ export const metadata: Metadata = {
   description: brandDescription,
   icons: {
     icon: [
+      { url: "/brand/telloya-favicon.ico", sizes: "any", type: "image/x-icon" },
       { url: "/brand/telloya-icon-16.png", sizes: "16x16", type: "image/png" },
       { url: "/brand/telloya-icon-32.png", sizes: "32x32", type: "image/png" },
       { url: "/brand/telloya-icon-192.png", sizes: "192x192", type: "image/png" },
@@ -49,6 +50,7 @@ export const metadata: Metadata = {
     title: defaultTitle,
     description: brandDescription,
     url: "/",
+    images: [{ url: "/brand/telloya-social-share.webp", width: 1200, height: 675, alt: "Telloya Connected T logo" }],
   },
   twitter: {
     card: "summary_large_image",

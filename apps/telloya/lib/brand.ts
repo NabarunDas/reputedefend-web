@@ -1,13 +1,10 @@
 /**
- * Brand tokens and approved asset paths for Telloya.
+ * Telloya brand — exact owner-approved 3D Connected T, 2026-11-02.
  *
- * Telloya is an AI receptionist service operated by ProfileRelaunch Ltd.
- * It uses the same design system as ProfileRelaunch but with its own
- * brand identity and dedicated domain.
- *
- * The dedicated final Telloya logo will be approved separately and placed
- * in public/brand/ when ready. Until then, the text-based wordmark component
- * serves as the temporary logo.
+ * Sculpted emerald and champagne-gold glass T with two gold connection
+ * points, a voicewave and the original white Telloya wordmark.
+ * No enclosing glass-square tile, headset or chat-bubble symbol.
+ * Company operator: ProfileRelaunch Ltd.
  */
 export const brandName = "Telloya"
 export const brandTagline = "Your AI Receptionist"
@@ -29,17 +26,28 @@ export const brandColors = {
 export const brandOperator = "ProfileRelaunch Ltd"
 export const operatorSiteUrl = "https://profilerelaunch.com"
 
-/**
- * Asset paths prepared for the future approved Telloya logo and favicon.
- * Do not commit generated or unapproved placeholder images to these paths.
- */
+/** Original design reproduced from user-approved pixels, with transparent mattes. */
 export const brandAssets = {
-  logo: "/brand/telloya-logo.svg",
-  logoDark: "/brand/telloya-logo-dark.png",
-  logoLight: "/brand/telloya-logo-light.png",
-  mark: "/brand/telloya-mark.svg",
-  favicon: "/icon.png",
-  appleTouchIcon: "/apple-icon.png",
+  horizontal: {
+    dark: "/brand/telloya-connected-t-lockup.webp",
+    light: "/brand/telloya-connected-t-lockup-dark.webp",
+    mono: "/brand/telloya-connected-t-lockup.webp",
+  },
+  mark: {
+    dark: "/brand/telloya-connected-t-icon.webp",
+    light: "/brand/telloya-connected-t-icon.webp",
+    mono: "/brand/telloya-connected-t-icon.webp",
+  },
+  lockup: {
+    dark: "/brand/telloya-connected-t-lockup.webp",
+    light: "/brand/telloya-connected-t-lockup-dark.webp",
+    mono: "/brand/telloya-connected-t-lockup.webp",
+  },
+  logo: "/brand/telloya-connected-t-lockup.webp",
+  logoDark: "/brand/telloya-connected-t-lockup-dark.webp",
+  logoLight: "/brand/telloya-connected-t-lockup.webp",
+  favicon: "/brand/telloya-icon-32.png",
+  appleTouchIcon: "/brand/telloya-icon-180.png",
 } as const
 
 export function pageTitle(page: string) {

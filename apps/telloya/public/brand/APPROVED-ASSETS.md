@@ -1,27 +1,40 @@
-# Telloya — approved brand assets (updated 2026-11-02)
+# FINAL Tello​ya brand — approved 2 November 2026
 
-## Current logo / favicon — owner-approved November 2
+## Canonical visual (no reinterpretations)
 
-The **sage glass button with amber-gold headset + telephone/chat bubble** replaces the previous emerald orbital phone emblem for the Telloya brand. Use the approved image, do not redraw it, recolor it or substitute another brand icon without approval.
+The **user-selected exact 3D Connected T** is the final Telloya brand.
+The letter itself is sculpted emerald-green glass and champagne-gold glass with two
+golden connection points and a short golden voicewave above the joined arms.
+The original white, rounded Telloya wordmark from the source image is also final.
+A gentle warm golden shadow is part of the presentation.
 
-- `telloya-amber-glass-icon.webp` — optimized new transparent 512px logo tile, used beside the ivory HTML wordmark in Telloya header and footer.
-- `telloya-icon-16.png` and `telloya-icon-32.png` — browser favicon versions of the new icon.
-- `telloya-icon-180.png` — Apple touch icon.
-- `telloya-icon-192.png` and `telloya-icon-512.png` — PWA application icons.
+**Do not redraw a new T, change the letter shape, substitute a generic font,
+reintroduce a headset/chat icon, or place the T inside a glass-square button.**
 
-The button shape and sage background are **part of the artwork**; do not wrap in additional CSS-generated glass tiles. Use a clear, real-text ivory `Telloya` wordmark on the dark marketing website. The gold accent is intentionally the brand distinction over the site's cinematic emerald atmosphere.
+The approved original source is retained in the delivered brand archive
+`Telloya_Final_Logo_Assets.zip`; it is a raster design, **not a vector master**.
 
-## Historical assets (retain for reference)
+## Current website assets
 
-- `telloya-logo-approved.webp` — superseded 2026-11-01 full green lockup; not used by active site header/footer.
-- `telloya-mark-approved.webp` — superseded 2026-11-01 green phone/orbit symbol; not used by active site header/footer.
+- `telloya-connected-t-lockup.webp` — transparent, exact approved wordmark and emblem; active website header/footer, dark backgrounds
+- `telloya-connected-t-lockup-dark.webp` — same exact contours with dark text for light backgrounds
+- `telloya-connected-t-icon.webp` — transparent standalone 3D T, extracted without redrawing
+- `telloya-icon-16.png`, `telloya-icon-32.png` — dark-emerald favicon derivatives
+- `telloya-favicon.ico` — multi-size legacy browser favicon
+- `telloya-icon-180.png` — Apple touch icon
+- `telloya-icon-192.png`, `telloya-icon-512.png` — application icons
+- `telloya-social-share.webp` — social sharing card from the exact approved original background
+- Existing `telloya-cinematic-console*.webp` — approved homepage hero artwork; unchanged
 
-## Cinematic artwork (unchanged)
+## Branding and environment boundaries
 
-- `telloya-cinematic-console.webp` — desktop hero console backdrop.
-- `telloya-cinematic-console-mobile.webp` — mobile hero console backdrop.
-- `telloya-cinematic-approved.webp` — the full design reference only; baked-in text should not replace semantic HTML copy.
+- Operator: **ProfileRelaunch Ltd**; use legal disclosure in marketing and email.
+- Use the current approved assets in marketing, future Telloya-specific emails, and the Telloya product surface.
+- Do not change ProfileRelaunch logos, emails, sender verification, customer/admin apps, Supabase, pricing or enquiries.
+- Do not embed protected Vercel Preview URLs in outgoing email image tags; use a public domain asset only after verified availability, otherwise use safe text fallback.
+- At 16px the favicon is a legibility-optimised resize of the same source T, not a redesigned symbol.
 
-## Boundaries
+## Superseded reference assets (may remain in /brand)
 
-Only Telloya brand assets are updated. The ProfileRelaunch brand, customer/admin application logos, Supabase, payments, the voice system, and the enquiry backend are unchanged. Future Telloya-branded emails should use the new icon with the existing shared verified sender and email infrastructure, without changing unrelated ProfileRelaunch emails.
+Previous emerald-orbit and amber-headset logo files are **historical only**.
+Do not use them as active Telloya identity.

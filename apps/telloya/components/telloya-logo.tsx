@@ -1,7 +1,10 @@
 /**
- * Telloya brand lockup — owner-approved sage-glass button and amber-gold
- * headset/chat emblem (2026-11-02). Keep the wordmark as accessible HTML.
- * The image already includes its rounded glass tile and needs no CSS frame.
+ * Telloya's final owner-selected "Connected T" logo, 2026-11-02.
+ * The image contains the exact 3D emerald-and-champagne-gold sculpted T
+ * and the original approved wordmark; no substitute font or redrawing.
+ *
+ * Logo alternatives use the same exact glyphs on light/dark surfaces.
+ * There is no rounded-square background button in the master design.
  */
 import Image from "next/image"
 
@@ -14,26 +17,21 @@ interface TelloyaLogoProps {
 }
 
 export function TelloyaLogo({ variant = "symbol", className = "", priority = false }: TelloyaLogoProps) {
+  const src = variant === "dark"
+    ? "/brand/telloya-connected-t-lockup-dark.webp"
+    : "/brand/telloya-connected-t-lockup.webp"
+
   return (
-    <span className={`telloya-logo-symbol ${className}`} style={{ display: "inline-flex", alignItems: "center", gap: "12px" }}>
+    <span className={`telloya-logo-lockup ${className}`}>
       <Image
-        src="/brand/telloya-amber-glass-icon.webp"
-        alt=""
-        width={48}
-        height={48}
+        src={src}
+        alt="Telloya"
+        width={1388}
+        height={510}
         priority={priority}
-        sizes="48px"
-        style={{ display: "block", flexShrink: 0 }}
+        sizes="(max-width: 520px) 142px, 164px"
+        style={{ display: "block", width: "100%", height: "auto", objectFit: "contain" }}
       />
-      <span style={{
-        fontFamily: "var(--font-display), Arial, sans-serif",
-        fontSize: "20px",
-        fontWeight: 800,
-        letterSpacing: "-0.02em",
-        color: variant === "dark" ? "#082e24" : "#f7f8f3",
-      }}>
-        Telloya
-      </span>
     </span>
   )
 }

@@ -802,6 +802,153 @@ describe("customer_portal_products_v1", () => {
     )).toEqual([{ entitlements: 0 }])
     expect(await counts()).toEqual({ ...before, subscriptions: before.subscriptions + 2 })
   })
+
+  it("lets a newer accepted subscription replace a closed entitlement without a second aggregate", async () => {
+    const historical = randomUUID()
+    await pilotSubscription(historical, "VC-26-VW2346", bakery, telloyaPlan, 2, "TELLOYA")
+    const expiredId = randomUUID()
+    const revokedId = randomUUID()
+    await entitlement(expiredId, bakery, high, historical, "NON_BILLABLE_PILOT")
+    await entitlement(revokedId, bakery, dock, historical, "NON_BILLABLE_PILOT")
+    await db.query(
+      "update public.product_entitlements set state = 'EXPIRED', eligible_to = now() - interval '1 hour' where id = $1",
+      [expiredId],
+    )
+    await db.query(
+      `update public.product_entitlements
+       set state = 'REVOKED', revoked_at = now(), revoked_by = $2, revocation_reason = $3
+       where id = $1`,
+      [revokedId, actor, "Historical entitlement closed before the replacement."],
+    )
+    const closed = await products(alexSession)
+    expect(closed?.businesses).toHaveLength(1)
+    expect(telloyaLocations(closed, "Harbour Bakery")?.status).toBe("expired")
+    expect(telloyaLocations(closed, "Harbour Bakery")?.locations.map(location => location.status).sort()).toEqual(["cancelled", "expired"])
+
+    const incoming = randomUUID()
+    await db.query(
+      `insert into public.commercial_subscriptions(
+        id, public_ref, customer_id, business_id, plan_family, plan_version_id, grant_kind, state,
+        amount_minor, currency, cadence_snapshot, terms_ref, pilot_ends_at, succeeds_subscription_id
+      ) values ($1, 'VC-26-XY2346', $2, $3, 'VOICE', $4, 'NON_BILLABLE_PILOT', 'DRAFT', null, 'GBP', 'MONTH', 'TELLOYA-TERMS-1', now() + interval '14 days', $5)`,
+      [incoming, alex, bakery, telloyaPlan, historical],
+    )
+    await db.exec(
+      `insert into public.commercial_subscription_items(subscription_id, component_code, quantity, quantity_limit_snapshot)
+       values ('${incoming}', 'TELLOYA', 1, 5)`,
+    )
+    const draft = await products(alexSession)
+    expect(draft?.businesses).toHaveLength(1)
+    expect(telloyaLocations(draft, "Harbour Bakery")?.status).toBe("expired")
+    expect(JSON.stringify(draft)).not.toContain("pending")
+
+    await db.query("update public.commercial_subscriptions set state = 'OFFERED' where id = $1", [incoming])
+    const offered = await products(alexSession)
+    expect(offered?.businesses).toHaveLength(1)
+    expect(telloyaLocations(offered, "Harbour Bakery")?.status).toBe("expired")
+    expect(JSON.stringify(offered)).not.toContain("pending")
+
+    await db.query("update public.commercial_subscriptions set state = 'ACCEPTED' where id = $1", [incoming])
+    const accepted = await products(alexSession)
+    expect(accepted?.businesses).toHaveLength(1)
+    expect(telloyaLocations(accepted, "Harbour Bakery")).toEqual({ status: "pending", locations: [] })
+    expect(guardBusiness(accepted, "Harbour Bakery")?.status).toBe("not_subscribed")
+
+    await db.query("update public.commercial_subscriptions set state = 'PAYMENT_PENDING' where id = $1", [incoming])
+    const pending = await products(alexSession)
+    expect(pending?.businesses).toHaveLength(1)
+    expect(telloyaLocations(pending, "Harbour Bakery")).toEqual({ status: "pending", locations: [] })
+    const serialised = JSON.stringify(pending)
+    expect(serialised).not.toContain("expired")
+    expect(serialised).not.toContain("cancelled")
+    expect(serialised).not.toContain("businessId")
+    expect(serialised).not.toContain(bakery)
+    expect(serialised).not.toContain(historical)
+    expect(serialised).not.toContain(incoming)
+    expect(serialised).not.toContain(alex)
+    expect(serialised).not.toContain("alex.products@example.com")
+    expect(serialised).not.toMatch(/cus_|sub_|si_/)
+    expect(serialised).not.toContain(binding)
+    expect(serialised).not.toContain(testCall)
+    expect(serialised).not.toContain(providerEvent)
+    expect(serialised).not.toContain("4900")
+    expect(await rows<{ entitlements: number }>(
+      "select count(*)::int as entitlements from public.product_entitlements where commercial_subscription_id = $1",
+      [incoming],
+    )).toEqual([{ entitlements: 0 }])
+  })
+
+  it("keeps one active aggregate while a replacement subscription is pending", async () => {
+    const current = randomUUID()
+    await billable(current, "VC-26-ZA2348", yard, "ACTIVE", true)
+    const currentEntitlement = randomUUID()
+    await db.exec("set local session_replication_role = replica")
+    await entitlement(currentEntitlement, yard, yardLoc, current, "COMMERCIAL_SUBSCRIPTION")
+    await db.exec("set local session_replication_role = origin")
+    expect(await rejected(
+      `insert into public.service_provisions(entitlement_id, business_id, location_id, state) values ($1, $2, $3, 'LIVE')`,
+      [currentEntitlement, yard, yardLoc],
+    )).toMatch(/LIVE|check constraint/i)
+    await allowLive()
+    await db.exec(
+      `insert into public.service_provisions(
+        entitlement_id, business_id, location_id, state,
+        profile_ready_at, agent_configured_at, number_allocated_at, forwarding_instructed_at,
+        customer_confirmed_at, provider_binding_ref, provider_test_call_ref, provider_test_outcome,
+        agent_test_passed_at, live_at
+      ) values (
+        '${currentEntitlement}', '${yard}', '${yardLoc}', 'LIVE',
+        now(), now(), now(), now(), now(), '${binding}', '${testCall}', 'PASSED', now(), now()
+      )`,
+    )
+    const open = await products(alexSession)
+    expect(open?.businesses).toHaveLength(1)
+    expect(telloyaLocations(open, "North Yard")?.status).toBe("active")
+    expect(telloyaLocations(open, "North Yard")?.locations).toEqual([
+      { locationName: "Hidden Yard", status: "active", nextStep: null },
+    ])
+
+    const replacement = randomUUID()
+    await db.query(
+      `insert into public.commercial_subscriptions(
+        id, public_ref, customer_id, business_id, plan_family, plan_version_id, grant_kind, state,
+        amount_minor, currency, tax_behaviour, cadence_snapshot, terms_ref, succeeds_subscription_id
+      ) values (
+        $1, 'VC-26-BC2349', $2, $3, 'VOICE', $4, 'BILLABLE', 'DRAFT',
+        4900, 'GBP', 'NOT_APPLICABLE', 'MONTH', 'TELLOYA-TERMS-1', $5
+      )`,
+      [replacement, alex, yard, telloyaPlan, current],
+    )
+    await db.exec(
+      `insert into public.commercial_subscription_items(subscription_id, component_code, quantity, quantity_limit_snapshot)
+       values ('${replacement}', 'TELLOYA', 1, 5)`,
+    )
+    await db.query("update public.commercial_subscriptions set state = 'PAYMENT_PENDING' where id = $1", [replacement])
+    const pending = await products(alexSession)
+    expect(pending?.businesses).toHaveLength(1)
+    expect(pending?.businesses[0]?.businessName).toBe("North Yard")
+    expect(telloyaLocations(pending, "North Yard")).toEqual({
+      status: "active",
+      locations: [{ locationName: "Hidden Yard", status: "active", nextStep: null }],
+    })
+    const serialised = JSON.stringify(pending)
+    expect(serialised).not.toContain("pending")
+    expect(serialised).not.toContain("businessId")
+    expect(serialised).not.toContain(yard)
+    expect(serialised).not.toContain(current)
+    expect(serialised).not.toContain(replacement)
+    expect(serialised).not.toContain(alex)
+    expect(serialised).not.toContain("alex.products@example.com")
+    expect(serialised).not.toMatch(/cus_|sub_|si_/)
+    expect(serialised).not.toContain(binding)
+    expect(serialised).not.toContain(testCall)
+    expect(serialised).not.toContain(providerEvent)
+    expect(serialised).not.toContain("4900")
+    expect(await rows<{ entitlements: number }>(
+      "select count(*)::int as entitlements from public.product_entitlements where commercial_subscription_id = $1",
+      [replacement],
+    )).toEqual([{ entitlements: 0 }])
+  })
 })
 
 async function rejected(query: string, params: unknown[] = []): Promise<string> {

@@ -12,8 +12,11 @@ BEGIN;
 -- Businesses and locations are assembled by business_id and location_id.
 -- Those ids are used only while building the JSON and are not returned.
 -- Display names are labels. An accepted or payment-pending Telloya
--- subscription with no entitlement row is pending. An offered quote, a
--- draft, and an enquiry are not a purchase and are not projected.
+-- subscription with no open entitlement is pending. An expired or revoked
+-- entitlement does not hide that newer subscription. An open entitlement
+-- keeps the current service while a replacement subscription is pending.
+-- Each business id is returned once. An offered quote, a draft, and an
+-- enquiry are not a purchase and are not projected.
 
 CREATE FUNCTION admin_private.customer_portal_products_rank_v1(p_status text)
 RETURNS integer
@@ -174,10 +177,15 @@ BEGIN
   customer := (sess ->> 'customerId')::uuid;
 
   BEGIN
-    SELECT COALESCE(jsonb_agg(row_value ORDER BY row_value ->> 'businessName', row_value ->> 'businessId'), '[]'::jsonb)
+    SELECT COALESCE(jsonb_agg(chosen.row_value ORDER BY chosen.row_value ->> 'businessName', chosen.row_value ->> 'businessId'), '[]'::jsonb)
       INTO telloya_rows
     FROM (
-      SELECT jsonb_build_object(
+      SELECT DISTINCT ON (combined.business_id)
+        combined.row_value
+      FROM (
+      SELECT grouped.business_id,
+        1 AS source_rank,
+        jsonb_build_object(
         'businessId', grouped.business_id::text,
         'businessName', grouped.business_name,
         'telloya', jsonb_build_object(
@@ -286,11 +294,13 @@ BEGIN
       ) step
       GROUP BY grouped.business_id, grouped.business_name
       UNION ALL
-      SELECT jsonb_build_object(
-        'businessId', subscription.business_id::text,
-        'businessName', business.display_name,
-        'telloya', jsonb_build_object('status', 'pending', 'locations', '[]'::jsonb)
-      )
+      SELECT subscription.business_id,
+        0 AS source_rank,
+        jsonb_build_object(
+          'businessId', subscription.business_id::text,
+          'businessName', business.display_name,
+          'telloya', jsonb_build_object('status', 'pending', 'locations', '[]'::jsonb)
+        )
       FROM public.commercial_subscriptions subscription
       JOIN public.businesses business ON business.id = subscription.business_id
       JOIN public.business_memberships membership
@@ -308,8 +318,11 @@ BEGIN
           FROM public.product_entitlements entitlement
           WHERE entitlement.business_id = subscription.business_id
             AND entitlement.component_code = 'TELLOYA'
+            AND entitlement.state IN ('PENDING', 'ELIGIBLE')
         )
-    ) built;
+      ) combined
+      ORDER BY combined.business_id, combined.source_rank
+    ) chosen;
   EXCEPTION WHEN OTHERS THEN
     telloya_rows := '[]'::jsonb;
     telloya_read := 'unavailable';
@@ -445,12 +458,14 @@ BEGIN
     SELECT value -> 'telloya' AS telloya
     FROM jsonb_array_elements(telloya_rows) value
     WHERE telloya_read = 'ok' AND value ->> 'businessId' = names.business_id
+    ORDER BY value ->> 'businessId'
     LIMIT 1
   ) telloya_match ON true
   LEFT JOIN LATERAL (
     SELECT value -> 'guard' AS guard
     FROM jsonb_array_elements(guard_rows) value
     WHERE guard_read = 'ok' AND value ->> 'businessId' = names.business_id
+    ORDER BY value ->> 'businessId'
     LIMIT 1
   ) guard_match ON true;
 

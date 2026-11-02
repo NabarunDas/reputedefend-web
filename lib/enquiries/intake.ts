@@ -91,15 +91,25 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
     // Fetch stored email status for existing enquiries
     try {
       // Type assertion needed because enquiries table isn't in generated Supabase types
-      const { data: storedEnquiry } = await (createSupabaseServerClient()
-        .from("enquiries" as any) as any)
+      const client = createSupabaseServerClient() as unknown as {
+        from(table: string): {
+          select(columns: string): {
+            eq(column: string, value: string): {
+              single(): Promise<{ data: { ack_status: string } | null; error: unknown }>
+            }
+          }
+        }
+      }
+      
+      const { data: storedEnquiry } = await client
+        .from("enquiries")
         .select("ack_status")
         .eq("submission_key", key)
         .single()
       
       if (storedEnquiry) {
         // Map stored ack_status to response fields
-        const ackStatus = storedEnquiry.ack_status as string
+        const ackStatus = storedEnquiry.ack_status
         if (ackStatus === "SENT") {
           result.receiptEmailSent = true
           result.receiptEmailStatus = "sent"

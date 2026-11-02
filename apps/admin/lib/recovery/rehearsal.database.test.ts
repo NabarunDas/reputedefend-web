@@ -54,17 +54,17 @@ describe("rebuilding the whole schema from zero", () => {
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    // The DEV applied head is 20261101200000 customer_portal_products_v1.
-    // It was applied once and must not be replayed. 20261101190000, 20261101180000,
+    // The DEV applied head is 20261102110000 customer_invitation_dispatch_v1.
+    // It was applied once and must not be replayed. 20261101200000, 20261101190000, 20261101180000,
     // 20261101170000, 20261031160000, 20261031150000, 20261031140000 and 20261031120000
     // were applied once and must not be replayed.
     // Do not replay 20261101200000. Do not apply 20261101200000 to Production.
     // Production stays at SEC-08.
     expect(migrationHead.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(true)
     expect(migrationHead.safeToReplay).toBe(false)
-    expect(appliedMigrationHead.version).toBe("20261101200000")
+    expect(appliedMigrationHead.version).toBe("20261102110000")
     expect(appliedMigrationHead.safeToReplay).toBe(false)
   })
 

@@ -7,7 +7,7 @@ import { createResendEnquiryProvider } from "@/lib/providers/resend-enquiry-prov
 import { readSupabaseConfig } from "@/lib/supabase/config"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import type { Json } from "@/lib/supabase/database"
-export type EnquiryReceipt = { status: "created" | "existing" | "conflict" | "invalid"; id?: string; attempt?: string; sendAck?: boolean }
+export type EnquiryReceipt = { status: "created" | "existing" | "conflict" | "invalid"; id?: string; attempt?: string; sendAck?: boolean; enquiryRef?: string }
 type DeliveryStatus = "SENT" | "FAILED" | "UNKNOWN" | "SKIPPED"
 export type GeneralIntakeOptions = {
   create?: (key: string, data: EnquiryInput, ack: boolean) => Promise<EnquiryReceipt>
@@ -48,7 +48,7 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
   catch { return { ok: false, message: ENQUIRY_UNAVAILABLE } }
   if (receipt.status === "conflict" || receipt.status === "invalid") return { ok: false, message: "Please reload the form and submit your enquiry again." }
   if (receipt.status !== "created" && receipt.status !== "existing") return { ok: false, message: ENQUIRY_UNAVAILABLE }
-  const success = { ok: true, persisted: true, message: "Your enquiry has been received." }
+  const success = { ok: true, persisted: true, message: "Your enquiry has been received.", enquiryRef: receipt.enquiryRef }
   if (receipt.status === "existing") return success
   // Any failure after the commit must leave the customer with a truthful receipt.
   if (!receipt.id || !receipt.attempt) return success

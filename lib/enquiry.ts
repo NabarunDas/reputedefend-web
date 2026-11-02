@@ -100,6 +100,7 @@ export type EnquiryResult = {
   message: string
   simulated?: boolean
   persisted?: boolean
+  enquiryRef?: string
   caseRef?: string
   caseType?: string
   receiptEmailSent?: boolean

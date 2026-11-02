@@ -1,0 +1,376 @@
+/* Features page - cinematic design */
+
+.page {
+  --night: #001a15;
+  --night-deep: #00110e;
+  --glass-line: rgba(176, 244, 175, .22);
+  --ivory: #f4f8ef;
+  --acid: #c0fc81;
+  overflow: clip;
+  color: var(--ivory);
+  background: var(--night-deep);
+  isolation: isolate;
+  min-height: 100vh;
+}
+
+.page :is(h1,h2,h3,p,ul,ol,dl) { margin-block-start: 0; }
+.page :is(a,button,summary):focus-visible {
+  outline: 3px solid #d9ff94;
+  outline-offset: 5px;
+}
+
+.hero {
+  position: relative;
+  isolation: isolate;
+  min-height: 385px;
+  padding: clamp(116px, 13vh, 145px) 0 clamp(38px, 5vh, 54px);
+  text-align: center;
+  background:
+    radial-gradient(ellipse 45% 35% at 50% 25%, rgba(5, 72, 42, .52), transparent 100%),
+    radial-gradient(ellipse 38% 42% at 5% 50%, rgba(42, 127, 81, .24), transparent 100%),
+    radial-gradient(ellipse 38% 42% at 95% 50%, rgba(19, 136, 81, .20), transparent 100%),
+    linear-gradient(180deg, #001c16 0%, #002820 50%, #001913 100%);
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 30% 25% at 15% 30%, rgba(107,205,132,.15), transparent 100%),
+    radial-gradient(ellipse 28% 20% at 88% 35%, rgba(164,255,170,.15), transparent 100%),
+    radial-gradient(ellipse 35% 22% at 50% 60%, rgba(11,97,60,.28), transparent 100%);
+  filter: blur(18px);
+  opacity: .92;
+  animation: atmosphericBreathe 18s ease-in-out infinite alternate;
+}
+
+@keyframes atmosphericBreathe {
+  from { transform: translateX(-1.2%) scale(1); }
+  to { transform: translateX(1.2%) scale(1.05); }
+}
+
+.heroContent {
+  position: relative;
+  z-index: 1;
+  width: min(940px, calc(100% - 36px));
+  margin-inline: auto;
+}
+
+.eyebrow {
+  color: #b9ec8a;
+  text-transform: uppercase;
+  letter-spacing: .17em;
+  font-size: .72rem;
+  font-weight: 800;
+  margin-bottom: 15px;
+}
+
+.heroTitle {
+  font-family: Georgia, "Times New Roman", serif;
+  color: #fffdf6;
+  font-weight: 400;
+  font-size: clamp(2.75rem, 4.2vw, 4.5rem);
+  letter-spacing: -.055em;
+  line-height: 1.02;
+  text-shadow: 0 4px 35px rgba(0,0,0,.44);
+  margin: 0 0 20px;
+  text-wrap: balance;
+}
+
+.heroTitle em {
+  color: #c5ef9d;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.heroLead {
+  max-width: 720px;
+  margin-inline: auto;
+  color: rgba(244,248,239,.82);
+  font-size: clamp(.98rem, 1.12vw, 1.12rem);
+  line-height: 1.52;
+  text-shadow: 0 1px 12px #001c16;
+}
+
+.body {
+  position: relative;
+  background:
+    radial-gradient(ellipse 42% 12% at 97% 15%, rgba(29,105,70,.16), transparent),
+    radial-gradient(ellipse 32% 20% at 3% 65%, rgba(31,105,71,.14), transparent),
+    linear-gradient(180deg, #00110e, #042219 40%, #001713 72%, #00110d);
+  padding: 0 0 84px;
+}
+
+.body::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .11;
+  background: repeating-linear-gradient(0deg, transparent 0, transparent 149px, rgba(208,255,180,.15) 150px);
+}
+
+.sectionWrap {
+  position: relative;
+  z-index: 1;
+  width: min(1230px, calc(100% - 64px));
+  margin-inline: auto;
+}
+
+.section {
+  padding-block: clamp(75px, 10vh, 95px);
+  border-bottom: 1px solid rgba(198,242,188,.16);
+}
+
+.section:last-child {
+  border-bottom: none;
+}
+
+.sectionHeader {
+  text-align: center;
+  max-width: 870px;
+  margin: 0 auto 48px;
+}
+
+.sectionTitle {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2.15rem, 3.5vw, 3.85rem);
+  line-height: 1.08;
+  font-weight: 500;
+  letter-spacing: -.045em;
+  text-wrap: balance;
+  margin-bottom: 18px;
+}
+
+.sectionTitle em {
+  color: #c5ef9d;
+  font-weight: 400;
+  font-style: italic;
+}
+
+.sectionLead {
+  color: rgba(244,248,239,.78);
+  font-size: 1.05rem;
+  line-height: 1.65;
+  max-width: 680px;
+  margin-inline: auto;
+}
+
+/* Feature cards - alternating layouts for visual interest */
+.featuresList {
+  display: grid;
+  gap: 36px;
+}
+
+.featureCard {
+  padding: 36px;
+}
+
+.featureKicker {
+  margin-bottom: 10px;
+}
+
+.featureCard h3 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.65rem;
+  font-weight: 500;
+  color: #fffdf6;
+  letter-spacing: -.035em;
+  line-height: 1.15;
+  margin-bottom: 14px;
+}
+
+.featureStatus {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 14px;
+  border-radius: 99px;
+  font-size: .73rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+
+.featureStatus[data-status="available"] {
+  background: rgba(150,248,119,.18);
+  color: #d0ff9c;
+  border: 1px solid rgba(180,255,145,.35);
+}
+
+.featureStatus[data-status="planned"],
+.featureStatus[data-status="future"] {
+  background: rgba(240, 198, 116, .16);
+  color: #f0c674;
+  border: 1px solid rgba(240, 198, 116, .30);
+}
+
+.featureDescription {
+  color: #d2e4d8;
+  font-size: .98rem;
+  line-height: 1.65;
+  margin-bottom: 22px;
+}
+
+.featurePoints {
+  margin-bottom: 18px;
+}
+
+.featureNote {
+  padding: 16px 20px;
+  background: rgba(11,97,60,.22);
+  border-radius: 14px;
+  border: 1px solid rgba(199,250,190,.18);
+  margin-top: 18px;
+}
+
+/* Workflow visualization */
+.workflowSection {
+  padding: 48px 42px;
+}
+
+.workflowSteps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+  align-items: center;
+  margin-top: 32px;
+}
+
+.workflowStep {
+  text-align: center;
+  position: relative;
+}
+
+.workflowStep::after {
+  content: "→";
+  position: absolute;
+  right: -36px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #bafa8a;
+  font-size: 2rem;
+  font-weight: 300;
+}
+
+.workflowStep:last-child::after {
+  display: none;
+}
+
+.workflowIcon {
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 18px;
+}
+
+.workflowLabel {
+  font-size: .96rem;
+  font-weight: 700;
+  color: #eaf9e7;
+  margin-bottom: 8px;
+}
+
+.workflowDesc {
+  font-size: .84rem;
+  color: #b6d0bd;
+  line-height: 1.5;
+}
+
+/* Technical cards */
+.technicalCard {
+  padding: 26px;
+  font-size: .92rem;
+  color: #d2e4d8;
+  line-height: 1.62;
+  text-align: center;
+}
+
+/* Future features */
+.futureCard {
+  padding: 28px;
+}
+
+.futureCard h3 {
+  margin-bottom: 14px;
+}
+
+.futureCard p {
+  margin-bottom: 14px;
+}
+
+.timeline {
+  display: inline-block;
+  padding: 4px 12px;
+  background: rgba(240, 198, 116, .14);
+  color: #f0c674;
+  border: 1px solid rgba(240, 198, 116, .26);
+  border-radius: 99px;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.futureNote {
+  text-align: center;
+  margin-top: 28px;
+  padding-top: 28px;
+  border-top: 1px solid rgba(198,242,188,.16);
+}
+
+/* Final CTA */
+.ctaSection {
+  margin-top: 85px;
+}
+
+/* Responsive */
+@media (max-width: 760px) {
+  .workflowSteps {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  
+  .workflowStep::after {
+    content: "↓";
+    right: auto;
+    top: auto;
+    bottom: -34px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  
+  .featureCard {
+    padding: 28px 24px;
+  }
+  
+  .workflowSection {
+    padding: 36px 28px;
+  }
+}
+
+@media (max-width: 520px) {
+  .featureCard h3 {
+    font-size: 1.4rem;
+  }
+  
+  .workflowSection {
+    padding: 32px 24px;
+  }
+  
+  .ctaSection {
+    margin-top: 60px;
+  }
+}
+
+/* Bring the first informative section close to the cinematic intro. */
+.body > .section:first-child { padding-top: clamp(46px, 6vh, 62px); }
+
+/* Match the compact How It Works handoff at tablet and mobile sizes.
+   Keep clear of the fixed glass navigation and avoid artificial hero height. */
+@media (max-width: 760px) {
+  .hero { min-height: 0; padding: clamp(108px, 12vh, 124px) 0 46px; }
+}
+@media (max-width: 520px) {
+  .hero { min-height: 0; padding: 102px 0 40px; }
+}

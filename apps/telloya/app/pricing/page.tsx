@@ -1,7 +1,9 @@
 import type { Metadata } from "next"
+import Link from "next/link"
+import { ArrowUpRight } from "lucide-react"
 import { pageTitle } from "@/lib/brand"
 import { pricingContent } from "@/lib/content"
-import { Section, Eyebrow, SectionTitle, PricingPlanCard, FaqItem, CtaSection } from "@/components/ui"
+import styles from "./pricing.module.css"
 
 const { seo, hero, plans, comparison, commercial, faq, cta } = pricingContent
 
@@ -22,109 +24,147 @@ export const metadata: Metadata = {
 
 export default function Pricing() {
   return (
-    <>
-      <Section className="hero">
-        <div className="hero-content">
-          <Eyebrow>{hero.eyebrow}</Eyebrow>
-          <h1 className="hero-headline">{hero.title}</h1>
-          <p className="hero-supporting">{hero.lead}</p>
+    <div className={styles.page}>
+      {/* Hero */}
+      <section className={styles.hero} aria-labelledby="pricing-title">
+        <div className={styles.heroContent}>
+          <p className={styles.eyebrow}>{hero.eyebrow}</p>
+          <h1 id="pricing-title" className={styles.heroTitle}>
+            {hero.title}
+          </h1>
+          <p className={styles.heroLead}>{hero.lead}</p>
         </div>
-      </Section>
+      </section>
 
-      <Section background="surface">
-        <div className="grid-2 max-w-5xl mx-auto">
-          {plans.map((plan) => (
-            <PricingPlanCard
-              key={plan.name}
-              name={plan.name}
-              tagline={plan.tagline}
-              description={plan.description}
-              status={plan.status}
-              features={plan.features}
-              notes={plan.notes}
-              cta={plan.cta}
-              href={plan.href}
-              highlight={plan.name === "Complete" ? false : undefined}
-            />
-          ))}
-        </div>
-      </Section>
+      <div className={styles.body}>
+        {/* Plans */}
+        <section className={`${styles.sectionWrap} ${styles.section}`} aria-label="Pricing plans">
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>
+              Choose the <em>right plan for you.</em>
+            </h2>
+            <p className={styles.sectionLead}>Standalone Telloya or the proposed Complete package with profile monitoring.</p>
+          </div>
+          <div className={styles.plansGrid}>
+            {plans.map((plan) => (
+              <article key={plan.name} className={styles.planCard}>
+                <h3>{plan.name}</h3>
+                <p className={styles.planTagline}>{plan.tagline}</p>
+                <p className={styles.planDescription}>{plan.description}</p>
+                <div className={styles.planStatus}>{plan.status}</div>
+                <ul className={styles.planFeatures}>
+                  {plan.features.map((feature, index) => (
+                    <li key={index}>{feature}</li>
+                  ))}
+                </ul>
+                {plan.notes && plan.notes.length > 0 && (
+                  <div className={styles.planNotes}>
+                    {plan.notes.map((note, index) => (
+                      <p key={index} className={styles.planNote}>
+                        {note}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                <Link className={styles.planCta} href={plan.href}>
+                  {plan.cta}
+                </Link>
+              </article>
+            ))}
+          </div>
+        </section>
 
-      <Section>
-        <div className="mb-12">
-          <Eyebrow>{comparison.eyebrow}</Eyebrow>
-          <SectionTitle>{comparison.title}</SectionTitle>
-          <p className="text-muted max-w-prose">{comparison.lead}</p>
-        </div>
-        <div className="max-w-3xl mx-auto overflow-x-auto">
-          <table className="w-full card">
-            <thead>
-              <tr className="border-b border-line">
-                {comparison.table.headers.map((header) => (
-                  <th key={header} className="text-left p-4 font-bold">
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {comparison.table.rows.map((row, index) => (
-                <tr key={index} className="border-b border-line last:border-0">
-                  <td className="p-4">{row[0]}</td>
-                  <td className="p-4 text-center">
-                    {row[1] ? (
-                      <span className="text-green font-bold text-xl">✓</span>
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </td>
-                  <td className="p-4 text-center">
-                    {row[2] ? (
-                      <span className="text-green font-bold text-xl">✓</span>
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </td>
+        {/* Comparison */}
+        <section className={`${styles.sectionWrap} ${styles.section}`} aria-labelledby="comparison-title">
+          <div className={styles.sectionHeader}>
+            <p className={styles.eyebrow}>{comparison.eyebrow}</p>
+            <h2 id="comparison-title" className={styles.sectionTitle}>
+              Compare <em>plan features.</em>
+            </h2>
+            <p className={styles.sectionLead}>{comparison.lead}</p>
+          </div>
+          <div className={styles.tableContainer}>
+            <table className={styles.comparisonTable}>
+              <thead>
+                <tr>
+                  {comparison.table.headers.map((header) => (
+                    <th key={header}>{header}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
+              </thead>
+              <tbody>
+                {comparison.table.rows.map((row, index) => (
+                  <tr key={index}>
+                    <td>{row[0]}</td>
+                    <td>
+                      {row[1] ? (
+                        <span className={styles.checkmark}>✓</span>
+                      ) : (
+                        <span className={styles.dash}>—</span>
+                      )}
+                    </td>
+                    <td>
+                      {row[2] ? (
+                        <span className={styles.checkmark}>✓</span>
+                      ) : (
+                        <span className={styles.dash}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-      <Section background="surface">
-        <div className="mb-12">
-          <Eyebrow>{commercial.eyebrow}</Eyebrow>
-          <SectionTitle>{commercial.title}</SectionTitle>
-        </div>
-        <div className="grid-2 max-w-4xl mx-auto">
-          {commercial.points.map((point) => (
-            <div key={point.title} className="card">
-              <h3 className="feature-title">{point.title}</h3>
-              <p className="text-muted">{point.description}</p>
-            </div>
-          ))}
-        </div>
-      </Section>
+        {/* Commercial */}
+        <section className={`${styles.sectionWrap} ${styles.section}`} aria-labelledby="commercial-title">
+          <div className={styles.sectionHeader}>
+            <p className={styles.eyebrow}>{commercial.eyebrow}</p>
+            <h2 id="commercial-title" className={styles.sectionTitle}>
+              Important <em>commercial information.</em>
+            </h2>
+          </div>
+          <div className={styles.commercialGrid}>
+            {commercial.points.map((point) => (
+              <article key={point.title} className={styles.commercialCard}>
+                <h3>{point.title}</h3>
+                <p>{point.description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
 
-      <Section>
-        <div className="mb-12">
-          <SectionTitle>{faq.title}</SectionTitle>
-        </div>
-        <div className="max-w-3xl mx-auto">
-          {faq.questions.map((item) => (
-            <FaqItem key={item.q} question={item.q} answer={item.a} />
-          ))}
-        </div>
-      </Section>
+        {/* FAQ */}
+        <section className={`${styles.sectionWrap} ${styles.section}`} aria-labelledby="faq-title">
+          <div className={styles.sectionHeader}>
+            <h2 id="faq-title" className={styles.sectionTitle}>
+              Pricing <em>questions answered.</em>
+            </h2>
+          </div>
+          <div className={styles.faqList}>
+            {faq.questions.map((item) => (
+              <article key={item.q} className={styles.faqItem}>
+                <h3 className={styles.faqQuestion}>{item.q}</h3>
+                <p className={styles.faqAnswer}>{item.a}</p>
+              </article>
+            ))}
+          </div>
+        </section>
 
-      <CtaSection
-        title={cta.title}
-        description={cta.description}
-        cta={cta.cta}
-        href={cta.href}
-        className="bg-surface"
-      />
-    </>
+        {/* CTA */}
+        <div className={styles.sectionWrap}>
+          <section className={styles.ctaSection} aria-labelledby="cta-title">
+            <h2 id="cta-title" className={styles.ctaTitle}>
+              Ready to get started <em>with Telloya?</em>
+            </h2>
+            <p className={styles.ctaDescription}>{cta.description}</p>
+            <Link className={styles.ctaButton} href={cta.href}>
+              {cta.cta} <ArrowUpRight size={18} aria-hidden="true" />
+            </Link>
+          </section>
+        </div>
+      </div>
+    </div>
   )
 }

@@ -1,7 +1,9 @@
 import type { Metadata } from "next"
+import Link from "next/link"
+import { ArrowUpRight } from "lucide-react"
 import { pageTitle } from "@/lib/brand"
 import { howItWorksContent } from "@/lib/content"
-import { Section, Eyebrow, SectionTitle, StepCard, CtaSection } from "@/components/ui"
+import styles from "./how-it-works.module.css"
 
 const { seo, hero, journey, experience, setup, limitations, cta } = howItWorksContent
 
@@ -22,88 +24,110 @@ export const metadata: Metadata = {
 
 export default function HowItWorks() {
   return (
-    <>
-      <Section className="hero">
-        <div className="hero-content">
-          <Eyebrow>{hero.eyebrow}</Eyebrow>
-          <h1 className="hero-headline">{hero.title}</h1>
-          <p className="hero-supporting">{hero.lead}</p>
+    <div className={styles.page}>
+      {/* Hero */}
+      <section className={styles.hero} aria-labelledby="how-it-works-title">
+        <div className={styles.heroContent}>
+          <p className={styles.eyebrow}>{hero.eyebrow}</p>
+          <h1 id="how-it-works-title" className={styles.heroTitle}>
+            {hero.title}
+          </h1>
+          <p className={styles.heroLead}>{hero.lead}</p>
         </div>
-      </Section>
+      </section>
 
-      <Section background="surface">
-        <div className="mb-12">
-          <SectionTitle>{journey.title}</SectionTitle>
-        </div>
-        <div className="max-w-4xl mx-auto">
-          {journey.steps.map((step) => (
-            <StepCard
-              key={step.number}
-              number={step.number}
-              title={step.title}
-              description={step.description}
-              detail={step.detail}
-            />
-          ))}
-        </div>
-      </Section>
-
-      <Section>
-        <div className="mb-12">
-          <Eyebrow>{experience.eyebrow}</Eyebrow>
-          <SectionTitle>{experience.title}</SectionTitle>
-          <p className="text-muted max-w-prose">{experience.lead}</p>
-        </div>
-        <div className="max-w-3xl card">
-          <p className="mb-6 font-semibold">{experience.example.greeting}</p>
-          <ul className="space-y-3">
-            {experience.example.flow.map((item, index) => (
-              <li key={index} className="text-muted pl-6 relative">
-                <span className="absolute left-0">→</span>
-                {item}
-              </li>
+      <div className={styles.body}>
+        {/* Journey Steps */}
+        <section className={`${styles.sectionWrap} ${styles.section}`} aria-labelledby="journey-title">
+          <div className={styles.sectionHeader}>
+            <h2 id="journey-title" className={styles.sectionTitle}>
+              A smarter way to <em>handle enquiries.</em>
+            </h2>
+            <p className={styles.sectionLead}>{journey.title}</p>
+          </div>
+          <div className={styles.journeySteps}>
+            {journey.steps.map((step) => (
+              <article key={step.number} className={styles.stepCard}>
+                <div className={styles.stepNumber}>{step.number}</div>
+                <h3 className={styles.stepTitle}>{step.title}</h3>
+                <p className={styles.stepDescription}>{step.description}</p>
+                <p className={styles.stepDetail}>{step.detail}</p>
+              </article>
             ))}
-          </ul>
-          <p className="mt-6 text-sm text-muted italic">{experience.example.note}</p>
-        </div>
-      </Section>
+          </div>
+        </section>
 
-      <Section background="surface">
-        <div className="mb-12">
-          <Eyebrow>{setup.eyebrow}</Eyebrow>
-          <SectionTitle>{setup.title}</SectionTitle>
-          <p className="text-muted max-w-prose">{setup.lead}</p>
-        </div>
-        <div className="grid-3 max-w-4xl mx-auto">
-          {setup.steps.map((step, index) => (
-            <div key={index} className="card">
-              <h3 className="feature-title">{step.title}</h3>
-              <p className="text-muted">{step.description}</p>
-            </div>
-          ))}
-        </div>
-        <p className="mt-8 text-center text-muted max-w-prose mx-auto">{setup.note}</p>
-      </Section>
+        {/* Experience */}
+        <section className={`${styles.sectionWrap} ${styles.section}`} aria-labelledby="experience-title">
+          <div className={styles.sectionHeader}>
+            <p className={styles.eyebrow}>{experience.eyebrow}</p>
+            <h2 id="experience-title" className={styles.sectionTitle}>
+              From first ring to <em>captured enquiry.</em>
+            </h2>
+            <p className={styles.sectionLead}>{experience.lead}</p>
+          </div>
+          <div className={styles.exampleBox}>
+            <p className={styles.exampleGreeting}>{experience.example.greeting}</p>
+            <ul className={styles.flowList}>
+              {experience.example.flow.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+            <p className={styles.exampleNote}>{experience.example.note}</p>
+          </div>
+        </section>
 
-      <Section>
-        <div className="mb-8">
-          <Eyebrow>{limitations.eyebrow}</Eyebrow>
-          <SectionTitle>{limitations.title}</SectionTitle>
-          <p className="text-muted max-w-prose">{limitations.lead}</p>
-        </div>
-        <div className="max-w-3xl card">
-          <ul className="space-y-3">
-            {limitations.points.map((point, index) => (
-              <li key={index} className="text-muted pl-6 relative">
-                <span className="absolute left-0">•</span>
-                {point}
-              </li>
+        {/* Setup */}
+        <section className={`${styles.sectionWrap} ${styles.section}`} aria-labelledby="setup-title">
+          <div className={styles.sectionHeader}>
+            <p className={styles.eyebrow}>{setup.eyebrow}</p>
+            <h2 id="setup-title" className={styles.sectionTitle}>
+              Simple setup, <em>powerful results.</em>
+            </h2>
+            <p className={styles.sectionLead}>{setup.lead}</p>
+          </div>
+          <div className={styles.setupGrid}>
+            {setup.steps.map((step, index) => (
+              <article key={index} className={styles.setupCard}>
+                <h3>{step.title}</h3>
+                <p>{step.description}</p>
+              </article>
             ))}
-          </ul>
-        </div>
-      </Section>
+          </div>
+          <p className={styles.setupNote}>{setup.note}</p>
+        </section>
 
-      <CtaSection title={cta.title} description={cta.description} cta={cta.cta} href={cta.href} />
-    </>
+        {/* Limitations */}
+        <section className={`${styles.sectionWrap} ${styles.section}`} aria-labelledby="limitations-title">
+          <div className={styles.sectionHeader}>
+            <p className={styles.eyebrow}>{limitations.eyebrow}</p>
+            <h2 id="limitations-title" className={styles.sectionTitle}>
+              What Telloya <em>can and cannot do.</em>
+            </h2>
+            <p className={styles.sectionLead}>{limitations.lead}</p>
+          </div>
+          <div className={styles.limitationsBox}>
+            <ul className={styles.limitationsList}>
+              {limitations.points.map((point, index) => (
+                <li key={index}>{point}</li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        {/* CTA */}
+        <div className={styles.sectionWrap}>
+          <section className={styles.ctaSection} aria-labelledby="cta-title">
+            <h2 id="cta-title" className={styles.ctaTitle}>
+              Ready to see how Telloya <em>works for you?</em>
+            </h2>
+            <p className={styles.ctaDescription}>{cta.description}</p>
+            <Link className={styles.ctaButton} href={cta.href}>
+              {cta.cta} <ArrowUpRight size={18} aria-hidden="true" />
+            </Link>
+          </section>
+        </div>
+      </div>
+    </div>
   )
 }

@@ -17,7 +17,7 @@ import {
 describe("Telloya Branding", () => {
   it("renders the Telloya logo with correct brand name", () => {
     render(<TelloyaLogo />)
-    expect(screen.getByLabelText(brandName)).toBeInTheDocument()
+    expect(screen.getByAltText(brandName)).toBeInTheDocument()
   })
 
   it("uses the correct brand name", () => {
@@ -26,14 +26,16 @@ describe("Telloya Branding", () => {
 
   it("supports dark variant for light backgrounds", () => {
     const { container } = render(<TelloyaLogo variant="dark" />)
-    const logo = container.querySelector('span')
-    expect(logo?.style.color).toBe("var(--green)")
+    const img = container.querySelector('img')
+    expect(img).toBeInTheDocument()
+    expect(img?.getAttribute('alt')).toBe("Telloya")
   })
 
   it("supports light variant for dark backgrounds", () => {
     const { container } = render(<TelloyaLogo variant="light" />)
-    const logo = container.querySelector('span')
-    expect(logo?.style.color).toBe("var(--lime)")
+    const img = container.querySelector('img')
+    expect(img).toBeInTheDocument()
+    expect(img?.getAttribute('alt')).toBe("Telloya")
   })
 })
 
@@ -66,14 +68,15 @@ describe("Legal Disclosure", () => {
     expect(footerText).toContain("WC2H 9JQ")
   })
 
-  it("footer logo uses light variant for contrast", () => {
-    const { container} = render(<Footer />)
-    const logo = container.querySelector('.site-logo-footer span')
-    expect(logo).toBeInTheDocument()
-    // Light variant should be used on dark footer background
-    const style = logo?.getAttribute('style')
-    expect(style).toBeTruthy()
-    expect(style).toContain("var(--lime)")
+  it("footer logo uses symbol variant for dark background", () => {
+    const { container } = render(<Footer />)
+    // Footer uses symbol variant (emblem + HTML text) for dark background
+    const logoContainer = container.querySelector('.site-logo-footer .telloya-logo-symbol')
+    expect(logoContainer).toBeInTheDocument()
+    const img = logoContainer?.querySelector('img')
+    const text = logoContainer?.querySelector('span')
+    expect(img).toBeInTheDocument()
+    expect(text?.textContent).toBe("Telloya")
   })
 
   it("includes legal terms disclosure about missing product-specific policies", () => {
@@ -92,7 +95,7 @@ describe("Navigation", () => {
     expect(screen.getAllByText("Features").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Industries").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Pricing").length).toBeGreaterThan(0)
-    expect(screen.getAllByText("Request Info").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Enquire").length).toBeGreaterThan(0)
   })
 
   it("includes customer login CTA", () => {
@@ -342,7 +345,7 @@ describe("Page Structure and Accessibility", () => {
     expect(hrefs).toContain('/features')
     expect(hrefs).toContain('/industries')
     expect(hrefs).toContain('/pricing')
-    expect(hrefs).toContain('/demo')
+    expect(hrefs).toContain('/enquire')
   })
 
   it("customer login CTA points to valid portal href", () => {

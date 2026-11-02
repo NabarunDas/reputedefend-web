@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { requireStaff } from "@/lib/require-staff"
-import { getEnquiry, getOnboarding } from "@/lib/enquiries/queries"
+import { getEnquiry, getInvitationMail, getOnboarding } from "@/lib/enquiries/queries"
+import { invitationDispatchEnabled } from "@/lib/commercial/invitation-dispatch"
 import { enquiryStates, emailStates } from "@/lib/enquiries/model"
 import { ukDate } from "@/lib/admin/activity"
 import { safeWebUrl } from "@/lib/records/model"
@@ -11,6 +12,10 @@ import { Badge, PageHeader } from "../../ui"
 export const metadata = { title: "Enquiry" }
 export default async function Enquiry({ params }: { params: Promise<{ id: string }> }) {
   await requireStaff(); const { id } = await params, e = await getEnquiry(id), onboarding = await getOnboarding(id), p = e.payload
+  const dispatchEnabled = invitationDispatchEnabled()
+  const invitationMail = dispatchEnabled && onboarding.supported && onboarding.invitationReady && !onboarding.emailVerified
+    ? await getInvitationMail(id)
+    : null
   return <section className="page">
     <Link className="back-link" href="/enquiries">Back to enquiries</Link>
     <PageHeader title={p.subject || "General enquiry"} description={<>{enquiryStates[e.status]} · {e.assigned ? "Assigned to administrator" : "Unassigned"} · {ukDate(e.createdAt)}</>} />
@@ -29,7 +34,7 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
       <p>{e.nextAction || "No next action recorded."}{e.nextActionAt && <> · {ukDate(e.nextActionAt)}</>}</p>
       {e.status !== "converted" && <TriageForm key={e.version} enquiry={e} />}
     </section>
-    {onboarding.supported && <OnboardingPanel view={onboarding} enquiryId={e.id} open={["new", "open", "waiting"].includes(e.status)} businessName={p.businessName} country={p.country} />}
+    {onboarding.supported && <OnboardingPanel view={onboarding} enquiryId={e.id} open={["new", "open", "waiting"].includes(e.status)} businessName={p.businessName} country={p.country} dispatchEnabled={dispatchEnabled} invitationMail={invitationMail} />}
     {e.status === "converted" ? <section className="panel"><h2>Linked work</h2><p>{e.caseRef ? <Link href={`/cases/${e.caseId}`}>Case {e.caseRef}</Link> : `Relaunch Guard request ${e.monitoringId}`}</p><p>Continue this work through the case or monitoring workflow. This enquiry stays linked for its history.</p></section> : !onboarding.supported && ["new", "open", "waiting"].includes(e.status) && <details className="panel"><summary>Create work from this enquiry</summary><ConversionForm key={e.version} enquiry={e} /></details>}
     <section className="panel">
       <h2>History</h2>

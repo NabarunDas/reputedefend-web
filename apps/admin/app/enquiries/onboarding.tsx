@@ -3,15 +3,24 @@ import { CommandForm, Reason } from "../records/forms"
 import { Badge } from "../ui"
 import { ukDate } from "@/lib/admin/activity"
 import { operationLabels, productLabels, stateLabels, type OnboardingView } from "@/lib/commercial/onboarding"
+import type { InvitationMail } from "@/lib/commercial/invitation-mail"
 
 const steps = ["Product", "Customer", "Business", "Locations", "Next action"] as const
 
-export function OnboardingPanel({ view, enquiryId, open, businessName, country }: {
+const invitationLabels: Record<string, string> = {
+  issue_invitation: "Customer invitation queued",
+  resend_invitation: "Customer invitation replaced",
+  revoke_invitation: "Customer invitation withdrawn",
+}
+
+export function OnboardingPanel({ view, enquiryId, open, businessName, country, dispatchEnabled = false, invitationMail = null }: {
   view: OnboardingView
   enquiryId: string
   open: boolean
   businessName: string
   country: string
+  dispatchEnabled?: boolean
+  invitationMail?: InvitationMail | null
 }) {
   if (!view.supported) return null
   const request = view.request
@@ -35,7 +44,8 @@ export function OnboardingPanel({ view, enquiryId, open, businessName, country }
     <p>{verifiedCopy}</p>
     {membershipCopy && <p>{membershipCopy}</p>}
     {view.termsConfigured ? <p>An approved price is available. Preparing an offer pins that price. It does not take payment or activate a product.</p> : <p>Commercial terms not yet configured. No price is offered.</p>}
-    <p>No invitation email is sent from this screen.</p>
+    {!dispatchEnabled && <p>No invitation email is sent from this screen.</p>}
+    {dispatchEnabled && !view.invitationReady && <p>No invitation email is sent until this request is ready.</p>}
     {view.outstanding.length > 0 && <ul>{view.outstanding.map(item => <li key={item}>{item}</li>)}</ul>}
     {view.step === "classify" && request?.state === "DECLINED" && <p>This enquiry was declined. {request.declineReason}</p>}
     {view.step === "classify" && open && <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Open onboarding" payload={form => ({ operation: "classify", version: 0, enquiryId, product: form.get("product"), reason: form.get("reason") })}>
@@ -87,7 +97,27 @@ export function OnboardingPanel({ view, enquiryId, open, businessName, country }
         <p>This records that the matched customer, business and locations are ready for a later invitation. It does not send email, create a login, or verify an address.</p>
         <Reason label="Why is this ready for a later invitation?" />
       </CommandForm>}
-      {view.invitationReady && <p>{view.emailVerified ? "Admin has recorded this request as ready for a later invitation. The customer email is already verified, so the existing login remains available. No invitation email has been sent." : "Admin has recorded this request as ready for a later invitation. The customer email is not verified. No invitation email has been sent."}</p>}
+      {view.invitationReady && !dispatchEnabled && <p>{view.emailVerified ? "Admin has recorded this request as ready for a later invitation. The customer email is already verified, so the existing login remains available. No invitation email has been sent." : "Admin has recorded this request as ready for a later invitation. The customer email is not verified. No invitation email has been sent."}</p>}
+      {view.invitationReady && dispatchEnabled && view.emailVerified && <p>Admin has recorded this request as ready. The customer email is already verified, so the existing login remains available. No invitation email is sent.</p>}
+      {view.invitationReady && dispatchEnabled && !view.emailVerified && invitationMail && <>
+        <p>{invitationMail.detail}</p>
+        {invitationMail.canSend && <CommandForm endpoint="invitation" actionUrl="/api/enquiries/invitation" submitLabel="Send customer invitation" payload={form => ({ operation: "issue_invitation", version, enquiryId, reason: form.get("reason") })}>
+          <p>This queues one invitation to the Customer Portal. It does not verify the email, confirm business authority, take a payment, or activate Telloya or Guard. Queued is not delivered.</p>
+          <Reason label="Why is this invitation being sent?" />
+        </CommandForm>}
+        {invitationMail.canProcess && <CommandForm endpoint="invitation" actionUrl="/api/enquiries/invitation" submitLabel="Process queued invitation now" payload={form => ({ operation: "process_invitation", version, enquiryId, reason: form.get("reason") })}>
+          <p>This sends the invitation that is already queued. It does not create another invitation or another link. Queued is not delivered until the provider accepts it.</p>
+          <Reason label="Why is this queued invitation being sent now?" />
+        </CommandForm>}
+        {invitationMail.canResend && <CommandForm endpoint="invitation" actionUrl="/api/enquiries/invitation" submitLabel="Send a new invitation" payload={form => ({ operation: "resend_invitation", version, enquiryId, reason: form.get("reason") })}>
+          <p>This withdraws the current invitation and queues a replacement. The previous link stops working. It does not verify the email or activate a product.</p>
+          <Reason label="Why is a new invitation needed?" />
+        </CommandForm>}
+        {invitationMail.canRevoke && <CommandForm endpoint="invitation" actionUrl="/api/enquiries/invitation" submitLabel="Withdraw the invitation" payload={form => ({ operation: "revoke_invitation", version, enquiryId, reason: form.get("reason") })}>
+          <p>The current link stops working. This does not delete the customer or the business.</p>
+          <Reason label="Why is this invitation being withdrawn?" />
+        </CommandForm>}
+      </>}
       {view.termsConfigured && view.membership === "verified" && !request?.subscriptionId && <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare the approved offer" payload={form => ({ operation: "prepare_offer", version, enquiryId, reason: form.get("reason") })}>
         <p>This pins the approved price and each component’s approved quantity. Telloya and Guard are not given the same quantity. It does not open a checkout or activate Telloya or Guard.</p>
         <Reason label="Why is this offer being prepared?" />
@@ -101,6 +131,6 @@ export function OnboardingPanel({ view, enquiryId, open, businessName, country }
       </CommandForm>
     </details>}
     <h3>What has been recorded</h3>
-    {view.history.length === 0 ? <p>Nothing has been recorded yet.</p> : <ol className="history-list">{view.history.map(event => <li key={event.id}><Badge tone="neutral">{operationLabels[event.operation] || "Recorded"}</Badge> · {stateLabels[event.toState] || event.toState} · {ukDate(event.createdAt)}{event.reason && <p className="preserve-lines">{event.reason}</p>}</li>)}</ol>}
+    {view.history.length === 0 ? <p>Nothing has been recorded yet.</p> : <ol className="history-list">{view.history.map(event => <li key={event.id}><Badge tone="neutral">{operationLabels[event.operation] || invitationLabels[event.operation] || "Recorded"}</Badge> · {stateLabels[event.toState] || event.toState} · {ukDate(event.createdAt)}{event.reason && <p className="preserve-lines">{event.reason}</p>}</li>)}</ol>}
   </section>
 }

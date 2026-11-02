@@ -6,6 +6,8 @@ import { sessionCookie } from "../auth/config"
 import { requireStaff } from "../require-staff"
 import { isUuid } from "../records/model"
 import type { OnboardingView } from "../commercial/onboarding"
+import type { InvitationMail } from "../commercial/invitation-mail"
+import { invitationDispatchEnabled } from "../commercial/invitation-dispatch"
 import type { EnquiryDetail, EnquiryFilters, EnquiryRow } from "./model"
 async function read<T>(name: string, args: Record<string,unknown>): Promise<T> {
   await requireStaff()
@@ -20,6 +22,30 @@ export async function getEnquiry(id: string): Promise<EnquiryDetail> {
   const result=await read<EnquiryDetail | {missing:true}>("admin_enquiry_detail_v1",{p_id:id})
   if("missing" in result) notFound()
   return result
+}
+function controlFlow(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : ""
+  const digest = typeof error === "object" && error && "digest" in error ? String((error as { digest?: unknown }).digest) : ""
+  return message.includes("NEXT_REDIRECT") || message.includes("NEXT_NOT_FOUND") || digest.startsWith("NEXT_REDIRECT") || digest.startsWith("NEXT_NOT_FOUND")
+}
+
+export async function getInvitationMail(id: string): Promise<InvitationMail | null> {
+  if (!invitationDispatchEnabled() || !isUuid(id)) return null
+  try {
+    const result = await read<InvitationMail | { missing: true }>("admin_customer_invitation_view_v1", { p_enquiry: id })
+    if ("missing" in result) return null
+    return result
+  } catch (error) {
+    if (controlFlow(error)) throw error
+    return {
+      status: "unavailable",
+      detail: "Invitation sending is not available yet.",
+      canSend: false,
+      canResend: false,
+      canProcess: false,
+      canRevoke: false,
+    }
+  }
 }
 export async function getOnboarding(id: string): Promise<OnboardingView> {
   if(!isUuid(id)) notFound()

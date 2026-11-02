@@ -152,12 +152,14 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261102110000_customer_invitation_dispatch_v1.sql",
+    ])
     expect(appliedMigrationHead.version).toBe("20261101200000")
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261101200000_customer_portal_products_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -208,6 +210,14 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("Do not replay 20261101190000")
     expect(supabase?.requirement).not.toContain("awaits a separate DEV application")
     expect(supabase?.requirement).toContain("Do not apply 20261101200000 to Production")
+    expect(supabase?.requirement).toContain("20261102110000 customer_invitation_dispatch_v1 has not been applied on DEV or Production.")
+    expect(supabase?.requirement).toContain("Do not apply 20261102110000.")
+    expect(supabase?.requirement).toContain("Do not apply 20261102110000 to Production.")
+    expect(supabase?.requirement).toContain("pendingMigrations() returns that file alone.")
+    expect(supabase?.requirement).toContain("The file inserts one communication template catalogue row and updates that row to APPROVED.")
+    expect(supabase?.requirement).toContain("That INSERT and that UPDATE are DML outside a function body, so containsDataChange is true.")
+    expect(supabase?.requirement).toContain("The catalogue change is not a customer, payment, subscription, invitation, communication, or session record.")
+    expect(migrationHead.containsDataChange).toBe(true)
     expect(supabase?.requirement).toContain("Do not apply 20261101190000 to Production")
     expect(supabase?.requirement).toContain("Do not apply 20261101180000 to Production")
     expect(supabase?.requirement).not.toContain("unapplied 20261031150000")

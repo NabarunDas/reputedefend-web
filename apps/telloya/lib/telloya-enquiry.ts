@@ -3,7 +3,7 @@
  * Shared between main app (persistence) and Telloya app (form)
  */
 
-import { canonicalBusinessCountry } from "./countries"
+import { canonicalBusinessCountry } from "@shared/countries"
 
 export const TELLOYA_PRODUCTS = ["telloya", "complete", ""] as const
 export type TelloyaProduct = (typeof TELLOYA_PRODUCTS)[number]

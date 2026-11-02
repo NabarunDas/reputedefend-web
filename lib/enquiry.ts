@@ -1,4 +1,4 @@
-import { canonicalBusinessCountry } from "@/lib/countries"
+import { canonicalBusinessCountry } from "./countries"
 
 export const ENQUIRY_SOURCES = ["homepage", "contact", "get-help"] as const
 export type EnquirySource = (typeof ENQUIRY_SOURCES)[number]

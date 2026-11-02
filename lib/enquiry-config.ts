@@ -1,4 +1,4 @@
-import { brandName } from "@/lib/brand"
+import { brandName } from "./brand"
 
 const EMAIL_PATTERN = /^\S+@\S+\.\S+$/
 

@@ -4,8 +4,8 @@
  */
 
 import { brandName } from "@/lib/brand"
-import { renderCustomerEmail } from "./email/customer-message"
-import { escapeHtml } from "./enquiry-email"
+import { renderCustomerEmail } from "@shared/email/customer-message"
+import { escapeHtml } from "@shared/enquiry-email"
 
 function brandedSubject(rest: string) {
   return `[${brandName}] ${rest}`

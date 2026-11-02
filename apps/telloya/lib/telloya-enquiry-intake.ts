@@ -4,9 +4,9 @@
  */
 
 import "server-only"
-import { persistGeneralEnquiry, type CustomEmailBuilder } from "./enquiries/intake"
-import { formattedFromAddress, type EnquiryEmailConfig } from "./enquiry-config"
-import type { EnquiryEmailMessage } from "./enquiry-provider"
+import { persistGeneralEnquiry, type CustomEmailBuilder } from "@shared/enquiries/intake"
+import { formattedFromAddress, type EnquiryEmailConfig } from "@shared/enquiry-config"
+import type { EnquiryEmailMessage } from "@shared/enquiry-provider"
 import { 
   type TelloyaEnquiryInput, 
   type TelloyaEnquiryResult,
@@ -20,7 +20,7 @@ import {
   telloyaInternalNotificationText,
   telloyaInternalNotificationHtml,
 } from "@/lib/telloya-enquiry-email"
-import type { EnquiryInput } from "./enquiry"
+import type { EnquiryInput } from "@shared/enquiry"
 
 // Type for the Telloya payload that includes extra fields beyond EnquiryInput
 type TelloyaPayload = EnquiryInput & {

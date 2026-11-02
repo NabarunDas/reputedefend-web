@@ -1,5 +1,5 @@
 import { Resend } from "resend"
-import type { EnquiryEmailMessage, EnquiryProvider, EnquiryProviderResult } from "@/lib/enquiry-provider"
+import type { EnquiryEmailMessage, EnquiryProvider, EnquiryProviderResult } from "../enquiry-provider"
 
 export type ResendEmailPayload = {
   from: string

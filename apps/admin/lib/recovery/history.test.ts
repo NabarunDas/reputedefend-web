@@ -33,7 +33,7 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending).toEqual([])
+    expect(pending.map(e => e.filename)).toEqual(["20261102200000_telloya_enquiry_infrastructure_v1.sql"])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261102110000",
       name: "customer_invitation_dispatch_v1",

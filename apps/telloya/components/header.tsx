@@ -9,7 +9,7 @@ import { navigationContent } from "@/lib/content"
 
 export function Header() {
   const pathname = usePathname()
-  const cinematic = pathname === "/"
+  const cinematic = true // Always use cinematic design across all routes
   const [scrolled, setScrolled] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null)
@@ -65,12 +65,20 @@ export function Header() {
     <header className={`site-header ${cinematic ? "site-header-cinematic" : "site-header-standard"} ${scrolled ? "site-header-scrolled" : ""}`}>
       <div className="container">
         <Link href="/" aria-label={brandHomeLabel} className="site-logo">
-          <TelloyaLogo variant={cinematic ? "symbol" : "dark"} priority={cinematic} />
+          <TelloyaLogo variant="symbol" priority />
         </Link>
         <nav className="site-nav" aria-label="Main navigation">
           <ul className="site-nav-links">
             {navigationContent.main.map(item => (
-              <li key={item.href}><Link href={item.href} className="site-nav-link">{item.label}</Link></li>
+              <li key={item.href}>
+                <Link 
+                  href={item.href} 
+                  className="site-nav-link"
+                  aria-current={pathname === item.href ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              </li>
             ))}
           </ul>
           <div className="site-nav-cta">
@@ -102,7 +110,14 @@ export function Header() {
           <ul className="mobile-menu-links">
             {navigationContent.main.map(item => (
               <li key={item.href}>
-                <Link href={item.href} className="mobile-menu-link" onClick={closeMenu}>{item.label}</Link>
+                <Link 
+                  href={item.href} 
+                  className="mobile-menu-link" 
+                  onClick={closeMenu}
+                  aria-current={pathname === item.href ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
               </li>
             ))}
           </ul>

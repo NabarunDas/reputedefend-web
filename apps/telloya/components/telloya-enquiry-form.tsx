@@ -146,7 +146,8 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
   }
 
   function continueToNext() {
-    const stepErrors = validateStep((step + 1) as 2 | 3 | 4)
+    // Validate only the current completed step before advancing
+    const stepErrors = validateStep(step)
     setErrors(stepErrors)
     if (Object.keys(stepErrors).length) {
       setDeliveryError(false)
@@ -194,7 +195,8 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
     setDeliveryError(false)
     setStatusText("Submitting your enquiry.")
 
-    if (!submissionKeyRef.current) {
+    // Generate or reuse submission key - regenerate if payload changed since last attempt
+    if (!submissionKeyRef.current || status === "idle") {
       submissionKeyRef.current = crypto.randomUUID()
     }
 

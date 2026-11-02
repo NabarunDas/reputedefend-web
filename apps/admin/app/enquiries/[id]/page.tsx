@@ -18,9 +18,28 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
     : null
   return <section className="page">
     <Link className="back-link" href="/enquiries">Back to enquiries</Link>
-    <PageHeader title={p.subject || "General enquiry"} description={<>{enquiryStates[e.status]} · {e.assigned ? "Assigned to administrator" : "Unassigned"} · {ukDate(e.createdAt)}</>} />
+    <PageHeader 
+      title={e.enquiryRef || p.subject || "General enquiry"} 
+      description={<>{e.enquiryRef && `${p.subject || "General enquiry"} · `}{enquiryStates[e.status]} · {e.assigned ? "Assigned to administrator" : "Unassigned"} · {ukDate(e.createdAt)}</>} 
+    />
     <section className="panel">
-      <dl><dt>Name</dt><dd>{p.fullName}</dd><dt>Email</dt><dd>{p.email || "Not recorded"}</dd><dt>Phone</dt><dd>{p.phone || "Not recorded"}</dd><dt>Business</dt><dd>{p.businessName || "Not recorded"}</dd></dl>
+      <dl>
+        <dt>Name</dt><dd>{p.fullName}</dd>
+        <dt>Email</dt><dd>{p.email || "Not recorded"}</dd>
+        <dt>Phone</dt><dd>{p.phone || "Not recorded"}</dd>
+        <dt>Business</dt><dd>{p.businessName || "Not recorded"}</dd>
+        {p.country && <><dt>Country</dt><dd>{p.country}</dd></>}
+        {p.source === "telloya" && (
+          <>
+            {p.product && <><dt>Product interest</dt><dd>{p.product === "telloya" ? "Telloya" : p.product === "complete" ? "Complete (Telloya + Relaunch Guard)" : p.product}</dd></>}
+            {p.trade && <><dt>Trade or service</dt><dd>{p.trade}</dd></>}
+            {p.locations && <><dt>Number of locations</dt><dd>{p.locations}</dd></>}
+            {p.missedCallProblem && <><dt>Missed-call challenge</dt><dd className="preserve-lines">{p.missedCallProblem}</dd></>}
+            {p.phoneSetup && <><dt>Current phone setup</dt><dd>{p.phoneSetup}</dd></>}
+            {p.contactPreference && <><dt>Best time to contact</dt><dd>{p.contactPreference}</dd></>}
+          </>
+        )}
+      </dl>
       <p className="preserve-lines">{p.details}</p>
       {([["Website", p.websiteUrl], ["Business Profile", p.businessProfileUrl], ["Review", p.reviewUrl]] as const).map(([label, value]) => { const url = safeWebUrl(value); return url ? <p key={label}><a href={url} target="_blank" rel="noopener noreferrer">Open {label} (new tab)</a></p> : null })}
     </section>

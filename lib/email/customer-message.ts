@@ -44,15 +44,16 @@ function safeText(value: string): boolean {
 }
 
 const portalCasePagePattern = /^https:\/\/[A-Za-z0-9.-]+\/portal\/cases\/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}(?:\/(?:payments|documents))?$/
+const invitationPlaceholderPattern = /^https:\/\/[A-Za-z0-9.-]+\/login\/invite\/ready$/
 
 export function trustedActionUrl(value: string): boolean {
   return actionUrlPattern.test(value) && !value.includes("#") && !value.includes("?")
 }
 
-/** An action URL, or the authenticated case Payments or Documents page. No query, fragment, or token. */
+/** An action URL, an authenticated case page, or the invitation placeholder. No query, fragment, or token. */
 export function trustedCustomerLink(value: string): boolean {
   if (value.includes("#") || value.includes("?") || value.includes("#t=")) return false
-  return trustedActionUrl(value) || portalCasePagePattern.test(value)
+  return trustedActionUrl(value) || portalCasePagePattern.test(value) || invitationPlaceholderPattern.test(value)
 }
 
 function blockText(block: CustomerEmailBlock): string | null {

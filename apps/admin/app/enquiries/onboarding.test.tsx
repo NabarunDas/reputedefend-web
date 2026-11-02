@@ -114,4 +114,25 @@ describe("Telloya onboarding panel", () => {
     expect(screen.getByText(/Matching does not restore it/)).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Use North Plumbing" })).toBeNull()
   })
+
+  it("shows one send action only when invitation dispatch is switched on and the request is ready", () => {
+    const ready = {
+      ...base,
+      step: "next" as const,
+      invitationReady: true,
+      emailVerified: false,
+      membership: "pending" as const,
+      outstanding: [] as string[],
+      nextAction: null,
+      request: { id: "33333333-3333-4333-8333-333333333333", product: "TELLOYA" as const, state: "READY" as const, version: 5, customerId: "22222222-2222-4222-8222-222222222222", businessId: "44444444-4444-4444-8444-444444444444", declineReason: null, subscriptionId: null },
+      customer: { id: "22222222-2222-4222-8222-222222222222", name: "North Owner", emailVerified: false, version: 1 },
+    }
+    const { rerender } = render(<OnboardingPanel view={ready} enquiryId={enquiryId} open businessName="North Plumbing" country="United Kingdom" />)
+    expect(screen.getByText(/No invitation email has been sent/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send customer invitation" })).toBeNull()
+    rerender(<OnboardingPanel view={ready} enquiryId={enquiryId} open businessName="North Plumbing" country="United Kingdom" dispatchEnabled invitationMail={{ status: "none", detail: "No customer invitation has been sent.", canSend: true, canResend: false, canRevoke: false }} />)
+    expect(screen.getByRole("button", { name: "Send customer invitation" })).toBeTruthy()
+    expect(screen.getByText(/Queued is not delivered/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send a new invitation" })).toBeNull()
+  })
 })

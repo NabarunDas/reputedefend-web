@@ -2,7 +2,7 @@ import type { EnvMap } from "../jobs/config"
 import type { JobHandler, JobHandlerInput, JobHandlerResult } from "../jobs/model"
 import { devEvidenceUploadOriginAllowed } from "./dev-lane"
 import { acceptanceWindowExpired, communicationsSendEnabled } from "./gate"
-import { linkSecretForVersion, materializeUploadUrl, prepareCommunicationAccessLink, prepareQuoteAcceptanceLink } from "./link"
+import { linkSecretForVersion, materializeInvitationUrl, materializeUploadUrl, prepareCommunicationAccessLink, prepareCustomerInvitationLink, prepareQuoteAcceptanceLink } from "./link"
 import { evidenceBodiesSharePortal } from "./snapshot"
 import { resolveMailProvider, type OutgoingMailProvider } from "./mail"
 
@@ -26,6 +26,9 @@ type LoadedSend = {
   inReplyTo?: string | null
   referencesHeader?: string | null
   linkKeyVersion?: number | null
+  invitationRequestId?: string | null
+  invitationGeneration?: number | null
+  invitationTokenHash?: string | null
 }
 
 type BeginAttempt = {
@@ -90,6 +93,25 @@ export function sendEmailHandler(env: EnvMap = process.env, provider?: OutgoingM
         const nextText = materializeUploadUrl(text, actionId, origin, prepared.token)
         const nextHtml = html ? materializeUploadUrl(html, actionId, origin, prepared.token) : html
         if (!nextText || (html && !nextHtml)) return { ok: false, retryable: false, error: linkError }
+        text = nextText
+        html = nextHtml
+      }
+      if (loaded.templateKey === "CUSTOMER_PORTAL_INVITATION") {
+        const origin = loaded.customerOrigin
+        const requestId = loaded.invitationRequestId
+        const generation = integerVersion(loaded.invitationGeneration)
+        const version = integerVersion(loaded.linkKeyVersion)
+        const prepared = origin && requestId && generation !== null && generation <= 3 && version !== null
+          ? prepareCustomerInvitationLink(requestId, generation, env, version)
+          : null
+        if (!origin || !requestId || generation === null || generation > 3 || version === null || !prepared || prepared.tokenHash !== loaded.invitationTokenHash) {
+          return { ok: false, retryable: false, error: "Secure invitation link cannot be materialised" }
+        }
+        const nextText = materializeInvitationUrl(text, origin, prepared.token)
+        const nextHtml = html ? materializeInvitationUrl(html, origin, prepared.token) : html
+        if (!nextText || (html && !nextHtml)) {
+          return { ok: false, retryable: false, error: "Secure invitation link cannot be materialised" }
+        }
         text = nextText
         html = nextHtml
       }

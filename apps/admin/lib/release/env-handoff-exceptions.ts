@@ -202,6 +202,11 @@ export const envHandoffExceptions: readonly EnvHandoffException[] = [
     files: ["apps/admin/lib/communications/handler.ts"],
     reason: "Issues the quotation acceptance link under the same versioned secret family, with a distinct purpose from communication access.",
   },
+  {
+    helper: "prepareCustomerInvitationLink",
+    files: ["apps/admin/lib/communications/handler.ts"],
+    reason: "Issues the customer invitation link under the same versioned secret family. The handler receives the injected environment so a test can prove the token never enters the stored body.",
+  },
 
   // Payments.
   {

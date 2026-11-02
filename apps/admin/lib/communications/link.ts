@@ -83,6 +83,34 @@ export function prepareCommunicationAccessLink(
   return { token, tokenHash: communicationAccessTokenHash(token), version }
 }
 
+const INVITATION_TOKEN_CONTEXT = "customer-portal-invitation"
+
+export function deriveCustomerInvitationToken(requestId: string, generation: number, secret: string, version = 1): string {
+  return createHmac("sha256", secret).update(`${INVITATION_TOKEN_CONTEXT}:${requestId}:g${generation}:v${version}`).digest("hex")
+}
+
+export function prepareCustomerInvitationLink(
+  requestId: string,
+  generation: number,
+  env: EnvMap = process.env,
+  version = currentLinkKeyVersion(env),
+): { token: string; tokenHash: string; version: number } | null {
+  if (!requestId || !Number.isInteger(generation) || generation < 1 || generation > 3) return null
+  const secret = linkSecretForVersion(version, env)
+  if (!secret) return null
+  const token = deriveCustomerInvitationToken(requestId, generation, secret, version)
+  return { token, tokenHash: communicationAccessTokenHash(token), version }
+}
+
+/** Replaces the stored placeholder once. The bearer stays out of the database row. */
+export function materializeInvitationUrl(body: string, origin: string, token: string): string | null {
+  if (!body || !origin || !/^[a-f0-9]{64}$/.test(token)) return null
+  if (body.includes("#t=") || /\/login\/invite\/[a-f0-9]{64}/.test(body)) return null
+  const placeholder = `${origin}/login/invite/ready`
+  if (body.split(placeholder).length !== 2) return null
+  return body.replace(placeholder, `${origin}/login/invite/${token}`)
+}
+
 export function materializeUploadUrl(body: string, actionId: string, origin: string, token: string): string | null {
   if (!body || !actionId || !origin || !token) return null
   if (body.includes("#t=")) return null

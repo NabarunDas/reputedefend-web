@@ -634,7 +634,7 @@ export const pricingContent = {
         "Call forwarding setup depends on your telephone provider",
       ],
       cta: "Contact us for details",
-      href: "/enquire",
+      href: "/enquire?product=telloya",
     },
     {
       name: "Complete",
@@ -653,7 +653,7 @@ export const pricingContent = {
         "Minute allowance and subscription terms to be confirmed",
       ],
       cta: "Enquire about Complete",
-      href: "/enquire",
+      href: "/enquire?product=complete",
     },
   ],
   comparison: {

@@ -1,5 +1,5 @@
 import "server-only"
-import { readEnquiryEmailConfig, runtimeAllowsSimulation, runtimeMayUseLiveProvider, type EnquiryEmailConfig, formattedFromAddress } from "../enquiry-config"
+import { readEnquiryEmailConfig, runtimeAllowsSimulation, runtimeMayUseLiveProvider, type EnquiryEmailConfig } from "../enquiry-config"
 import { buildInternalEnquiryMessage, buildCustomerAcknowledgementMessage, ENQUIRY_UNAVAILABLE } from "../enquiry-delivery"
 import type { EnquiryInput, EnquiryResult } from "../enquiry"
 import type { EnquiryProvider, EnquiryEmailMessage } from "../enquiry-provider"

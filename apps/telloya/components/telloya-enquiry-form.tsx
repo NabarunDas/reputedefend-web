@@ -241,6 +241,7 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
     payload.submissionKey = submissionKeyRef.current
 
     try {
+      const res = await fetch("/api/telloya/enquiry", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),

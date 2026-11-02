@@ -27,6 +27,7 @@ vi.mock("next/navigation", () => ({
 afterEach(() => {
   cleanup()
   nav.pathname = "/portal"
+  vi.unstubAllEnvs()
 })
 
 function oneHeading(name: string | RegExp) {
@@ -81,7 +82,7 @@ describe("assembled portal accessibility", () => {
     check("/portal/account", "Account", <AccountUnavailable />)
   })
 
-  it("keeps one My Products heading and marks that destination when the hub is open", () => {
+  it("keeps one My Products heading and hides workspace navigation on the launcher", () => {
     vi.stubEnv("CUSTOMER_PRODUCTS_HUB_ENABLED", "true")
     nav.pathname = "/portal/products"
     render(<PortalLayout><ProductsView accountName="Ada Okonkwo" products={presentProducts({
@@ -89,13 +90,32 @@ describe("assembled portal accessibility", () => {
       guard: { status: "unavailable" },
     })} /></PortalLayout>)
     oneHeading("My Products")
-    const current = screen.getByRole("navigation", { name: "Customer portal" }).querySelector("[aria-current='page']")
-    expect(current?.textContent).toBe("My Products")
-    expect(current?.getAttribute("href")).toBe("/portal/products")
+    expect(screen.queryByRole("navigation", { name: "Customer portal" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Dashboard" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Cases" })).toBeNull()
+    expect(screen.queryByText("My ProfileRelaunch")).toBeNull()
     expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled()
     cleanup()
+    nav.pathname = "/portal/products"
     render(<PortalLayout><ProductsLoading /></PortalLayout>)
     oneHeading("My Products")
+    expect(screen.queryByRole("navigation", { name: "Customer portal" })).toBeNull()
+    vi.unstubAllEnvs()
+  })
+
+  it("marks the current workspace when the hub is open", () => {
+    vi.stubEnv("CUSTOMER_PRODUCTS_HUB_ENABLED", "true")
+    nav.pathname = "/portal/recovery"
+    const recovery = render(<PortalLayout><PortalHome dashboard={{ summary: { activeCases: 0, attentionCases: 0, previousCases: 0 }, attentionCases: [], recentCases: [] }} productsReturn /></PortalLayout>)
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/portal/recovery")
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getAllByRole("link", { name: "Back to My Products" }).length).toBeGreaterThan(0)
+    expect(screen.queryByRole("link", { name: "Relaunch Guard" })).toBeNull()
+    recovery.unmount()
+    nav.pathname = "/portal/guard"
+    render(<PortalLayout><GuardView locations={[]} focused={false} /></PortalLayout>)
+    expect(screen.getByRole("link", { name: "Relaunch Guard" })).toHaveAttribute("aria-current", "page")
+    expect(screen.queryByRole("link", { name: "Cases" })).toBeNull()
     vi.unstubAllEnvs()
   })
 })

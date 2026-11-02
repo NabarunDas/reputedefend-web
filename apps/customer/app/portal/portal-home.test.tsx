@@ -59,6 +59,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 describe("portal shell", () => {
@@ -184,15 +185,49 @@ describe("portal shell", () => {
 
   it("keeps My Products out of navigation until the hub flag is on", () => {
     const closed = render(<PortalNav />)
-    expect(screen.queryByRole("link", { name: "My Products" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Back to My Products" })).toBeNull()
+    expect(screen.getByRole("link", { name: "Relaunch Guard" })).toHaveAttribute("href", "/portal/guard")
     closed.unmount()
-    nav.pathname = "/portal/products"
-    render(<PortalNav productsHub />)
-    const link = screen.getByRole("link", { name: "My Products" })
+    nav.pathname = "/portal/recovery"
+    render(<PortalNav mode="recovery" />)
+    const link = screen.getByRole("link", { name: "Back to My Products" })
     expect(link).toHaveAttribute("href", "/portal/products")
-    expect(link).toHaveAttribute("aria-current", "page")
+    expect(link).not.toHaveAttribute("aria-current")
     const dashboard = screen.getByRole("link", { name: "Dashboard" })
     expect(dashboard).toHaveAttribute("href", "/portal/recovery")
-    expect(dashboard).not.toHaveAttribute("aria-current")
+    expect(dashboard).toHaveAttribute("aria-current", "page")
+    expect(screen.queryByRole("link", { name: "Relaunch Guard" })).toBeNull()
+    expect(screen.getByRole("link", { name: "Cases" })).toHaveAttribute("href", "/portal/cases")
+    expect(screen.getByRole("link", { name: "Payments" })).toHaveAttribute("href", "/portal/payments")
+  })
+
+  it("uses a launcher shell on My Products and a Guard shell without Recovery tabs", () => {
+    vi.stubEnv("CUSTOMER_PRODUCTS_HUB_ENABLED", "true")
+    nav.pathname = "/portal/products"
+    const products = renderPortal()
+    expect(screen.queryByText("My ProfileRelaunch")).toBeNull()
+    expect(screen.queryByRole("navigation", { name: "Customer portal" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Dashboard" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Cases" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Relaunch Guard" })).toBeNull()
+    products.unmount()
+
+    nav.pathname = "/portal"
+    const entry = renderPortal()
+    expect(screen.queryByRole("navigation", { name: "Customer portal" })).toBeNull()
+    entry.unmount()
+
+    nav.pathname = "/portal/guard"
+    renderPortal()
+    expect(screen.queryByRole("heading", { level: 1, name: "Relaunch Guard" })).toBeNull()
+    const labels = [...screen.getByRole("navigation", { name: "Customer portal" }).querySelectorAll("a")].map(item => item.textContent?.trim())
+    expect(labels).toEqual(["Back to My Products", "Relaunch Guard", "Account"])
+    expect(screen.getByRole("link", { name: "Relaunch Guard" })).toHaveAttribute("aria-current", "page")
+    expect(screen.queryByRole("link", { name: "Cases" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Messages" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Payments" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "More" })).toBeNull()
+    vi.unstubAllEnvs()
   })
 })

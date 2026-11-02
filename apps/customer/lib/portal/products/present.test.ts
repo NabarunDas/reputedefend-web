@@ -1,9 +1,14 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import type { CustomerCaseRow, CustomerDashboard } from "@/lib/portal/cases/parse"
-import { presentProducts, type ProductSources } from "./present"
+import { presentProducts, type ProductCard, type ProductKey, type ProductSources } from "./present"
 
 const submittedAt = "2026-10-08T12:00:00.000Z"
+const assessment = { label: "Start an assessment", href: "https://profilerelaunch.com/get-help" }
+const guardEnquiry = { label: "Enquire about Relaunch Guard", href: "https://profilerelaunch.com/get-help" }
+const telloyaEmail = { label: "Email us about Telloya", href: "mailto:contact@profilerelaunch.com" }
+const openRecovery = { label: "Open dashboard", href: "/portal/recovery" }
+const openGuard = { label: "Open dashboard", href: "/portal/guard" }
 
 function row(overrides: Partial<CustomerCaseRow> = {}): CustomerCaseRow {
   return {
@@ -30,6 +35,14 @@ function dashboard(overrides: Partial<CustomerDashboard> = {}): CustomerDashboar
   }
 }
 
+const emptyRecovery = {
+  status: "ready" as const,
+  dashboard: dashboard({
+    summary: { activeCases: 0, attentionCases: 0, previousCases: 0 },
+    recentCases: [],
+  }),
+}
+
 function sources(overrides: Partial<ProductSources> = {}): ProductSources {
   return {
     recovery: { status: "ready", dashboard: dashboard() },
@@ -38,28 +51,35 @@ function sources(overrides: Partial<ProductSources> = {}): ProductSources {
   }
 }
 
-function text(cards: ReturnType<typeof presentProducts>) {
+function text(cards: readonly ProductCard[]) {
   return JSON.stringify(cards)
 }
 
-function actionLabels(card: ReturnType<typeof presentProducts>[number]) {
+function tile(cards: readonly ProductCard[], key: ProductKey) {
+  const found = cards.find(card => card.key === key)
+  if (!found) throw new Error(key)
+  return found
+}
+
+function labels(card: ProductCard) {
   return card.actions.map(action => action.label)
 }
 
-describe("product presentation", () => {
-  it("describes ProfileRelaunch and Telloya without a subscription state", () => {
+describe("product launcher", () => {
+  it("lists three services and does not treat a sign-in or a case as a subscription", () => {
     const cards = presentProducts(sources())
-    expect(cards.map(card => card.key)).toEqual(["profilerelaunch", "telloya"])
-    expect(cards[0].services.join(" ")).toMatch(/Recovery/)
-    expect(cards[0].services.join(" ")).toMatch(/Review Protection/)
-    expect(cards[0].services.join(" ")).toMatch(/Relaunch Guard/)
-    expect(text(cards)).not.toMatch(/\b(Active|Paid|Trial|Subscribed|Subscription)\b/)
-    expect(cards.every(card => !("entitlement" in card))).toBe(true)
-    const telloya = cards[1]
-    expect(telloya.status).toBe("exploring")
-    expect(telloya.actions).toEqual([])
-    expect(telloya.unavailableReason).toBe("Telloya is not open in your portal yet.")
-    expect(telloya.attention).toBeNull()
+    expect(cards.map(card => card.key)).toEqual(["recovery", "guard", "telloya"])
+    expect(cards.map(card => card.name)).toEqual(["Recovery & Review Support", "Relaunch Guard", "Telloya"])
+    expect(tile(cards, "recovery").group).toBe("yours")
+    expect(tile(cards, "recovery").actions).toEqual([openRecovery])
+    expect(tile(cards, "guard").group).toBe("explore")
+    expect(tile(cards, "guard").actions).toEqual([guardEnquiry])
+    expect(tile(cards, "guard").statusLabel).toBeUndefined()
+    expect(tile(cards, "telloya").group).toBe("explore")
+    expect(tile(cards, "telloya").actions).toEqual([])
+    expect(tile(cards, "telloya").unavailableReason).toBe("Telloya is not open in your portal yet.")
+    expect(text(cards)).not.toMatch(/\b(Active|Paid|Trial|Subscribed|Not subscribed)\b/)
+    expect(text(cards)).not.toContain("/portal/telloya")
     const source = readFileSync(new URL("./present.ts", import.meta.url), "utf8")
     const view = readFileSync(new URL("../../../app/portal/products/products-view.tsx", import.meta.url), "utf8")
     expect(source).toMatch(/A case is not a subscription/)
@@ -73,8 +93,8 @@ describe("product presentation", () => {
     expect(`${source}\n${view}\n${enquiry}`).not.toMatch(/\/checkout|stripe|createSubscription|Subscribe/)
   })
 
-  it("opens Recovery from the dashboard projection and keeps a failed read neutral", () => {
-    const ready = presentProducts(sources({
+  it("opens Recovery only when a case exists and offers the assessment otherwise", () => {
+    const ready = tile(presentProducts(sources({
       recovery: {
         status: "ready",
         dashboard: dashboard({
@@ -82,16 +102,15 @@ describe("product presentation", () => {
           attentionCases: [row()],
         }),
       },
-    }))[0]
-    expect(ready.status).toBe("open")
-    expect(ready.actions).toContainEqual({ label: "Open Recovery dashboard", href: "/portal/recovery" })
+    })), "recovery")
+    expect(ready.group).toBe("yours")
+    expect(ready.actions).toEqual([openRecovery])
     expect(ready.context).toContain("Harbour Bakery")
     expect(ready.context).not.toContain("A case is not a subscription")
-    expect(ready.statusLabel).toBeUndefined()
+    expect(ready.statusLabel).toBe("Cases open")
     expect(ready.attention).toBe("1 case needs your attention")
-    expect(ready.unavailableReason).toBeNull()
 
-    const several = presentProducts(sources({
+    const several = tile(presentProducts(sources({
       recovery: {
         status: "ready",
         dashboard: dashboard({
@@ -103,34 +122,44 @@ describe("product presentation", () => {
           recentCases: [row({ reference: "PR-26-CCCCCC", businessName: "West Quay" })],
         }),
       },
-    }))[0]
+    })), "recovery")
     expect(several.attention).toBe("2 cases need your attention")
     expect(several.context).toContain("Harbour Bakery and 2 other businesses")
 
-    const missing = presentProducts(sources({
+    const none = tile(presentProducts(sources({ recovery: emptyRecovery })), "recovery")
+    expect(none.group).toBe("explore")
+    expect(none.actions).toEqual([assessment])
+    expect(none.statusLabel).toBeUndefined()
+    expect(none.context).toBe("No cases are open on this account.")
+    expect(labels(none)).not.toContain("Open dashboard")
+
+    const missing = tile(presentProducts(sources({
       recovery: { status: "unavailable" },
       guard: { status: "unavailable" },
-    }))[0]
-    expect(missing.status).toBe("unavailable")
+    })), "recovery")
+    expect(missing.group).toBe("unconfirmed")
     expect(missing.actions).toEqual([])
-    expect(missing.attention).toBeNull()
+    expect(missing.statusLabel).toBe("Status temporarily unavailable")
     expect(missing.unavailableReason).toMatch(/does not say whether it has been set up/)
     expect(text([missing])).not.toMatch(/unpurchased|not purchased|Active|Not subscribed/)
   })
 
-  it("uses the Guard projection for location context and does not invent monitoring", () => {
-    const empty = presentProducts(sources())[0]
-    expect(empty.actions).toContainEqual({ label: "Open Relaunch Guard", href: "/portal/guard" })
+  it("does not open Guard just because the monitoring query succeeds", () => {
+    const empty = tile(presentProducts(sources()), "guard")
+    expect(empty.group).toBe("explore")
+    expect(empty.actions).toEqual([guardEnquiry])
     expect(empty.context).toContain("No covered locations are on file.")
     expect(empty.context).not.toMatch(/Monitoring is recorded/)
+    expect(empty.statusLabel).toBeUndefined()
 
-    const quiet = presentProducts(sources({
+    const quiet = tile(presentProducts(sources({
       guard: { status: "ready", locations: [{ businessName: "Harbour Bakery", monitoringActive: false }] },
-    }))[0]
+    })), "guard")
+    expect(quiet.actions).toEqual([guardEnquiry])
     expect(quiet.context).toContain("Harbour Bakery")
     expect(quiet.context).not.toMatch(/Monitoring is recorded/)
 
-    const recorded = presentProducts(sources({
+    const recorded = tile(presentProducts(sources({
       guard: {
         status: "ready",
         locations: [
@@ -138,27 +167,30 @@ describe("product presentation", () => {
           { businessName: "North Pier Cafe", monitoringActive: false },
         ],
       },
-    }))[0]
+    })), "guard")
+    expect(recorded.group).toBe("yours")
+    expect(recorded.actions).toEqual([openGuard])
+    expect(recorded.statusLabel).toBeUndefined()
     expect(recorded.context).toContain("Harbour Bakery and North Pier Cafe. Monitoring is recorded for 1 location.")
 
     const missing = presentProducts(sources({
-      recovery: { status: "ready", dashboard: dashboard({ summary: { activeCases: 0, attentionCases: 0, previousCases: 0 }, recentCases: [] }) },
+      recovery: emptyRecovery,
       guard: { status: "unavailable" },
-    }))[0]
-    expect(missing.status).toBe("exploring")
-    expect(actionLabels(missing)).not.toContain("Open Relaunch Guard")
-    expect(missing.unavailableReason).toMatch(/does not say whether it has been set up/)
+    }))
+    expect(tile(missing, "guard").group).toBe("unconfirmed")
+    expect(tile(missing, "guard").actions).toEqual([])
+    expect(tile(missing, "guard").statusLabel).toBe("Status temporarily unavailable")
+    expect(tile(missing, "recovery").actions).toEqual([assessment])
   })
 
-  it("leaves the existing cards unchanged when no projection is supplied", () => {
+  it("leaves commercial labels off when no projection is supplied", () => {
     const cards = presentProducts(sources())
-    expect(cards.map(card => card.statusLabel)).toEqual([undefined, undefined])
-    expect(cards[0].actions).toContainEqual({ label: "Open Relaunch Guard", href: "/portal/guard" })
-    expect(cards[1].unavailableReason).toBe("Telloya is not open in your portal yet.")
+    expect(cards.map(card => card.statusLabel)).toEqual(["Cases open", undefined, undefined])
+    expect(tile(cards, "telloya").unavailableReason).toBe("Telloya is not open in your portal yet.")
     expect(text(cards)).not.toMatch(/Not subscribed|Status temporarily unavailable|Subscribe/)
   })
 
-  it("shows Telloya location status and does not treat one live location as the whole business", () => {
+  it("puts Telloya with a recorded state under Your services and still withholds a dashboard", () => {
     const cards = presentProducts(sources({
       commercial: {
         reads: { telloya: "ok", guard: "ok" },
@@ -175,19 +207,24 @@ describe("product presentation", () => {
         }],
       },
     }))
-    const telloya = cards[1]
+    const telloya = tile(cards, "telloya")
+    expect(telloya.group).toBe("yours")
     expect(telloya.statusLabel).toBe("Partially active")
     expect(telloya.statusLabel).not.toBe("Active")
     expect(telloya.statusLabel).not.toBe("Not subscribed")
     expect(telloya.context).toContain("High Street: Active")
     expect(telloya.context).toContain("Dock: Ready for provider verification")
     expect(telloya.actions).toEqual([])
+    expect(telloya.unavailableReason).toBe("There is no Telloya workspace to open yet.")
     expect(telloya.attention).toBe("This location is waiting for provider verification.")
     expect(text([telloya])).not.toMatch(/\bPaid\b|Subscribe|\/portal\/telloya/)
+    expect(tile(cards, "guard").group).toBe("explore")
+    expect(tile(cards, "guard").statusLabel).toBe("Not subscribed")
+    expect(tile(cards, "guard").actions).toEqual([guardEnquiry])
   })
 
   it("labels a pilot as a pilot and an expired pilot as expired", () => {
-    const pilot = presentProducts(sources({
+    const pilot = tile(presentProducts(sources({
       commercial: {
         reads: { telloya: "ok", guard: "ok" },
         businesses: [{
@@ -199,11 +236,13 @@ describe("product presentation", () => {
           guard: { status: "not_subscribed", locations: [] },
         }],
       },
-    }))[1]
+    })), "telloya")
+    expect(pilot.group).toBe("yours")
     expect(pilot.statusLabel).toBe("Pilot")
+    expect(pilot.actions).toEqual([])
     expect(text([pilot])).not.toMatch(/\b(Paid|Active)\b/)
 
-    const expired = presentProducts(sources({
+    const expired = tile(presentProducts(sources({
       commercial: {
         reads: { telloya: "ok", guard: "ok" },
         businesses: [{
@@ -215,13 +254,14 @@ describe("product presentation", () => {
           guard: { status: "not_subscribed", locations: [] },
         }],
       },
-    }))[1]
+    })), "telloya")
     expect(expired.statusLabel).toBe("Expired")
+    expect(expired.actions).toEqual([])
     expect(text([expired])).not.toMatch(/\bPaid\b/)
   })
 
-  it("keeps Guard monitoring when a preview allocation is present and does not call a preview active", () => {
-    const recorded = presentProducts(sources({
+  it("keeps recorded Guard monitoring open and does not call a preview active", () => {
+    const recorded = tile(presentProducts(sources({
       guard: { status: "ready", locations: [{ businessName: "Harbour Bakery", monitoringActive: true }] },
       commercial: {
         reads: { telloya: "ok", guard: "ok" },
@@ -240,14 +280,15 @@ describe("product presentation", () => {
           },
         }],
       },
-    }))[0]
-    expect(recorded.actions).toContainEqual({ label: "Open Relaunch Guard", href: "/portal/guard" })
+    })), "guard")
+    expect(recorded.group).toBe("yours")
+    expect(recorded.actions).toEqual([openGuard])
+    expect(recorded.statusLabel).toBe("Active")
     expect(recorded.context).toContain("Monitoring is recorded for 1 location.")
     expect(recorded.context).toContain("Your existing Guard monitoring is unchanged.")
-    expect(recorded.statusLabel).toBeUndefined()
-    expect(recorded.context).toContain("Relaunch Guard: Active")
+    expect(recorded.context).toContain("High Street: Active")
 
-    const preview = presentProducts(sources({
+    const preview = tile(presentProducts(sources({
       commercial: {
         reads: { telloya: "ok", guard: "ok" },
         businesses: [{
@@ -265,13 +306,13 @@ describe("product presentation", () => {
           },
         }],
       },
-    }))[0]
-    expect(preview.statusLabel).toBeUndefined()
-    expect(preview.context).toContain("Relaunch Guard: Pending")
-    expect(preview.context).not.toContain("Relaunch Guard: Active")
+    })), "guard")
+    expect(preview.group).toBe("yours")
+    expect(preview.statusLabel).toBe("Pending")
+    expect(preview.context).not.toContain("Active")
     expect(preview.attention).toBe("Guard monitoring is not active from this bundle.")
     expect(preview.context).not.toMatch(/can activate/)
-    expect(preview.actions).toContainEqual({ label: "Open Relaunch Guard", href: "/portal/guard" })
+    expect(preview.actions).toEqual([])
   })
 
   it("keeps known Guard monitoring open when only the extra commercial read fails", () => {
@@ -282,32 +323,34 @@ describe("product presentation", () => {
         businesses: [],
       },
     }))
-    const profile = cards[0]
-    expect(profile.actions).toContainEqual({ label: "Open Recovery dashboard", href: "/portal/recovery" })
-    expect(profile.actions).toContainEqual({ label: "Open Relaunch Guard", href: "/portal/guard" })
-    expect(profile.status).toBe("open")
-    expect(profile.statusLabel).toBeUndefined()
-    expect(profile.context).toContain("Relaunch Guard: Status temporarily unavailable.")
-    expect(profile.context).toContain("Monitoring is recorded for 1 location.")
-    expect(profile.unavailableReason).toBe("Some extra details are temporarily unavailable. Monitoring already recorded is unchanged.")
-    expect(text([profile])).not.toMatch(/stopped|no longer|Not subscribed/)
-    expect(cards[1].statusLabel).toBe("Status temporarily unavailable")
-    expect(cards[1].actions).toEqual([])
+    const recovery = tile(cards, "recovery")
+    const guard = tile(cards, "guard")
+    expect(recovery.actions).toEqual([openRecovery])
+    expect(guard.group).toBe("yours")
+    expect(guard.actions).toEqual([openGuard])
+    expect(guard.statusLabel).toBeUndefined()
+    expect(guard.context).toContain("Status temporarily unavailable.")
+    expect(guard.context).toContain("Monitoring is recorded for 1 location.")
+    expect(guard.unavailableReason).toBe("Some extra details are temporarily unavailable. Monitoring already recorded is unchanged.")
+    expect(text([guard])).not.toMatch(/stopped|no longer|Not subscribed/)
+    expect(tile(cards, "telloya").group).toBe("unconfirmed")
+    expect(tile(cards, "telloya").statusLabel).toBe("Status temporarily unavailable")
+    expect(tile(cards, "telloya").actions).toEqual([])
     expect(text(cards)).not.toMatch(/Not subscribed/)
 
     const operational = presentProducts(sources({
       guard: { status: "unavailable" },
       commercial: { reads: { telloya: "ok", guard: "unavailable" }, businesses: [] },
-    }))[0]
-    expect(operational.statusLabel).toBeUndefined()
-    expect(operational.context).toContain("Relaunch Guard: Status temporarily unavailable.")
-    expect(actionLabels(operational)).not.toContain("Open Relaunch Guard")
-    expect(operational.unavailableReason).toMatch(/does not say whether it has been set up/)
-    expect(text([operational])).not.toMatch(/stopped|no longer|Not subscribed/)
+    }))
+    expect(tile(operational, "guard").group).toBe("unconfirmed")
+    expect(tile(operational, "guard").statusLabel).toBe("Status temporarily unavailable")
+    expect(tile(operational, "guard").actions).toEqual([])
+    expect(tile(operational, "guard").unavailableReason).toMatch(/does not say whether it has been set up/)
+    expect(text([tile(operational, "guard")])).not.toMatch(/stopped|no longer|Not subscribed/)
   })
 
-  it("shows an accepted subscription with no locations as pending rather than purchased or absent", () => {
-    const pending = presentProducts(sources({
+  it("shows an accepted Telloya subscription with no locations as pending and withholds a dashboard", () => {
+    const pending = tile(presentProducts(sources({
       commercial: {
         reads: { telloya: "ok", guard: "ok" },
         businesses: [{
@@ -316,8 +359,8 @@ describe("product presentation", () => {
           guard: { status: "not_subscribed", locations: [] },
         }],
       },
-    }))[1]
-    expect(pending.status).toBe("exploring")
+    })), "telloya")
+    expect(pending.group).toBe("yours")
     expect(pending.statusLabel).toBe("Pending")
     expect(pending.context).toBe("Harbour Bakery: Pending.")
     expect(pending.attention).toBe("Telloya is not active yet.")
@@ -325,17 +368,18 @@ describe("product presentation", () => {
     expect(pending.unavailableReason).toBe("There is no Telloya workspace to open yet.")
     expect(text([pending])).not.toMatch(/Not subscribed|\b(Active|Paid)\b/)
 
-    const absent = presentProducts(sources({
+    const absent = tile(presentProducts(sources({
       commercial: {
         reads: { telloya: "ok", guard: "ok" },
         businesses: [],
       },
-    }))[1]
+    })), "telloya")
+    expect(absent.group).toBe("explore")
     expect(absent.statusLabel).toBe("Not subscribed")
-    expect(absent.actions).toEqual([{ label: "Email us about Telloya", href: "mailto:contact@profilerelaunch.com" }])
+    expect(absent.actions).toEqual([telloyaEmail])
     expect(absent.attention).toBeNull()
 
-    const mixed = presentProducts(sources({
+    const mixed = tile(presentProducts(sources({
       commercial: {
         reads: { telloya: "ok", guard: "ok" },
         businesses: [
@@ -354,24 +398,59 @@ describe("product presentation", () => {
           },
         ],
       },
-    }))[1]
+    })), "telloya")
+    expect(mixed.group).toBe("yours")
     expect(mixed.statusLabel).toBe("Partially active")
     expect(mixed.statusLabel).not.toBe("Active")
     expect(mixed.statusLabel).not.toBe("Pending")
     expect(mixed.statusLabel).not.toBe("Not subscribed")
     expect(mixed.context).toContain("Harbour Bakery, High Street: Active")
     expect(mixed.context).toContain("North Yard: Pending")
+    expect(mixed.actions).toEqual([])
   })
 
-  it("shows each customer's products from the commercial projection and does not activate the other", () => {
-    const emptyRecovery = {
-      status: "ready" as const,
-      dashboard: dashboard({
-        summary: { activeCases: 0, attentionCases: 0, previousCases: 0 },
-        recentCases: [],
-      }),
-    }
-    const profileOnly = presentProducts(sources({
+  it("groups each account from its own cases and commercial rows", () => {
+    const recoveryOnly = presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "not_subscribed", locations: [] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      },
+    }))
+    expect(tile(recoveryOnly, "recovery").group).toBe("yours")
+    expect(tile(recoveryOnly, "recovery").actions).toEqual([openRecovery])
+    expect(tile(recoveryOnly, "recovery").statusLabel).not.toBe("Not subscribed")
+    expect(tile(recoveryOnly, "guard").group).toBe("explore")
+    expect(tile(recoveryOnly, "guard").statusLabel).toBe("Not subscribed")
+    expect(tile(recoveryOnly, "guard").actions).toEqual([guardEnquiry])
+    expect(tile(recoveryOnly, "telloya").group).toBe("explore")
+    expect(tile(recoveryOnly, "telloya").actions).toEqual([telloyaEmail])
+
+    const telloyaOnly = presentProducts(sources({
+      recovery: emptyRecovery,
+      guard: { status: "ready", locations: [] },
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "active", locations: [{ locationName: "High Street", status: "active", nextStep: null }] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      },
+    }))
+    expect(tile(telloyaOnly, "telloya").group).toBe("yours")
+    expect(tile(telloyaOnly, "telloya").statusLabel).toBe("Active")
+    expect(tile(telloyaOnly, "telloya").actions).toEqual([])
+    expect(tile(telloyaOnly, "guard").group).toBe("explore")
+    expect(tile(telloyaOnly, "recovery").group).toBe("explore")
+    expect(tile(telloyaOnly, "recovery").actions).toEqual([assessment])
+    expect(text([tile(telloyaOnly, "telloya")])).not.toContain("/portal/telloya")
+
+    const guardOnly = presentProducts(sources({
+      recovery: emptyRecovery,
       commercial: {
         reads: { telloya: "ok", guard: "ok" },
         businesses: [{
@@ -384,32 +463,11 @@ describe("product presentation", () => {
         }],
       },
     }))
-    expect(profileOnly[0].statusLabel).toBeUndefined()
-    expect(profileOnly[0].context).toContain("Relaunch Guard: Active")
-    expect(profileOnly[0].context).not.toContain("A case is not a subscription")
-    expect(profileOnly[0].actions).toContainEqual({ label: "Open Recovery dashboard", href: "/portal/recovery" })
-    expect(profileOnly[1].statusLabel).toBe("Not subscribed")
-    expect(profileOnly[1].actions).toEqual([{ label: "Email us about Telloya", href: "mailto:contact@profilerelaunch.com" }])
-    expect(text([profileOnly[1]])).not.toMatch(/\/portal\/telloya/)
-
-    const telloyaOnly = presentProducts(sources({
-      recovery: emptyRecovery,
-      commercial: {
-        reads: { telloya: "ok", guard: "ok" },
-        businesses: [{
-          businessName: "Harbour Bakery",
-          telloya: { status: "active", locations: [{ locationName: "High Street", status: "active", nextStep: null }] },
-          guard: { status: "not_subscribed", locations: [] },
-        }],
-      },
-    }))
-    expect(telloyaOnly[0].statusLabel).toBeUndefined()
-    expect(telloyaOnly[0].context).toContain("Relaunch Guard: Not subscribed")
-    expect(actionLabels(telloyaOnly[0])).not.toContain("Open Recovery dashboard")
-    expect(telloyaOnly[0].actions).toContainEqual({ label: "Enquire about Relaunch Guard", href: "https://profilerelaunch.com/get-help" })
-    expect(telloyaOnly[1].statusLabel).toBe("Active")
-    expect(telloyaOnly[1].actions).toEqual([])
-    expect(telloyaOnly[1].unavailableReason).toBe("There is no Telloya workspace to open yet.")
+    expect(tile(guardOnly, "guard").group).toBe("yours")
+    expect(tile(guardOnly, "guard").statusLabel).toBe("Active")
+    expect(tile(guardOnly, "guard").actions).toEqual([openGuard])
+    expect(tile(guardOnly, "recovery").group).toBe("explore")
+    expect(tile(guardOnly, "telloya").group).toBe("explore")
 
     const both = presentProducts(sources({
       commercial: {
@@ -424,24 +482,30 @@ describe("product presentation", () => {
         }],
       },
     }))
-    expect(both.map(card => card.key)).toEqual(["profilerelaunch", "telloya"])
-    expect(both[0].statusLabel).toBeUndefined()
-    expect(both[0].context).toContain("Relaunch Guard: Pilot")
-    expect(both[1].statusLabel).toBe("Setup in progress")
-    expect(both[1].actions).toEqual([])
+    expect(tile(both, "recovery").group).toBe("yours")
+    expect(tile(both, "telloya").group).toBe("yours")
+    expect(tile(both, "telloya").statusLabel).toBe("Setup in progress")
+    expect(tile(both, "telloya").actions).toEqual([])
+    expect(tile(both, "guard").group).toBe("yours")
+    expect(tile(both, "guard").statusLabel).toBe("Pilot")
+    expect(tile(both, "guard").actions).toEqual([])
 
     const none = presentProducts(sources({
       recovery: emptyRecovery,
+      guard: { status: "ready", locations: [] },
       commercial: { reads: { telloya: "ok", guard: "ok" }, businesses: [] },
     }))
-    expect(none[0].statusLabel).toBeUndefined()
-    expect(none[0].context).toContain("Relaunch Guard: Not subscribed")
-    expect(none[1].statusLabel).toBe("Not subscribed")
-    expect(actionLabels(none[0])).not.toContain("Open Recovery dashboard")
-    expect(none[1].actions).toEqual([{ label: "Email us about Telloya", href: "mailto:contact@profilerelaunch.com" }])
+    expect(none.every(card => card.group === "explore")).toBe(true)
+    expect(tile(none, "guard").statusLabel).toBe("Not subscribed")
+    expect(tile(none, "telloya").statusLabel).toBe("Not subscribed")
+    expect(tile(none, "recovery").actions).toEqual([assessment])
+    expect(tile(none, "guard").actions).toEqual([guardEnquiry])
+    expect(labels(tile(none, "guard"))).not.toContain("Open dashboard")
     expect(text(none)).not.toMatch(/\/portal\/telloya|checkout/)
+  })
 
-    const oneLocation = presentProducts(sources({
+  it("keeps one active location from speaking for every location", () => {
+    const mixed = tile(presentProducts(sources({
       commercial: {
         reads: { telloya: "ok", guard: "ok" },
         businesses: [{
@@ -456,38 +520,17 @@ describe("product presentation", () => {
           },
         }],
       },
-    }))[0]
-    expect(oneLocation.statusLabel).toBeUndefined()
-    expect(oneLocation.context).toContain("Relaunch Guard: Partially active")
-    expect(oneLocation.context).not.toContain("Relaunch Guard: Not subscribed")
-    expect(oneLocation.context).not.toContain("Relaunch Guard: Active.")
-    expect(oneLocation.context).toContain("High Street: Active")
-    expect(oneLocation.context).toContain("Dock: Not subscribed")
-    expect(actionLabels(oneLocation)).not.toContain("Enquire about Relaunch Guard")
-  })
+    })), "guard")
+    expect(mixed.group).toBe("yours")
+    expect(mixed.statusLabel).toBe("Partially active")
+    expect(mixed.statusLabel).not.toBe("Active")
+    expect(mixed.statusLabel).not.toBe("Not subscribed")
+    expect(mixed.context).toContain("High Street: Active")
+    expect(mixed.context).toContain("Dock: Not subscribed")
+    expect(mixed.actions).toEqual([openGuard])
 
-  it("keeps Recovery open when Guard is not subscribed and does not drop a business that has no location rows", () => {
-    const recoveryOnly = presentProducts(sources({
-      commercial: {
-        reads: { telloya: "ok", guard: "ok" },
-        businesses: [{
-          businessName: "Harbour Bakery",
-          telloya: { status: "not_subscribed", locations: [] },
-          guard: { status: "not_subscribed", locations: [] },
-        }],
-      },
-    }))[0]
-    expect(recoveryOnly.statusLabel).toBeUndefined()
-    expect(recoveryOnly.actions).toContainEqual({ label: "Open Recovery dashboard", href: "/portal/recovery" })
-    expect(recoveryOnly.context).toContain("Relaunch Guard: Not subscribed")
-    expect(recoveryOnly.context).not.toMatch(/^Not subscribed/)
-    expect(text([recoveryOnly])).not.toMatch(/"statusLabel":"Not subscribed"/)
-
-    const mixedBusinesses = presentProducts(sources({
-      recovery: {
-        status: "ready",
-        dashboard: dashboard({ summary: { activeCases: 0, attentionCases: 0, previousCases: 0 }, recentCases: [] }),
-      },
+    const businesses = presentProducts(sources({
+      recovery: emptyRecovery,
       commercial: {
         reads: { telloya: "ok", guard: "ok" },
         businesses: [
@@ -507,16 +550,13 @@ describe("product presentation", () => {
         ],
       },
     }))
-    expect(mixedBusinesses[0].statusLabel).toBeUndefined()
-    expect(mixedBusinesses[0].context).toContain("Relaunch Guard: Partially active")
-    expect(mixedBusinesses[0].context).toContain("Harbour Bakery, High Street: Active")
-    expect(mixedBusinesses[0].context).toContain("North Yard: Not subscribed")
-    expect(mixedBusinesses[1].statusLabel).toBe("Partially active")
-    expect(mixedBusinesses[1].statusLabel).not.toBe("Active")
-    expect(mixedBusinesses[1].statusLabel).not.toBe("Not subscribed")
-    expect(mixedBusinesses[1].context).toContain("Harbour Bakery, High Street: Active")
-    expect(mixedBusinesses[1].context).toContain("North Yard: Not subscribed")
-    expect(mixedBusinesses[1].actions).toEqual([])
+    expect(tile(businesses, "guard").statusLabel).toBe("Partially active")
+    expect(tile(businesses, "guard").context).toContain("Harbour Bakery, High Street: Active")
+    expect(tile(businesses, "guard").context).toContain("North Yard: Not subscribed")
+    expect(tile(businesses, "telloya").statusLabel).toBe("Partially active")
+    expect(tile(businesses, "telloya").statusLabel).not.toBe("Active")
+    expect(tile(businesses, "telloya").context).toContain("North Yard: Not subscribed")
+    expect(tile(businesses, "telloya").actions).toEqual([])
 
     const varies = presentProducts(sources({
       commercial: {
@@ -540,11 +580,30 @@ describe("product presentation", () => {
         }],
       },
     }))
-    expect(varies[0].context).toContain("Relaunch Guard: Status varies by location")
-    expect(varies[0].context).toContain("High Street: Pending")
-    expect(varies[0].context).toContain("Dock: Not subscribed")
-    expect(varies[1].statusLabel).toBe("Status varies by location")
-    expect(varies[1].context).toContain("High Street: Pending")
-    expect(varies[1].context).toContain("Dock: Setup in progress")
+    expect(tile(varies, "guard").group).toBe("yours")
+    expect(tile(varies, "guard").statusLabel).toBe("Status varies by location")
+    expect(tile(varies, "guard").actions).toEqual([])
+    expect(tile(varies, "guard").context).toContain("High Street: Pending")
+    expect(tile(varies, "guard").context).toContain("Dock: Not subscribed")
+    expect(tile(varies, "telloya").statusLabel).toBe("Status varies by location")
+    expect(tile(varies, "telloya").context).toContain("Dock: Setup in progress")
+  })
+
+  it("does not open Guard when coverage is recorded but the workspace read failed", () => {
+    const guard = tile(presentProducts(sources({
+      guard: { status: "unavailable" },
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "not_subscribed", locations: [] },
+          guard: { status: "active", locations: [] },
+        }],
+      },
+    })), "guard")
+    expect(guard.group).toBe("yours")
+    expect(guard.statusLabel).toBe("Active")
+    expect(guard.actions).toEqual([])
+    expect(guard.unavailableReason).toMatch(/does not say whether coverage has changed/)
   })
 })

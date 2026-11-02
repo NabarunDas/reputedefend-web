@@ -128,7 +128,9 @@ PR #384, behind `CUSTOMER_PRODUCTS_HUB_ENABLED` (exact `true` only):
 - A failed read is `unavailable`, not "unpurchased".
 - No purchase, trial, or active badge is shown.
 
-Phase 02F, still behind the same hub flag: a valid session at `/portal` redirects to `/portal/products`. That page shows two cards, ProfileRelaunch and Telloya. Recovery, Review Protection and Relaunch Guard sit on the ProfileRelaunch card and open the existing `/portal/recovery` and `/portal/guard` pages. Telloya has no customer workspace, so it has no Open action. Commercial labels come only from `customer_portal_products_v1` while `CUSTOMER_PRODUCTS_READ_ENABLED` is exactly `true`. A failed read stays "Status temporarily unavailable". With the hub flag off, `/portal` remains the Recovery dashboard.
+Phase 02F, still behind the same hub flag: a valid session at `/portal` redirects to `/portal/products`. Commercial labels come only from `customer_portal_products_v1` while `CUSTOMER_PRODUCTS_READ_ENABLED` is exactly `true`. A failed read stays "Status temporarily unavailable". With the hub flag off, `/portal` remains the Recovery dashboard.
+
+Phase 02G keeps that landing and replaces the two cards with a service launcher. Recovery & Review Support, Relaunch Guard and Telloya are separate entries, grouped into Your services or Explore more services from the account's own cases, Guard monitoring and commercial rows. `/portal/products` has no Recovery navigation. Opening Recovery or Guard then shows that workspace, with a way back to My Products. Telloya still has no customer workspace, so it has no Open dashboard action. A successful Guard query with no recorded coverage does not open Guard.
 
 `apps/telloya` is a marketing site. It has no database, login, or entitlement code. Telloya marketing PR #383 is out of scope for this design's file changes.
 

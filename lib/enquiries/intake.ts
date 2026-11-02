@@ -55,7 +55,7 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
   if (!options.create && !readSupabaseConfig().ready) {
     if (runtimeAllowsSimulation(nodeEnv)) {
       // Generate mock reference for Telloya in simulation mode
-      const mockRef = data.source === "telloya" 
+      const mockRef = (data.source as string) === "telloya" 
         ? `TY-${new Date().getFullYear().toString().slice(-2)}-${Math.random().toString(36).slice(2, 8).toUpperCase().replace(/[IL01O]/g, "X")}`
         : undefined
       return { 
@@ -90,8 +90,9 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
     
     // Fetch stored email status for existing enquiries
     try {
-      const { data: storedEnquiry } = await createSupabaseServerClient()
-        .from("enquiries")
+      // Type assertion needed because enquiries table isn't in generated Supabase types
+      const { data: storedEnquiry } = await (createSupabaseServerClient()
+        .from("enquiries" as any) as any)
         .select("ack_status")
         .eq("submission_key", key)
         .single()

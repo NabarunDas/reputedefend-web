@@ -167,9 +167,9 @@ describe("Email delivery status mapping", () => {
         }),
         finish: async () => {},
         provider: {
-          send: async (_message) => {
+          send: async () => {
             // Simulate successful email send
-            return Promise.resolve({ ok: true })
+            return { ok: true, id: "test-message-id" } as const
           },
         },
         config: {
@@ -201,7 +201,7 @@ describe("Email delivery status mapping", () => {
         }),
         finish: async () => {},
         provider: {
-          send: async () => ({ ok: true }),
+          send: async () => ({ ok: true, id: "test-message-id" } as const),
         },
       }
     )

@@ -1,8 +1,10 @@
 -- Phase 02E customer invitation dispatch.
 -- Forward-only. This file is not applied to DEV or Production.
 -- Do not apply it from this pull request. Do not replay an already-applied file.
--- Schema and functions only. No customer, invitation, communication, entitlement,
--- subscription, payment, session, or provision rows are inserted by this file.
+-- Top-level DML inserts one communication template catalogue row and then
+-- updates that row to APPROVED. That catalogue row is not a customer,
+-- invitation, communication, entitlement, subscription, payment, session,
+-- or provision record.
 -- An invitation token is never stored. The queued email keeps a placeholder
 -- address. The worker replaces that placeholder only in the provider payload.
 

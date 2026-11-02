@@ -35,7 +35,8 @@ describe("the migration history validator", () => {
     expect(pending.map(entry => entry.filename)).toEqual([
       "20261102110000_customer_invitation_dispatch_v1.sql",
     ])
-    expect(pending.every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
+    expect(pending.every(entry => !entry.appliedToDev && !entry.safeToReplay)).toBe(true)
+    expect(pending.map(entry => entry.containsDataChange)).toEqual([true])
     expect(healthyRemote.at(-1)).toEqual({
       version: "20261101200000",
       name: "customer_portal_products_v1",

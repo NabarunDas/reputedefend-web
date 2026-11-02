@@ -24,7 +24,7 @@ describe("the migration chain manifest", () => {
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     expect(migrationHead.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
-    expect(migrationHead.containsDataChange).toBe(false)
+    expect(migrationHead.containsDataChange).toBe(true)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
@@ -41,7 +41,8 @@ describe("the migration chain manifest", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261102110000_customer_invitation_dispatch_v1.sql",
     ])
-    expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
+    expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.safeToReplay)).toBe(true)
+    expect(pendingMigrations().map(entry => entry.containsDataChange)).toEqual([true])
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
     expect(findMigration("20261028120000_guided_postpayment_handover_v1.sql")?.appliedToDev).toBe(true)
@@ -95,7 +96,7 @@ describe("the migration chain manifest", () => {
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
-    expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
+    expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(true)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     const onboardingSql = readFileSync(new URL("20261101180000_admin_commercial_onboarding_v1.sql", directory), "utf8")
     expect(onboardingSql.length).toBe(45724)
@@ -250,6 +251,7 @@ describe("the migration chain manifest", () => {
       "20261022124813",
       "20261022172455",
       "20261031160000",
+      "20261102110000",
     ])
   })
 

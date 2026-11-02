@@ -70,7 +70,7 @@ describe("upgrading a database that is already running", () => {
     // disposable rebuild is not a live apply. Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")
     expect(pending.at(-1)?.appliedToDev).toBe(false)
-    expect(pending.at(-1)?.containsDataChange).toBe(false)
+    expect(pending.at(-1)?.containsDataChange).toBe(true)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261101200000_customer_portal_products_v1.sql")
     expect(pending.at(-2)?.appliedToDev).toBe(true)

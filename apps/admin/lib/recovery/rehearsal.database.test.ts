@@ -62,7 +62,7 @@ describe("rebuilding the whole schema from zero", () => {
     // Production stays at SEC-08.
     expect(migrationHead.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
-    expect(migrationHead.containsDataChange).toBe(false)
+    expect(migrationHead.containsDataChange).toBe(true)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.version).toBe("20261101200000")
     expect(appliedMigrationHead.safeToReplay).toBe(false)

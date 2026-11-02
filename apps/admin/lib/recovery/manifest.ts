@@ -1326,15 +1326,17 @@ export const migrationChain: readonly MigrationEntry[] = [
   {
     // Customer invitation dispatch. Not applied to DEV or Production.
     // Do not apply it from this pull request and do not replay it.
-    // Schema and functions only, so containsDataChange stays false.
-    // It does not insert an invitation, a communication, an entitlement,
-    // a subscription, a payment, a session, or a provision.
+    // Top-level DML inserts one communication template catalogue row and
+    // updates that row to APPROVED. That INSERT and UPDATE are outside a
+    // function body, so containsDataChange is true. The catalogue row is
+    // not a customer, payment, subscription, invitation, communication,
+    // entitlement, session, or provision record.
     version: "20261102110000",
     filename: "20261102110000_customer_invitation_dispatch_v1.sql",
     step: "Customer invitation dispatch",
     kind: "additive",
     appliedToDev: false,
-    containsDataChange: false,
+    containsDataChange: true,
     safeToReplay: false,
     verification: { category: "Customer invitation dispatch", probe: "public.admin_customer_invitation_command_v1" },
   },
@@ -1396,6 +1398,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * applied and must not be replayed. `pendingMigrations()` returns only
  * `20261102110000_customer_invitation_dispatch_v1.sql`. That file has not been
  * applied on DEV or Production. Do not apply `20261102110000`.
+ * containsDataChange is true because the file inserts one communication
+ * template catalogue row and updates it to APPROVED outside a function body.
+ * That catalogue row is not a customer, payment, subscription, invitation,
+ * communication, or session record.
  * `20261101200000` must not be replayed or applied to Production.
  * `20261101190000` remains applied, with the previous ledger at 94 entries,
  * and must not be replayed or applied to Production.

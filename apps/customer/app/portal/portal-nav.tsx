@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation"
 
 const dashboard = { label: "Dashboard", href: "/portal" } as const
 const recoveryDashboard = { label: "Dashboard", href: "/portal/recovery" } as const
-const productsItem = { label: "Back to My Products", href: "/portal/products" } as const
 
 const cases = { label: "Cases", href: "/portal/cases" } as const
 const documents = { label: "Documents", href: "/portal/documents" } as const
@@ -32,11 +31,11 @@ export function PortalNav({ defaultOpen = false, mode = "legacy" }: { defaultOpe
   const seenPath = useRef(pathname)
   const [open, setOpen] = useState(defaultOpen)
   const primary = mode === "guard"
-    ? [productsItem, guardItem, account]
+    ? [guardItem, account]
     : mode === "account"
-      ? [productsItem, account]
+      ? [account]
       : mode === "recovery"
-        ? [productsItem, recoveryDashboard, cases, documents]
+        ? [recoveryDashboard, cases, documents]
         : [dashboard, cases, documents]
   const more = mode === "guard" || mode === "account" ? [] : mode === "recovery" ? recoveryMore : legacyMore
   const activeMore = more.find(item => current(pathname, item.href))

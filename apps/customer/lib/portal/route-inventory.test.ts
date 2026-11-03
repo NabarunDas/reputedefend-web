@@ -124,7 +124,9 @@ describe("customer portal route inventory", () => {
   })
 
   it("keeps portal navigation pointed at inventoried pages", () => {
-    const nav = readFileSync(new URL("app/portal/portal-nav.tsx", customerRoot), "utf8")
+    const nav = ["app/portal/portal-nav.tsx", "app/portal/product-switch.tsx"]
+      .map(file => readFileSync(new URL(file, customerRoot), "utf8"))
+      .join("\n")
     for (const href of PORTAL_NAV_HREFS) {
       expect(nav).toContain(`href: "${href}"`)
       expect(PORTAL_ROUTES.some(route => route.path === href && route.kind === "page")).toBe(true)

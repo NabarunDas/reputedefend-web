@@ -8,9 +8,10 @@ export function welcomeHeading(accountName?: string | null): string {
   return `Welcome back, ${name}`
 }
 
-export function PageHeading({ title, lede }: { title: string; lede?: string }) {
+export function PageHeading({ title, lede, context }: { title: string; lede?: string; context?: string }) {
   return (
     <header className="portal-page-head">
+      {context ? <p className="portal-page-context">{context}</p> : null}
       <h1>{title}</h1>
       {lede ? <p className="lead">{lede}</p> : null}
     </header>

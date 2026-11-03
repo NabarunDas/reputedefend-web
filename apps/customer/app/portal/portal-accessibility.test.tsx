@@ -108,11 +108,15 @@ describe("assembled portal accessibility", () => {
   it("marks the current workspace when the hub is open", () => {
     vi.stubEnv("CUSTOMER_PRODUCTS_HUB_ENABLED", "true")
     nav.pathname = "/portal/recovery"
-    const recovery = render(<PortalLayout><PortalHome dashboard={{ summary: { activeCases: 0, attentionCases: 0, previousCases: 0 }, attentionCases: [], recentCases: [] }} productsReturn /></PortalLayout>)
+    const recovery = render(<PortalLayout><PortalHome dashboard={{ summary: { activeCases: 0, attentionCases: 0, previousCases: 0 }, attentionCases: [], recentCases: [] }} context="Recovery & Review Support / Dashboard" /></PortalLayout>)
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/portal/recovery")
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page")
-    expect(screen.getAllByRole("link", { name: "Back to My Products" }).length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "Switch product" })).toBeEnabled()
+    expect(screen.queryByRole("link", { name: "Back to My Products" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Relaunch Guard" })).toBeNull()
+    expect(screen.getByText("Recovery & Review Support / Dashboard")).toBeTruthy()
+    expect(document.querySelector(".portal-context-product")).toHaveTextContent("Recovery & Review Support")
+    expect(document.querySelector(".portal-context-title")).toHaveTextContent("Dashboard")
     recovery.unmount()
     nav.pathname = "/portal/guard"
     const guard = render(<PortalLayout><GuardView locations={[]} focused={false} /></PortalLayout>)
@@ -122,7 +126,8 @@ describe("assembled portal accessibility", () => {
     nav.pathname = "/portal/account"
     render(<PortalLayout><AccountView account={{ name: "Alex Customer", email: "alex@example.com", phone: null, emailVerified: true, phoneVerified: false }} /></PortalLayout>)
     expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("aria-current", "page")
-    expect(screen.getByRole("link", { name: "Back to My Products" })).toHaveAttribute("href", "/portal/products")
+    expect(screen.getByRole("button", { name: "Switch product" })).toBeEnabled()
+    expect(screen.queryByRole("link", { name: "Back to My Products" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Cases" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Documents" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Messages" })).toBeNull()

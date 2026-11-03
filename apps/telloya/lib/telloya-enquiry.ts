@@ -55,8 +55,8 @@ export type TelloyaEnquiryInput = {
   // Product interest (legacy compatibility)
   product: TelloyaProduct
   
-  // Plan tier selection
-  planTier: TelloyaPlanTier
+  // Plan tier selection (required unless legacy product is provided)
+  planTier?: TelloyaPlanTier
   
   // Relaunch Guard add-on
   guardInterested?: boolean
@@ -153,6 +153,29 @@ function asAccepted(value: unknown) {
   return value === true
 }
 
+function asBoolean(value: unknown): boolean | undefined {
+  if (value === true || value === false) return value
+  return undefined
+}
+
+function asPositiveNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && value > 0 && Number.isFinite(value)) return value
+  if (typeof value === "string") {
+    const num = parseFloat(value)
+    if (num > 0 && Number.isFinite(num)) return num
+  }
+  return undefined
+}
+
+function asPositiveInteger(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value
+  if (typeof value === "string") {
+    const num = parseInt(value, 10)
+    if (num > 0 && Number.isInteger(num)) return num
+  }
+  return undefined
+}
+
 function isHttpUrl(value: string) {
   try {
     const url = new URL(value)
@@ -201,6 +224,22 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
     websiteUrl: input.websiteUrl ? normalizeTelloyaText(asString(input.websiteUrl)) : undefined,
     phone: normalizeTelloyaText(asString(input.phone)),
     product: normalizeTelloyaText(asString(input.product)) as TelloyaProduct,
+    planTier: input.planTier ? (normalizeTelloyaText(asString(input.planTier)) as TelloyaPlanTier) : undefined,
+    guardInterested: asBoolean(input.guardInterested),
+    guardLocationCount: asPositiveInteger(input.guardLocationCount),
+    customMonthlyMinutes: asPositiveInteger(input.customMonthlyMinutes),
+    customMonthlyCalls: asPositiveInteger(input.customMonthlyCalls),
+    customPhoneNumbers: asPositiveInteger(input.customPhoneNumbers),
+    customLocations: asPositiveInteger(input.customLocations),
+    customLanguages: input.customLanguages ? normalizeTelloyaText(asString(input.customLanguages)) : undefined,
+    customRequirements: input.customRequirements ? normalizeTelloyaText(asString(input.customRequirements)) : undefined,
+    voicePreference: input.voicePreference ? normalizeTelloyaText(asString(input.voicePreference)) as VoicePreference : undefined,
+    voiceAccent: input.voiceAccent ? normalizeTelloyaText(asString(input.voiceAccent)) : undefined,
+    primaryLanguage: input.primaryLanguage ? normalizeTelloyaText(asString(input.primaryLanguage)) : undefined,
+    speakingStyle: input.speakingStyle ? normalizeTelloyaText(asString(input.speakingStyle)) as SpeakingStyle : undefined,
+    additionalLanguages: input.additionalLanguages ? normalizeTelloyaText(asString(input.additionalLanguages)) : undefined,
+    overageInterested: asBoolean(input.overageInterested),
+    overageMonthlyCapGbp: asPositiveNumber(input.overageMonthlyCapGbp),
     missedCallProblem: input.missedCallProblem ? normalizeTelloyaText(asString(input.missedCallProblem)) : undefined,
     phoneSetup: input.phoneSetup ? normalizeTelloyaText(asString(input.phoneSetup)) : undefined,
     contactPreference: input.contactPreference ? normalizeTelloyaText(asString(input.contactPreference)) : undefined,
@@ -272,9 +311,77 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
     errors.phone = "Please enter a valid phone number."
   }
 
-  // Product validation
-  if (!data.product || !isTelloyaProduct(data.product)) {
+  // Product validation (legacy - required unless planTier is set)
+  if (!data.planTier && (!data.product || !isTelloyaProduct(data.product))) {
     errors.product = "Please select a product."
+  }
+
+  // Plan tier validation (required unless legacy product is set)
+  if (!data.product && !data.planTier) {
+    errors.planTier = "Please select a plan."
+  } else if (data.planTier && !(TELLOYA_PLAN_TIERS as readonly string[]).includes(data.planTier)) {
+    errors.planTier = "Please select a valid plan."
+  }
+
+  // Guard add-on validation
+  if (data.guardInterested === true) {
+    if (!data.guardLocationCount || data.guardLocationCount < 1) {
+      errors.guardLocationCount = "Please specify how many locations need Guard protection."
+    }
+  }
+
+  // Custom plan validation - all required if planTier is custom
+  if (data.planTier === "custom") {
+    if (!data.customMonthlyMinutes || data.customMonthlyMinutes < 1) {
+      errors.customMonthlyMinutes = "Please specify the monthly minutes you need."
+    }
+    if (!data.customMonthlyCalls || data.customMonthlyCalls < 1) {
+      errors.customMonthlyCalls = "Please specify the monthly calls you expect."
+    }
+    if (!data.customPhoneNumbers || data.customPhoneNumbers < 1) {
+      errors.customPhoneNumbers = "Please specify how many phone numbers you need."
+    }
+    if (!data.customLocations || data.customLocations < 1) {
+      errors.customLocations = "Please specify how many locations you operate."
+    }
+  }
+
+  // Custom languages validation (optional, character limit)
+  if (data.customLanguages && data.customLanguages.length > telloyaEnquiryLimits.customLanguages) {
+    errors.customLanguages = `Please keep languages within ${telloyaEnquiryLimits.customLanguages} characters.`
+  }
+
+  // Custom requirements validation (optional, character limit)
+  if (data.customRequirements && data.customRequirements.length > telloyaEnquiryLimits.customRequirements) {
+    errors.customRequirements = `Please keep requirements within ${telloyaEnquiryLimits.customRequirements} characters.`
+  }
+
+  // Voice preferences validation (all optional, check limits)
+  if (data.voicePreference && !(VOICE_PREFERENCES as readonly string[]).includes(data.voicePreference)) {
+    errors.voicePreference = "Please select a valid voice preference."
+  }
+  
+  if (data.voiceAccent && data.voiceAccent.length > telloyaEnquiryLimits.voiceAccent) {
+    errors.voiceAccent = `Please keep voice accent within ${telloyaEnquiryLimits.voiceAccent} characters.`
+  }
+
+  if (data.primaryLanguage && data.primaryLanguage.length > telloyaEnquiryLimits.primaryLanguage) {
+    errors.primaryLanguage = `Please keep primary language within ${telloyaEnquiryLimits.primaryLanguage} characters.`
+  }
+
+  if (data.speakingStyle && !(SPEAKING_STYLES as readonly string[]).includes(data.speakingStyle)) {
+    errors.speakingStyle = "Please select a valid speaking style."
+  }
+
+  if (data.additionalLanguages && data.additionalLanguages.length > telloyaEnquiryLimits.additionalLanguages) {
+    errors.additionalLanguages = `Please keep additional languages within ${telloyaEnquiryLimits.additionalLanguages} characters.`
+  }
+
+  // Overage validation
+  if (data.overageInterested === true && data.overageMonthlyCapGbp) {
+    if (data.overageMonthlyCapGbp < 1) {
+      errors.overageMonthlyCapGbp = "Monthly cap must be at least £1."
+    }
   }
 
   // Missed call problem (optional)
@@ -305,8 +412,46 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
  * This is what gets stored in the enquiries.payload JSONB column
  */
 export function telloyaEnquiryToPayload(data: TelloyaEnquiryInput) {
-  // Combine missedCallProblem, phoneSetup, and contactPreference into a structured details field
+  // Combine all requirements and preferences into a structured details field
   const detailsParts: string[] = []
+  
+  if (data.planTier) {
+    detailsParts.push(`Plan tier: ${data.planTier}`)
+  }
+  
+  if (data.guardInterested) {
+    detailsParts.push(`Guard interested: Yes (${data.guardLocationCount || 0} locations)`)
+  }
+  
+  if (data.planTier === "custom") {
+    const customParts: string[] = []
+    if (data.customMonthlyMinutes) customParts.push(`Minutes: ${data.customMonthlyMinutes}/month`)
+    if (data.customMonthlyCalls) customParts.push(`Calls: ${data.customMonthlyCalls}/month`)
+    if (data.customPhoneNumbers) customParts.push(`Phone numbers: ${data.customPhoneNumbers}`)
+    if (data.customLocations) customParts.push(`Locations: ${data.customLocations}`)
+    if (data.customLanguages) customParts.push(`Languages: ${data.customLanguages}`)
+    if (customParts.length) {
+      detailsParts.push(`Custom requirements:\n${customParts.join("\n")}`)
+    }
+    if (data.customRequirements) {
+      detailsParts.push(`Additional requirements:\n${data.customRequirements}`)
+    }
+  }
+  
+  if (data.voicePreference || data.voiceAccent || data.primaryLanguage || data.speakingStyle || data.additionalLanguages) {
+    const voiceParts: string[] = []
+    if (data.voicePreference) voiceParts.push(`Voice: ${data.voicePreference}`)
+    if (data.voiceAccent) voiceParts.push(`Accent: ${data.voiceAccent}`)
+    if (data.primaryLanguage) voiceParts.push(`Primary language: ${data.primaryLanguage}`)
+    if (data.speakingStyle) voiceParts.push(`Speaking style: ${data.speakingStyle}`)
+    if (data.additionalLanguages) voiceParts.push(`Additional languages: ${data.additionalLanguages}`)
+    detailsParts.push(`Voice preferences:\n${voiceParts.join("\n")}`)
+  }
+  
+  if (data.overageInterested) {
+    const overageCap = data.overageMonthlyCapGbp ? ` (cap: £${data.overageMonthlyCapGbp}/month)` : ""
+    detailsParts.push(`Overage interested: Yes${overageCap}`)
+  }
   
   if (data.missedCallProblem) {
     detailsParts.push(`Missed call requirements:\n${data.missedCallProblem}`)
@@ -332,6 +477,22 @@ export function telloyaEnquiryToPayload(data: TelloyaEnquiryInput) {
     locations: data.locations || "",
     websiteUrl: data.websiteUrl || "",
     product: data.product,
+    planTier: data.planTier || "",
+    guardInterested: data.guardInterested || false,
+    guardLocationCount: data.guardLocationCount || 0,
+    customMonthlyMinutes: data.customMonthlyMinutes || 0,
+    customMonthlyCalls: data.customMonthlyCalls || 0,
+    customPhoneNumbers: data.customPhoneNumbers || 0,
+    customLocations: data.customLocations || 0,
+    customLanguages: data.customLanguages || "",
+    customRequirements: data.customRequirements || "",
+    voicePreference: data.voicePreference || "",
+    voiceAccent: data.voiceAccent || "",
+    primaryLanguage: data.primaryLanguage || "",
+    speakingStyle: data.speakingStyle || "",
+    additionalLanguages: data.additionalLanguages || "",
+    overageInterested: data.overageInterested || false,
+    overageMonthlyCapGbp: data.overageMonthlyCapGbp || 0,
     missedCallProblem: data.missedCallProblem || "",
     phoneSetup: data.phoneSetup || "",
     contactPreference: data.contactPreference || "",

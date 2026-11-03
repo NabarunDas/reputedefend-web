@@ -94,10 +94,22 @@ const STEP_TITLES = {
   4: "Review and submit",
 } as const
 
-export function TelloyaEnquiryForm({ capabilities, initialPlanTier = "" }: { capabilities?: TelloyaEnquiryCapabilities; initialPlanTier?: PlanTierInterest }) {
+export function TelloyaEnquiryForm({ 
+  capabilities, 
+  initialPlanTier = "", 
+  initialGuardInterested = false 
+}: { 
+  capabilities?: TelloyaEnquiryCapabilities; 
+  initialPlanTier?: PlanTierInterest;
+  initialGuardInterested?: boolean;
+}) {
   const submissionEnabled = capabilities?.submissionEnabled ?? false
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
-  const [values, setValues] = useState<EnquiryValues>({ ...INITIAL_VALUES, planTier: initialPlanTier })
+  const [values, setValues] = useState<EnquiryValues>({ 
+    ...INITIAL_VALUES, 
+    planTier: initialPlanTier,
+    guardInterested: initialGuardInterested 
+  })
   const [errors, setErrors] = useState<EnquiryFieldErrors>({})
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle")
   const [deliveryError, setDeliveryError] = useState(false)
@@ -737,7 +749,7 @@ export function TelloyaEnquiryForm({ capabilities, initialPlanTier = "" }: { cap
             </div>
 
             <div style={{ marginTop: "2rem", paddingTop: "2rem", borderTop: "1px solid #e5e7eb" }}>
-              <p className={styles.sectionNote} style={{ marginBottom: "1.5rem" }}>Overage protection (optional)</p>
+              <p className={styles.sectionNote} style={{ marginBottom: "1.5rem" }}>Additional minutes (optional)</p>
               <label className={styles.check} htmlFor={`${formId}-overageInterested`}>
                 <input
                   id={`${formId}-overageInterested`}
@@ -746,11 +758,11 @@ export function TelloyaEnquiryForm({ capabilities, initialPlanTier = "" }: { cap
                   onChange={(e) => update("overageInterested", e.target.checked)}
                 />
                 <span>
-                  Enable overage at £0.25/minute with monthly spending cap
+                  Interested in additional minutes at £0.25/minute if plan allowance exceeded
                 </span>
               </label>
               {values.overageInterested && (
-                <Field id={`${formId}-overageMonthlyCapGbp`} label="Monthly spending cap (£)" optional error={errors.overageMonthlyCapGbp} hint="Maximum overage spend per month">
+                <Field id={`${formId}-overageMonthlyCapGbp`} label="Proposed monthly cap (£)" optional error={errors.overageMonthlyCapGbp} hint="Maximum additional spend per month">
                   <input
                     name="overageMonthlyCapGbp"
                     type="number"
@@ -769,6 +781,7 @@ export function TelloyaEnquiryForm({ capabilities, initialPlanTier = "" }: { cap
         {step === 4 && (
           <div className={styles.reviewIntro}>
             <p className={styles.reviewIntro}>Check the details below before submitting your enquiry. You can go back and change anything that doesn&apos;t look right.</p>
+            <p className={styles.sectionNote} style={{ marginTop: "0.75rem", marginBottom: "1.5rem" }}>Note: Submitting this enquiry does not authorize any charges or activate service. We will discuss pricing and next steps when we contact you.</p>
             <ReviewBlock title="Plan selection" onEdit={() => goToStep(1)}>
               <ReviewItem label="Plan" value={values.planTier ? telloyaPlans.find(p => p.tier === values.planTier)?.name || values.planTier : "Not selected"} />
               {values.guardInterested && (
@@ -809,7 +822,7 @@ export function TelloyaEnquiryForm({ capabilities, initialPlanTier = "" }: { cap
                 </>
               )}
               {values.overageInterested && (
-                <ReviewItem label="Overage protection" value={values.overageMonthlyCapGbp ? `Enabled (cap: £${values.overageMonthlyCapGbp}/month)` : "Enabled"} />
+                <ReviewItem label="Additional minutes interest" value={values.overageMonthlyCapGbp ? `Yes (proposed cap: £${values.overageMonthlyCapGbp}/month)` : "Yes"} />
               )}
             </ReviewBlock>
             <label className={styles.check} htmlFor={`${formId}-privacyAccepted`}>

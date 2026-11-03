@@ -20,6 +20,7 @@ const OUTCOMES: Record<string, string> = {
   superseded: "This offer has been replaced. It cannot be accepted.",
   changed: "This offer has changed. Refresh the page before doing anything else. It has not been accepted.",
   terms_pending: "The agreement for this offer is not available yet. It cannot be accepted.",
+  conditions_pending: "The commercial terms for this offer are not available yet. It cannot be accepted.",
 }
 
 const KEYS = [
@@ -33,7 +34,24 @@ const KEYS = [
   "agreementAccepted",
   "recurringConsent",
   "confirmations",
+  "conditions",
 ] as const
+
+const CONDITION_KEYS = [
+  "tier",
+  "includedMinutes",
+  "minutesRollover",
+  "baseAmountMinor",
+  "guardIncluded",
+  "guardUnitMinor",
+  "guardQuantity",
+  "overagePermitted",
+  "overageRateMinor",
+  "overageOptIn",
+  "overageCapMinor",
+] as const
+
+const TIERS = new Set(["Basic", "Growth", "Pro", "Custom"])
 
 const reply = (message: string, http = 401) =>
   NextResponse.json({ message }, { status: http, headers: privateResponseHeaders })
@@ -62,6 +80,46 @@ function originOk(request: NextRequest) {
 function integer(value: unknown, min: number, max: number): number | null {
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) return null
   return value
+}
+
+function conditions(value: unknown, priceMinor: number): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const row = value as Record<string, unknown>
+  if (Object.keys(row).length !== CONDITION_KEYS.length || CONDITION_KEYS.some(name => !Object.hasOwn(row, name))) return null
+  if (typeof row.tier !== "string" || !TIERS.has(row.tier)) return null
+  const includedMinutes = row.includedMinutes == null ? null : integer(row.includedMinutes, 1, 1_000_000)
+  if (row.includedMinutes != null && includedMinutes == null) return null
+  if (row.tier !== "Custom" && includedMinutes == null) return null
+  if (typeof row.minutesRollover !== "boolean" || typeof row.guardIncluded !== "boolean") return null
+  if (typeof row.overagePermitted !== "boolean" || typeof row.overageOptIn !== "boolean") return null
+  const baseAmountMinor = integer(row.baseAmountMinor, 1, 100_000_000)
+  const guardQuantity = integer(row.guardQuantity, 0, 20)
+  const guardUnitMinor = row.guardUnitMinor == null ? null : integer(row.guardUnitMinor, 1, 100_000_000)
+  const overageRateMinor = row.overageRateMinor == null ? null : integer(row.overageRateMinor, 1, 100_000_000)
+  const overageCapMinor = row.overageCapMinor == null ? null : integer(row.overageCapMinor, 1, 100_000_000)
+  if (baseAmountMinor == null || guardQuantity == null) return null
+  if (row.guardUnitMinor != null && guardUnitMinor == null) return null
+  if (row.overageRateMinor != null && overageRateMinor == null) return null
+  if (row.overageCapMinor != null && overageCapMinor == null) return null
+  if (row.guardIncluded !== guardQuantity > 0) return null
+  if (row.guardIncluded && guardUnitMinor == null) return null
+  if (row.overagePermitted !== (overageRateMinor != null)) return null
+  if ((baseAmountMinor + (row.guardIncluded ? guardUnitMinor! * guardQuantity : 0)) !== priceMinor) return null
+  if (row.overageOptIn && (!row.overagePermitted || overageCapMinor == null)) return null
+  if (!row.overageOptIn && overageCapMinor != null) return null
+  return {
+    tier: row.tier,
+    includedMinutes,
+    minutesRollover: row.minutesRollover,
+    baseAmountMinor,
+    guardIncluded: row.guardIncluded,
+    guardUnitMinor,
+    guardQuantity,
+    overagePermitted: row.overagePermitted,
+    overageRateMinor,
+    overageOptIn: row.overageOptIn,
+    overageCapMinor,
+  }
 }
 
 function confirmations(value: unknown): Record<string, true> | null {
@@ -101,6 +159,8 @@ export async function portalCommercialOfferCommand(request: NextRequest) {
   if (!checked) return reply(CONFIRM, 400)
   if ((body.cadence === "MONTH" || body.cadence === "YEAR") && body.recurringConsent !== true) return reply(CONFIRM, 400)
   if (body.cadence === "ONCE" && body.recurringConsent) return reply(CONFIRM, 400)
+  const commercial = conditions(body.conditions, priceMinor)
+  if (!commercial) return reply(CONFIRM, 400)
 
   try {
     const result = await backend().rpc<unknown>("customer_portal_commercial_offer_command_v1", {
@@ -117,6 +177,7 @@ export async function portalCommercialOfferCommand(request: NextRequest) {
         agreementAccepted: true,
         recurringConsent: body.recurringConsent,
         confirmations: checked,
+        conditions: commercial,
       },
     })
     if (result == null) return reply(SIGN_IN)

@@ -3,10 +3,22 @@ import { parseCommercialOffer } from "./offer-types"
 
 const agreement = {
   title: "Telloya service agreement",
-  body: "This agreement covers Telloya for the named locations and no other service.",
+  body: "This agreement covers Telloya for the named locations and no other service. Payment is collected by Stripe after a separate payment step.",
   cancellation: "Either party may cancel as stated in this agreement.",
   versionRef: "TELLOYA-TERMS-1",
   confirmations: [{ key: "business_authority", label: "I can accept this offer for the business." }],
+}
+
+const conditions = {
+  tier: "Growth",
+  includedMinutes: 300,
+  minutesRollover: false,
+  baseAmountMinor: 4900,
+  guardIncluded: false,
+  guardUnitMinor: null,
+  guardQuantity: 0,
+  overagePermitted: true,
+  overageRateMinor: 25,
 }
 
 const ready = {
@@ -14,7 +26,7 @@ const ready = {
   offerRef: "VC-26-AB2347",
   offerVersion: 2,
   product: "Telloya",
-  businessName: "Harbour Bakery",
+  businessName: "Stripe Bakery",
   locations: ["Dock", "High Street"],
   services: ["Telloya"],
   priceMinor: 4900,
@@ -25,16 +37,20 @@ const ready = {
   cadence: "MONTH",
   recurring: true,
   agreement,
+  conditions,
   nextStep: "Accept the agreement to record this offer. Payment and service setup follow separately.",
 }
 
 describe("commercial offer parser", () => {
   it("keeps an eligible offer and an accepted record, and rejects a leaked field", () => {
-    expect(parseCommercialOffer(ready)?.status).toBe("ready")
+    const parsed = parseCommercialOffer(ready)
+    expect(parsed?.status).toBe("ready")
+    if (parsed?.status === "ready") expect(parsed.businessName).toBe("Stripe Bakery")
     const { offerVersion: _version, ...accepted } = ready
     expect(parseCommercialOffer({
       ...accepted,
       status: "accepted",
+      conditions: { ...conditions, overageOptIn: false, overageCapMinor: null },
       acceptedAt: "2026-11-03T12:00:00.000Z",
     })?.status).toBe("accepted")
     expect(parseCommercialOffer({ status: "unavailable" })).toEqual({ status: "unavailable" })
@@ -46,6 +62,8 @@ describe("commercial offer parser", () => {
     expect(authority?.status === "unavailable" && authority.reason).toBe("authority")
     expect(parseCommercialOffer({ ...ready, subscriptionId: "a032a000-0000-4000-8000-000000000031" })).toBeNull()
     expect(parseCommercialOffer({ ...ready, agreement: { ...agreement, contentHash: "ab".repeat(32) } })).toBeNull()
+    expect(parseCommercialOffer({ ...ready, businessName: "cus_secret bakery" })).toBeNull()
+    expect(parseCommercialOffer({ ...ready, conditions: { ...conditions, overageOptIn: true, overageCapMinor: 2000 } })).toBeNull()
     expect(parseCommercialOffer({ ...ready, totalMinor: 1 })).toBeNull()
     expect(parseCommercialOffer({ ...ready, recurring: false })).toBeNull()
     expect(parseCommercialOffer(null)).toBeNull()

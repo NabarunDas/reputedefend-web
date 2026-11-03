@@ -11,13 +11,30 @@ export function AcceptOfferForm({ offer }: { offer: ReadyOffer }) {
   const [message, setMessage] = useState<string | null>(null)
   const [agreement, setAgreement] = useState(false)
   const [recurring, setRecurring] = useState(false)
+  const [overage, setOverage] = useState(false)
+  const [cap, setCap] = useState("")
   const [checked, setChecked] = useState<Record<string, boolean>>({})
+
+  function spendingCapMinor() {
+    if (!offer.conditions.overagePermitted || !overage) return null
+    if (!/^\d+(\.\d{1,2})?$/.test(cap)) return null
+    const pounds = Number(cap)
+    const minor = Math.round(pounds * 100)
+    if (!Number.isFinite(pounds) || minor < 1 || minor > 100_000_000) return null
+    return minor
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (pending) return
     setPending(true)
     setMessage(null)
+    const overageCapMinor = spendingCapMinor()
+    if (offer.conditions.overagePermitted && overage && overageCapMinor == null) {
+      setMessage("Enter a monthly spending cap to authorise additional usage. No cap is assumed.")
+      setPending(false)
+      return
+    }
     try {
       const response = await fetch("/api/portal/onboarding/offer", {
         method: "POST",
@@ -36,6 +53,19 @@ export function AcceptOfferForm({ offer }: { offer: ReadyOffer }) {
           agreementAccepted: agreement,
           recurringConsent: offer.recurring ? recurring : false,
           confirmations: Object.fromEntries(offer.agreement.confirmations.map(item => [item.key, checked[item.key] === true])),
+          conditions: {
+            tier: offer.conditions.tier,
+            includedMinutes: offer.conditions.includedMinutes,
+            minutesRollover: offer.conditions.minutesRollover,
+            baseAmountMinor: offer.conditions.baseAmountMinor,
+            guardIncluded: offer.conditions.guardIncluded,
+            guardUnitMinor: offer.conditions.guardUnitMinor,
+            guardQuantity: offer.conditions.guardQuantity,
+            overagePermitted: offer.conditions.overagePermitted,
+            overageRateMinor: offer.conditions.overageRateMinor,
+            overageOptIn: offer.conditions.overagePermitted ? overage : false,
+            overageCapMinor,
+          },
         }),
       })
       if (response.ok) {
@@ -76,6 +106,33 @@ export function AcceptOfferForm({ offer }: { offer: ReadyOffer }) {
           <span>{item.label}</span>
         </label>
       ))}
+      {offer.conditions.overagePermitted && offer.conditions.overageRateMinor != null ? (
+        <>
+          <label className="offer-check">
+            <input
+              type="checkbox"
+              name="overage"
+              checked={overage}
+              onChange={event => {
+                setOverage(event.target.checked)
+                if (!event.target.checked) setCap("")
+              }}
+            />
+            <span>I agree to additional usage at {new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(offer.conditions.overageRateMinor / 100)} per minute. This is separate from the recurring charge.</span>
+          </label>
+          <label className="offer-check">
+            <span>Monthly spending cap, in pounds. Leave this blank unless you opt in.</span>
+            <input
+              type="text"
+              name="overageCap"
+              inputMode="decimal"
+              value={cap}
+              disabled={!overage}
+              onChange={event => setCap(event.target.value)}
+            />
+          </label>
+        </>
+      ) : null}
       {offer.recurring ? (
         <label className="offer-check">
           <input

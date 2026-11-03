@@ -26,6 +26,9 @@ describe("onboarding progress parser", () => {
     expect(parseOnboardingStatus({
       requests: [{ ...row, nextStep: "Use cus_secret to pay." }],
     })).toBeNull()
+    expect(parseOnboardingStatus({
+      requests: [{ ...row, businessName: "Stripe Bakery", nextStep: "Payment is collected by Stripe later." }],
+    })?.requests[0].businessName).toBe("Stripe Bakery")
     expect(parseOnboardingStatus(null)).toBeNull()
     expect(parseOnboardingStatus({
       requests: [{ ...row, offerRef: "VC-26-AB2347", offerState: "eligible" }],

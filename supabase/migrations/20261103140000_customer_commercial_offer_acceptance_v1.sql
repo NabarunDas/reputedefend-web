@@ -133,6 +133,122 @@ CREATE TRIGGER commercial_agreement_versions_protect
 BEFORE INSERT OR UPDATE OR DELETE ON public.commercial_agreement_versions
 FOR EACH ROW EXECUTE FUNCTION admin_private.protect_commercial_agreement_v1();
 
+-- Approved commercial conditions for one plan version. Marketing prices are not
+-- inserted here. Approval of a row is a separate business decision. A Telloya
+-- tier is Basic, Growth, Pro, or Custom. Guard is optional coverage on that
+-- plan, not another AI tier. Additional usage is offered only when a rate is
+-- recorded. No spending cap is stored on the plan.
+CREATE FUNCTION admin_private.commercial_plan_conditions_hash_v1(
+  p_tier text,
+  p_minutes integer,
+  p_rollover boolean,
+  p_base integer,
+  p_guard integer,
+  p_overage integer
+) RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT encode(extensions.digest(convert_to(
+    coalesce(p_tier, '') || E'\n'
+      || coalesce(p_minutes::text, '') || E'\n'
+      || coalesce(p_rollover::text, '') || E'\n'
+      || coalesce(p_base::text, '') || E'\n'
+      || coalesce(p_guard::text, '') || E'\n'
+      || coalesce(p_overage::text, ''),
+    'UTF8'
+  ), 'sha256'), 'hex');
+$$;
+
+CREATE TABLE public.commercial_plan_conditions (
+  id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
+  plan_version_id uuid NOT NULL UNIQUE REFERENCES public.plan_versions (id) ON DELETE RESTRICT,
+  tier_code text NOT NULL CHECK (tier_code IN ('BASIC', 'GROWTH', 'PRO', 'CUSTOM')),
+  tier_label text NOT NULL CHECK (tier_label IN ('Basic', 'Growth', 'Pro', 'Custom')),
+  included_minutes integer,
+  minutes_rollover boolean NOT NULL,
+  base_amount_minor integer NOT NULL CHECK (base_amount_minor > 0),
+  guard_unit_amount_minor integer,
+  overage_rate_minor integer,
+  content_hash text NOT NULL CHECK (content_hash ~ '^[a-f0-9]{64}$'),
+  status text NOT NULL CHECK (status IN ('DRAFT', 'APPROVED', 'RETIRED')),
+  approved_by uuid,
+  approved_at timestamptz,
+  retired_by uuid,
+  retired_at timestamptz,
+  record_version integer NOT NULL DEFAULT 1 CHECK (record_version >= 1),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT commercial_plan_conditions_tier_label CHECK (
+    (tier_code = 'BASIC' AND tier_label = 'Basic')
+    OR (tier_code = 'GROWTH' AND tier_label = 'Growth')
+    OR (tier_code = 'PRO' AND tier_label = 'Pro')
+    OR (tier_code = 'CUSTOM' AND tier_label = 'Custom')
+  ),
+  CONSTRAINT commercial_plan_conditions_minutes CHECK (
+    (tier_code = 'CUSTOM' AND (included_minutes IS NULL OR included_minutes > 0))
+    OR (tier_code <> 'CUSTOM' AND included_minutes IS NOT NULL AND included_minutes > 0)
+  ),
+  CONSTRAINT commercial_plan_conditions_guard_rate CHECK (
+    guard_unit_amount_minor IS NULL OR guard_unit_amount_minor > 0
+  ),
+  CONSTRAINT commercial_plan_conditions_overage_rate CHECK (
+    overage_rate_minor IS NULL OR overage_rate_minor > 0
+  ),
+  CONSTRAINT commercial_plan_conditions_status_actor CHECK (
+    (status = 'DRAFT' AND approved_at IS NULL AND approved_by IS NULL AND retired_at IS NULL AND retired_by IS NULL)
+    OR (status = 'APPROVED' AND approved_at IS NOT NULL AND approved_by IS NOT NULL AND retired_at IS NULL AND retired_by IS NULL)
+    OR (status = 'RETIRED' AND approved_at IS NOT NULL AND approved_by IS NOT NULL AND retired_at IS NOT NULL AND retired_by IS NOT NULL)
+  )
+);
+
+CREATE FUNCTION admin_private.protect_commercial_plan_conditions_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'commercial plan conditions are not deleted';
+  END IF;
+  IF admin_private.commercial_plan_conditions_hash_v1(
+    NEW.tier_code, NEW.included_minutes, NEW.minutes_rollover, NEW.base_amount_minor,
+    NEW.guard_unit_amount_minor, NEW.overage_rate_minor
+  ) IS DISTINCT FROM NEW.content_hash THEN
+    RAISE EXCEPTION 'commercial plan conditions hash does not match';
+  END IF;
+  IF TG_OP = 'UPDATE' AND (
+    NEW.plan_version_id IS DISTINCT FROM OLD.plan_version_id
+    OR NEW.tier_code IS DISTINCT FROM OLD.tier_code
+    OR NEW.tier_label IS DISTINCT FROM OLD.tier_label
+    OR NEW.included_minutes IS DISTINCT FROM OLD.included_minutes
+    OR NEW.minutes_rollover IS DISTINCT FROM OLD.minutes_rollover
+    OR NEW.base_amount_minor IS DISTINCT FROM OLD.base_amount_minor
+    OR NEW.guard_unit_amount_minor IS DISTINCT FROM OLD.guard_unit_amount_minor
+    OR NEW.overage_rate_minor IS DISTINCT FROM OLD.overage_rate_minor
+    OR NEW.content_hash IS DISTINCT FROM OLD.content_hash
+    OR NEW.id IS DISTINCT FROM OLD.id
+  ) THEN
+    RAISE EXCEPTION 'commercial plan conditions are immutable';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.status IN ('APPROVED', 'RETIRED') AND NEW.status IS DISTINCT FROM OLD.status THEN
+    IF NOT (OLD.status = 'APPROVED' AND NEW.status = 'RETIRED') THEN
+      RAISE EXCEPTION 'commercial plan conditions cannot move backwards';
+    END IF;
+  END IF;
+  NEW.updated_at := pg_catalog.now();
+  IF TG_OP = 'UPDATE' THEN
+    NEW.record_version := OLD.record_version + 1;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER commercial_plan_conditions_protect
+BEFORE INSERT OR UPDATE OR DELETE ON public.commercial_plan_conditions
+FOR EACH ROW EXECUTE FUNCTION admin_private.protect_commercial_plan_conditions_v1();
+
 CREATE TABLE public.commercial_offer_acceptances (
   id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
   request_id uuid NOT NULL UNIQUE,
@@ -155,6 +271,20 @@ CREATE TABLE public.commercial_offer_acceptances (
   cadence text NOT NULL CHECK (cadence IN ('MONTH', 'YEAR', 'ONCE')),
   subscription_record_version integer NOT NULL CHECK (subscription_record_version >= 1),
   recurring_consent_at timestamptz,
+  plan_tier text NOT NULL CHECK (plan_tier IN ('Basic', 'Growth', 'Pro', 'Custom')),
+  included_minutes integer,
+  minutes_rollover boolean NOT NULL,
+  base_amount_minor integer NOT NULL CHECK (base_amount_minor > 0),
+  guard_included boolean NOT NULL,
+  guard_unit_amount_minor integer,
+  guard_quantity integer NOT NULL CHECK (guard_quantity >= 0),
+  overage_permitted boolean NOT NULL,
+  overage_rate_minor integer,
+  overage_opt_in boolean NOT NULL,
+  overage_cap_minor integer,
+  overage_consent_at timestamptz,
+  conditions_id uuid NOT NULL REFERENCES public.commercial_plan_conditions (id) ON DELETE RESTRICT,
+  conditions_record_version integer NOT NULL CHECK (conditions_record_version >= 1),
   confirmations jsonb NOT NULL CHECK (jsonb_typeof(confirmations) = 'object'),
   email_snapshot text NOT NULL,
   actor_customer_id uuid NOT NULL,
@@ -167,6 +297,32 @@ CREATE TABLE public.commercial_offer_acceptances (
   CONSTRAINT commercial_offer_acceptances_recurring_consent CHECK (
     (cadence = 'ONCE' AND recurring_consent_at IS NULL)
     OR (cadence IN ('MONTH', 'YEAR') AND recurring_consent_at IS NOT NULL)
+  ),
+  CONSTRAINT commercial_offer_acceptances_guard_shape CHECK (
+    (guard_included = false AND guard_quantity = 0)
+    OR (guard_included = true AND guard_quantity > 0 AND guard_unit_amount_minor IS NOT NULL AND guard_unit_amount_minor > 0)
+  ),
+  CONSTRAINT commercial_offer_acceptances_overage_decision CHECK (
+    (
+      overage_opt_in = false
+      AND overage_cap_minor IS NULL
+      AND overage_consent_at IS NULL
+    )
+    OR (
+      overage_opt_in = true
+      AND overage_permitted = true
+      AND overage_rate_minor IS NOT NULL
+      AND overage_rate_minor > 0
+      AND overage_cap_minor IS NOT NULL
+      AND overage_cap_minor > 0
+      AND overage_consent_at IS NOT NULL
+    )
+  ),
+  CONSTRAINT commercial_offer_acceptances_price_composition CHECK (
+    base_amount_minor + CASE
+      WHEN guard_included THEN guard_unit_amount_minor * guard_quantity
+      ELSE 0
+    END = amount_minor
   )
 );
 
@@ -193,10 +349,12 @@ CREATE TABLE admin_private.customer_commercial_command_receipts (
 );
 
 ALTER TABLE public.commercial_agreement_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.commercial_plan_conditions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.commercial_offer_acceptances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_private.customer_commercial_command_receipts ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON TABLE public.commercial_agreement_versions FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.commercial_plan_conditions FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.commercial_offer_acceptances FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE admin_private.customer_commercial_command_receipts FROM PUBLIC, anon, authenticated;
 
@@ -246,6 +404,7 @@ DECLARE
   sub public.commercial_subscriptions;
   plan public.plan_versions;
   agreement public.commercial_agreement_versions;
+  conditions public.commercial_plan_conditions;
   req public.onboarding_requests;
   membership text;
   business_name text;
@@ -253,6 +412,8 @@ DECLARE
   services jsonb;
   kind text;
   total_minor integer;
+  guard_quantity integer;
+  conditions_view jsonb;
 BEGIN
   SELECT * INTO sub FROM public.commercial_subscriptions WHERE id = p_subscription;
   IF sub.id IS NULL OR sub.customer_id IS DISTINCT FROM p_customer THEN
@@ -311,7 +472,36 @@ BEGIN
     IF agreement.id IS NULL THEN
       kind := 'terms_pending';
     ELSE
-      kind := 'eligible';
+      SELECT * INTO conditions
+      FROM public.commercial_plan_conditions
+      WHERE plan_version_id = plan.id
+        AND status = 'APPROVED';
+      SELECT coalesce(sum(item.quantity), 0) INTO guard_quantity
+      FROM public.commercial_subscription_items AS item
+      WHERE item.subscription_id = sub.id
+        AND item.component_code = 'GUARD';
+      IF conditions.id IS NULL THEN
+        kind := 'conditions_pending';
+      ELSIF guard_quantity > 0 AND conditions.guard_unit_amount_minor IS NULL THEN
+        kind := 'changed';
+      ELSIF conditions.base_amount_minor
+        + coalesce(conditions.guard_unit_amount_minor, 0) * guard_quantity
+        IS DISTINCT FROM sub.amount_minor THEN
+        kind := 'changed';
+      ELSE
+        kind := 'eligible';
+        conditions_view := jsonb_build_object(
+          'tier', conditions.tier_label,
+          'includedMinutes', to_jsonb(conditions.included_minutes),
+          'minutesRollover', conditions.minutes_rollover,
+          'baseAmountMinor', conditions.base_amount_minor,
+          'guardIncluded', guard_quantity > 0,
+          'guardUnitMinor', to_jsonb(conditions.guard_unit_amount_minor),
+          'guardQuantity', guard_quantity,
+          'overagePermitted', conditions.overage_rate_minor IS NOT NULL,
+          'overageRateMinor', to_jsonb(conditions.overage_rate_minor)
+        );
+      END IF;
     END IF;
   END IF;
 
@@ -342,6 +532,19 @@ BEGIN
           'cancellation', acceptance.cancellation_text,
           'versionRef', acceptance.agreement_version_ref,
           'confirmations', coalesce(acceptance.terms_snapshot -> 'confirmations', '[]'::jsonb)
+        ),
+        'conditions', jsonb_build_object(
+          'tier', acceptance.plan_tier,
+          'includedMinutes', to_jsonb(acceptance.included_minutes),
+          'minutesRollover', acceptance.minutes_rollover,
+          'baseAmountMinor', acceptance.base_amount_minor,
+          'guardIncluded', acceptance.guard_included,
+          'guardUnitMinor', to_jsonb(acceptance.guard_unit_amount_minor),
+          'guardQuantity', acceptance.guard_quantity,
+          'overagePermitted', acceptance.overage_permitted,
+          'overageRateMinor', to_jsonb(acceptance.overage_rate_minor),
+          'overageOptIn', acceptance.overage_opt_in,
+          'overageCapMinor', to_jsonb(acceptance.overage_cap_minor)
         ),
         'agreementHash', acceptance.agreement_content_hash,
         'acceptedAt', acceptance.accepted_at,
@@ -381,6 +584,9 @@ BEGIN
       'versionRef', agreement.version_ref,
       'confirmations', agreement.required_confirmations
     ) ELSE NULL END,
+    'conditions', CASE WHEN kind = 'eligible' THEN conditions_view ELSE NULL END,
+    'conditionsId', CASE WHEN kind = 'eligible' THEN conditions.id ELSE NULL END,
+    'conditionsVersion', CASE WHEN kind = 'eligible' THEN conditions.record_version ELSE NULL END,
     'agreementHash', CASE WHEN kind = 'eligible' THEN agreement.content_hash ELSE NULL END,
     'agreementId', CASE WHEN kind = 'eligible' THEN agreement.id ELSE NULL END,
     'planVersionId', sub.plan_version_id,
@@ -429,6 +635,7 @@ BEGIN
       'cadence', p_classified ->> 'cadence',
       'recurring', p_classified -> 'recurring',
       'agreement', agreement,
+      'conditions', p_classified -> 'conditions',
       'nextStep', 'Accept the agreement to record this offer. Payment and service setup follow separately.'
     );
   END IF;
@@ -449,6 +656,7 @@ BEGIN
       'cadence', p_classified ->> 'cadence',
       'recurring', p_classified -> 'recurring',
       'agreement', agreement,
+      'conditions', p_classified -> 'conditions',
       'acceptedAt', p_classified ->> 'acceptedAt',
       'nextStep', 'This offer is accepted. Payment and service setup follow separately. Nothing has been paid and the service has not started.'
     );
@@ -461,6 +669,16 @@ BEGIN
       'businessName', p_classified ->> 'businessName',
       'locations', p_classified -> 'locations',
       'nextStep', 'The agreement for this offer is not available yet. It cannot be accepted until that agreement is approved.'
+    );
+  END IF;
+  IF kind = 'conditions_pending' THEN
+    RETURN jsonb_build_object(
+      'status', 'conditions_pending',
+      'offerRef', p_classified ->> 'offerRef',
+      'product', p_classified ->> 'product',
+      'businessName', p_classified ->> 'businessName',
+      'locations', p_classified -> 'locations',
+      'nextStep', 'The commercial terms for this offer are not available yet. It cannot be accepted until those terms are approved.'
     );
   END IF;
   IF kind IN ('withdrawn', 'expired', 'changed', 'superseded') THEN
@@ -536,6 +754,11 @@ DECLARE
   result jsonb;
   acceptance_id uuid;
   accepted_stamp timestamptz;
+  locked_plan public.plan_versions;
+  locked_conditions public.commercial_plan_conditions;
+  submitted_conditions jsonb;
+  overage_opt_in boolean;
+  overage_cap integer;
 BEGIN
   sess := admin_private.customer_portal_session_v1(p_token_hash);
   IF sess IS NULL OR (sess ->> 'customerId') IS NULL OR (sess ->> 'authUserId') IS NULL OR (sess ->> 'email') IS NULL THEN
@@ -552,11 +775,12 @@ BEGIN
   END IF;
   IF (
     SELECT count(*) FROM jsonb_object_keys(p_data)
-  ) <> 9
+  ) <> 10
     OR NOT (
       p_data ? 'offerVersion' AND p_data ? 'priceMinor' AND p_data ? 'taxBehaviour'
       AND p_data ? 'taxMinor' AND p_data ? 'cadence' AND p_data ? 'agreementRef'
       AND p_data ? 'agreementAccepted' AND p_data ? 'recurringConsent' AND p_data ? 'confirmations'
+      AND p_data ? 'conditions'
     )
   THEN
     RETURN jsonb_build_object('status', 'invalid');
@@ -581,6 +805,15 @@ BEGIN
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('commercial-offer:' || sub.id::text, 1));
   SELECT * INTO sub FROM public.commercial_subscriptions WHERE id = sub.id FOR UPDATE;
+  -- Lock order: this subscription, then its plan_versions row, then the approved
+  -- commercial_plan_conditions row, then the approved agreement. A retirement or
+  -- amendment locks plan_versions and does not lock a subscription before that
+  -- plan row, so the two transactions cannot deadlock. A retirement that commits
+  -- before this plan lock is visible to the recheck below.
+  SELECT * INTO locked_plan
+  FROM public.plan_versions
+  WHERE id = sub.plan_version_id
+  FOR UPDATE;
   classified := admin_private.commercial_offer_classify_v1(customer, sub.id);
   IF classified IS NULL OR classified ->> 'kind' IS NULL OR classified ->> 'kind' = 'unavailable' THEN
     RETURN jsonb_build_object('status', 'unavailable');
@@ -616,6 +849,7 @@ BEGIN
       OR p_data ->> 'cadence' IS DISTINCT FROM classified ->> 'cadence'
       OR p_data ->> 'agreementRef' IS DISTINCT FROM classified -> 'agreement' ->> 'versionRef'
       OR (p_data -> 'confirmations') IS DISTINCT FROM expected_confirmations
+      OR (p_data -> 'conditions') IS DISTINCT FROM (classified -> 'conditions')
       OR ((p_data ->> 'recurringConsent')::boolean IS DISTINCT FROM true AND (classified ->> 'recurring')::boolean)
       OR ((p_data ->> 'recurringConsent')::boolean AND NOT (classified ->> 'recurring')::boolean)
     THEN
@@ -647,6 +881,81 @@ BEGIN
   THEN
     RETURN jsonb_build_object('status', 'conflict');
   END IF;
+  IF locked_plan.id IS NULL
+    OR locked_plan.status IS DISTINCT FROM 'APPROVED'
+    OR locked_plan.product_code IS DISTINCT FROM classified ->> 'productCode'
+    OR locked_plan.effective_from > pg_catalog.now()
+    OR (locked_plan.effective_to IS NOT NULL AND locked_plan.effective_to <= pg_catalog.now())
+    OR locked_plan.amount_minor IS DISTINCT FROM sub.amount_minor
+    OR locked_plan.tax_behaviour IS DISTINCT FROM sub.tax_behaviour
+    OR locked_plan.billing_cadence IS DISTINCT FROM sub.cadence_snapshot
+    OR locked_plan.terms_ref IS DISTINCT FROM sub.terms_ref
+    OR locked_plan.currency IS DISTINCT FROM sub.currency
+  THEN
+    result := jsonb_build_object(
+      'status', CASE
+        WHEN locked_plan.status = 'RETIRED' THEN 'superseded'
+        WHEN locked_plan.effective_to IS NOT NULL AND locked_plan.effective_to <= pg_catalog.now() THEN 'expired'
+        ELSE 'changed'
+      END,
+      'offerRef', sub.public_ref
+    );
+    INSERT INTO admin_private.customer_commercial_command_receipts(request_id, customer_id, fingerprint, response)
+    VALUES (p_request, customer, fingerprint, result);
+    RETURN result;
+  END IF;
+
+  SELECT * INTO locked_conditions
+  FROM public.commercial_plan_conditions
+  WHERE id = (classified ->> 'conditionsId')::uuid
+    AND plan_version_id = locked_plan.id
+    AND status = 'APPROVED'
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    result := jsonb_build_object('status', 'conditions_pending', 'offerRef', sub.public_ref);
+    INSERT INTO admin_private.customer_commercial_command_receipts(request_id, customer_id, fingerprint, response)
+    VALUES (p_request, customer, fingerprint, result);
+    RETURN result;
+  END IF;
+
+  submitted_conditions := p_data -> 'conditions';
+  IF jsonb_typeof(submitted_conditions) <> 'object'
+    OR (
+      SELECT count(*) FROM jsonb_object_keys(submitted_conditions)
+    ) <> 11
+    OR NOT (
+      submitted_conditions ? 'tier' AND submitted_conditions ? 'includedMinutes'
+      AND submitted_conditions ? 'minutesRollover' AND submitted_conditions ? 'baseAmountMinor'
+      AND submitted_conditions ? 'guardIncluded' AND submitted_conditions ? 'guardUnitMinor'
+      AND submitted_conditions ? 'guardQuantity' AND submitted_conditions ? 'overagePermitted'
+      AND submitted_conditions ? 'overageRateMinor' AND submitted_conditions ? 'overageOptIn'
+      AND submitted_conditions ? 'overageCapMinor'
+    )
+    OR jsonb_typeof(submitted_conditions -> 'overageOptIn') <> 'boolean'
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  IF (submitted_conditions - 'overageOptIn' - 'overageCapMinor') IS DISTINCT FROM (classified -> 'conditions') THEN
+    RETURN jsonb_build_object('status', 'conflict');
+  END IF;
+  overage_opt_in := (submitted_conditions ->> 'overageOptIn')::boolean;
+  IF overage_opt_in THEN
+    IF (classified -> 'conditions' ->> 'overagePermitted')::boolean IS DISTINCT FROM true
+      OR jsonb_typeof(submitted_conditions -> 'overageCapMinor') <> 'number'
+      OR (submitted_conditions ->> 'overageCapMinor') !~ '^[0-9]+$'
+      OR (submitted_conditions ->> 'overageCapMinor')::integer < 1
+      OR (submitted_conditions ->> 'overageCapMinor')::integer > 100000000
+    THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    overage_cap := (submitted_conditions ->> 'overageCapMinor')::integer;
+  ELSE
+    IF jsonb_typeof(submitted_conditions -> 'overageCapMinor') <> 'null' THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    overage_cap := NULL;
+  END IF;
+
   IF sub.cadence_snapshot IN ('MONTH', 'YEAR') AND (p_data ->> 'recurringConsent')::boolean IS DISTINCT FROM true THEN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
@@ -692,7 +1001,11 @@ BEGIN
     request_id, subscription_id, customer_id, business_id, product_code, plan_version_id,
     agreement_version_id, agreement_version_ref, agreement_content_hash, agreement_title,
     agreement_body, cancellation_text, terms_snapshot, amount_minor, currency, tax_behaviour,
-    tax_amount_minor, cadence, subscription_record_version, recurring_consent_at, confirmations,
+    tax_amount_minor, cadence, subscription_record_version, recurring_consent_at,
+    plan_tier, included_minutes, minutes_rollover, base_amount_minor,
+    guard_included, guard_unit_amount_minor, guard_quantity,
+    overage_permitted, overage_rate_minor, overage_opt_in, overage_cap_minor, overage_consent_at,
+    conditions_id, conditions_record_version, confirmations,
     email_snapshot, actor_customer_id, auth_user_id
   ) VALUES (
     p_request, sub.id, customer, sub.business_id, classified ->> 'productCode', (classified ->> 'planVersionId')::uuid,
@@ -713,11 +1026,29 @@ BEGIN
       'cadence', sub.cadence_snapshot,
       'agreementRef', classified -> 'agreement' ->> 'versionRef',
       'agreementHash', classified ->> 'agreementHash',
-      'confirmations', classified -> 'agreement' -> 'confirmations'
+      'confirmations', classified -> 'agreement' -> 'confirmations',
+      'conditions', classified -> 'conditions' || jsonb_build_object(
+        'overageOptIn', overage_opt_in,
+        'overageCapMinor', to_jsonb(overage_cap)
+      )
     ),
     sub.amount_minor, sub.currency, sub.tax_behaviour, sub.tax_amount_minor, sub.cadence_snapshot,
     sub.record_version,
     CASE WHEN sub.cadence_snapshot = 'ONCE' THEN NULL ELSE pg_catalog.now() END,
+    locked_conditions.tier_label,
+    locked_conditions.included_minutes,
+    locked_conditions.minutes_rollover,
+    locked_conditions.base_amount_minor,
+    coalesce((classified -> 'conditions' ->> 'guardIncluded')::boolean, false),
+    locked_conditions.guard_unit_amount_minor,
+    coalesce((classified -> 'conditions' ->> 'guardQuantity')::integer, 0),
+    locked_conditions.overage_rate_minor IS NOT NULL,
+    locked_conditions.overage_rate_minor,
+    overage_opt_in,
+    overage_cap,
+    CASE WHEN overage_opt_in THEN pg_catalog.now() ELSE NULL END,
+    locked_conditions.id,
+    locked_conditions.record_version,
     submitted_confirmations, email, customer, actor
   )
   RETURNING id, accepted_at INTO acceptance_id, accepted_stamp;
@@ -742,6 +1073,8 @@ $$;
 
 REVOKE ALL ON FUNCTION admin_private.commercial_agreement_confirmations_ok_v1(jsonb) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.commercial_agreement_hash_v1(text, text, text, text, text, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.commercial_plan_conditions_hash_v1(text, integer, boolean, integer, integer, integer) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.protect_commercial_plan_conditions_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.protect_commercial_agreement_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.protect_commercial_offer_acceptance_v1() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.commercial_offer_services_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
@@ -970,6 +1303,9 @@ BEGIN
         ON agreement.product_code = plan.product_code
        AND agreement.version_ref = plan.terms_ref
        AND agreement.status = 'APPROVED'
+      JOIN public.commercial_plan_conditions AS conditions
+        ON conditions.plan_version_id = plan.id
+       AND conditions.status = 'APPROVED'
       WHERE subscription.id = req.commercial_subscription_id
         AND subscription.customer_id = customer
         AND subscription.business_id = req.business_id
@@ -983,7 +1319,22 @@ BEGIN
         AND plan.terms_ref = subscription.terms_ref
         AND plan.currency = subscription.currency
         AND plan.effective_from <= pg_catalog.now()
-        AND (plan.effective_to IS NULL OR plan.effective_to > pg_catalog.now());
+        AND (plan.effective_to IS NULL OR plan.effective_to > pg_catalog.now())
+        AND conditions.base_amount_minor + coalesce((
+          SELECT sum(item.quantity) * conditions.guard_unit_amount_minor
+          FROM public.commercial_subscription_items AS item
+          WHERE item.subscription_id = subscription.id
+            AND item.component_code = 'GUARD'
+        ), 0) = subscription.amount_minor
+        AND (
+          conditions.guard_unit_amount_minor IS NOT NULL
+          OR NOT EXISTS (
+            SELECT 1
+            FROM public.commercial_subscription_items AS item
+            WHERE item.subscription_id = subscription.id
+              AND item.component_code = 'GUARD'
+          )
+        );
       IF offer_ref IS NOT NULL THEN
         offer_state := 'eligible';
         projected := jsonb_set(projected, '{customerActionRequired}', 'true'::jsonb);

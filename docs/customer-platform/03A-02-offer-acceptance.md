@@ -14,7 +14,9 @@ Recovery case agreements and `paid_service_acceptances` are not reused. A Telloy
 
 `terms_ref` on a plan is not an agreement. `public.commercial_agreement_versions` stores the product-scoped title, body, cancellation text, required confirmations, and content hash. This phase does not approve a plan or an agreement and does not seed either.
 
-An offer can be accepted only when an `APPROVED` agreement exists for the same product and the plan's `terms_ref`. A missing or unapproved agreement is `terms_pending`. The customer sees that the agreement is not available. No wording is invented and no consent is stored.
+An offer can be accepted only when an `APPROVED` agreement exists for the same product and the plan's `terms_ref`, and an `APPROVED` `commercial_plan_conditions` row identifies the Telloya tier and the commercial conditions. A missing or unapproved agreement is `terms_pending`. Missing approved conditions are `conditions_pending`. The customer sees that the missing part is not available. No wording, minutes, Guard price, or spending cap is invented, and no consent is stored.
+
+Marketing prices are not copied into a plan or an offer. Basic, Growth, Pro, and Custom remain Telloya tiers. Relaunch Guard is optional coverage on that plan, not another AI tier. Additional usage is recorded only when the approved conditions include a rate, the customer opts in separately from the recurring charge, and the customer enters a monthly spending cap. Accepting the base subscription does not authorise extra usage charges.
 
 ## Read
 
@@ -32,13 +34,13 @@ An eligible offer requires a verified membership, an `OFFERED` billable subscrip
 
 On success it sets the subscription to `ACCEPTED`, inserts one immutable `commercial_offer_acceptances` row, and appends an `OFFERED` to `ACCEPTED` commercial subscription event. The acceptance stores the agreement version, full terms snapshot, content hash, product, business, locations, pricing, currency, tax, cadence, the session email, the authenticated actor, and the server timestamp.
 
-The same idempotency key and the same submission return the original result and do not insert a second acceptance. A different submission for that key, a stale price, or a selector that does not match the submitted snapshot returns conflict and does not accept a different offer. A later request for an offer that is already accepted also returns conflict when the tax amount or the required confirmations differ from the recorded acceptance. Before the state change, the command locks the approved agreement row and stops if that agreement is no longer approved. A withdrawal that commits first leaves the row outside `OFFERED`, so the acceptance update matches nothing.
+The same idempotency key and the same submission return the original result and do not insert a second acceptance. A different submission for that key, a stale price, a different tax amount, or a selector that does not match the submitted snapshot returns conflict and does not accept a different offer. A later request for an offer that is already accepted also returns conflict when the tax amount, the required confirmations, or the recorded commercial conditions differ. The command locks the subscription, then the plan row, then the approved conditions, then the approved agreement. It rechecks the plan status, effective window, product, price, tax, currency, cadence, and terms reference under that plan lock. A plan retired before that lock is acquired is not accepted. A withdrawal that commits first leaves the row outside `OFFERED`, so the acceptance update matches nothing.
 
 The subscription is not set to `PAID`, `ACTIVE`, or `LIVE`. No entitlement, payment evidence, Guard allocation, or service provision is created.
 
 ## Customer pages
 
-`/portal/onboarding/offer/[selector]` shows the product, business, locations, included services, cadence, price, tax treatment, total, the agreement, and the cancellation text. Complete explains that both Telloya and Relaunch Guard are included and that Guard is not active.
+`/portal/onboarding/offer/[selector]` shows the Telloya tier, business, locations, included services, included minutes, recurring base charge, optional Guard coverage and price, additional-usage policy, cadence, tax treatment, total, the agreement, and the cancellation text. The stored tax fact is inclusive, exclusive, or not applicable. The page calls that applicable tax and does not rename it VAT. Guard is described as optional coverage and is not described as active.
 
 Accept offer is shown only when `CUSTOMER_COMMERCIAL_OFFER_ACCEPT_ENABLED` is exactly `true`, after the terms are on the page. The consent boxes start unchecked. A successful acceptance returns to the same offer, which is then a read-only accepted record. Setup progress says Offer accepted and explains that payment and service setup follow separately.
 

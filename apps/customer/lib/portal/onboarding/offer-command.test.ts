@@ -40,6 +40,19 @@ const accept = {
   agreementAccepted: true,
   recurringConsent: true,
   confirmations: { business_authority: true },
+  conditions: {
+    tier: "Growth",
+    includedMinutes: 300,
+    minutesRollover: false,
+    baseAmountMinor: 4900,
+    guardIncluded: false,
+    guardUnitMinor: null,
+    guardQuantity: 0,
+    overagePermitted: true,
+    overageRateMinor: 25,
+    overageOptIn: false,
+    overageCapMinor: null,
+  },
 }
 
 beforeEach(() => {
@@ -79,6 +92,7 @@ describe("commercial offer acceptance command", () => {
         agreementAccepted: true,
         recurringConsent: true,
         confirmations: { business_authority: true },
+        conditions: accept.conditions,
       },
     })
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toMatch(/customerId|businessId|subscriptionId|agreementHash/)
@@ -89,6 +103,11 @@ describe("commercial offer acceptance command", () => {
     expect(unchecked.status).toBe(400)
     const missingConsent = await portalCommercialOfferCommand(req({ ...accept, recurringConsent: false }))
     expect(missingConsent.status).toBe(400)
+    const inventedCap = await portalCommercialOfferCommand(req({
+      ...accept,
+      conditions: { ...accept.conditions, overageOptIn: true, overageCapMinor: null },
+    }))
+    expect(inventedCap.status).toBe(400)
     expect(mocks.rpc).not.toHaveBeenCalled()
 
     mocks.rpc.mockResolvedValueOnce(null)

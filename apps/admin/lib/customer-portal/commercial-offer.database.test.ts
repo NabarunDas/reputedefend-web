@@ -125,6 +125,8 @@ async function offer(options: {
   terms?: string
   approvePlan?: boolean
   agreementStatus?: "APPROVED" | "DRAFT" | "none"
+  conditions?: "none"
+  overage?: number | null
   state?: string
   replica?: boolean
 }) {
@@ -186,14 +188,49 @@ async function offer(options: {
       [request, location],
     )
   }
+  const amount = options.amount ?? 4900
+  const guardQuantity = product === "COMPLETE" ? 1 : 0
+  const guardUnit = guardQuantity > 0 ? 999 : null
+  const base = amount - (guardUnit ?? 0) * guardQuantity
+  const commercial = {
+    tier: "Growth",
+    includedMinutes: 300,
+    minutesRollover: false,
+    baseAmountMinor: base,
+    guardIncluded: guardQuantity > 0,
+    guardUnitMinor: guardUnit,
+    guardQuantity,
+    overagePermitted: options.overage !== null,
+    overageRateMinor: options.overage === undefined ? 25 : options.overage,
+  }
+  if (options.conditions !== "none") {
+    await db.query(
+      `insert into public.commercial_plan_conditions(
+        id, plan_version_id, tier_code, tier_label, included_minutes, minutes_rollover,
+        base_amount_minor, guard_unit_amount_minor, overage_rate_minor, content_hash,
+        status, approved_by, approved_at
+      ) values (
+        $1, $2, 'GROWTH', 'Growth', 300, false, $3, $4, $5,
+        admin_private.commercial_plan_conditions_hash_v1('GROWTH', 300, false, $3, $4, $5),
+        'APPROVED', $6, now()
+      )`,
+      [randomUUID(), planId, base, guardUnit, commercial.overageRateMinor, actor],
+    )
+  }
   const version = await rows<{ record_version: number }>(
     `select record_version from public.commercial_subscriptions where id = $1`,
     [subscription],
   )
-  return { subscription, request, planId, terms, version: version[0].record_version, ref: options.ref }
+  return { subscription, request, planId, terms, version: version[0].record_version, ref: options.ref, conditions: commercial, amount }
 }
 
-function consent(prepared: { version: number; terms: string; amount?: number; cadence?: string }, recurring = true) {
+function consent(prepared: {
+  version: number
+  terms: string
+  amount?: number
+  cadence?: string
+  conditions: Record<string, unknown>
+}, recurring = true, overageOptIn = false, overageCapMinor: number | null = null) {
   return {
     offerVersion: prepared.version,
     priceMinor: prepared.amount ?? 4900,
@@ -204,6 +241,11 @@ function consent(prepared: { version: number; terms: string; amount?: number; ca
     agreementAccepted: true,
     recurringConsent: recurring,
     confirmations: { business_authority: true },
+    conditions: {
+      ...prepared.conditions,
+      overageOptIn,
+      overageCapMinor,
+    },
   }
 }
 
@@ -507,5 +549,97 @@ describe("customer commercial offer acceptance", () => {
       `select recurring_consent_at::text as consent from public.commercial_offer_acceptances`,
     )
     expect(consentAt[0].consent).toBeNull()
+    const overage = await rows<{ opt: boolean; cap: number | null }>(
+      `select overage_opt_in as opt, overage_cap_minor as cap from public.commercial_offer_acceptances`,
+    )
+    expect(overage[0]).toEqual({ opt: false, cap: null })
+  })
+
+  it("shows the approved Telloya tier and records additional usage only with an explicit cap", async () => {
+    const prepared = await offer({ ref: "VC-26-MNUT37", amount: 7900 })
+    const seen = await read(alexSession, prepared.ref)
+    expect(seen).toMatchObject({
+      status: "ready",
+      product: "Telloya",
+      priceMinor: 7900,
+      conditions: {
+        tier: "Growth",
+        includedMinutes: 300,
+        minutesRollover: false,
+        baseAmountMinor: 7900,
+        guardIncluded: false,
+        guardQuantity: 0,
+        overagePermitted: true,
+        overageRateMinor: 25,
+      },
+    })
+    expect(JSON.stringify(seen)).not.toMatch(/overageOptIn|cus_|sub_/)
+    const refused = await command(alexSession, prepared.ref, consent(prepared, true, true, null))
+    expect(refused).toMatchObject({ status: "invalid" })
+    const accepted = await command(alexSession, prepared.ref, consent(prepared, true, true, 2000))
+    expect(accepted).toMatchObject({ status: "success", existing: false })
+    const stored = await rows<{ opt: boolean; cap: number; rate: number; stamp: string | null }>(
+      `select overage_opt_in as opt, overage_cap_minor as cap, overage_rate_minor as rate,
+              overage_consent_at::text as stamp
+       from public.commercial_offer_acceptances`,
+    )
+    expect(stored[0]).toMatchObject({ opt: true, cap: 2000, rate: 25 })
+    expect(stored[0].stamp).toBeTruthy()
+    const changedCap = await command(alexSession, prepared.ref, consent(prepared, true, true, 3000))
+    expect(changedCap).toMatchObject({ status: "conflict" })
+    expect((await sideEffects()).payments).toBe(0)
+  })
+
+  it("keeps a plan retired before acceptance from being accepted", async () => {
+    const prepared = await offer({ ref: "VC-26-RETR42" })
+    await db.query(
+      `update public.plan_versions
+       set status = 'RETIRED', retired_by = $2, retired_at = now()
+       where id = $1`,
+      [prepared.planId, actor],
+    )
+    const result = await command(alexSession, prepared.ref, consent(prepared))
+    expect(result).toMatchObject({ status: "superseded", offerRef: prepared.ref })
+    const state = await rows<{ state: string }>(
+      `select state from public.commercial_subscriptions where public_ref = $1`,
+      [prepared.ref],
+    )
+    expect(state[0].state).toBe("OFFERED")
+    expect((await sideEffects()).acceptances).toBe(0)
+  })
+
+  it("does not treat missing commercial conditions as an acceptable offer", async () => {
+    const prepared = await offer({
+      ref: "VC-26-CNDS45",
+      conditions: "none",
+      business: yard,
+      locations: [yardLoc],
+    })
+    const seen = await read(alexSession, prepared.ref)
+    expect(seen).toMatchObject({ status: "conditions_pending", product: "Telloya" })
+    expect(JSON.stringify(seen)).not.toContain("includedMinutes")
+    const refused = await command(alexSession, prepared.ref, consent(prepared))
+    expect(refused).toMatchObject({ status: "conditions_pending" })
+    expect((await sideEffects()).acceptances).toBe(0)
+  })
+
+  it("keeps additional usage unauthorised unless the approved terms permit it and the customer sets a cap", async () => {
+    const prepared = await offer({ ref: "VC-26-NVG238", overage: null })
+    const seen = await read(alexSession, prepared.ref)
+    expect(seen).toMatchObject({
+      status: "ready",
+      conditions: { overagePermitted: false, overageRateMinor: null },
+    })
+    const opted = await command(alexSession, prepared.ref, consent(prepared, true, true, 2000))
+    expect(opted).toMatchObject({ status: "invalid" })
+    const accepted = await command(alexSession, prepared.ref, consent(prepared))
+    expect(accepted).toMatchObject({ status: "success", existing: false })
+    const stored = await rows<{ permitted: boolean; opt: boolean; cap: number | null; rate: number | null }>(
+      `select overage_permitted as permitted, overage_opt_in as opt,
+              overage_cap_minor as cap, overage_rate_minor as rate
+       from public.commercial_offer_acceptances`,
+    )
+    expect(stored[0]).toEqual({ permitted: false, opt: false, cap: null, rate: null })
+    expect((await sideEffects()).payments).toBe(0)
   })
 })

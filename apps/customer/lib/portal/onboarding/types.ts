@@ -64,7 +64,7 @@ function text(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null
   const trimmed = value.trim()
   if (trimmed.length < 1 || trimmed.length > max) return null
-  if (/cus_|sub_|si_|amount_minor|provider_|token_hash|stripe/i.test(trimmed)) return null
+  if (/\b(?:cus|sub|si|pi|cs|pm|sk|whsec|price)_[A-Za-z0-9]+\b|amount_minor|token_hash|provider_/i.test(trimmed)) return null
   return trimmed
 }
 
@@ -81,7 +81,7 @@ export function parseOnboardingStatus(value: unknown): { requests: OnboardingReq
   if (Object.keys(record).some(key => key !== "requests")) return null
   if (!Array.isArray(record.requests) || record.requests.length > 50) return null
   const serialised = JSON.stringify(record)
-  if (/cus_|sub_|si_|amount_minor|provider_|token_hash|stripe/i.test(serialised)) return null
+  if (/\b(?:cus|sub|si|pi|cs|pm|sk|whsec|price)_[A-Za-z0-9]+\b|amount_minor|token_hash|provider_/i.test(serialised)) return null
   const requests: OnboardingRequestView[] = []
   for (const entry of record.requests) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null

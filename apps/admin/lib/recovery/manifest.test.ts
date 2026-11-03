@@ -136,8 +136,8 @@ describe("the migration chain manifest", () => {
       safeToReplay: false,
     })
     const offerSql = readFileSync(new URL("20261103140000_customer_commercial_offer_acceptance_v1.sql", directory), "utf8")
-    expect(offerSql.length).toBe(44629)
-    expect(createHash("sha256").update(offerSql).digest("hex")).toBe("e1f2725707a2424db56c69a7a02d1dfd952f95c48fb08c14f3ec24e00e27c7cd")
+    expect(offerSql.length).toBe(60883)
+    expect(createHash("sha256").update(offerSql).digest("hex")).toBe("8f9fbda50319486185648de6ebdeae0b433cba53215e1ba5be48460e2a268a76")
     expect(findMigration("20261103140000_customer_commercial_offer_acceptance_v1.sql")).toMatchObject({
       appliedToDev: false,
       containsDataChange: false,

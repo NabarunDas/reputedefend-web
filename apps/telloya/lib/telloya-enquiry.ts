@@ -283,6 +283,49 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
   return { valid: true, data }
 }
 
+/**
+ * Calculate the approximate length of the structured details field
+ * Used to enforce the 5,000 character database limit
+ */
+function calculateDetailsLength(data: TelloyaEnquiryInput): number {
+  const parts: string[] = []
+  
+  if (data.planTier) parts.push(`Plan tier: ${data.planTier}`)
+  if (data.guardInterested) parts.push(`Guard interested: Yes (${data.guardLocationCount || 0} locations)`)
+  
+  if (data.planTier === "custom") {
+    const customParts: string[] = []
+    if (data.customMonthlyMinutes) customParts.push(`Minutes: ${data.customMonthlyMinutes}/month`)
+    if (data.customMonthlyCalls) customParts.push(`Calls: ${data.customMonthlyCalls}/month`)
+    if (data.customPhoneNumbers) customParts.push(`Phone numbers: ${data.customPhoneNumbers}`)
+    if (data.customLocations) customParts.push(`Locations: ${data.customLocations}`)
+    if (data.customLanguages) customParts.push(`Languages: ${data.customLanguages}`)
+    if (customParts.length) parts.push(`Custom requirements:\n${customParts.join("\n")}`)
+    if (data.customRequirements) parts.push(`Additional requirements:\n${data.customRequirements}`)
+  }
+  
+  if (data.voicePreference || data.voiceAccent || data.primaryLanguage || data.speakingStyle || data.additionalLanguages) {
+    const voiceParts: string[] = []
+    if (data.voicePreference) voiceParts.push(`Voice: ${data.voicePreference}`)
+    if (data.voiceAccent) voiceParts.push(`Accent: ${data.voiceAccent}`)
+    if (data.primaryLanguage) voiceParts.push(`Primary language: ${data.primaryLanguage}`)
+    if (data.speakingStyle) voiceParts.push(`Speaking style: ${data.speakingStyle}`)
+    if (data.additionalLanguages) voiceParts.push(`Additional languages: ${data.additionalLanguages}`)
+    parts.push(`Voice preferences:\n${voiceParts.join("\n")}`)
+  }
+  
+  if (data.overageInterested) {
+    const cap = data.overageMonthlyCapGbp ? ` (cap: £${data.overageMonthlyCapGbp}/month)` : ""
+    parts.push(`Overage interested: Yes${cap}`)
+  }
+  
+  if (data.missedCallProblem) parts.push(`Missed call requirements:\n${data.missedCallProblem}`)
+  if (data.phoneSetup) parts.push(`Phone setup:\n${data.phoneSetup}`)
+  if (data.contactPreference) parts.push(`Contact preference:\n${data.contactPreference}`)
+  
+  return parts.join("\n\n").length || "No additional details provided.".length
+}
+
 export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaEnquiryFieldErrors {
   const errors: TelloyaEnquiryFieldErrors = {}
 
@@ -355,22 +398,38 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
   if (data.guardInterested === true) {
     if (!data.guardLocationCount || data.guardLocationCount < 1) {
       errors.guardLocationCount = "Please specify how many locations need Guard protection."
+    } else if (data.guardLocationCount > 999) {
+      errors.guardLocationCount = "Location count must be 999 or less."
     }
   }
 
-  // Custom plan validation - all required if planTier is custom
+  // Custom plan validation - minutes, numbers, locations required; calls optional
   if (data.planTier === "custom") {
     if (!data.customMonthlyMinutes || data.customMonthlyMinutes < 1) {
       errors.customMonthlyMinutes = "Please specify the monthly minutes you need."
+    } else if (data.customMonthlyMinutes > 1000000) {
+      errors.customMonthlyMinutes = "Monthly minutes must be 1,000,000 or less."
     }
-    if (!data.customMonthlyCalls || data.customMonthlyCalls < 1) {
-      errors.customMonthlyCalls = "Please specify the monthly calls you expect."
+    
+    // Monthly calls is optional (not all businesses track this)
+    if (data.customMonthlyCalls !== undefined && data.customMonthlyCalls !== null) {
+      if (data.customMonthlyCalls < 1) {
+        errors.customMonthlyCalls = "Monthly calls must be at least 1 if provided."
+      } else if (data.customMonthlyCalls > 100000) {
+        errors.customMonthlyCalls = "Monthly calls must be 100,000 or less."
+      }
     }
+    
     if (!data.customPhoneNumbers || data.customPhoneNumbers < 1) {
       errors.customPhoneNumbers = "Please specify how many phone numbers you need."
+    } else if (data.customPhoneNumbers > 999) {
+      errors.customPhoneNumbers = "Phone numbers must be 999 or less."
     }
+    
     if (!data.customLocations || data.customLocations < 1) {
       errors.customLocations = "Please specify how many locations you operate."
+    } else if (data.customLocations > 9999) {
+      errors.customLocations = "Locations must be 9,999 or less."
     }
   }
 
@@ -405,10 +464,14 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
     errors.additionalLanguages = `Please keep additional languages within ${telloyaEnquiryLimits.additionalLanguages} characters.`
   }
 
-  // Overage validation
-  if (data.overageInterested === true && data.overageMonthlyCapGbp) {
-    if (data.overageMonthlyCapGbp < 1) {
-      errors.overageMonthlyCapGbp = "Monthly cap must be at least £1."
+  // Overage validation (cap required when overageInterested is true)
+  if (data.overageInterested === true) {
+    if (data.overageMonthlyCapGbp === undefined || data.overageMonthlyCapGbp === null) {
+      errors.overageMonthlyCapGbp = "Please enter a monthly spending cap."
+    } else if (data.overageMonthlyCapGbp < 1) {
+      errors.overageMonthlyCapGbp = "Proposed monthly cap must be at least £1."
+    } else if (data.overageMonthlyCapGbp > 100000) {
+      errors.overageMonthlyCapGbp = "Proposed monthly cap must be £100,000 or less."
     }
   }
 
@@ -430,6 +493,14 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
   // Privacy acceptance
   if (!data.privacyAccepted) {
     errors.privacyAccepted = "Please confirm that you have read the privacy notice."
+  }
+
+  // Check structured details field length (database limit: 5,000 characters)
+  // This prevents silent truncation and ensures all customer input is preserved
+  const detailsLength = calculateDetailsLength(data)
+  if (detailsLength > 5000) {
+    // Generic error since this is a combined field - user needs to reduce text input somewhere
+    errors.customRequirements = "The combined length of your requirements and preferences exceeds the maximum allowed. Please reduce the length of your custom requirements or other text fields."
   }
 
   return errors

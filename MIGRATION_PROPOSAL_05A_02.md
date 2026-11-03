@@ -1,12 +1,12 @@
 # Migration proposal: Telloya Phase 05A-02 validation
 
-**Status:** draft review only. Do not apply to DEV or Production.
+**Status:** applied once to `profilerelaunch-dev`. Do not replay it. Do not apply it to Production.
 
 The canonical SQL is the single versioned migration:
 
 `supabase/migrations/20261103200518_telloya_enquiry_phase_05a_02_validation.sql`
 
-The recovery manifest records that file as pending. `appliedToDev` is false. `appliedMigrationHead` stays `20261103140000_customer_commercial_offer_acceptance_v1.sql`. Do not apply `20261103200518` to DEV or Production.
+The verified DEV ledger contains 100 entries and ends at `20261103200518`. The canonical version is recorded once. The applied SQL MD5 is `ce8975868e0727760bb283a99b2f5dc9`. The repository file is 10,317 characters and its SHA-256 is `d2b402acd545a05b251cffb61c0a0a4b8028cb220ead5525ff122cbf97cfb0ab`. The recovery manifest records `appliedToDev: true`. `appliedMigrationHead` is this file. Production remains at `20261014170000`. Telloya feature flags remain false.
 
 Executable assertions live outside the migration directory:
 
@@ -55,7 +55,7 @@ Optional fields are validated whenever they are supplied, including when the rel
 
 ## Rollback
 
-Do not edit `20261102200000`. A later rollback migration, if one is approved, would `CREATE OR REPLACE` the function body from that applied migration. No rollback migration is included here, so applying this file is a one-way proposal until that separate file exists.
+Do not edit `20261102200000` or this applied file. Do not replay `20261103200518`. A later rollback migration, if one is approved, would `CREATE OR REPLACE` the function body from `20261102200000`. No rollback migration is included here.
 
 ## Tests
 

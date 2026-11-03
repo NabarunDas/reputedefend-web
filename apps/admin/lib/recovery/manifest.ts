@@ -1401,7 +1401,7 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Telloya Phase 05A-02 enquiry validation. Applied once to profilerelaunch-dev.
-    // The verified DEV ledger contains 100 entries and ends at 20261103200518.
+    // When it was applied, the verified DEV ledger contained 100 entries and ended at 20261103200518.
     // The previous ledger contained 99 entries and ended at 20261103140000.
     // Canonical version recorded once. Repository file is 10,317 characters.
     // MD5 ce8975868e0727760bb283a99b2f5dc9.
@@ -1423,17 +1423,26 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Telloya enquiry validation", probe: "admin_private.valid_enquiry_v1" },
   },
   {
-    // Commercial payment preparation. Repository file only.
-    // The verified DEV ledger contains 100 entries and ends at 20261103200518.
-    // Do not apply 20261103213000 to DEV. Do not apply 20261103213000 to Production.
+    // Commercial payment preparation. Applied once to profilerelaunch-dev.
+    // The verified DEV ledger contains 101 entries and ends at 20261103213000.
+    // The previous ledger contained 100 entries and ended at 20261103200518.
+    // Canonical version recorded once. Repository file is 44,920 characters.
+    // MD5 8db49c31c5d8b41e93e3768017120137.
+    // SHA-256 8f4103468abc024f249d671fabea0e8587cb60093de3d7f5665f5c8f5bd90f8d.
+    // Payment-preparation functions and permissions were verified.
+    // Invalid-session and unknown-operation checks passed.
+    // No customer or payment records were created.
+    // Commercial feature flags remain OFF.
     // Schema and function changes only. containsDataChange stays false.
     // It does not collect a payment, create payment evidence, grant an entitlement,
-    // or activate a service. safeToReplay stays false.
+    // or activate a service.
+    // Do not replay 20261103213000. Do not apply 20261103213000 to Production.
+    // safeToReplay stays false.
     version: "20261103213000",
     filename: "20261103213000_customer_commercial_payment_preparation_v1.sql",
     step: "Customer commercial payment preparation",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Customer commercial payment preparation", probe: "public.customer_portal_commercial_payment_prepare_v1" },
@@ -1449,8 +1458,17 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261103200518`. The live DEV ledger contains 100 entries. The previous
- * head `20261103140000` had 99 entries. Telloya Phase 05A-02 validation was
+ * `20261103213000`. The live DEV ledger contains 101 entries. Commercial
+ * payment preparation was applied once to DEV. The repository file is
+ * 44,920 characters. MD5 8db49c31c5d8b41e93e3768017120137. SHA-256
+ * 8f4103468abc024f249d671fabea0e8587cb60093de3d7f5665f5c8f5bd90f8d.
+ * Schema and function changes only. containsDataChange is false.
+ * Payment-preparation functions and permissions were verified.
+ * Invalid-session and unknown-operation checks passed. No customer or
+ * payment records were created. Commercial feature flags remain OFF.
+ * Do not replay `20261103213000` or apply it to Production. The previous
+ * head `20261103200518` had 100 entries. The head before that,
+ * `20261103140000`, had 99 entries. Telloya Phase 05A-02 validation was
  * applied once to DEV. The repository file is 10,317 characters. MD5
  * ce8975868e0727760bb283a99b2f5dc9. SHA-256
  * d2b402acd545a05b251cffb61c0a0a4b8028cb220ead5525ff122cbf97cfb0ab.
@@ -1522,8 +1540,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` contains only `20261103213000`.
- * Do not apply 20261103213000 to DEV. Do not apply 20261103213000 to Production.
+ * applied and must not be replayed. `pendingMigrations()` is empty.
+ * `20261103213000` is already applied on DEV and must not be replayed.
+ * Do not apply 20261103213000 to Production.
  * `20261103200518` is already applied on DEV and must not be replayed.
  * Do not apply 20261103200518 to Production.
  * `20261103140000` is already applied on DEV and must not be replayed.

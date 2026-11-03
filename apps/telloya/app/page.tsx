@@ -198,7 +198,7 @@ export default function Home() {
           <div className={styles.planGrid}>
             {plans.tiers.map((tier) => (
               <article className={`${styles.planCard} ${tier.popular ? styles.popularCard : ""}`} key={tier.name}>
-                {tier.popular && <div className={styles.popularLabel}>Popular</div>}
+                {tier.popular && <div className={styles.popularLabel}>Recommended</div>}
                 <div className={styles.planPricing}>
                   <div className={styles.planPrice}>{tier.price}</div>
                   <div className={styles.planMinutes}>{tier.minutes}</div>

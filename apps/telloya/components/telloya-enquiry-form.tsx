@@ -332,16 +332,28 @@ export function TelloyaEnquiryForm({
     setDeliveryError(false)
     setStatusText("Submitting your enquiry.")
 
+    // Strict numeric conversion helpers - values already validated in validateStep()
+    const toInteger = (val: string | undefined): number | undefined => {
+      if (!val) return undefined
+      const num = Number(val)
+      return Number.isInteger(num) ? num : undefined
+    }
+    const toNumber = (val: string | undefined): number | undefined => {
+      if (!val) return undefined
+      const num = Number(val)
+      return Number.isFinite(num) ? num : undefined
+    }
+
     // Create payload to check if it has changed
     const payload: TelloyaEnquiryRequest = {
       product: values.product || "telloya",
       planTier: values.planTier,
       guardInterested: values.guardInterested,
-      guardLocationCount: values.guardLocationCount ? parseInt(values.guardLocationCount, 10) : undefined,
-      customMonthlyMinutes: values.customMonthlyMinutes ? parseInt(values.customMonthlyMinutes, 10) : undefined,
-      customMonthlyCalls: values.customMonthlyCalls ? parseInt(values.customMonthlyCalls, 10) : undefined,
-      customPhoneNumbers: values.customPhoneNumbers ? parseInt(values.customPhoneNumbers, 10) : undefined,
-      customLocations: values.customLocations ? parseInt(values.customLocations, 10) : undefined,
+      guardLocationCount: toInteger(values.guardLocationCount),
+      customMonthlyMinutes: toInteger(values.customMonthlyMinutes),
+      customMonthlyCalls: toInteger(values.customMonthlyCalls),
+      customPhoneNumbers: toInteger(values.customPhoneNumbers),
+      customLocations: toInteger(values.customLocations),
       customLanguages: values.customLanguages || undefined,
       customRequirements: values.customRequirements || undefined,
       voicePreference: values.voicePreference || undefined,
@@ -350,7 +362,7 @@ export function TelloyaEnquiryForm({
       speakingStyle: values.speakingStyle || undefined,
       additionalLanguages: values.additionalLanguages || undefined,
       overageInterested: values.overageInterested,
-      overageMonthlyCapGbp: values.overageMonthlyCapGbp ? parseFloat(values.overageMonthlyCapGbp) : undefined,
+      overageMonthlyCapGbp: toNumber(values.overageMonthlyCapGbp),
       businessName: values.businessName,
       country: values.country,
       trade: values.trade,

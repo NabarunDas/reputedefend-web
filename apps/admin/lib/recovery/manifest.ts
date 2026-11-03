@@ -1346,6 +1346,22 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Customer invitation dispatch", probe: "public.admin_customer_invitation_command_v1" },
   },
+  {
+    // Telloya enquiry infrastructure. Repository source only.
+    // Not applied to DEV. Do not apply it to Production. Do not replay it.
+    // Extends existing enquiries table with public_ref column and TY reference generation.
+    // Updates create_general_enquiry_v1 and Admin RPC functions backwards-compatibly.
+    // Schema and function changes only. containsDataChange stays false.
+    // safeToReplay stays false.
+    version: "20261102200000",
+    filename: "20261102200000_telloya_enquiry_infrastructure_v1.sql",
+    step: "Telloya enquiry infrastructure",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya enquiry persistence", probe: "public.generate_enquiry_public_ref" },
+  },
 ]
 
 /**

@@ -152,12 +152,14 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations()).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261102200000_telloya_enquiry_infrastructure_v1.sql",
+    ])
     expect(appliedMigrationHead.version).toBe("20261102110000")
     expect(appliedMigrationHead.containsDataChange).toBe(true)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -224,7 +226,8 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("The file inserts one communication template catalogue row and updates that row to APPROVED.")
     expect(supabase?.requirement).toContain("That INSERT and that UPDATE are DML outside a function body, so containsDataChange is true.")
     expect(supabase?.requirement).toContain("The catalogue change is not a customer, payment, subscription, invitation, communication, or session record.")
-    expect(migrationHead.containsDataChange).toBe(true)
+    // Check the applied DEV head, not the pending repository head
+    expect(appliedMigrationHead.containsDataChange).toBe(true)
     expect(supabase?.requirement).toContain("Do not apply 20261101190000 to Production")
     expect(supabase?.requirement).toContain("Do not apply 20261101180000 to Production")
     expect(supabase?.requirement).not.toContain("unapplied 20261031150000")

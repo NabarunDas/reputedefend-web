@@ -4,7 +4,7 @@ import {
   runtimeAllowsSimulation,
   runtimeMayUseLiveProvider,
   type EnquiryEmailConfig,
-} from "@/lib/enquiry-config"
+} from "./enquiry-config"
 import {
   customerAcknowledgementHtml,
   customerAcknowledgementSubject,
@@ -12,10 +12,10 @@ import {
   enquiryEmailHtml,
   enquiryEmailSubject,
   enquiryEmailText,
-} from "@/lib/enquiry-email"
-import type { EnquiryInput, EnquiryResult } from "@/lib/enquiry"
-import type { EnquiryEmailMessage, EnquiryProvider } from "@/lib/enquiry-provider"
-import { createResendEnquiryProvider } from "@/lib/providers/resend-enquiry-provider"
+} from "./enquiry-email"
+import type { EnquiryInput, EnquiryResult } from "./enquiry"
+import type { EnquiryEmailMessage, EnquiryProvider } from "./enquiry-provider"
+import { createResendEnquiryProvider } from "./providers/resend-enquiry-provider"
 
 export const ENQUIRY_UNAVAILABLE = "Enquiries are temporarily unavailable. Please try again shortly."
 export const ENQUIRY_SIMULATED_MESSAGE = "Development enquiry recorded. In production, this will only confirm after delivery."

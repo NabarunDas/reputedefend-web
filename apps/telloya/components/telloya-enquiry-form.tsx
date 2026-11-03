@@ -55,20 +55,23 @@ const STEP_TITLES = {
   4: "Review and submit",
 } as const
 
-export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnquiryCapabilities }) {
+export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capabilities?: TelloyaEnquiryCapabilities; initialProduct?: ProductInterest }) {
   const submissionEnabled = capabilities?.submissionEnabled ?? false
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
-  const [values, setValues] = useState<EnquiryValues>(INITIAL_VALUES)
+  const [values, setValues] = useState<EnquiryValues>({ ...INITIAL_VALUES, product: initialProduct })
   const [errors, setErrors] = useState<EnquiryFieldErrors>({})
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle")
   const [deliveryError, setDeliveryError] = useState(false)
   const [statusText, setStatusText] = useState("")
   const [enquiryRef, setEnquiryRef] = useState("")
+  const [copySuccess, setCopySuccess] = useState(false)
+  const [receiptEmailStatus, setReceiptEmailStatus] = useState<"sent" | "suppressed" | "unavailable" | "">("")
   const headingRef = useRef<HTMLHeadingElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
   const successRef = useRef<HTMLHeadingElement>(null)
   const formId = useId()
   const submissionKeyRef = useRef("")
+  const lastPayloadRef = useRef("")
   const [focusKey, setFocusKey] = useState(0)
   const focusWhat = useRef<"heading" | "summary" | "success">("heading")
 
@@ -82,6 +85,29 @@ export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnq
   function requestFocus(target: "heading" | "summary" | "success") {
     focusWhat.current = target
     setFocusKey((key) => key + 1)
+  }
+
+  async function copyReference() {
+    if (!enquiryRef) return
+    try {
+      await navigator.clipboard.writeText(enquiryRef)
+      setCopySuccess(true)
+      setTimeout(() => setCopySuccess(false), 2000)
+    } catch {
+      // Fallback for browsers without clipboard API
+      const input = document.createElement("input")
+      input.value = enquiryRef
+      document.body.appendChild(input)
+      input.select()
+      try {
+        document.execCommand("copy")
+        setCopySuccess(true)
+        setTimeout(() => setCopySuccess(false), 2000)
+      } catch {
+        // Silently fail
+      }
+      document.body.removeChild(input)
+    }
   }
 
   function update<K extends keyof EnquiryValues>(key: K, value: EnquiryValues[K]) {
@@ -121,7 +147,8 @@ export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnq
   }
 
   function continueToNext() {
-    const stepErrors = validateStep((step + 1) as 2 | 3 | 4)
+    // Validate only the current completed step before advancing
+    const stepErrors = validateStep(step)
     setErrors(stepErrors)
     if (Object.keys(stepErrors).length) {
       setDeliveryError(false)
@@ -169,29 +196,51 @@ export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnq
     setDeliveryError(false)
     setStatusText("Submitting your enquiry.")
 
-    if (!submissionKeyRef.current) {
-      submissionKeyRef.current = crypto.randomUUID()
+    // Create payload to check if it has changed
+    const payload: TelloyaEnquiryRequest = {
+      product: values.product,
+      businessName: values.businessName,
+      country: values.country,
+      trade: values.trade,
+      locations: values.locations,
+      websiteUrl: values.websiteUrl,
+      fullName: values.fullName,
+      email: values.email,
+      phone: values.phone,
+      missedCallProblem: values.missedCallProblem,
+      phoneSetup: values.phoneSetup,
+      contactPreference: values.contactPreference,
+      privacyAccepted: values.privacyAccepted,
+      source: "telloya",
+      submissionKey: "", // Will be set below
     }
 
-    try {
-      const payload: TelloyaEnquiryRequest = {
-        product: values.product,
-        businessName: values.businessName,
-        country: values.country,
-        trade: values.trade,
-        locations: values.locations,
-        websiteUrl: values.websiteUrl,
-        fullName: values.fullName,
-        email: values.email,
-        phone: values.phone,
-        missedCallProblem: values.missedCallProblem,
-        phoneSetup: values.phoneSetup,
-        contactPreference: values.contactPreference,
-        privacyAccepted: values.privacyAccepted,
-        source: "telloya",
-        submissionKey: submissionKeyRef.current,
-      }
+    // Generate canonical payload fingerprint (without submissionKey)
+    const payloadFingerprint = JSON.stringify({
+      product: payload.product,
+      businessName: payload.businessName,
+      country: payload.country,
+      trade: payload.trade,
+      locations: payload.locations,
+      websiteUrl: payload.websiteUrl,
+      fullName: payload.fullName,
+      email: payload.email,
+      phone: payload.phone,
+      missedCallProblem: payload.missedCallProblem,
+      phoneSetup: payload.phoneSetup,
+      contactPreference: payload.contactPreference,
+      privacyAccepted: payload.privacyAccepted,
+    })
 
+    // Generate new submission key only if payload changed, otherwise reuse for retry
+    if (!submissionKeyRef.current || lastPayloadRef.current !== payloadFingerprint) {
+      submissionKeyRef.current = crypto.randomUUID()
+      lastPayloadRef.current = payloadFingerprint
+    }
+
+    payload.submissionKey = submissionKeyRef.current
+
+    try {
       const res = await fetch("/api/telloya/enquiry", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -201,11 +250,22 @@ export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnq
       const json = await res.json() as TelloyaEnquiryResponse
 
       if (json.ok) {
-        setEnquiryRef(json.enquiryRef || "")
-        setStatus("success")
-        setStatusText("Your enquiry has been received.")
-        requestFocus("success")
-        return
+        // Require actual TY reference before showing success
+        if (json.enquiryRef && /^TY-\d\d-[A-HJ-NP-Z2-9]{6}$/.test(json.enquiryRef)) {
+          setEnquiryRef(json.enquiryRef)
+          setReceiptEmailStatus(json.receiptEmailStatus || "")
+          setStatus("success")
+          setStatusText("Your enquiry has been received.")
+          requestFocus("success")
+          return
+        } else {
+          // Success response without valid TY reference - treat as error
+          setStatus("idle")
+          setDeliveryError(true)
+          setStatusText("Unable to complete this enquiry right now.")
+          requestFocus("summary")
+          return
+        }
       }
 
       if (json.errors && Object.keys(json.errors).length) {
@@ -226,16 +286,50 @@ export function TelloyaEnquiryForm({ capabilities }: { capabilities?: TelloyaEnq
   }
 
   if (status === "success") {
+    const emailStatusMessage = receiptEmailStatus === "sent"
+      ? "A confirmation email has been accepted by the email provider. Please check your inbox and, if needed, your spam folder. Provider acceptance does not guarantee inbox delivery."
+      : receiptEmailStatus === "suppressed"
+        ? "No confirmation email was requested. Your enquiry is safely recorded."
+        : receiptEmailStatus === "unavailable"
+          ? "We could not send a confirmation email, but your enquiry is safely recorded. Please keep this reference."
+          : ""
+    
     return (
       <div className={styles.success} role="status">
-        <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>Thank you — we have received your enquiry</h2>
+        <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>
+          Thank you — we have received your enquiry
+        </h2>
         {enquiryRef && (
-          <>
+          <div className={styles.refGroup}>
             <p className={styles.refLabel}>Enquiry reference</p>
-            <p className={styles.refValue}>{enquiryRef}</p>
-          </>
+            <div className={styles.refRow}>
+              <p className={styles.refValue}>{enquiryRef}</p>
+              <button 
+                type="button" 
+                onClick={copyReference}
+                className={styles.copyButton}
+                aria-label={copySuccess ? "Reference copied" : "Copy reference"}
+              >
+                {copySuccess ? (
+                  <>
+                    <Check size={16} aria-hidden="true" /> Copied
+                  </>
+                ) : (
+                  <>Copy</>
+                )}
+              </button>
+            </div>
+          </div>
         )}
-        <p>Your request is safely recorded. Our team will review the details and get in touch soon.</p>
+        <p className={styles.successBody}>
+          Your request is safely recorded. Our team will review the details and get in touch soon.
+        </p>
+        <p className={styles.successNote}>
+          Please keep this reference handy so we can find your enquiry quickly if you contact us.
+        </p>
+        {emailStatusMessage && (
+          <p className={styles.successNote}>{emailStatusMessage}</p>
+        )}
       </div>
     )
   }

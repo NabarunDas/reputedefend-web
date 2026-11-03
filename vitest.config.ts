@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL(".", import.meta.url)),
+      "@shared": fileURLToPath(new URL("./lib", import.meta.url)),
       "server-only": fileURLToPath(new URL("./test/server-only-stub.ts", import.meta.url)),
     },
   },

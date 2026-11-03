@@ -36,6 +36,8 @@ export type TelloyaEnquiryResponse = {
   ok: boolean
   message?: string
   enquiryRef?: string
+  receiptEmailSent?: boolean
+  receiptEmailStatus?: "sent" | "suppressed" | "unavailable"
   errors?: Record<string, string>
   code?: string
 }

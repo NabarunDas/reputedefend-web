@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto"
-import { readSupabaseConfig } from "@/lib/supabase/config"
-import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { readSupabaseConfig } from "./supabase/config"
+import { createSupabaseServerClient } from "./supabase/server"
 
 const WINDOW_MS = 10 * 60 * 1000
 const MAX_REQUESTS = 8

@@ -1,12 +1,12 @@
-import { brandName } from "@/lib/brand"
-import { renderCustomerEmail } from "@/lib/email/customer-message"
+import { brandName } from "./brand"
+import { renderCustomerEmail } from "./email/customer-message"
 import {
   CASE_SERVICES,
   CONTACT_SUBJECTS,
   GENERAL_SERVICE_OPTIONS,
   caseServiceLabel,
   type EnquiryInput,
-} from "@/lib/enquiry"
+} from "./enquiry"
 
 function brandedSubject(rest: string) {
   return `[${brandName}] ${rest}`

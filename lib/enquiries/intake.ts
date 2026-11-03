@@ -1,20 +1,30 @@
 import "server-only"
-import { readEnquiryEmailConfig, runtimeAllowsSimulation, runtimeMayUseLiveProvider, type EnquiryEmailConfig } from "@/lib/enquiry-config"
-import { buildInternalEnquiryMessage, buildCustomerAcknowledgementMessage, ENQUIRY_UNAVAILABLE } from "@/lib/enquiry-delivery"
-import type { EnquiryInput, EnquiryResult } from "@/lib/enquiry"
-import type { EnquiryProvider } from "@/lib/enquiry-provider"
-import { createResendEnquiryProvider } from "@/lib/providers/resend-enquiry-provider"
-import { readSupabaseConfig } from "@/lib/supabase/config"
-import { createSupabaseServerClient } from "@/lib/supabase/server"
-import type { Json } from "@/lib/supabase/database"
-export type EnquiryReceipt = { status: "created" | "existing" | "conflict" | "invalid"; id?: string; attempt?: string; sendAck?: boolean }
+import { readEnquiryEmailConfig, runtimeAllowsSimulation, runtimeMayUseLiveProvider, type EnquiryEmailConfig } from "../enquiry-config"
+import { buildInternalEnquiryMessage, buildCustomerAcknowledgementMessage, ENQUIRY_UNAVAILABLE } from "../enquiry-delivery"
+import type { EnquiryInput, EnquiryResult } from "../enquiry"
+import type { EnquiryProvider, EnquiryEmailMessage } from "../enquiry-provider"
+import { createResendEnquiryProvider } from "../providers/resend-enquiry-provider"
+import { readSupabaseConfig } from "../supabase/config"
+import { createSupabaseServerClient } from "../supabase/server"
+import type { Json } from "../supabase/database"
+export type EnquiryReceipt = { status: "created" | "existing" | "conflict" | "invalid"; id?: string; attempt?: string; sendAck?: boolean; enquiryRef?: string }
 type DeliveryStatus = "SENT" | "FAILED" | "UNKNOWN" | "SKIPPED"
+export type CustomEmailBuilder = {
+  buildInternal: (data: EnquiryInput, config: EnquiryEmailConfig, submittedAt: Date, ref?: string) => EnquiryEmailMessage
+  buildCustomerAck?: (data: EnquiryInput, config: EnquiryEmailConfig, ref?: string) => EnquiryEmailMessage
+}
 export type GeneralIntakeOptions = {
   create?: (key: string, data: EnquiryInput, ack: boolean) => Promise<EnquiryReceipt>
   finish?: (id: string, attempt: string, internal: DeliveryStatus, ack: DeliveryStatus) => Promise<void>
   provider?: EnquiryProvider
   config?: EnquiryEmailConfig
   nodeEnv?: string
+  customEmailBuilder?: CustomEmailBuilder
+  /**
+   * Source-specific override for customer acknowledgement.
+   * When provided, overrides the global config.sendCustomerAck setting.
+   */
+  sendCustomerAck?: boolean
 }
 async function create(key: string, payload: EnquiryInput, ack: boolean): Promise<EnquiryReceipt> {
   const { data, error } = await createSupabaseServerClient().rpc("create_general_enquiry_v1", { p_key: key, p_data: payload as unknown as Json, p_ack: ack }).abortSignal(AbortSignal.timeout(8000))
@@ -39,29 +49,126 @@ async function send(provider: EnquiryProvider, message: Parameters<EnquiryProvid
 /** Persist first. Duplicate submissions never trigger another notification attempt. */
 export async function persistGeneralEnquiry(data: EnquiryInput, key: string, options: GeneralIntakeOptions = {}): Promise<EnquiryResult> {
   const config = options.config ?? readEnquiryEmailConfig(), nodeEnv = options.nodeEnv ?? process.env.NODE_ENV
+  // Use source-specific acknowledgement policy if provided, otherwise fall back to global config
+  const shouldSendAck = options.sendCustomerAck !== undefined ? options.sendCustomerAck : config.sendCustomerAck
+  
   if (!options.create && !readSupabaseConfig().ready) {
-    if (runtimeAllowsSimulation(nodeEnv)) return { ok: true, simulated: true, message: "Development simulation only. No enquiry has been saved or sent." }
+    // No simulation mode for public API - enquiry must be persisted before returning success
     return { ok: false, message: ENQUIRY_UNAVAILABLE }
   }
   let receipt: EnquiryReceipt
-  try { receipt = await (options.create ?? create)(key, data, config.sendCustomerAck) }
+  try { receipt = await (options.create ?? create)(key, data, shouldSendAck) }
   catch { return { ok: false, message: ENQUIRY_UNAVAILABLE } }
   if (receipt.status === "conflict" || receipt.status === "invalid") return { ok: false, message: "Please reload the form and submit your enquiry again." }
   if (receipt.status !== "created" && receipt.status !== "existing") return { ok: false, message: ENQUIRY_UNAVAILABLE }
-  const success = { ok: true, persisted: true, message: "Your enquiry has been received." }
-  if (receipt.status === "existing") return success
+  const success = { ok: true, persisted: true, message: "Your enquiry has been received.", enquiryRef: receipt.enquiryRef }
+  
+  // For existing enquiries, return success with actual stored email status
+  // Legacy ProfileRelaunch enquiries have no enquiryRef and expect minimal response
+  if (receipt.status === "existing") {
+    const result: EnquiryResult = {
+      ok: true,
+      persisted: true,
+      message: "Your enquiry has been received.",
+    }
+    
+    // Include reference if available (Telloya enquiries)
+    if (receipt.enquiryRef) {
+      result.enquiryRef = receipt.enquiryRef
+    }
+    
+    // Fetch stored email status for existing enquiries
+    try {
+      // Type assertion needed because enquiries table isn't in generated Supabase types
+      const client = createSupabaseServerClient() as unknown as {
+        from(table: string): {
+          select(columns: string): {
+            eq(column: string, value: string): {
+              single(): Promise<{ data: { ack_status: string } | null; error: unknown }>
+            }
+          }
+        }
+      }
+      
+      const { data: storedEnquiry } = await client
+        .from("enquiries")
+        .select("ack_status")
+        .eq("submission_key", key)
+        .single()
+      
+      if (storedEnquiry) {
+        // Map stored ack_status to response fields
+        const ackStatus = storedEnquiry.ack_status
+        if (ackStatus === "SENT") {
+          result.receiptEmailSent = true
+          result.receiptEmailStatus = "sent"
+        } else if (ackStatus === "SKIPPED") {
+          result.receiptEmailSent = false
+          result.receiptEmailStatus = "suppressed"
+        } else {
+          // FAILED, UNKNOWN, SENDING
+          result.receiptEmailSent = false
+          result.receiptEmailStatus = "unavailable"
+        }
+      }
+    } catch {
+      // If we can't fetch the status, omit it rather than returning incorrect data
+      // The enquiry itself exists and was received, which is the most important fact
+    }
+    
+    return result
+  }
+  
   // Any failure after the commit must leave the customer with a truthful receipt.
   if (!receipt.id || !receipt.attempt) return success
   let internal: DeliveryStatus = "FAILED", ack: DeliveryStatus = receipt.sendAck ? "FAILED" : "SKIPPED"
   try {
     const provider = options.provider ?? (config.ready && runtimeMayUseLiveProvider(nodeEnv) ? createResendEnquiryProvider(config.apiKey) : undefined)
     if (provider && config.ready) {
-      internal = await send(provider, buildInternalEnquiryMessage(data, config, new Date()))
-      if (receipt.sendAck && config.sendCustomerAck) ack = await send(provider, buildCustomerAcknowledgementMessage(data, config))
-      else ack = "SKIPPED"
+      const submittedAt = new Date()
+      // Generate stable idempotency keys based on enquiry ID and message type
+      const internalIdempotencyKey = receipt.id ? `${receipt.id}-internal` : undefined
+      const ackIdempotencyKey = receipt.id ? `${receipt.id}-customer-ack` : undefined
+      
+      // Use custom email builder if provided, otherwise use default
+      const internalMessage = options.customEmailBuilder 
+        ? options.customEmailBuilder.buildInternal(data, config, submittedAt, receipt.enquiryRef)
+        : buildInternalEnquiryMessage(data, config, submittedAt)
+      
+      // Add idempotency key to internal message
+      internal = await send(provider, { ...internalMessage, idempotencyKey: internalIdempotencyKey })
+      
+      if (receipt.sendAck && shouldSendAck) {
+        const ackMessage = options.customEmailBuilder?.buildCustomerAck
+          ? options.customEmailBuilder.buildCustomerAck(data, config, receipt.enquiryRef)
+          : buildCustomerAcknowledgementMessage(data, config)
+        // Add idempotency key to acknowledgement message
+        ack = await send(provider, { ...ackMessage, idempotencyKey: ackIdempotencyKey })
+      } else ack = "SKIPPED"
     }
   } catch { /* The saved enquiry remains actionable in the admin queue. */ }
   try { await (options.finish ?? finish)(receipt.id, receipt.attempt, internal, ack) }
   catch { console.error("[enquiry-intake] notification outcome could not be confirmed") }
-  return success
+  
+  // Return success with accurate email delivery status
+  const receiptEmailStatus: "sent" | "suppressed" | "unavailable" = 
+    ack === "SENT" ? "sent" 
+    : ack === "SKIPPED" ? "suppressed"
+    : "unavailable"
+  
+  // Build result, only including properties that have values
+  const result: EnquiryResult = {
+    ok: true,
+    persisted: true,
+    message: "Your enquiry has been received.",
+    receiptEmailSent: ack === "SENT",
+    receiptEmailStatus,
+  }
+  
+  // Only include enquiryRef if it exists (Telloya)
+  if (receipt.enquiryRef) {
+    result.enquiryRef = receipt.enquiryRef
+  }
+  
+  return result
 }

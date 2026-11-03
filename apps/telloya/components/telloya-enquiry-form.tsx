@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Mail } from "lucide-react"
 import styles from "./telloya-enquiry-form.module.css"
 import type { TelloyaEnquiryRequest, TelloyaEnquiryResponse, TelloyaEnquiryCapabilities } from "@/lib/enquiry-contract"
 import { legalIdentity } from "@/lib/legal"
-import { telloyaPlans, formatGbpPrice, formatMinutes, type TelloyaPlanTier } from "@/lib/pricing"
+import { telloyaPlans, relaunchGuardAddon, overagePolicy, formatGbpPrice, formatMinutes, type TelloyaPlanTier } from "@/lib/pricing"
 
 type PlanTierInterest = TelloyaPlanTier | ""
 type VoicePreferenceChoice = "female" | "male" | "no-preference" | ""
@@ -527,7 +527,7 @@ export function TelloyaEnquiryForm({
                     onChange={(e) => update("guardInterested", e.target.checked)}
                   />
                   <span>
-                    Add Relaunch Guard monitoring at £9.99/location/month
+                    Add Relaunch Guard monitoring at {formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)}/location/month
                   </span>
                 </label>
                 {values.guardInterested && (
@@ -623,7 +623,7 @@ export function TelloyaEnquiryForm({
                     onChange={(e) => update("guardInterested", e.target.checked)}
                   />
                   <span>
-                    Add Relaunch Guard monitoring at £9.99/location/month
+                    Add Relaunch Guard monitoring at {formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)}/location/month
                   </span>
                 </label>
                 {values.guardInterested && (
@@ -758,7 +758,7 @@ export function TelloyaEnquiryForm({
                   onChange={(e) => update("overageInterested", e.target.checked)}
                 />
                 <span>
-                  Interested in additional minutes at £0.25/minute if plan allowance exceeded
+                  Interested in additional minutes at {formatGbpPrice(overagePolicy.pricePerMinuteGbp)}/minute if plan allowance exceeded
                 </span>
               </label>
               {values.overageInterested && (

@@ -27,16 +27,32 @@ export const metadata: Metadata = {
 export default async function EnquirePage({
   searchParams,
 }: {
-  searchParams: Promise<{ product?: string | string[] }>
+  searchParams: Promise<{ plan?: string | string[]; product?: string | string[] }>
 }) {
   const capabilities = getEnquiryCapabilities()
   const params = await searchParams
   
-  // Parse product preselection from URL (e.g., ?product=telloya or ?product=complete)
+  // Parse plan preselection from URL
+  // NEW: ?plan=basic|growth|pro|custom (Phase 05A-02)
+  // LEGACY: ?product=telloya|complete (preserved for historical links)
+  const planParam = Array.isArray(params.plan) ? params.plan[0] : params.plan
   const productParam = Array.isArray(params.product) ? params.product[0] : params.product
-  const initialProduct = productParam === "telloya" || productParam === "complete" 
-    ? productParam 
-    : ""
+  
+  let initialPlanTier: "" | "basic" | "growth" | "pro" | "custom" = ""
+  let initialGuardInterested = false
+  
+  // New plan parameter takes precedence
+  if (planParam === "basic" || planParam === "growth" || planParam === "pro" || planParam === "custom") {
+    initialPlanTier = planParam
+  } 
+  // Legacy product parameter support
+  else if (productParam === "telloya") {
+    // Historical 'telloya' link: no plan preselection, user must choose
+    initialPlanTier = ""
+  } else if (productParam === "complete") {
+    // Historical 'complete' link: preselect Guard interest but require tier selection
+    initialGuardInterested = true
+  }
   
   return (
     <div className={styles.page}>
@@ -65,7 +81,7 @@ export default async function EnquirePage({
 
       <div className={styles.main}>
         <div className={styles.formColumn}>
-          <TelloyaEnquiryForm capabilities={capabilities} initialProduct={initialProduct} />
+          <TelloyaEnquiryForm capabilities={capabilities} initialPlanTier={initialPlanTier} initialGuardInterested={initialGuardInterested} />
           <aside className={styles.aside}>
             <section className={styles.process} aria-labelledby="next-title">
               <h2 id="next-title">What happens next</h2>

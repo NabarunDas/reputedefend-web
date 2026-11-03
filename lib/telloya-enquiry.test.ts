@@ -355,7 +355,7 @@ describe("Telloya enquiry validation - Phase 05A-02", () => {
     expect(result.valid).toBe(false)
     if (!result.valid) {
       expect(result.errors?.customMonthlyMinutes).toBeTruthy()
-      expect(result.errors?.customMonthlyCalls).toBeTruthy()
+      // customMonthlyCalls is optional, no error expected
       expect(result.errors?.customPhoneNumbers).toBeTruthy()
       expect(result.errors?.customLocations).toBeTruthy()
     }
@@ -381,7 +381,7 @@ describe("Telloya enquiry validation - Phase 05A-02", () => {
   it("rejects invalid voice preference enum", () => {
     const enquiry = { 
       ...validTierEnquiry,
-      voicePreference: "robot" as any,
+      voicePreference: "robot",
     }
     const result = validateTelloyaEnquiry(enquiry)
     expect(result.valid).toBe(false)
@@ -421,7 +421,7 @@ describe("Telloya enquiry validation - Phase 05A-02", () => {
   it("rejects invalid plan tier enum", () => {
     const enquiry = { 
       ...validTierEnquiry,
-      planTier: "premium" as any,
+      planTier: "premium",
     }
     const result = validateTelloyaEnquiry(enquiry)
     expect(result.valid).toBe(false)

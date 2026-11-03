@@ -9,14 +9,14 @@ export type VoicePreference = "female" | "male" | "no-preference" | ""
 export type SpeakingStyle = "friendly" | "professional" | "calm" | "no-preference" | ""
 
 export type TelloyaEnquiryRequest = {
-  // Product selection (legacy compatibility)
+  // Product selection (legacy compatibility - required for old submissions)
   product: "telloya" | "complete" | ""
   
-  // Plan tier selection
-  planTier: TelloyaPlanTier
+  // Plan tier selection (optional for backward compatibility with legacy product-only requests)
+  planTier?: TelloyaPlanTier
   
-  // Relaunch Guard add-on
-  guardInterested: boolean
+  // Relaunch Guard add-on (optional - defaults to false if not provided)
+  guardInterested?: boolean
   guardLocationCount?: number
   
   // Custom plan requirements (when planTier === "custom")

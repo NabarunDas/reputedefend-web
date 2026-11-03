@@ -159,20 +159,14 @@ function asBoolean(value: unknown): boolean | undefined {
 }
 
 function asPositiveNumber(value: unknown): number | undefined {
+  // Only accept actual numbers, reject strings to avoid silent parsing
   if (typeof value === "number" && value > 0 && Number.isFinite(value)) return value
-  if (typeof value === "string") {
-    const num = parseFloat(value)
-    if (num > 0 && Number.isFinite(num)) return num
-  }
   return undefined
 }
 
 function asPositiveInteger(value: unknown): number | undefined {
+  // Only accept actual numbers, reject strings to avoid silent parsing
   if (typeof value === "number" && Number.isInteger(value) && value > 0) return value
-  if (typeof value === "string") {
-    const num = parseInt(value, 10)
-    if (num > 0 && Number.isInteger(num)) return num
-  }
   return undefined
 }
 
@@ -206,6 +200,40 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
   // Validate boolean fields - API must receive strict boolean, not string
   if ("privacyAccepted" in input && typeof input.privacyAccepted !== "boolean") {
     return { valid: false, error: PROCESS_ERROR }
+  }
+  if ("guardInterested" in input && input.guardInterested != null && typeof input.guardInterested !== "boolean") {
+    return { valid: false, error: PROCESS_ERROR }
+  }
+  if ("overageInterested" in input && input.overageInterested != null && typeof input.overageInterested !== "boolean") {
+    return { valid: false, error: PROCESS_ERROR }
+  }
+
+  // Validate numeric fields - must be actual numbers, not strings
+  const numericFields = ["guardLocationCount", "customMonthlyMinutes", "customMonthlyCalls", "customPhoneNumbers", "customLocations", "overageMonthlyCapGbp"] as const
+  for (const key of numericFields) {
+    if (key in input && input[key] != null && typeof input[key] !== "number") {
+      return { valid: false, error: PROCESS_ERROR }
+    }
+  }
+
+  // Validate enum fields
+  if ("planTier" in input && input.planTier != null) {
+    const planTier = asString(input.planTier)
+    if (planTier && !(TELLOYA_PLAN_TIERS as readonly string[]).includes(planTier)) {
+      return { valid: false, error: PROCESS_ERROR }
+    }
+  }
+  if ("voicePreference" in input && input.voicePreference != null) {
+    const voicePreference = asString(input.voicePreference)
+    if (voicePreference && !(VOICE_PREFERENCES as readonly string[]).includes(voicePreference)) {
+      return { valid: false, error: PROCESS_ERROR }
+    }
+  }
+  if ("speakingStyle" in input && input.speakingStyle != null) {
+    const speakingStyle = asString(input.speakingStyle)
+    if (speakingStyle && !(SPEAKING_STYLES as readonly string[]).includes(speakingStyle)) {
+      return { valid: false, error: PROCESS_ERROR }
+    }
   }
 
   // Ensure source is telloya

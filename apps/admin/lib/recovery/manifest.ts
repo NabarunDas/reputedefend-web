@@ -1399,6 +1399,23 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Customer commercial offer acceptance", probe: "public.customer_portal_commercial_offer_v1" },
   },
+  {
+    // Telloya Phase 05A-02 enquiry validation. Draft proposal only.
+    // Not in the DEV ledger and not applied to Production.
+    // Do not apply 20261103200518 to DEV. Do not apply 20261103200518 to Production.
+    // CREATE OR REPLACE of admin_private.valid_enquiry_v1 only. Signature,
+    // volatility, search_path and grants stay as applied in 20261102200000.
+    // Schema and function changes only, so containsDataChange stays false.
+    // safeToReplay stays false.
+    version: "20261103200518",
+    filename: "20261103200518_telloya_enquiry_phase_05a_02_validation.sql",
+    step: "Telloya enquiry Phase 05A-02 validation",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya enquiry validation", probe: "admin_private.valid_enquiry_v1" },
+  },
 ]
 
 /**
@@ -1474,7 +1491,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` returns only
+ * `20261103200518_telloya_enquiry_phase_05a_02_validation.sql`. That file is a
+ * draft proposal. Do not apply 20261103200518 to DEV. Do not apply
+ * 20261103200518 to Production.
  * `20261103140000` is already applied on DEV and must not be replayed.
  * Do not apply 20261103140000 to Production.
  * Do not replay it. `20261103120000` is already applied on DEV and must not be replayed.

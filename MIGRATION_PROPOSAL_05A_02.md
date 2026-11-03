@@ -6,6 +6,8 @@ The canonical SQL is the single versioned migration:
 
 `supabase/migrations/20261103200518_telloya_enquiry_phase_05a_02_validation.sql`
 
+The recovery manifest records that file as pending. `appliedToDev` is false. `appliedMigrationHead` stays `20261103140000_customer_commercial_offer_acceptance_v1.sql`. Do not apply `20261103200518` to DEV or Production.
+
 Executable assertions live outside the migration directory:
 
 `supabase/tests/database/telloya-enquiry-phase-05a-02.validation.sql`

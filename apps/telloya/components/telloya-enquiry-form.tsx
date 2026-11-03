@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Mail } from "lucide-react"
 import styles from "./telloya-enquiry-form.module.css"
 import type { TelloyaEnquiryRequest, TelloyaEnquiryResponse, TelloyaEnquiryCapabilities } from "@/lib/enquiry-contract"
 import { legalIdentity } from "@/lib/legal"
-import { telloyaPlans, relaunchGuardAddon, overagePolicy, formatGbpPrice, formatMinutes, type TelloyaPlanTier } from "@/lib/pricing"
+import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes, type TelloyaPlanTier } from "@/lib/pricing"
 
 type PlanTierInterest = TelloyaPlanTier | ""
 type VoicePreferenceChoice = "female" | "male" | "no-preference" | ""
@@ -86,6 +86,24 @@ const INITIAL_VALUES: EnquiryValues = {
 }
 
 type EnquiryFieldErrors = Partial<Record<keyof EnquiryValues, string>>
+
+function strictWholeNumber(value: string | undefined, min: number, max: number): number | undefined | "invalid" {
+  const trimmed = value?.trim() ?? ""
+  if (!trimmed) return undefined
+  if (!/^\d+$/.test(trimmed)) return "invalid"
+  const parsed = Number(trimmed)
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) return "invalid"
+  return parsed
+}
+
+function strictAmount(value: string | undefined, min: number, max: number): number | undefined | "invalid" {
+  const trimmed = value?.trim() ?? ""
+  if (!trimmed) return undefined
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return "invalid"
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) return "invalid"
+  return parsed
+}
 
 const STEP_TITLES = {
   1: "Choose your plan",
@@ -188,78 +206,33 @@ export function TelloyaEnquiryForm({
         stepErrors.planTier = "Please select a plan."
       }
 
-      // Validate Guard location count if Guard is interested
       if (values.guardInterested) {
-        const guardCount = values.guardLocationCount?.trim()
-        if (!guardCount) {
-          stepErrors.guardLocationCount = "Please enter the number of locations."
-        } else {
-          const parsed = Number(guardCount)
-          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 999) {
-            stepErrors.guardLocationCount = "Please enter a whole number between 1 and 999."
-          }
-        }
+        const guardCount = strictWholeNumber(values.guardLocationCount, 1, 999)
+        if (guardCount === undefined) stepErrors.guardLocationCount = "Please enter the number of locations."
+        else if (guardCount === "invalid") stepErrors.guardLocationCount = "Please enter a whole number between 1 and 999."
       }
 
-      // Validate Custom plan requirements
       if (values.planTier === "custom") {
-        // Monthly minutes (required)
-        const minutes = values.customMonthlyMinutes?.trim()
-        if (!minutes) {
-          stepErrors.customMonthlyMinutes = "Please enter monthly minutes required."
-        } else {
-          const parsed = Number(minutes)
-          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1000000) {
-            stepErrors.customMonthlyMinutes = "Please enter a whole number between 1 and 1,000,000."
-          }
-        }
+        const minutes = strictWholeNumber(values.customMonthlyMinutes, 1, 1000000)
+        if (minutes === undefined) stepErrors.customMonthlyMinutes = "Please enter monthly minutes required."
+        else if (minutes === "invalid") stepErrors.customMonthlyMinutes = "Please enter a whole number between 1 and 1,000,000."
 
-        // Monthly calls (optional, but if provided must be valid)
-        const calls = values.customMonthlyCalls?.trim()
-        if (calls) {
-          const parsed = Number(calls)
-          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100000) {
-            stepErrors.customMonthlyCalls = "Please enter a whole number between 1 and 100,000."
-          }
-        }
+        const calls = strictWholeNumber(values.customMonthlyCalls, 1, 100000)
+        if (calls === "invalid") stepErrors.customMonthlyCalls = "Please enter a whole number between 1 and 100,000."
 
-        // Phone numbers (required)
-        const phones = values.customPhoneNumbers?.trim()
-        if (!phones) {
-          stepErrors.customPhoneNumbers = "Please enter the number of phone numbers."
-        } else {
-          const parsed = Number(phones)
-          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 999) {
-            stepErrors.customPhoneNumbers = "Please enter a whole number between 1 and 999."
-          }
-        }
+        const phones = strictWholeNumber(values.customPhoneNumbers, 1, 999)
+        if (phones === undefined) stepErrors.customPhoneNumbers = "Please enter the number of phone numbers."
+        else if (phones === "invalid") stepErrors.customPhoneNumbers = "Please enter a whole number between 1 and 999."
 
-        // Locations (required)
-        const locs = values.customLocations?.trim()
-        if (!locs) {
-          stepErrors.customLocations = "Please enter the number of locations."
-        } else {
-          const parsed = Number(locs)
-          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 9999) {
-            stepErrors.customLocations = "Please enter a whole number between 1 and 9,999."
-          }
-        }
-
-        // Custom requirements (optional text field, validated on server for length)
+        const locs = strictWholeNumber(values.customLocations, 1, 9999)
+        if (locs === undefined) stepErrors.customLocations = "Please enter the number of locations."
+        else if (locs === "invalid") stepErrors.customLocations = "Please enter a whole number between 1 and 9,999."
       }
 
-      // Validate overage spending cap if overage is interested
       if (values.overageInterested) {
-        const cap = values.overageMonthlyCapGbp?.trim()
-        if (!cap) {
-          stepErrors.overageMonthlyCapGbp = "Please enter a monthly spending cap."
-        } else {
-          const parsed = Number(cap)
-          // Allow decimal values for currency, but must be positive
-          if (isNaN(parsed) || parsed < 1 || parsed > 100000) {
-            stepErrors.overageMonthlyCapGbp = "Please enter an amount between £1 and £100,000."
-          }
-        }
+        const cap = strictAmount(values.overageMonthlyCapGbp, 1, 100000)
+        if (cap === undefined) stepErrors.overageMonthlyCapGbp = "Please enter a monthly spending cap."
+        else if (cap === "invalid") stepErrors.overageMonthlyCapGbp = "Please enter an amount between £1 and £100,000."
       }
     }
 
@@ -328,41 +301,58 @@ export function TelloyaEnquiryForm({
       return
     }
 
+    const guardLocationCount = values.guardInterested ? strictWholeNumber(values.guardLocationCount, 1, 999) : undefined
+    const customMonthlyMinutes = values.planTier === "custom" ? strictWholeNumber(values.customMonthlyMinutes, 1, 1000000) : undefined
+    const customMonthlyCalls = values.planTier === "custom" ? strictWholeNumber(values.customMonthlyCalls, 1, 100000) : undefined
+    const customPhoneNumbers = values.planTier === "custom" ? strictWholeNumber(values.customPhoneNumbers, 1, 999) : undefined
+    const customLocations = values.planTier === "custom" ? strictWholeNumber(values.customLocations, 1, 9999) : undefined
+    const overageMonthlyCapGbp = values.overageInterested ? strictAmount(values.overageMonthlyCapGbp, 1, 100000) : undefined
+    const numericErrors: EnquiryFieldErrors = {}
+    if (guardLocationCount === "invalid") numericErrors.guardLocationCount = "Please enter a whole number between 1 and 999."
+    if (customMonthlyMinutes === "invalid") numericErrors.customMonthlyMinutes = "Please enter a whole number between 1 and 1,000,000."
+    if (customMonthlyCalls === "invalid") numericErrors.customMonthlyCalls = "Please enter a whole number between 1 and 100,000."
+    if (customPhoneNumbers === "invalid") numericErrors.customPhoneNumbers = "Please enter a whole number between 1 and 999."
+    if (customLocations === "invalid") numericErrors.customLocations = "Please enter a whole number between 1 and 9,999."
+    if (overageMonthlyCapGbp === "invalid") numericErrors.overageMonthlyCapGbp = "Please enter an amount between £1 and £100,000."
+    if (
+      guardLocationCount === "invalid"
+      || customMonthlyMinutes === "invalid"
+      || customMonthlyCalls === "invalid"
+      || customPhoneNumbers === "invalid"
+      || customLocations === "invalid"
+      || overageMonthlyCapGbp === "invalid"
+    ) {
+      setErrors(numericErrors)
+      setDeliveryError(false)
+      setStatus("idle")
+      setStatusText("Please correct the highlighted fields before submitting.")
+      requestFocus("summary")
+      return
+    }
+
     setStatus("loading")
     setDeliveryError(false)
     setStatusText("Submitting your enquiry.")
 
-    // Strict numeric conversion helpers - values already validated in validateStep()
-    const toInteger = (val: string | undefined): number | undefined => {
-      if (!val) return undefined
-      const num = Number(val)
-      return Number.isInteger(num) ? num : undefined
-    }
-    const toNumber = (val: string | undefined): number | undefined => {
-      if (!val) return undefined
-      const num = Number(val)
-      return Number.isFinite(num) ? num : undefined
-    }
-
-    // Create payload to check if it has changed
+    // Create payload to check if it has changed. Inactive conditional numbers are omitted.
     const payload: TelloyaEnquiryRequest = {
       product: values.product || "telloya",
       planTier: values.planTier,
       guardInterested: values.guardInterested,
-      guardLocationCount: toInteger(values.guardLocationCount),
-      customMonthlyMinutes: toInteger(values.customMonthlyMinutes),
-      customMonthlyCalls: toInteger(values.customMonthlyCalls),
-      customPhoneNumbers: toInteger(values.customPhoneNumbers),
-      customLocations: toInteger(values.customLocations),
-      customLanguages: values.customLanguages || undefined,
-      customRequirements: values.customRequirements || undefined,
+      guardLocationCount,
+      customMonthlyMinutes,
+      customMonthlyCalls,
+      customPhoneNumbers,
+      customLocations,
+      customLanguages: values.planTier === "custom" ? values.customLanguages || undefined : undefined,
+      customRequirements: values.planTier === "custom" ? values.customRequirements || undefined : undefined,
       voicePreference: values.voicePreference || undefined,
       voiceAccent: values.voiceAccent || undefined,
       primaryLanguage: values.primaryLanguage || undefined,
       speakingStyle: values.speakingStyle || undefined,
       additionalLanguages: values.additionalLanguages || undefined,
       overageInterested: values.overageInterested,
-      overageMonthlyCapGbp: toNumber(values.overageMonthlyCapGbp),
+      overageMonthlyCapGbp,
       businessName: values.businessName,
       country: values.country,
       trade: values.trade,
@@ -540,6 +530,12 @@ export function TelloyaEnquiryForm({
     )
   }
 
+  const selectedPlan = telloyaPlans.find((plan) => plan.tier === values.planTier)
+  const guardLocations = strictWholeNumber(values.guardLocationCount, 1, 999)
+  const indicativeMonthlyTotal = selectedPlan?.monthlyPriceGbp != null && values.guardInterested && typeof guardLocations === "number"
+    ? calculateCombinedPrice(selectedPlan.monthlyPriceGbp, guardLocations)
+    : null
+
   return (
     <form className={styles.form} onSubmit={submitEnquiry} noValidate aria-busy={status === "loading"}>
       <div className={styles.progress}>
@@ -628,6 +624,11 @@ export function TelloyaEnquiryForm({
                     />
                   </Field>
                 )}
+                {indicativeMonthlyTotal && selectedPlan?.monthlyPriceGbp != null && (
+                  <p className={styles.sectionNote}>
+                    Indicative monthly total: {formatGbpPrice(indicativeMonthlyTotal)} ({selectedPlan.name} {formatGbpPrice(selectedPlan.monthlyPriceGbp)} + Guard {formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {Number(values.guardLocationCount)}). This estimate does not authorise billing.
+                  </p>
+                )}
               </div>
             )}
 
@@ -646,7 +647,7 @@ export function TelloyaEnquiryForm({
                       required
                     />
                   </Field>
-                  <Field id={`${formId}-customMonthlyCalls`} label="Expected calls per month" error={errors.customMonthlyCalls}>
+                  <Field id={`${formId}-customMonthlyCalls`} label="Expected calls per month" optional error={errors.customMonthlyCalls}>
                     <input
                       name="customMonthlyCalls"
                       type="number"
@@ -654,7 +655,6 @@ export function TelloyaEnquiryForm({
                       value={values.customMonthlyCalls}
                       onChange={(e) => update("customMonthlyCalls", e.target.value)}
                       placeholder="e.g., 200"
-                      required
                     />
                   </Field>
                 </div>
@@ -848,7 +848,7 @@ export function TelloyaEnquiryForm({
                 </span>
               </label>
               {values.overageInterested && (
-                <Field id={`${formId}-overageMonthlyCapGbp`} label="Proposed monthly cap (£)" optional error={errors.overageMonthlyCapGbp} hint="Maximum additional spend per month">
+                <Field id={`${formId}-overageMonthlyCapGbp`} label="Proposed monthly cap (£)" error={errors.overageMonthlyCapGbp} hint="Required when you are interested in additional minutes. This does not authorise billing.">
                   <input
                     name="overageMonthlyCapGbp"
                     type="number"
@@ -857,6 +857,7 @@ export function TelloyaEnquiryForm({
                     value={values.overageMonthlyCapGbp}
                     onChange={(e) => update("overageMonthlyCapGbp", e.target.value)}
                     placeholder="e.g., 50"
+                    required
                   />
                 </Field>
               )}
@@ -872,6 +873,9 @@ export function TelloyaEnquiryForm({
               <ReviewItem label="Plan" value={values.planTier ? telloyaPlans.find(p => p.tier === values.planTier)?.name || values.planTier : "Not selected"} />
               {values.guardInterested && (
                 <ReviewItem label="Relaunch Guard" value={`Yes (${values.guardLocationCount || 0} locations)`} />
+              )}
+              {indicativeMonthlyTotal && (
+                <ReviewItem label="Indicative monthly total" value={`${formatGbpPrice(indicativeMonthlyTotal)} estimate, not a charge`} />
               )}
               {values.planTier === "custom" && (
                 <>

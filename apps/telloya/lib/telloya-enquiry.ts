@@ -158,16 +158,16 @@ function asBoolean(value: unknown): boolean | undefined {
   return undefined
 }
 
-function asPositiveNumber(value: unknown): number | undefined {
-  // Only accept actual numbers, reject strings to avoid silent parsing
-  if (typeof value === "number" && value > 0 && Number.isFinite(value)) return value
-  return undefined
+function suppliedInteger(value: unknown): number | undefined | "invalid" {
+  if (value == null) return undefined
+  if (typeof value !== "number" || !Number.isInteger(value)) return "invalid"
+  return value
 }
 
-function asPositiveInteger(value: unknown): number | undefined {
-  // Only accept actual numbers, reject strings to avoid silent parsing
-  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value
-  return undefined
+function suppliedNumber(value: unknown): number | undefined | "invalid" {
+  if (value == null) return undefined
+  if (typeof value !== "number" || !Number.isFinite(value)) return "invalid"
+  return value
 }
 
 function isHttpUrl(value: string) {
@@ -208,11 +208,31 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
     return { valid: false, error: PROCESS_ERROR }
   }
 
-  // Validate numeric fields - must be actual numbers, not strings
-  const numericFields = ["guardLocationCount", "customMonthlyMinutes", "customMonthlyCalls", "customPhoneNumbers", "customLocations", "overageMonthlyCapGbp"] as const
-  for (const key of numericFields) {
-    if (key in input && input[key] != null && typeof input[key] !== "number") {
-      return { valid: false, error: PROCESS_ERROR }
+  const guardLocationCount = suppliedInteger(input.guardLocationCount)
+  const customMonthlyMinutes = suppliedInteger(input.customMonthlyMinutes)
+  const customMonthlyCalls = suppliedInteger(input.customMonthlyCalls)
+  const customPhoneNumbers = suppliedInteger(input.customPhoneNumbers)
+  const customLocations = suppliedInteger(input.customLocations)
+  const overageMonthlyCapGbp = suppliedNumber(input.overageMonthlyCapGbp)
+  if (
+    guardLocationCount === "invalid"
+    || customMonthlyMinutes === "invalid"
+    || customMonthlyCalls === "invalid"
+    || customPhoneNumbers === "invalid"
+    || customLocations === "invalid"
+    || overageMonthlyCapGbp === "invalid"
+  ) {
+    return {
+      valid: false,
+      error: "Please check the highlighted fields.",
+      errors: {
+        ...(guardLocationCount === "invalid" ? { guardLocationCount: "Please enter a whole number between 1 and 999." } : {}),
+        ...(customMonthlyMinutes === "invalid" ? { customMonthlyMinutes: "Please enter a whole number between 1 and 1,000,000." } : {}),
+        ...(customMonthlyCalls === "invalid" ? { customMonthlyCalls: "Please enter a whole number between 1 and 100,000." } : {}),
+        ...(customPhoneNumbers === "invalid" ? { customPhoneNumbers: "Please enter a whole number between 1 and 999." } : {}),
+        ...(customLocations === "invalid" ? { customLocations: "Please enter a whole number between 1 and 9,999." } : {}),
+        ...(overageMonthlyCapGbp === "invalid" ? { overageMonthlyCapGbp: "Please enter an amount between £1 and £100,000." } : {}),
+      },
     }
   }
 
@@ -254,11 +274,11 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
     product: normalizeTelloyaText(asString(input.product)) as TelloyaProduct,
     planTier: input.planTier ? (normalizeTelloyaText(asString(input.planTier)) as TelloyaPlanTier) : undefined,
     guardInterested: asBoolean(input.guardInterested),
-    guardLocationCount: asPositiveInteger(input.guardLocationCount),
-    customMonthlyMinutes: asPositiveInteger(input.customMonthlyMinutes),
-    customMonthlyCalls: asPositiveInteger(input.customMonthlyCalls),
-    customPhoneNumbers: asPositiveInteger(input.customPhoneNumbers),
-    customLocations: asPositiveInteger(input.customLocations),
+    guardLocationCount,
+    customMonthlyMinutes,
+    customMonthlyCalls,
+    customPhoneNumbers,
+    customLocations,
     customLanguages: input.customLanguages ? normalizeTelloyaText(asString(input.customLanguages)) : undefined,
     customRequirements: input.customRequirements ? normalizeTelloyaText(asString(input.customRequirements)) : undefined,
     voicePreference: input.voicePreference ? normalizeTelloyaText(asString(input.voicePreference)) as VoicePreference : undefined,
@@ -267,7 +287,7 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
     speakingStyle: input.speakingStyle ? normalizeTelloyaText(asString(input.speakingStyle)) as SpeakingStyle : undefined,
     additionalLanguages: input.additionalLanguages ? normalizeTelloyaText(asString(input.additionalLanguages)) : undefined,
     overageInterested: asBoolean(input.overageInterested),
-    overageMonthlyCapGbp: asPositiveNumber(input.overageMonthlyCapGbp),
+    overageMonthlyCapGbp,
     missedCallProblem: input.missedCallProblem ? normalizeTelloyaText(asString(input.missedCallProblem)) : undefined,
     phoneSetup: input.phoneSetup ? normalizeTelloyaText(asString(input.phoneSetup)) : undefined,
     contactPreference: input.contactPreference ? normalizeTelloyaText(asString(input.contactPreference)) : undefined,
@@ -394,43 +414,43 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
     errors.planTier = "Please select a valid plan."
   }
 
-  // Guard add-on validation
-  if (data.guardInterested === true) {
-    if (!data.guardLocationCount || data.guardLocationCount < 1) {
-      errors.guardLocationCount = "Please specify how many locations need Guard protection."
-    } else if (data.guardLocationCount > 999) {
-      errors.guardLocationCount = "Location count must be 999 or less."
+  // Guard count is bounded whenever it is supplied, including when Guard is not selected.
+  if (data.guardLocationCount !== undefined) {
+    if (!Number.isInteger(data.guardLocationCount) || data.guardLocationCount < 1 || data.guardLocationCount > 999) {
+      errors.guardLocationCount = "Location count must be a whole number from 1 to 999."
+    }
+  } else if (data.guardInterested === true) {
+    errors.guardLocationCount = "Please specify how many locations need Guard protection."
+  }
+
+  if (data.customMonthlyMinutes !== undefined) {
+    if (!Number.isInteger(data.customMonthlyMinutes) || data.customMonthlyMinutes < 1 || data.customMonthlyMinutes > 1000000) {
+      errors.customMonthlyMinutes = "Monthly minutes must be a whole number from 1 to 1,000,000."
+    }
+  } else if (data.planTier === "custom") {
+    errors.customMonthlyMinutes = "Please specify the monthly minutes you need."
+  }
+
+  if (data.customMonthlyCalls !== undefined) {
+    if (!Number.isInteger(data.customMonthlyCalls) || data.customMonthlyCalls < 1 || data.customMonthlyCalls > 100000) {
+      errors.customMonthlyCalls = "Monthly calls must be a whole number from 1 to 100,000."
     }
   }
 
-  // Custom plan validation - minutes, numbers, locations required; calls optional
-  if (data.planTier === "custom") {
-    if (!data.customMonthlyMinutes || data.customMonthlyMinutes < 1) {
-      errors.customMonthlyMinutes = "Please specify the monthly minutes you need."
-    } else if (data.customMonthlyMinutes > 1000000) {
-      errors.customMonthlyMinutes = "Monthly minutes must be 1,000,000 or less."
+  if (data.customPhoneNumbers !== undefined) {
+    if (!Number.isInteger(data.customPhoneNumbers) || data.customPhoneNumbers < 1 || data.customPhoneNumbers > 999) {
+      errors.customPhoneNumbers = "Phone numbers must be a whole number from 1 to 999."
     }
-    
-    // Monthly calls is optional (not all businesses track this)
-    if (data.customMonthlyCalls !== undefined && data.customMonthlyCalls !== null) {
-      if (data.customMonthlyCalls < 1) {
-        errors.customMonthlyCalls = "Monthly calls must be at least 1 if provided."
-      } else if (data.customMonthlyCalls > 100000) {
-        errors.customMonthlyCalls = "Monthly calls must be 100,000 or less."
-      }
+  } else if (data.planTier === "custom") {
+    errors.customPhoneNumbers = "Please specify how many phone numbers you need."
+  }
+
+  if (data.customLocations !== undefined) {
+    if (!Number.isInteger(data.customLocations) || data.customLocations < 1 || data.customLocations > 9999) {
+      errors.customLocations = "Locations must be a whole number from 1 to 9,999."
     }
-    
-    if (!data.customPhoneNumbers || data.customPhoneNumbers < 1) {
-      errors.customPhoneNumbers = "Please specify how many phone numbers you need."
-    } else if (data.customPhoneNumbers > 999) {
-      errors.customPhoneNumbers = "Phone numbers must be 999 or less."
-    }
-    
-    if (!data.customLocations || data.customLocations < 1) {
-      errors.customLocations = "Please specify how many locations you operate."
-    } else if (data.customLocations > 9999) {
-      errors.customLocations = "Locations must be 9,999 or less."
-    }
+  } else if (data.planTier === "custom") {
+    errors.customLocations = "Please specify how many locations you operate."
   }
 
   // Custom languages validation (optional, character limit)
@@ -464,15 +484,12 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
     errors.additionalLanguages = `Please keep additional languages within ${telloyaEnquiryLimits.additionalLanguages} characters.`
   }
 
-  // Overage validation (cap required when overageInterested is true)
-  if (data.overageInterested === true) {
-    if (data.overageMonthlyCapGbp === undefined || data.overageMonthlyCapGbp === null) {
-      errors.overageMonthlyCapGbp = "Please enter a monthly spending cap."
-    } else if (data.overageMonthlyCapGbp < 1) {
-      errors.overageMonthlyCapGbp = "Proposed monthly cap must be at least £1."
-    } else if (data.overageMonthlyCapGbp > 100000) {
-      errors.overageMonthlyCapGbp = "Proposed monthly cap must be £100,000 or less."
+  if (data.overageMonthlyCapGbp !== undefined) {
+    if (data.overageMonthlyCapGbp < 1 || data.overageMonthlyCapGbp > 100000) {
+      errors.overageMonthlyCapGbp = "Proposed monthly cap must be between £1 and £100,000."
     }
+  } else if (data.overageInterested === true) {
+    errors.overageMonthlyCapGbp = "Please enter a monthly spending cap."
   }
 
   // Missed call problem (optional)

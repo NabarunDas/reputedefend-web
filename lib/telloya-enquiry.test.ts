@@ -851,4 +851,36 @@ describe("Telloya enquiry regression tests", () => {
       expect(result.errors?.overageMonthlyCapGbp).toBeTruthy()
     }
   })
+
+  it("rejects explicit invalid numbers even when the related option is off", () => {
+    const base = {
+      planTier: "basic" as const,
+      guardInterested: false,
+      overageInterested: false,
+      businessName: "Bounds Business",
+      country: "UK",
+      trade: "Testing",
+      fullName: "Test User",
+      email: "bounds@test.com",
+      phone: "07700900000",
+      privacyAccepted: true,
+      source: "telloya" as const,
+    }
+
+    const negativeGuard = validateTelloyaEnquiry({ ...base, guardLocationCount: -2 })
+    expect(negativeGuard.valid).toBe(false)
+    if (!negativeGuard.valid) expect(negativeGuard.errors?.guardLocationCount).toBeTruthy()
+
+    const fractionalGuard = validateTelloyaEnquiry({ ...base, guardInterested: true, guardLocationCount: 1.5 })
+    expect(fractionalGuard.valid).toBe(false)
+    if (!fractionalGuard.valid) expect(fractionalGuard.errors?.guardLocationCount).toBeTruthy()
+
+    const hugeMinutes = validateTelloyaEnquiry({ ...base, customMonthlyMinutes: 999999999 })
+    expect(hugeMinutes.valid).toBe(false)
+    if (!hugeMinutes.valid) expect(hugeMinutes.errors?.customMonthlyMinutes).toBeTruthy()
+
+    const negativeCap = validateTelloyaEnquiry({ ...base, overageMonthlyCapGbp: -1 })
+    expect(negativeCap.valid).toBe(false)
+    if (!negativeCap.valid) expect(negativeCap.errors?.overageMonthlyCapGbp).toBeTruthy()
+  })
 })

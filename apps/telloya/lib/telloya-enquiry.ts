@@ -8,6 +8,15 @@ import { canonicalBusinessCountry } from "@shared/countries"
 export const TELLOYA_PRODUCTS = ["telloya", "complete", ""] as const
 export type TelloyaProduct = (typeof TELLOYA_PRODUCTS)[number]
 
+export const TELLOYA_PLAN_TIERS = ["basic", "growth", "pro", "custom", ""] as const
+export type TelloyaPlanTier = (typeof TELLOYA_PLAN_TIERS)[number]
+
+export const VOICE_PREFERENCES = ["female", "male", "no-preference", ""] as const
+export type VoicePreference = (typeof VOICE_PREFERENCES)[number]
+
+export const SPEAKING_STYLES = ["friendly", "professional", "calm", "no-preference", ""] as const
+export type SpeakingStyle = (typeof SPEAKING_STYLES)[number]
+
 export const telloyaEnquiryLimits = {
   fullName: 100,
   email: 254,
@@ -18,6 +27,12 @@ export const telloyaEnquiryLimits = {
   websiteUrl: 1000,
   phone: 40,
   product: 64,
+  planTier: 64,
+  customLanguages: 500,
+  customRequirements: 2000,
+  voiceAccent: 100,
+  primaryLanguage: 100,
+  additionalLanguages: 500,
   missedCallProblem: 5000,
   phoneSetup: 5000,
   contactPreference: 100,
@@ -37,8 +52,34 @@ export type TelloyaEnquiryInput = {
   email: string
   phone: string
 
-  // Product interest
+  // Product interest (legacy compatibility)
   product: TelloyaProduct
+  
+  // Plan tier selection
+  planTier: TelloyaPlanTier
+  
+  // Relaunch Guard add-on
+  guardInterested?: boolean
+  guardLocationCount?: number
+  
+  // Custom plan requirements
+  customMonthlyMinutes?: number
+  customMonthlyCalls?: number
+  customPhoneNumbers?: number
+  customLocations?: number
+  customLanguages?: string
+  customRequirements?: string
+  
+  // Voice and language preferences
+  voicePreference?: VoicePreference
+  voiceAccent?: string
+  primaryLanguage?: string
+  speakingStyle?: SpeakingStyle
+  additionalLanguages?: string
+  
+  // Overage interest
+  overageInterested?: boolean
+  overageMonthlyCapGbp?: number
 
   // Requirements
   missedCallProblem?: string
@@ -80,6 +121,14 @@ const STRING_FIELDS = [
   "websiteUrl",
   "phone",
   "product",
+  "planTier",
+  "customLanguages",
+  "customRequirements",
+  "voicePreference",
+  "voiceAccent",
+  "primaryLanguage",
+  "speakingStyle",
+  "additionalLanguages",
   "missedCallProblem",
   "phoneSetup",
   "contactPreference",

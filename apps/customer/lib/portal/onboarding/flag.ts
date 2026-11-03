@@ -31,3 +31,16 @@ export function commercialOfferReadEnabled() {
 export function commercialOfferAcceptEnabled() {
   return process.env.CUSTOMER_COMMERCIAL_OFFER_ACCEPT_ENABLED === "true"
 }
+
+/**
+ * Session-scoped commercial checkout preparation.
+ *
+ * Exactly "true" allows the payment-preparation command. Every other value
+ * hides the payment action and does not call the command. This flag does not
+ * choose a Stripe mode, override the provider lane, collect a payment, grant
+ * an entitlement, or activate a service. Preview and Production do not inherit
+ * a DEV value.
+ */
+export function commercialCheckoutEnabled() {
+  return process.env.CUSTOMER_COMMERCIAL_CHECKOUT_ENABLED === "true"
+}

@@ -3,7 +3,7 @@ import Stripe from "stripe"
 import { isStripeLiveSecret, isStripeTestSecret, paymentLane, resolvePaymentProviderMode, type PaymentEnv } from "./config"
 import { databaseLaneAgrees, type DatabasePaymentLane } from "./lane-agreement"
 import { GUARD_PRODUCT_NAME, normalisedCheckoutEmail, requireCheckoutPresentation } from "./checkout-presentation"
-import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata } from "./model"
+import { assertGuardScheduleSubscription, assertSafeCommercialMetadata, assertSafeGuardMetadata, assertSafeMetadata, commercialMetadata, guardMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, isCommercialMetadata, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata } from "./model"
 import { LiveStripeKeyError, PaymentsDisabledError, type PaymentProvider } from "./provider"
 import { trustedStripeUrl } from "./stripe-url"
 
@@ -299,11 +299,29 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
       return { id: voided.id, status: "void", voided: true, alreadyPaid: false, livemode: expectedLivemode }
     },
     async createRecurringPrice(input) {
-      const meta = { priceVersionId: input.priceVersionId, providerOperationId: input.providerOperationId }
-      assertSafeGuardMetadata(meta)
+      const commercial = input.commercial
+      const meta = commercial
+        ? commercialMetadata({
+          customerId: commercial.customerId,
+          commercialSubscriptionId: commercial.commercialSubscriptionId,
+          acceptanceId: commercial.acceptanceId,
+          providerOperationId: input.providerOperationId,
+        })
+        : { priceVersionId: input.priceVersionId, providerOperationId: input.providerOperationId }
+      if (commercial) assertSafeCommercialMetadata(meta)
+      else assertSafeGuardMetadata(meta)
+      if (commercial && (commercial.productName !== "Telloya" && commercial.productName !== "Complete")) {
+        throw new PaymentsDisabledError("Commercial price product is not approved.")
+      }
+      if (commercial && input.currency !== "GBP") {
+        throw new PaymentsDisabledError("Commercial price currency is not GBP.")
+      }
+      if (commercial && commercial.taxBehaviour !== "NOT_APPLICABLE") {
+        throw new PaymentsDisabledError("Commercial tax is not ready for secure payment.")
+      }
       const stripe = client(env)
       const product = await stripe.products.create({
-        name: GUARD_PRODUCT_NAME,
+        name: commercial ? commercial.productName : GUARD_PRODUCT_NAME,
         metadata: meta,
       }, { idempotencyKey: `${input.idempotencyKey}:product` })
       lane(product, "Stripe object")
@@ -313,18 +331,30 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
         recurring: { interval: "month" },
         product: product.id,
         metadata: meta,
+        ...(commercial ? { tax_behavior: "unspecified" as const } : {}),
       }, { idempotencyKey: input.idempotencyKey })
       lane(price, "Stripe object")
       if (price.unit_amount !== input.amountMinor || (price.currency || "").toLowerCase() !== "gbp" || price.type !== "recurring") {
-        throw new PaymentsDisabledError("Stripe Price does not match the approved Guard amount.")
+        throw new PaymentsDisabledError(commercial
+          ? "Stripe Price does not match the approved commercial amount."
+          : "Stripe Price does not match the approved Guard amount.")
       }
       return { productId: product.id, priceId: price.id, amountMinor: input.amountMinor, livemode: expectedLivemode }
     },
     async createSubscriptionCheckout(input) {
-      const meta = guardMetadata(input.metadata)
-      assertSafeGuardMetadata(meta)
-      if (input.trialEnd != null && !isStripeTrialEndAllowed(input.trialEnd)) {
-        throw new PaymentsDisabledError("Delayed Guard Checkout requires a Stripe trial_end at least 48 hours in the future.")
+      let meta: Record<string, string>
+      let commercial = false
+      if (isCommercialMetadata(input.metadata)) {
+        commercial = true
+        meta = commercialMetadata(input.metadata)
+        assertSafeCommercialMetadata(meta)
+        if (input.trialEnd != null) throw new PaymentsDisabledError("Commercial Checkout does not start a trial.")
+      } else {
+        meta = guardMetadata(input.metadata)
+        assertSafeGuardMetadata(meta)
+        if (input.trialEnd != null && !isStripeTrialEndAllowed(input.trialEnd)) {
+          throw new PaymentsDisabledError("Delayed Guard Checkout requires a Stripe trial_end at least 48 hours in the future.")
+        }
       }
       const session = await client(env).checkout.sessions.create({
         mode: "subscription",
@@ -338,6 +368,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
           ...(input.trialEnd ? { trial_end: input.trialEnd } : {}),
         },
         metadata: meta,
+        ...(commercial ? { automatic_tax: { enabled: false } } : {}),
       }, { idempotencyKey: input.idempotencyKey })
       lane(session, "Stripe object")
       return { id: session.id, url: requireCheckoutUrl(session.url), mode: "subscription", amountMinor: 0, livemode: expectedLivemode }

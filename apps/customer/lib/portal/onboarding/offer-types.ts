@@ -58,10 +58,18 @@ export type PricedOffer = {
 }
 
 export type ReadyOffer = PricedOffer & { status: "ready"; offerVersion: number }
+export type CommercialPaymentReadiness = {
+  state: "preparing" | "started" | "unsupported"
+  cadence: OfferCadence
+  totalMinor: number
+  guardChargeMinor: number | null
+}
+
 export type AcceptedOffer = Omit<PricedOffer, "conditions"> & {
   status: "accepted"
   acceptedAt: string
   conditions: AcceptedConditions
+  payment?: CommercialPaymentReadiness
 }
 
 export type LimitedOffer = {
@@ -236,6 +244,35 @@ function conditions(value: unknown, accepted: boolean): OfferConditions | Accept
   return { ...facts, overageOptIn: row.overageOptIn, overageCapMinor }
 }
 
+const PAYMENT_STATES = new Set(["preparing", "started", "unsupported"])
+const PAYMENT_KEYS = ["state", "cadence", "totalMinor", "guardChargeMinor"]
+
+function paymentReadiness(
+  value: unknown,
+  cadence: OfferCadence,
+  totalMinor: number,
+  commercial: AcceptedConditions,
+): CommercialPaymentReadiness | null {
+  const row = record(value)
+  if (!row || !exactKeys(row, PAYMENT_KEYS)) return null
+  if (typeof row.state !== "string" || !PAYMENT_STATES.has(row.state)) return null
+  if (row.cadence !== cadence) return null
+  const total = money(row.totalMinor)
+  if (total !== totalMinor) return null
+  const expectedGuard = commercial.guardIncluded && commercial.guardUnitMinor != null
+    ? commercial.guardUnitMinor * commercial.guardQuantity
+    : null
+  if (expectedGuard == null) {
+    if (row.guardChargeMinor !== null) return null
+  } else if (row.guardChargeMinor !== expectedGuard) return null
+  return {
+    state: row.state as CommercialPaymentReadiness["state"],
+    cadence,
+    totalMinor,
+    guardChargeMinor: expectedGuard,
+  }
+}
+
 export function parseCommercialOffer(value: unknown): Exclude<CommercialOfferRead, { status: "unauthenticated" }> | null {
   const row = record(value)
   if (!row) return null
@@ -276,17 +313,22 @@ export function parseCommercialOffer(value: unknown): Exclude<CommercialOfferRea
     return { ...price, status: "ready", offerVersion }
   }
   if (status === "accepted") {
-    if (!exactKeys(row, [
+    const acceptedKeys = [
       "status", "offerRef", "product", "businessName", "locations", "services",
       "priceMinor", "currency", "taxBehaviour", "taxMinor", "totalMinor", "cadence", "recurring",
       "agreement", "conditions", "acceptedAt", "nextStep",
-    ])) return null
+    ]
+    const withPayment = exactKeys(row, [...acceptedKeys, "payment"])
+    if (!withPayment && !exactKeys(row, acceptedKeys)) return null
     const acceptedAt = text(row.acceptedAt, 40)
     const recorded = conditions(row.conditions, true)
     if (!acceptedAt || Number.isNaN(new Date(acceptedAt).getTime()) || !recorded || !("overageOptIn" in recorded)) return null
     const price = priced(row, offerRef, product as OfferProduct, businessName, nextStep, recorded)
     if (!price) return null
-    return { ...price, conditions: recorded, status: "accepted", acceptedAt }
+    if (!withPayment) return { ...price, conditions: recorded, status: "accepted", acceptedAt }
+    const payment = paymentReadiness(row.payment, price.cadence, price.totalMinor, recorded)
+    if (!payment) return null
+    return { ...price, conditions: recorded, status: "accepted", acceptedAt, payment }
   }
   return null
 }

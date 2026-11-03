@@ -53,6 +53,25 @@ describe("commercial offer parser", () => {
       conditions: { ...conditions, overageOptIn: false, overageCapMinor: null },
       acceptedAt: "2026-11-03T12:00:00.000Z",
     })?.status).toBe("accepted")
+    const withPayment = parseCommercialOffer({
+      ...accepted,
+      status: "accepted",
+      conditions: { ...conditions, guardIncluded: true, guardUnitMinor: 999, guardQuantity: 2, baseAmountMinor: 6902, overageOptIn: true, overageCapMinor: 2500 },
+      priceMinor: 8900,
+      totalMinor: 8900,
+      acceptedAt: "2026-11-03T12:00:00.000Z",
+      payment: { state: "preparing", cadence: "MONTH", totalMinor: 8900, guardChargeMinor: 1998 },
+    })
+    expect(withPayment?.status === "accepted" && withPayment.payment).toEqual({
+      state: "preparing", cadence: "MONTH", totalMinor: 8900, guardChargeMinor: 1998,
+    })
+    expect(parseCommercialOffer({
+      ...accepted,
+      status: "accepted",
+      conditions: { ...conditions, overageOptIn: false, overageCapMinor: null },
+      acceptedAt: "2026-11-03T12:00:00.000Z",
+      payment: { state: "started", cadence: "YEAR", totalMinor: 4900, guardChargeMinor: null },
+    })).toBeNull()
     expect(parseCommercialOffer({ status: "unavailable" })).toEqual({ status: "unavailable" })
     const authority = parseCommercialOffer({
       status: "unavailable",

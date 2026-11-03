@@ -103,6 +103,35 @@ describe("commercial offer presentation", () => {
     }} acceptEnabled />)
     expect(screen.getByRole("heading", { level: 1, name: "Offer accepted" })).toBeTruthy()
     expect(screen.getByText(/Nothing has been paid and the service has not started/)).toBeTruthy()
+    expect(screen.getByText(/Payment has not been completed/)).toBeTruthy()
+    expect(screen.getByText("Payment setup is being prepared.")).toBeTruthy()
+    expect(screen.getAllByText("£99.00").length).toBeGreaterThan(0)
     expect(screen.queryByRole("button", { name: "Accept offer" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Continue to secure payment" })).toBeNull()
+
+    cleanup()
+    render(<OfferView offer={{
+      ...priced,
+      status: "accepted",
+      acceptedAt: "2026-11-03T12:00:00.000Z",
+      conditions: { ...ready.conditions, overageOptIn: true, overageCapMinor: 2500 },
+      payment: { state: "preparing", cadence: "MONTH", totalMinor: 9900, guardChargeMinor: 999 },
+    }} paymentAction />)
+    expect(screen.getByRole("button", { name: "Continue to secure payment" })).toBeTruthy()
+    expect(screen.getByText("£9.99 for 1 location")).toBeTruthy()
+    expect(screen.queryByText("Payment setup is being prepared.")).toBeNull()
+    expect(document.body.innerHTML).not.toMatch(/cus_|sub_|price_|cs_/)
+
+    cleanup()
+    render(<OfferView offer={{
+      ...priced,
+      status: "accepted",
+      cadence: "YEAR",
+      acceptedAt: "2026-11-03T12:00:00.000Z",
+      conditions: { ...ready.conditions, overageOptIn: false, overageCapMinor: null },
+      payment: { state: "unsupported", cadence: "YEAR", totalMinor: 9900, guardChargeMinor: 999 },
+    }} paymentAction />)
+    expect(screen.getByText("This billing arrangement is not ready for secure payment.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Continue to secure payment" })).toBeNull()
   })
 })

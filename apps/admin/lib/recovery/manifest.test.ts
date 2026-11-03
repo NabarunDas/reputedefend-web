@@ -22,8 +22,8 @@ describe("the migration chain manifest", () => {
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261103200518_telloya_enquiry_phase_05a_02_validation.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261103213000_customer_commercial_payment_preparation_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
@@ -38,7 +38,9 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261103213000_customer_commercial_payment_preparation_v1.sql",
+    ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
@@ -94,8 +96,9 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Telloya Phase 05A-02 validation is the DEV-applied head and the repository head.
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
+    // Commercial payment preparation is the repository head and is not applied on DEV.
+    // Telloya Phase 05A-02 validation remains the DEV-applied head.
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     const onboardingSql = readFileSync(new URL("20261101180000_admin_commercial_onboarding_v1.sql", directory), "utf8")

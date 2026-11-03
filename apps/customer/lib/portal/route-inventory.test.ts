@@ -111,6 +111,7 @@ describe("customer portal route inventory", () => {
       "lib/portal/documents/handover.ts",
       "lib/portal/service/command.ts",
       "lib/portal/onboarding/offer-command.ts",
+      "lib/portal/onboarding/payment-command.ts",
       "lib/portal/payments/command.ts",
       "lib/portal/payments/receipt.ts",
       "lib/portal/payments/invoice.ts",

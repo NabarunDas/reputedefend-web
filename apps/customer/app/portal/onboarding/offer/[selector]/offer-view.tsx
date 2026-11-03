@@ -3,6 +3,7 @@ import type { AcceptedOffer, CommercialOfferRead, PricedOffer, ReadyOffer } from
 
 type ShownOffer = ReadyOffer | AcceptedOffer
 import { AcceptOfferForm } from "./accept-form"
+import { ContinueToSecurePayment } from "./payment-form"
 
 function pounds(minor: number) {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(minor / 100)
@@ -133,7 +134,15 @@ export function OfferUnavailable({ message }: { message?: string }) {
   )
 }
 
-export function OfferView({ offer, acceptEnabled = commercialOfferAcceptEnabled() }: { offer: Exclude<CommercialOfferRead, { status: "unauthenticated" }>; acceptEnabled?: boolean }) {
+export function OfferView({
+  offer,
+  acceptEnabled = commercialOfferAcceptEnabled(),
+  paymentAction = false,
+}: {
+  offer: Exclude<CommercialOfferRead, { status: "unauthenticated" }>
+  acceptEnabled?: boolean
+  paymentAction?: boolean
+}) {
   if (offer.status === "unavailable") {
     return <OfferUnavailable message={offer.reason === "authority" ? offer.nextStep : undefined} />
   }
@@ -177,10 +186,34 @@ export function OfferView({ offer, acceptEnabled = commercialOfferAcceptEnabled(
       {offer.status === "conditions_pending" ? (
         <p className="onboarding-banner">The commercial terms for this offer are not available yet. It cannot be accepted until those terms are approved.</p>
       ) : null}
-      {accepted ? (
+      {offer.status === "accepted" ? (
         <section aria-labelledby="offer-recorded">
           <h2 id="offer-recorded">What happens next</h2>
-          <p>This offer is accepted{offer.acceptedAt && when(offer.acceptedAt) ? ` as of ${when(offer.acceptedAt)}` : ""}. Payment and service setup follow separately. Nothing has been paid and the service has not started.</p>
+          <p>This offer is accepted{offer.acceptedAt && when(offer.acceptedAt) ? ` as of ${when(offer.acceptedAt)}` : ""}. Payment has not been completed. Nothing has been paid and the service has not started.</p>
+          <dl className="offer-facts">
+            <div>
+              <dt>Contractual charge</dt>
+              <dd>{pounds(offer.totalMinor)}</dd>
+            </div>
+            <div>
+              <dt>Billing</dt>
+              <dd>{cadenceLabel(offer.cadence)}</dd>
+            </div>
+            {offer.conditions.guardIncluded && offer.conditions.guardUnitMinor != null ? (
+              <div>
+                <dt>Included Relaunch Guard</dt>
+                <dd>{pounds(offer.conditions.guardUnitMinor * offer.conditions.guardQuantity)} for {offer.conditions.guardQuantity === 1 ? "1 location" : `${offer.conditions.guardQuantity} locations`}</dd>
+              </div>
+            ) : null}
+          </dl>
+          {offer.payment?.state === "unsupported" ? (
+            <p className="onboarding-banner">This billing arrangement is not ready for secure payment.</p>
+          ) : paymentAction && (offer.payment?.state === "preparing" || offer.payment?.state === "started") ? (
+            <ContinueToSecurePayment selector={offer.offerRef} />
+          ) : (
+            <p className="onboarding-banner">Payment setup is being prepared.</p>
+          )}
+          <p className="onboarding-links"><a href="/portal/payments">Billing</a></p>
         </section>
       ) : null}
       {ready && acceptEnabled ? <AcceptOfferForm offer={offer} /> : null}

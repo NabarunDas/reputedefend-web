@@ -1422,6 +1422,22 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya enquiry validation", probe: "admin_private.valid_enquiry_v1" },
   },
+  {
+    // Commercial payment preparation. Repository file only.
+    // The verified DEV ledger contains 100 entries and ends at 20261103200518.
+    // Do not apply 20261103213000 to DEV. Do not apply 20261103213000 to Production.
+    // Schema and function changes only. containsDataChange stays false.
+    // It does not collect a payment, create payment evidence, grant an entitlement,
+    // or activate a service. safeToReplay stays false.
+    version: "20261103213000",
+    filename: "20261103213000_customer_commercial_payment_preparation_v1.sql",
+    step: "Customer commercial payment preparation",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Customer commercial payment preparation", probe: "public.customer_portal_commercial_payment_prepare_v1" },
+  },
 ]
 
 /**
@@ -1506,7 +1522,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` contains only `20261103213000`.
+ * Do not apply 20261103213000 to DEV. Do not apply 20261103213000 to Production.
  * `20261103200518` is already applied on DEV and must not be replayed.
  * Do not apply 20261103200518 to Production.
  * `20261103140000` is already applied on DEV and must not be replayed.

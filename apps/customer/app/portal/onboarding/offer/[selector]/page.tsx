@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { portalAvailable } from "@/lib/portal/config"
-import { commercialOfferReadEnabled } from "@/lib/portal/onboarding/flag"
+import { commercialCheckoutEnabled, commercialOfferReadEnabled } from "@/lib/portal/onboarding/flag"
+import { paymentLane, paymentsEnabled } from "../../../../../../../lib/payments/config"
 import { loadCommercialOffer } from "@/lib/portal/onboarding/offer-load"
 import { productsHubEnabled } from "@/lib/portal/products-hub"
 import { getPortalSession } from "@/lib/portal/session"
@@ -22,5 +23,11 @@ export default async function CommercialOfferPage({ params }: { params: Promise<
   const loaded = await loadCommercialOffer(selector)
   if (loaded.status === "unauthenticated") redirect("/login")
   if (loaded.status === "unavailable" && !loaded.reason) return <OfferUnavailable />
-  return <OfferView offer={loaded} />
+  const paymentAction = loaded.status === "accepted"
+    && commercialCheckoutEnabled()
+    && (paymentsEnabled() || paymentLane() === "local")
+    && loaded.cadence === "MONTH"
+    && loaded.taxBehaviour === "NOT_APPLICABLE"
+    && (loaded.payment?.state === "preparing" || loaded.payment?.state === "started")
+  return <OfferView offer={loaded} paymentAction={paymentAction} />
 }

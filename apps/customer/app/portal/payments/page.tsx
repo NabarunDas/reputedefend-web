@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { portalAvailable } from "@/lib/portal/config"
+import { loadCommercialPaymentNotices } from "@/lib/portal/onboarding/payment-notice"
 import { loadCustomerPayments } from "@/lib/portal/payments/queries"
 import { PaymentsUnavailable, PaymentsView } from "./payments-view"
 
@@ -10,5 +11,6 @@ export default async function CustomerPaymentsPage() {
   const loaded = await loadCustomerPayments()
   if (loaded.status === "unauthenticated") redirect("/login")
   if (loaded.status === "unavailable") return <PaymentsUnavailable />
-  return <PaymentsView cases={loaded.payments.cases} focused={false} />
+  const commercialNotices = await loadCommercialPaymentNotices()
+  return <PaymentsView cases={loaded.payments.cases} focused={false} commercialNotices={commercialNotices} />
 }

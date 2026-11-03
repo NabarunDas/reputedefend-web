@@ -3,6 +3,8 @@ import { validateTelloyaEnquiry } from "@/lib/telloya-enquiry"
 import { persistTelloyaEnquiry } from "@/lib/telloya-enquiry-intake"
 import { getEnquiryCapabilities } from "@/lib/enquiry-contract"
 import { legalIdentity } from "@/lib/legal"
+import { consumePublicRateLimit } from "@shared/enquiry-rate-limit"
+import { ENQUIRY_UNAVAILABLE } from "@shared/enquiry-delivery"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
@@ -73,6 +75,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { ok: false, message: "Invalid submission. Please reload the page and try again." },
         { status: 400 }
+      )
+    }
+
+    // Apply rate limiting to prevent abuse
+    const limit = await consumePublicRateLimit(request)
+    if (!limit.ok) {
+      return NextResponse.json(
+        { ok: false, message: ENQUIRY_UNAVAILABLE },
+        { status: limit.status }
       )
     }
 

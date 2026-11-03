@@ -101,7 +101,7 @@ function asString(value: unknown) {
 }
 
 function asAccepted(value: unknown) {
-  return value === true || value === "true" || value === "on" || value === "1"
+  return value === true
 }
 
 function isHttpUrl(value: string) {
@@ -131,8 +131,8 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
     }
   }
 
-  // Validate boolean fields
-  if ("privacyAccepted" in input && input.privacyAccepted != null && typeof input.privacyAccepted !== "boolean" && typeof input.privacyAccepted !== "string") {
+  // Validate boolean fields - API must receive strict boolean, not string
+  if ("privacyAccepted" in input && typeof input.privacyAccepted !== "boolean") {
     return { valid: false, error: PROCESS_ERROR }
   }
 

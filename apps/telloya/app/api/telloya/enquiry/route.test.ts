@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { POST } from "./route"
 import type { TelloyaEnquiryRequest } from "@/lib/enquiry-contract"
 import { legalIdentity } from "@/lib/legal"
@@ -116,67 +116,80 @@ describe("POST /api/telloya/enquiry", () => {
     expect(json.ok).toBe(false)
   })
 
-  it("should validate required fields", async () => {
-    const invalidPayload = {
-      product: "",
-      businessName: "",
-      country: "",
-      trade: "",
-      fullName: "",
-      email: "invalid-email",
-      phone: "",
-      privacyAccepted: false,
-      source: "telloya",
-      submissionKey: crypto.randomUUID(),
-    }
+  describe("input validation (when submissions enabled)", () => {
+    let originalEnv: string | undefined
 
-    const request = new Request("http://localhost:3000/api/telloya/enquiry", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(invalidPayload),
+    beforeEach(() => {
+      originalEnv = process.env.TELLOYA_ENQUIRY_ENABLED
+      process.env.TELLOYA_ENQUIRY_ENABLED = "true"
     })
 
-    const response = await POST(request)
-    const json = await response.json()
-
-    expect(json.ok).toBe(false)
-    expect(response.status).toBe(400)
-    expect(json.errors).toBeDefined()
-    expect(json.errors.product).toBeTruthy()
-    expect(json.errors.businessName).toBeTruthy()
-    expect(json.errors.email).toBeTruthy()
-  })
-
-  it("should reject oversized payloads", async () => {
-    const hugePayload = {
-      ...validPayload,
-      trade: "x".repeat(200000),
-    }
-
-    const request = new Request("http://localhost:3000/api/telloya/enquiry", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(hugePayload),
+    afterEach(() => {
+      process.env.TELLOYA_ENQUIRY_ENABLED = originalEnv
     })
 
-    const response = await POST(request)
-    const json = await response.json()
+    it("should validate required fields", async () => {
+      const invalidPayload = {
+        product: "",
+        businessName: "",
+        country: "",
+        trade: "",
+        fullName: "",
+        email: "invalid-email",
+        phone: "",
+        privacyAccepted: false,
+        source: "telloya",
+        submissionKey: crypto.randomUUID(),
+      }
 
-    expect(json.ok).toBe(false)
-    expect(response.status).toBe(413)
-  })
+      const request = new Request("http://localhost:3000/api/telloya/enquiry", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(invalidPayload),
+      })
 
-  it("should reject malformed JSON", async () => {
-    const request = new Request("http://localhost:3000/api/telloya/enquiry", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{ invalid json",
+      const response = await POST(request)
+      const json = await response.json()
+
+      expect(json.ok).toBe(false)
+      expect(response.status).toBe(400)
+      expect(json.errors).toBeDefined()
+      expect(json.errors.product).toBeTruthy()
+      expect(json.errors.businessName).toBeTruthy()
+      expect(json.errors.email).toBeTruthy()
     })
 
-    const response = await POST(request)
-    const json = await response.json()
+    it("should reject oversized payloads", async () => {
+      const hugePayload = {
+        ...validPayload,
+        trade: "x".repeat(200000),
+      }
 
-    expect(json.ok).toBe(false)
-    expect(response.status).toBe(400)
+      const request = new Request("http://localhost:3000/api/telloya/enquiry", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(hugePayload),
+      })
+
+      const response = await POST(request)
+      const json = await response.json()
+
+      expect(json.ok).toBe(false)
+      expect(response.status).toBe(413)
+    })
+
+    it("should reject malformed JSON", async () => {
+      const request = new Request("http://localhost:3000/api/telloya/enquiry", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{ invalid json",
+      })
+
+      const response = await POST(request)
+      const json = await response.json()
+
+      expect(json.ok).toBe(false)
+      expect(response.status).toBe(400)
+    })
   })
 })

@@ -39,6 +39,14 @@ export function telloyaCustomerAcknowledgement(ref: string) {
       { type: "paragraph", text: "Kind regards," },
       { type: "paragraph", text: "Telloya — a service operated by ProfileRelaunch Ltd" },
     ],
+    caseRef: ref,
+    brand: {
+      name: "Telloya",
+      tagline: "AI Receptionist — operated by ProfileRelaunch Ltd",
+      siteUrl: "https://telloya.com",
+      logoUrl: null,
+      referenceLabel: "Enquiry reference",
+    },
   })
 }
 

@@ -23,10 +23,21 @@ export type CustomerEmailBlock =
   | { type: "list"; title?: string; items: string[] }
   | { type: "button"; label: string; url: string }
 
+export type CustomerEmailBrand = {
+  name: string
+  tagline: string
+  siteUrl: string
+  logoUrl?: string | null
+  logoWidth?: number
+  logoHeight?: number
+  referenceLabel?: string
+}
+
 export type CustomerEmailContent = {
   title: string
   blocks: CustomerEmailBlock[]
   caseRef?: string | null
+  brand?: CustomerEmailBrand | null
 }
 
 function escapeHtml(value: string): string {
@@ -101,6 +112,7 @@ function blockHtml(block: CustomerEmailBlock): string | null {
 /**
  * Email-client HTML and the matching plain-text alternative.
  * Button addresses must already be server-generated action URLs or an authenticated case page, with no token.
+ * Optionally accepts brand overrides for Telloya or other services; defaults to ProfileRelaunch branding.
  */
 export function renderCustomerEmail(content: CustomerEmailContent): { html: string; text: string } | null {
   if (!safeText(content.title)) return null
@@ -115,13 +127,26 @@ export function renderCustomerEmail(content: CustomerEmailContent): { html: stri
   }
   const caseRef = content.caseRef?.trim() || ""
   if (caseRef && !safeText(caseRef)) return null
-  const siteHost = new URL(brandSiteUrl).hostname
+
+  const effectiveBrand = content.brand || {
+    name: brandName,
+    tagline: brandTagline,
+    siteUrl: brandSiteUrl,
+    logoUrl: customerEmailLogoUrl,
+    logoWidth: EMAIL_LOGO_WIDTH,
+    logoHeight: EMAIL_LOGO_HEIGHT,
+    referenceLabel: "Case reference",
+  }
+
+  const siteHost = new URL(effectiveBrand.siteUrl).hostname
+  const refLabel = effectiveBrand.referenceLabel || "Case reference"
+  
   const text = [
-    brandName,
+    effectiveBrand.name,
     content.title.trim(),
     ...textBlocks,
-    caseRef ? `Case reference: ${caseRef}` : "",
-    brandSiteUrl,
+    caseRef ? `${refLabel}: ${caseRef}` : "",
+    effectiveBrand.siteUrl,
     customerEmailSecurityNote,
   ].filter(Boolean).join("\n\n")
 
@@ -131,14 +156,16 @@ export function renderCustomerEmail(content: CustomerEmailContent): { html: stri
   const muted = brandColors.muted
   const mist = brandColors.mist
   const title = escapeHtml(content.title.trim())
-  const logo = escapeHtml(customerEmailLogoUrl)
-  const brand = escapeHtml(brandName)
-  const tagline = escapeHtml(brandTagline)
-  const site = escapeHtml(brandSiteUrl)
+  const logo = effectiveBrand.logoUrl ? escapeHtml(effectiveBrand.logoUrl) : null
+  const logoW = effectiveBrand.logoWidth || EMAIL_LOGO_WIDTH
+  const logoH = effectiveBrand.logoHeight || EMAIL_LOGO_HEIGHT
+  const brand = escapeHtml(effectiveBrand.name)
+  const tagline = escapeHtml(effectiveBrand.tagline)
+  const site = escapeHtml(effectiveBrand.siteUrl)
   const host = escapeHtml(siteHost)
   const security = escapeHtml(customerEmailSecurityNote)
   const reference = caseRef
-    ? `<p style="margin:0 0 6px 0;font-size:13px;line-height:1.5;color:${muted};">Case reference: ${escapeHtml(caseRef)}</p>`
+    ? `<p style="margin:0 0 6px 0;font-size:13px;line-height:1.5;color:${muted};">${escapeHtml(refLabel)}: ${escapeHtml(caseRef)}</p>`
     : ""
 
   const html = `<!DOCTYPE html>
@@ -161,8 +188,8 @@ export function renderCustomerEmail(content: CustomerEmailContent): { html: stri
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid ${mist};border-collapse:collapse;">
         <tr>
           <td class="email-pad" style="padding:28px 36px 8px 36px;background-color:#ffffff;">
-            <img src="${logo}" alt="${brand}" width="${EMAIL_LOGO_WIDTH}" height="${EMAIL_LOGO_HEIGHT}" style="display:block;width:${EMAIL_LOGO_WIDTH}px;height:auto;max-width:100%;border:0;outline:none;text-decoration:none;" />
-            <p style="margin:8px 0 0 0;font-family:${FONT};font-size:16px;line-height:1.4;font-weight:700;color:${forest};">${brand}</p>
+            ${logo ? `<img src="${logo}" alt="${brand}" width="${logoW}" height="${logoH}" style="display:block;width:${logoW}px;height:auto;max-width:100%;border:0;outline:none;text-decoration:none;" />` : ""}
+            <p style="margin:${logo ? "8px" : "0"} 0 0 0;font-family:${FONT};font-size:${logo ? "16px" : "22px"};line-height:1.4;font-weight:700;color:${forest};">${brand}</p>
           </td>
         </tr>
         <tr>

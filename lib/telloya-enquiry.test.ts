@@ -18,19 +18,6 @@ describe("Telloya enquiry validation", () => {
     source: "telloya",
   }
 
-  const validTierEnquiry: TelloyaEnquiryInput = {
-    product: "telloya",
-    planTier: "growth",
-    businessName: "Test Plumbing Ltd",
-    country: "GB",
-    trade: "Plumbing services",
-    fullName: "John Smith",
-    email: "john@example.com",
-    phone: "+447700900000",
-    privacyAccepted: true,
-    source: "telloya",
-  }
-
   it("accepts valid Telloya enquiry", () => {
     const result = validateTelloyaEnquiry(validEnquiry)
     expect(result.valid).toBe(true)

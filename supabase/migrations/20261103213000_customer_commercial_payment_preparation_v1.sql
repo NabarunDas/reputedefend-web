@@ -1,6 +1,7 @@
 -- Commercial subscription payment preparation.
--- Repository source only. Not applied to DEV. Not applied to Production.
--- Do not apply 20261103160000 to DEV. Do not apply 20261103160000 to Production.
+-- Repository file only. The verified DEV ledger contains 100 entries and ends at 20261103200518.
+-- Do not apply 20261103213000 to DEV. Do not apply 20261103213000 to Production.
+-- Do not replay 20261103200518. Do not apply 20261103200518 to Production.
 -- Do not replay this file. It does not collect a payment, create payment evidence,
 -- grant an entitlement, activate a service, or send mail.
 -- A checkout session is not payment evidence. ACCEPTED becomes PAYMENT_PENDING

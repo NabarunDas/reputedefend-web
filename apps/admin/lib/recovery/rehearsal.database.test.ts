@@ -56,8 +56,8 @@ describe("rebuilding the whole schema from zero", () => {
     // Production and AWS approved backup heads remain at SEC-08.
     // The DEV applied head is 20261103200518 telloya_enquiry_phase_05a_02_validation.
     // It was applied once. Do not replay 20261103200518. Do not apply 20261103200518 to Production.
-    // The repository head is 20261103160000 customer_commercial_payment_preparation_v1.
-    // Do not apply 20261103160000 to DEV. Do not apply 20261103160000 to Production.
+    // The repository head is 20261103213000 customer_commercial_payment_preparation_v1.
+    // Do not apply 20261103213000 to DEV. Do not apply 20261103213000 to Production.
     // The previous DEV head is 20261103140000 customer_commercial_offer_acceptance_v1.
     // Do not replay 20261103140000. Do not apply 20261103140000 to Production.
     // It was applied once and must not be replayed. 20261101200000, 20261101190000, 20261101180000,
@@ -65,7 +65,7 @@ describe("rebuilding the whole schema from zero", () => {
     // were applied once and must not be replayed.
     // Do not replay 20261101200000. Do not apply 20261101200000 to Production.
     // Production stays at SEC-08.
-    expect(migrationHead.filename).toBe("20261103160000_customer_commercial_payment_preparation_v1.sql")
+    expect(migrationHead.filename).toBe("20261103213000_customer_commercial_payment_preparation_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)

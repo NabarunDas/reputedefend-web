@@ -59,8 +59,8 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The repository head is 20261103160000 customer_commercial_payment_preparation_v1.
-    // Do not apply 20261103160000 to DEV. Do not apply 20261103160000 to Production.
+    // The repository head is 20261103213000 customer_commercial_payment_preparation_v1.
+    // Do not apply 20261103213000 to DEV. Do not apply 20261103213000 to Production.
     // The DEV applied head is 20261103200518 telloya_enquiry_phase_05a_02_validation.
     // It was applied once. Do not replay 20261103200518. Do not apply 20261103200518 to Production.
     // 20261103140000 customer_commercial_offer_acceptance_v1 is already applied on DEV. Do not replay it. Do not apply it to Production.
@@ -75,7 +75,7 @@ describe("upgrading a database that is already running", () => {
     // stay before the commercial foundation and must not be replayed on the live database. Payment
     // request 20261030200000 is applied on DEV and must not be replayed. This
     // disposable rebuild is not a live apply. Production remains at SEC-08.
-    expect(pending.at(-1)?.filename).toBe("20261103160000_customer_commercial_payment_preparation_v1.sql")
+    expect(pending.at(-1)?.filename).toBe("20261103213000_customer_commercial_payment_preparation_v1.sql")
     expect(pending.at(-1)?.appliedToDev).toBe(false)
     expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)

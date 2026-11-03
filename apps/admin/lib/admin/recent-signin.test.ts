@@ -44,7 +44,7 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
     })
     // Telloya validation 20261103200518 is DEV-applied. Payment preparation is the only pending file.
     expect(pendingMigrations().map(m => m.filename)).toEqual([
-      "20261103160000_customer_commercial_payment_preparation_v1.sql",
+      "20261103213000_customer_commercial_payment_preparation_v1.sql",
     ])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])

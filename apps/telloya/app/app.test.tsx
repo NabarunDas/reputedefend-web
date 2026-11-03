@@ -202,44 +202,81 @@ describe("Marketing Claims", () => {
     expect(typeof pageModule).toBe("function")
   })
 
-  it("does not claim Complete is 'Recommended'", async () => {
+  it("uses approved four-tier pricing structure", async () => {
     const contentModule = await import("@/lib/content")
     const pricingContent = contentModule.pricingContent
     
-    // Verify Complete plan doesn't have highlight flag
-    const completePlan = pricingContent.plans.find(p => p.name === "Complete")
-    expect(completePlan).toBeDefined()
-    expect('highlight' in (completePlan || {})).toBe(false)
+    // Verify all four tiers exist
+    expect(pricingContent.plans).toHaveLength(4)
+    const tiers = pricingContent.plans.map(p => p.tier)
+    expect(tiers).toContain("basic")
+    expect(tiers).toContain("growth")
+    expect(tiers).toContain("pro")
+    expect(tiers).toContain("custom")
   })
 
-  it("homepage does not render Recommended badge for Complete", async () => {
-    const HomePage = (await import("@/app/page")).default
-    const { container } = render(<HomePage />)
+  it("marks Growth as popular, not other plans", async () => {
+    const contentModule = await import("@/lib/content")
+    const pricingContent = contentModule.pricingContent
     
-    // Check that no Recommended badge appears on the page
-    const badge = container.querySelector('.pricing-badge')
-    expect(badge).not.toBeInTheDocument()
+    const basicPlan = pricingContent.plans.find(p => p.tier === "basic")
+    const growthPlan = pricingContent.plans.find(p => p.tier === "growth")
+    const proPlan = pricingContent.plans.find(p => p.tier === "pro")
+    const customPlan = pricingContent.plans.find(p => p.tier === "custom")
+    
+    expect(basicPlan?.popular).toBeFalsy()
+    expect(growthPlan?.popular).toBe(true)
+    expect(proPlan?.popular).toBeFalsy()
+    expect(customPlan?.popular).toBeFalsy()
   })
 
-  it("does not reference a non-existent enquiry form", async () => {
+  it("clarifies enquiry form limitations appropriately", async () => {
     const contentModule = await import("@/lib/content")
     const pricingFaq = contentModule.pricingContent.faq.questions
     
-    // Check that FAQ doesn't claim there's a form
-    const formReferences = pricingFaq.filter(q => 
-      q.a.toLowerCase().includes('enquiry form') || 
-      (q.a.toLowerCase().includes('submit') && q.a.toLowerCase().includes('form'))
-    )
-    expect(formReferences.length).toBe(0)
+    // Verify that any form references include appropriate limitations
+    const overageQuestion = pricingFaq.find(q => q.q.includes("exceed my minutes"))
+    expect(overageQuestion).toBeDefined()
+    expect(overageQuestion?.a).toContain("enquiry form does not authorise")
   })
 
-  it("describes Complete as proposed package", async () => {
+  it("presents Relaunch Guard as optional add-on, not mandatory component", async () => {
     const contentModule = await import("@/lib/content")
     const pricingContent = contentModule.pricingContent
     
-    const completePlan = pricingContent.plans.find(p => p.name === "Complete")
-    expect(completePlan?.description).toContain("Proposed package")
-    expect(completePlan?.status).toContain("Proposed")
+    // Verify Guard section exists and is labeled as optional
+    expect(pricingContent.guard).toBeDefined()
+    expect(pricingContent.guard.eyebrow).toBe("Optional add-on")
+    expect(pricingContent.guard.pricePerLocationGbp).toBe(9.99)
+    
+    // Verify lead explains it's separate and optional
+    expect(pricingContent.guard.lead).toContain("optional")
+    expect(pricingContent.guard.lead).toContain("separate")
+    
+    // Verify note explains recovery services not included
+    expect(pricingContent.guard.note).toContain("not included")
+  })
+  
+  it("shows approved pricing for fixed plans", async () => {
+    const contentModule = await import("@/lib/content")
+    const pricingContent = contentModule.pricingContent
+    
+    const basicPlan = pricingContent.plans.find(p => p.tier === "basic")
+    const growthPlan = pricingContent.plans.find(p => p.tier === "growth")
+    const proPlan = pricingContent.plans.find(p => p.tier === "pro")
+    const customPlan = pricingContent.plans.find(p => p.tier === "custom")
+    
+    expect(basicPlan?.monthlyPriceGbp).toBe(49)
+    expect(basicPlan?.minutesPerMonth).toBe(120)
+    
+    expect(growthPlan?.monthlyPriceGbp).toBe(79)
+    expect(growthPlan?.minutesPerMonth).toBe(300)
+    
+    expect(proPlan?.monthlyPriceGbp).toBe(120)
+    expect(proPlan?.minutesPerMonth).toBe(500)
+    
+    expect(customPlan?.monthlyPriceGbp).toBeNull()
+    expect(customPlan?.minutesPerMonth).toBeNull()
   })
 })
 

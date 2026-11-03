@@ -3,9 +3,40 @@
  * Used by both frontend form and backend API
  */
 
+export type TelloyaPlanTier = "basic" | "growth" | "pro" | "custom" | ""
+
+export type VoicePreference = "female" | "male" | "no-preference" | ""
+export type SpeakingStyle = "friendly" | "professional" | "calm" | "no-preference" | ""
+
 export type TelloyaEnquiryRequest = {
-  // Product selection
+  // Product selection (legacy compatibility - required for old submissions)
   product: "telloya" | "complete" | ""
+  
+  // Plan tier selection (optional for backward compatibility with legacy product-only requests)
+  planTier?: TelloyaPlanTier
+  
+  // Relaunch Guard add-on (optional - defaults to false if not provided)
+  guardInterested?: boolean
+  guardLocationCount?: number
+  
+  // Custom plan requirements (when planTier === "custom")
+  customMonthlyMinutes?: number
+  customMonthlyCalls?: number
+  customPhoneNumbers?: number
+  customLocations?: number
+  customLanguages?: string
+  customRequirements?: string
+  
+  // Voice and language preferences (all tiers)
+  voicePreference?: VoicePreference
+  voiceAccent?: string
+  primaryLanguage?: string
+  speakingStyle?: SpeakingStyle
+  additionalLanguages?: string
+  
+  // Overage interest
+  overageInterested?: boolean
+  overageMonthlyCapGbp?: number
   
   // Business details
   businessName: string
@@ -44,6 +75,12 @@ export type TelloyaEnquiryResponse = {
 
 export type TelloyaEnquiryFieldErrors = {
   product?: string
+  planTier?: string
+  guardLocationCount?: string
+  customMonthlyMinutes?: string
+  customPhoneNumbers?: string
+  customLocations?: string
+  overageMonthlyCapGbp?: string
   businessName?: string
   country?: string
   trade?: string

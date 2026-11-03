@@ -30,6 +30,23 @@ type TelloyaPayload = EnquiryInput & {
   missedCallProblem: string
   phoneSetup: string
   contactPreference: string
+  // Phase 05A-02 fields
+  planTier?: string
+  guardInterested: boolean
+  guardLocationCount?: number
+  customMonthlyMinutes?: number
+  customMonthlyCalls?: number
+  customPhoneNumbers?: number
+  customLocations?: number
+  customLanguages?: string
+  customRequirements?: string
+  voicePreference?: string
+  voiceAccent?: string
+  primaryLanguage?: string
+  speakingStyle?: string
+  additionalLanguages?: string
+  overageInterested: boolean
+  overageMonthlyCapGbp?: number
 }
 
 // Telloya-specific email builders that integrate with the shared infrastructure
@@ -40,7 +57,7 @@ const telloyaEmailBuilder: CustomEmailBuilder = {
     // Cast to TelloyaPayload since we know this came from telloyaEnquiryToPayload()
     const payload = data as unknown as TelloyaPayload
     
-    // Extract Telloya data for the email template
+    // Extract Telloya data for the email template (all fields including Phase 05A-02)
     const telloyaData = {
       fullName: payload.fullName,
       email: payload.email,
@@ -54,6 +71,23 @@ const telloyaEmailBuilder: CustomEmailBuilder = {
       missedCallProblem: payload.missedCallProblem,
       phoneSetup: payload.phoneSetup,
       contactPreference: payload.contactPreference,
+      // Phase 05A-02 fields
+      planTier: payload.planTier,
+      guardInterested: payload.guardInterested,
+      guardLocationCount: payload.guardLocationCount,
+      customMonthlyMinutes: payload.customMonthlyMinutes,
+      customMonthlyCalls: payload.customMonthlyCalls,
+      customPhoneNumbers: payload.customPhoneNumbers,
+      customLocations: payload.customLocations,
+      customLanguages: payload.customLanguages,
+      customRequirements: payload.customRequirements,
+      voicePreference: payload.voicePreference,
+      voiceAccent: payload.voiceAccent,
+      primaryLanguage: payload.primaryLanguage,
+      speakingStyle: payload.speakingStyle,
+      additionalLanguages: payload.additionalLanguages,
+      overageInterested: payload.overageInterested,
+      overageMonthlyCapGbp: payload.overageMonthlyCapGbp,
     }
 
     return {

@@ -267,10 +267,26 @@
 }
 
 .optionLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 15px;
   font-weight: 750;
   line-height: 1.4;
   color: #eaf9e7;
+}
+
+.optionBadge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(192, 252, 129, .18);
+  border: 1px solid rgba(192, 252, 129, .4);
+  color: #c0fc81;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
 }
 
 .optionCopy {
@@ -279,6 +295,13 @@
   font-weight: 500;
   line-height: 1.45;
   color: #b6d0bd;
+}
+
+.sectionNote {
+  color: #b6d0bd;
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0;
 }
 
 .fields,
@@ -331,6 +354,14 @@
   border-radius: 12px;
   background: rgba(0,17,14,.65);
   color: #f4f8ef;
+}
+
+select.control {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23b6d0bd' d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 40px;
 }
 
 textarea.control {

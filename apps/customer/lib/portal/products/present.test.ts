@@ -691,12 +691,14 @@ describe("product launcher", () => {
     expect(tile(active, "telloya").actions.map(action => action.label)).not.toContain("Open dashboard")
 
     const missed = presentProducts(sources({ commercial, onboarding: { status: "unavailable" } }))
-    expect(tile(missed, "telloya").statusLabel).toBe("Not subscribed")
-    expect(tile(missed, "telloya").actions).toEqual([telloyaEmail])
+    expect(tile(missed, "telloya").statusLabel).toBe("Status temporarily unavailable")
+    expect(tile(missed, "telloya").statusLabel).not.toBe("Not subscribed")
+    expect(tile(missed, "telloya").actions).toEqual([])
 
     const closed = presentProducts(sources({ onboarding: { status: "unavailable" } }))
-    expect(tile(closed, "telloya").statusLabel).toBeUndefined()
-    expect(text([tile(closed, "telloya")])).not.toMatch(/Not subscribed/)
+    expect(tile(closed, "telloya").statusLabel).toBe("Status temporarily unavailable")
+    expect(tile(closed, "telloya").statusLabel).not.toBe("Not subscribed")
+    expect(text([tile(closed, "telloya")])).not.toMatch(/\bActive\b/)
 
     const unknownService = presentProducts(sources({
       commercial: { reads: { telloya: "unavailable", guard: "ok" }, businesses: [] },
@@ -706,5 +708,115 @@ describe("product launcher", () => {
     expect(tile(unknownService, "telloya").statusLabel).not.toBe("Not subscribed")
     expect(tile(unknownService, "telloya").statusLabel).not.toBe("Active")
     expect(tile(unknownService, "telloya").actions).toEqual([{ label: "Track setup", href: "/portal/onboarding" }])
+  })
+
+  it("keeps a closed request out of Your services and does not infer Active", () => {
+    const progress = (overrides: Partial<OnboardingRequestView> = {}): OnboardingRequestView => ({
+      product: "Telloya",
+      stage: "closed",
+      statusLabel: "Request closed",
+      waitingFor: "us",
+      customerActionRequired: false,
+      businessName: "Harbour Bakery",
+      locations: ["High Street"],
+      completed: ["Request received"],
+      nextStep: "This request is closed.",
+      receivedAt: "2026-11-01T09:00:00.000Z",
+      updatedAt: "2026-11-01T09:30:00.000Z",
+      ...overrides,
+    })
+    const commercial = {
+      reads: { telloya: "ok" as const, guard: "ok" as const },
+      businesses: [{
+        businessName: "Harbour Bakery",
+        telloya: { status: "not_subscribed" as const, locations: [] },
+        guard: { status: "not_subscribed" as const, locations: [] },
+      }],
+    }
+    const closed = presentProducts(sources({
+      commercial,
+      onboarding: { status: "ready", requests: [progress({ stage: "declined" })] },
+    }))
+    expect(tile(closed, "telloya").group).toBe("explore")
+    expect(tile(closed, "telloya").statusLabel).toBe("Not subscribed")
+    expect(tile(closed, "telloya").actions).toEqual([
+      telloyaEmail,
+      { label: "View previous request", href: "/portal/onboarding" },
+    ])
+    expect(tile(closed, "telloya").context).toContain("Request closed")
+    expect(tile(closed, "guard").statusLabel).toBe("Not subscribed")
+    expect(tile(closed, "guard").actions).toEqual([guardEnquiry])
+
+    const mixed = presentProducts(sources({
+      commercial,
+      onboarding: {
+        status: "ready",
+        requests: [
+          progress(),
+          progress({
+            stage: "under_review",
+            statusLabel: "Request in progress",
+            businessName: "North Yard",
+            receivedAt: "2026-11-02T09:00:00.000Z",
+          }),
+        ],
+      },
+    }))
+    expect(tile(mixed, "telloya").group).toBe("yours")
+    expect(tile(mixed, "telloya").statusLabel).toBe("Request in progress")
+    expect(tile(mixed, "telloya").statusLabel).not.toBe("Active")
+    expect(tile(mixed, "telloya").context).not.toContain("Request closed")
+    expect(tile(mixed, "telloya").actions).toEqual([{ label: "Track setup", href: "/portal/onboarding" }])
+
+    const setup = presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "setup", locations: [] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      },
+      onboarding: { status: "ready", requests: [progress()] },
+    }))
+    expect(tile(setup, "telloya").statusLabel).toBe("Setup in progress")
+    expect(tile(setup, "telloya").actions).toEqual([{ label: "View previous request", href: "/portal/onboarding" }])
+
+    const claimed = presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "not_subscribed", locations: [] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      },
+      onboarding: { status: "ready", requests: [progress({ stage: "ready", statusLabel: "Active" })] },
+    }))
+    expect(tile(claimed, "telloya").statusLabel).toBe("Request in progress")
+    expect(tile(claimed, "telloya").statusLabel).not.toBe("Active")
+
+    const pilot = presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "pilot", locations: [] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      },
+      onboarding: { status: "unavailable" },
+    }))
+    expect(tile(pilot, "telloya").statusLabel).toBe("Pilot")
+    expect(tile(pilot, "telloya").group).toBe("yours")
+
+    const missed = presentProducts(sources({
+      commercial,
+      onboarding: { status: "unavailable" },
+    }))
+    expect(tile(missed, "telloya").statusLabel).toBe("Status temporarily unavailable")
+    expect(tile(missed, "telloya").statusLabel).not.toBe("Not subscribed")
+    expect(tile(missed, "telloya").statusLabel).not.toBe("Active")
+    expect(tile(missed, "telloya").group).toBe("unconfirmed")
   })
 })

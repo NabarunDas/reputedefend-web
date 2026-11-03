@@ -117,12 +117,13 @@ BEGIN
     END IF;
   ELSIF p_request_state = 'AWAITING_PAYMENT' OR p_subscription_state = 'PAYMENT_PENDING' THEN
     stage := 'awaiting_customer';
-    label := 'Awaiting your payment';
     completed := completed || jsonb_build_array('Offer recorded');
     IF p_payment_recorded THEN
+      label := 'Payment recorded';
       completed := completed || jsonb_build_array('Payment recorded');
       next_step := 'A payment has been recorded. We are checking it.';
     ELSE
+      label := 'Awaiting your payment';
       waiting := 'you';
       action_needed := true;
       next_step := 'A payment step has been recorded. There is no payment button on this page.';
@@ -132,7 +133,12 @@ BEGIN
     label := 'Acceptance recorded';
     next_step := 'Your acceptance is recorded. We will confirm the next step.';
     completed := completed || jsonb_build_array('Offer recorded', 'Acceptance recorded');
-  ELSIF p_subscription_state = 'OFFERED' OR p_request_state = 'OFFERED' THEN
+  ELSIF p_subscription_state = 'OFFERED' THEN
+    stage := 'offer_preparation';
+    label := 'Offer prepared';
+    next_step := 'An offer has been prepared. There is nothing to accept or pay on this page.';
+    completed := completed || jsonb_build_array('Offer recorded');
+  ELSIF p_request_state = 'OFFERED' THEN
     stage := 'offer_preparation';
     label := 'Offer being prepared';
     next_step := 'We are preparing the offer. There is nothing to accept or pay yet.';
@@ -257,44 +263,89 @@ BEGIN
         WHERE id = req.commercial_subscription_id
           AND customer_id = customer
           AND business_id = req.business_id;
-        payment_recorded := EXISTS (
-          SELECT 1
-          FROM public.commercial_payment_evidence AS evidence
-          WHERE evidence.subscription_id = req.commercial_subscription_id
-        );
+        IF subscription_state IS NOT NULL THEN
+          payment_recorded := EXISTS (
+            SELECT 1
+            FROM public.commercial_payment_evidence AS evidence
+            WHERE evidence.subscription_id = req.commercial_subscription_id
+          );
+        END IF;
       END IF;
 
-      SELECT provision.state,
-        (
-          provision.state = 'LIVE'
-          AND provision.live_at IS NOT NULL
-          AND provision.profile_ready_at IS NOT NULL
-          AND provision.agent_configured_at IS NOT NULL
-          AND provision.number_allocated_at IS NOT NULL
-          AND provision.forwarding_instructed_at IS NOT NULL
-          AND provision.customer_confirmed_at IS NOT NULL
-          AND provision.provider_binding_ref IS NOT NULL
-          AND btrim(provision.provider_binding_ref) <> ''
-          AND provision.provider_test_outcome = 'PASSED'
-          AND provision.provider_test_call_ref IS NOT NULL
-          AND btrim(provision.provider_test_call_ref) <> ''
-          AND provision.agent_test_passed_at IS NOT NULL
+      -- A provision counts only for this request's own commercial subscription
+      -- and the locations selected on this request. Another subscription's
+      -- provision, or a provision with no linked subscription, is ignored.
+      -- Ready for use needs an ELIGIBLE Telloya entitlement and genuine LIVE
+      -- evidence at every selected location. service_provisions_live_closed
+      -- still rejects LIVE rows.
+      IF subscription_state IS NOT NULL THEN
+        WITH selected AS (
+          SELECT location_id
+          FROM admin_private.onboarding_request_locations
+          WHERE onboarding_request_id = req.id
+        ),
+        matched AS (
+          SELECT
+            selected.location_id,
+            provision.state,
+            provision.updated_at,
+            (
+              entitlement.state = 'ELIGIBLE'
+              AND provision.state = 'LIVE'
+              AND provision.live_at IS NOT NULL
+              AND provision.profile_ready_at IS NOT NULL
+              AND provision.agent_configured_at IS NOT NULL
+              AND provision.number_allocated_at IS NOT NULL
+              AND provision.forwarding_instructed_at IS NOT NULL
+              AND provision.customer_confirmed_at IS NOT NULL
+              AND provision.provider_binding_ref IS NOT NULL
+              AND btrim(provision.provider_binding_ref) <> ''
+              AND provision.provider_test_outcome = 'PASSED'
+              AND provision.provider_test_call_ref IS NOT NULL
+              AND btrim(provision.provider_test_call_ref) <> ''
+              AND provision.agent_test_passed_at IS NOT NULL
+            ) AS location_ready
+          FROM selected
+          JOIN public.product_entitlements AS entitlement
+            ON entitlement.location_id = selected.location_id
+           AND entitlement.business_id = req.business_id
+           AND entitlement.commercial_subscription_id = req.commercial_subscription_id
+           AND entitlement.component_code = 'TELLOYA'
+           AND entitlement.state IN ('PENDING', 'ELIGIBLE')
+          JOIN public.service_provisions AS provision
+            ON provision.entitlement_id = entitlement.id
+           AND provision.business_id = entitlement.business_id
+           AND provision.location_id = entitlement.location_id
+          JOIN public.commercial_subscriptions AS subscription
+            ON subscription.id = req.commercial_subscription_id
+           AND subscription.id = entitlement.commercial_subscription_id
+           AND subscription.customer_id = customer
+           AND subscription.business_id = req.business_id
         )
-      INTO provision_state, provision_ready
-      FROM public.service_provisions AS provision
-      JOIN public.product_entitlements AS entitlement
-        ON entitlement.id = provision.entitlement_id
-      WHERE entitlement.business_id = req.business_id
-        AND entitlement.component_code = 'TELLOYA'
-        AND entitlement.state IN ('PENDING', 'ELIGIBLE')
-      ORDER BY
-        CASE
-          WHEN provision.state = 'LIVE' THEN 0
-          WHEN provision.state = 'ENDED' THEN 2
-          ELSE 1
-        END,
-        provision.updated_at DESC
-      LIMIT 1;
+        SELECT
+          CASE
+            WHEN (SELECT count(*) FROM selected) = 0 THEN NULL
+            WHEN (SELECT count(*) FROM matched) = 0 THEN NULL
+            WHEN (SELECT count(*) FROM matched) < (SELECT count(*) FROM selected) THEN 'NOT_STARTED'
+            ELSE (
+              SELECT matched.state
+              FROM matched
+              ORDER BY
+                CASE
+                  WHEN matched.state = 'LIVE' THEN 0
+                  WHEN matched.state = 'ENDED' THEN 2
+                  ELSE 1
+                END,
+                matched.updated_at DESC
+              LIMIT 1
+            )
+          END,
+          (
+            (SELECT count(*) FROM selected) > 0
+            AND (SELECT count(*) FROM matched WHERE matched.location_ready) = (SELECT count(*) FROM selected)
+          )
+        INTO provision_state, provision_ready;
+      END IF;
 
       SELECT display_name INTO business_name
       FROM public.businesses

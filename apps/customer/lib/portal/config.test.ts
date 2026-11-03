@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { customerBackendConfig, customerConfig } from "@/lib/config"
 import { invitedLoginAvailable, portalAvailable, portalCookieOptions, portalInviteCookieName, portalPendingCookieName, portalSessionCookieName } from "./config"
 import { productsHubEnabled } from "./products-hub"
+import { onboardingStatusReadEnabled } from "./onboarding/flag"
 import { productsReadEnabled } from "./products-read"
 
 const origin = "https://customer.profilerelaunch.com"
@@ -155,5 +156,17 @@ describe("portal feature gate", () => {
     expect(productsReadEnabled()).toBe(true)
     expect(productsHubEnabled()).toBe(false)
     expect(portalAvailable()).toBe(false)
+  })
+
+  it("keeps the onboarding progress read closed unless its own flag is exactly true", () => {
+    expect(onboardingStatusReadEnabled()).toBe(false)
+    for (const value of ["", "false", "1", "yes", "on", "TRUE", "true "]) {
+      vi.stubEnv("CUSTOMER_ONBOARDING_STATUS_READ_ENABLED", value)
+      expect(onboardingStatusReadEnabled()).toBe(false)
+    }
+    vi.stubEnv("CUSTOMER_ONBOARDING_STATUS_READ_ENABLED", "true")
+    expect(onboardingStatusReadEnabled()).toBe(true)
+    expect(productsReadEnabled()).toBe(false)
+    expect(productsHubEnabled()).toBe(false)
   })
 })

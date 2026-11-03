@@ -78,6 +78,33 @@ describe("setup progress page", () => {
     expect(document.body.innerHTML).not.toMatch(/Pay now|checkout/)
   })
 
+  it("names a prepared offer and a recorded payment without a payment action", () => {
+    render(<OnboardingView requests={[
+      request({
+        stage: "offer_preparation",
+        statusLabel: "Offer prepared",
+        nextStep: "An offer has been prepared. There is nothing to accept or pay on this page.",
+        completed: ["Request received", "Under review", "Offer recorded"],
+      }),
+      request({
+        product: "Complete",
+        stage: "awaiting_customer",
+        statusLabel: "Payment recorded",
+        waitingFor: "us",
+        customerActionRequired: false,
+        businessName: "North Yard",
+        nextStep: "A payment has been recorded. We are checking it.",
+        completed: ["Request received", "Offer recorded", "Payment recorded"],
+        receivedAt: "2026-11-02T09:00:00.000Z",
+      }),
+    ]} />)
+    expect(screen.getByRole("heading", { name: "Offer prepared" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Payment recorded" })).toBeTruthy()
+    expect(screen.getByText(/An offer has been prepared/)).toBeTruthy()
+    expect(screen.getByText(/A payment has been recorded/)).toBeTruthy()
+    expect(document.body.innerHTML).not.toMatch(/Awaiting your payment|Offer being prepared|Pay now|Accept offer/)
+  })
+
   it("does not call a missing read an empty request", () => {
     render(<OnboardingUnavailable />)
     expect(screen.getByText(/does not say whether a request is in progress/)).toBeTruthy()

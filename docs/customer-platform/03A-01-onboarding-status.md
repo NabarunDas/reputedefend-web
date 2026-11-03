@@ -57,16 +57,16 @@ DEV still has no approved `plan_versions`, no commercial subscriptions, no produ
 
 Pending membership returns the product and the verification stage, with no business name and no locations. Revoked membership returns a limited review line and withholds the business, locations, offer, and provision. Requests are ordered by `created_at`, then id. Another customer's request is not returned.
 
-My Products keeps Recovery and Guard as they are. A Telloya or Complete request adds a compact status and Track setup. An existing entitlement status is kept and only gains View progress. A failed onboarding read is not shown as Not subscribed. There is no Telloya dashboard and no Open dashboard from this request.
+My Products keeps Recovery and Guard as they are. While `CUSTOMER_ONBOARDING_STATUS_READ_ENABLED` is exactly `true`, an open Telloya or Complete request adds a compact status and Track setup. A closed or declined request stays in history and uses View previous request. It does not place an otherwise unsubscribed Telloya under Your services. An existing Active, Pilot, or Setup status is kept. A failed onboarding read is not shown as Not subscribed, and onboarding progress alone never becomes Active. There is no Telloya dashboard and no Open dashboard from this request.
 
-`/portal/onboarding` is a neutral page. It uses the same portal session and the products hub gate. It does not use the Recovery navigation.
+`/portal/onboarding` is a neutral page. It uses the same portal session, the products hub gate, and the onboarding read flag. With the flag off it returns to My Products and does not query the function. It does not use the Recovery navigation.
 
-The migration `20261103120000_customer_portal_onboarding_status_v1` is repository source only. It is not applied to DEV or Production. `20261102200000_telloya_enquiry_infrastructure_v1` is also still unapplied.
+The migration `20261103120000_customer_portal_onboarding_status_v1` is repository source only. It is not applied to DEV or Production. Do not replay it. `20261102200000_telloya_enquiry_infrastructure_v1` is already applied on DEV. The verified DEV ledger contains 97 entries and ends there. Do not replay it and do not apply it to Production. A provision advances only the request whose commercial subscription and selected locations own it. An offered subscription is Offer prepared. A request that is still being prepared is Offer being prepared. Recorded payment evidence is Payment recorded, not Awaiting your payment.
 
 ## Later phases
 
 03A-02 agreement acceptance needs one approved priced plan version and a recorded transition from `OFFERED` to `ACCEPTED`. The progress page can name that stage only after the row exists. It must not grow an acceptance button before that command exists.
 
-03A-03 payments need a commercial payment record of their own. Recovery guided checkout and standalone Guard billing stay separate. The progress read can say a payment was recorded only from `commercial_payment_evidence` or `PAYMENT_PENDING` / `AWAITING_PAYMENT`. It must not return Stripe ids or amounts.
+03A-03 payments need a commercial payment record of their own. Recovery guided checkout and standalone Guard billing stay separate. The progress read can say a payment was recorded only from `commercial_payment_evidence` while the request is `AWAITING_PAYMENT` or the subscription is `PAYMENT_PENDING`. It must not return Stripe ids or amounts, and it must not offer a payment button.
 
 03A-04 provider provisioning needs a command that fills `service_provisions` and, only with the operational evidence above, is allowed to leave `LIVE`. That also means retiring `service_provisions_live_closed` in that later migration, not in this one. Complete still must not create Guard coverage.

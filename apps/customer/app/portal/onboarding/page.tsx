@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { portalAvailable } from "@/lib/portal/config"
+import { onboardingStatusReadEnabled } from "@/lib/portal/onboarding/flag"
 import { loadOnboardingStatus } from "@/lib/portal/onboarding/load"
 import { productsHubEnabled } from "@/lib/portal/products-hub"
 import { getPortalSession } from "@/lib/portal/session"
@@ -12,6 +13,10 @@ export default async function OnboardingPage() {
   if (!productsHubEnabled()) {
     if (!await getPortalSession()) redirect("/login")
     redirect("/portal")
+  }
+  if (!onboardingStatusReadEnabled()) {
+    if (!await getPortalSession()) redirect("/login")
+    redirect("/portal/products")
   }
   const loaded = await loadOnboardingStatus()
   if (loaded.status === "unauthenticated") redirect("/login")

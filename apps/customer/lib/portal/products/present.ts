@@ -371,23 +371,53 @@ function requestLines(requests: readonly { product: string; businessName: string
   }).join(" ")
 }
 
+const PRESERVED_SERVICE = new Set([
+  STATUS_LABEL.active,
+  STATUS_LABEL.pilot,
+  STATUS_LABEL.setup,
+  STATUS_LABEL.pending,
+])
+
+function historyRequest(request: { stage: string; statusLabel: string }) {
+  return request.stage === "declined" || request.stage === "closed" || request.statusLabel === "Request closed"
+}
+
 /**
  * A recorded onboarding request is less authoritative than a real entitlement.
  * It never replaces that status, and a failed read never becomes Not subscribed.
+ * A closed request stays in history and does not make the service look active.
  */
 function applyOnboarding(card: ProductCard, onboarding: ProductSources["onboarding"]): ProductCard {
-  if (!onboarding || onboarding.status !== "ready" || onboarding.requests.length === 0) return card
-  const lines = requestLines(onboarding.requests)
-  const labels = [...new Set(onboarding.requests.map(request => request.statusLabel))]
-  const summary = labels.length === 1 ? labels[0] : "Status varies by request"
+  if (!onboarding) return card
+  if (onboarding.status !== "ready") {
+    if (PRESERVED_SERVICE.has(card.statusLabel ?? "") || card.statusLabel === STATUS_UNAVAILABLE) return card
+    return {
+      ...card,
+      group: "unconfirmed",
+      status: "unavailable",
+      statusLabel: STATUS_UNAVAILABLE,
+      context: null,
+      actions: [],
+      attention: null,
+      unavailableReason: "We couldn't confirm the service status just now. This does not say whether the service is active.",
+    }
+  }
+  if (onboarding.requests.length === 0) return card
+  const open = onboarding.requests.filter(request => !historyRequest(request))
+  const historyOnly = open.length === 0
+  const visible = historyOnly ? onboarding.requests : open
+  const lines = requestLines(visible)
+  const labels = [...new Set(visible.map(request => request.statusLabel))]
+  const recorded = labels.length === 1 ? labels[0] : "Status varies by request"
+  const summary = recorded === STATUS_LABEL.active ? "Request in progress" : recorded
   const authoritative = !!card.statusLabel
     && card.statusLabel !== STATUS_LABEL.not_subscribed
     && card.statusLabel !== STATUS_UNAVAILABLE
   const progress = {
-    label: authoritative ? "View progress" : "Track setup",
+    label: historyOnly ? "View previous request" : authoritative ? "View progress" : "Track setup",
     href: PROGRESS_HREF,
   }
-  if (authoritative) {
+  if (authoritative || historyOnly) {
     return {
       ...card,
       context: joinParts([card.context, lines]),
@@ -402,7 +432,7 @@ function applyOnboarding(card: ProductCard, onboarding: ProductSources["onboardi
     statusLabel: summary,
     context: lines,
     actions: [progress],
-    attention: onboarding.requests.length === 1 ? onboarding.requests[0].nextStep : null,
+    attention: visible.length === 1 ? visible[0].nextStep : null,
     unavailableReason: serviceUnknown
       ? "We couldn't confirm the service status just now. This does not say whether the service is active."
       : TELLOYA_NO_WORKSPACE,

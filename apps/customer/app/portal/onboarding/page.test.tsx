@@ -36,6 +36,14 @@ describe("setup progress route", () => {
     expect(load).not.toHaveBeenCalled()
 
     hub.mockReturnValue(true)
+    await expect(Page()).rejects.toThrow("REDIRECT:/login")
+    expect(load).not.toHaveBeenCalled()
+
+    session.mockResolvedValueOnce({ customerId: "customer-1" })
+    await expect(Page()).rejects.toThrow("REDIRECT:/portal/products")
+    expect(load).not.toHaveBeenCalled()
+
+    vi.stubEnv("CUSTOMER_ONBOARDING_STATUS_READ_ENABLED", "true")
     load.mockResolvedValueOnce({ status: "unauthenticated" })
     await expect(Page()).rejects.toThrow("REDIRECT:/login")
 
@@ -46,5 +54,6 @@ describe("setup progress route", () => {
     load.mockResolvedValueOnce({ status: "ready", requests: [] })
     const ready = await Page()
     expect(ready.props.requests).toEqual([])
+    vi.unstubAllEnvs()
   })
 })

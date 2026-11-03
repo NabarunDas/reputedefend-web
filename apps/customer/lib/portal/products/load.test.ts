@@ -62,10 +62,7 @@ describe("My Products commercial read", () => {
     expect(loaded.products[2].actions.map(action => action.href).join(" ")).not.toMatch(/\/portal\/telloya|telloya\.com\/enquire/)
     expect(loaded.products[1].actions).toContainEqual({ label: "Open dashboard", href: "/portal/guard" })
     expect(loaded.products[0].actions).toContainEqual({ label: "Open dashboard", href: "/portal/recovery" })
-    expect(rpc).toHaveBeenCalledTimes(1)
-    expect(rpc).toHaveBeenCalledWith("customer_portal_onboarding_status_v1", {
-      p_token_hash: createHash("sha256").update(token).digest("hex"),
-    })
+    expect(rpc).not.toHaveBeenCalled()
     expect(rpc).not.toHaveBeenCalledWith("customer_portal_products_v1", expect.anything())
     expect(JSON.stringify(loaded.products)).not.toMatch(/Not subscribed|Subscribe|\/portal\/telloya/)
   })
@@ -74,6 +71,7 @@ describe("My Products commercial read", () => {
     jar.set("pr-portal-dev", token)
     vi.stubEnv("CUSTOMER_PRODUCTS_READ_ENABLED", "true")
     const hash = createHash("sha256").update(token).digest("hex")
+    vi.stubEnv("CUSTOMER_ONBOARDING_STATUS_READ_ENABLED", "true")
     rpc.mockImplementation(async (name: string) => {
       if (name === "customer_portal_products_v1") throw new Error("products read failed")
       if (name === "customer_portal_onboarding_status_v1") return { requests: [] }
@@ -98,6 +96,111 @@ describe("My Products commercial read", () => {
 
     rpc.mockImplementation(async (name: string) => name === "customer_portal_products_v1" ? null : { requests: [] })
     await expect(loadProductHub()).resolves.toEqual({ status: "unauthenticated" })
+  })
+
+  it("reads onboarding only when its flag is exactly true", async () => {
+    jar.set("pr-portal-dev", token)
+    const hash = createHash("sha256").update(token).digest("hex")
+    const commercial = {
+      reads: { telloya: "ok", guard: "ok" },
+      businesses: [{
+        businessName: "Harbour Bakery",
+        telloya: { status: "not_subscribed", locations: [] },
+        guard: { status: "not_subscribed", locations: [] },
+      }],
+    }
+    const progress = {
+      product: "Telloya",
+      stage: "under_review",
+      statusLabel: "Request in progress",
+      waitingFor: "us",
+      customerActionRequired: false,
+      businessName: "Harbour Bakery",
+      locations: ["High Street"],
+      completed: ["Request received", "Under review"],
+      nextStep: "We are reviewing this request.",
+      receivedAt: "2026-11-01T09:00:00.000Z",
+      updatedAt: "2026-11-01T09:30:00.000Z",
+    }
+    vi.stubEnv("CUSTOMER_PRODUCTS_READ_ENABLED", "true")
+    rpc.mockResolvedValue(commercial)
+    const closed = await loadProductHub()
+    expect(closed.status).toBe("ready")
+    if (closed.status !== "ready") return
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith("customer_portal_products_v1", { p_token_hash: hash })
+    expect(closed.products[2].statusLabel).toBe("Not subscribed")
+    expect(closed.products[2].group).toBe("explore")
+    expect(closed.products[2].actions.map(action => action.label)).not.toContain("Track setup")
+
+    vi.stubEnv("CUSTOMER_ONBOARDING_STATUS_READ_ENABLED", "true")
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_portal_products_v1") return commercial
+      if (name === "customer_portal_onboarding_status_v1") return { requests: [progress] }
+      throw new Error(name)
+    })
+    const open = await loadProductHub()
+    expect(open.status).toBe("ready")
+    if (open.status !== "ready") return
+    expect(rpc).toHaveBeenCalledWith("customer_portal_onboarding_status_v1", { p_token_hash: hash })
+    expect(open.products[2].statusLabel).toBe("Request in progress")
+    expect(open.products[2].group).toBe("yours")
+    expect(open.products[2].statusLabel).not.toBe("Active")
+    expect(open.products[2].actions).toEqual([{ label: "Track setup", href: "/portal/onboarding" }])
+  })
+
+  it("does not turn a missing or unreadable onboarding read into Not subscribed", async () => {
+    jar.set("pr-portal-dev", token)
+    vi.stubEnv("CUSTOMER_PRODUCTS_READ_ENABLED", "true")
+    vi.stubEnv("CUSTOMER_ONBOARDING_STATUS_READ_ENABLED", "true")
+    const commercial = {
+      reads: { telloya: "ok", guard: "ok" },
+      businesses: [{
+        businessName: "Harbour Bakery",
+        telloya: { status: "not_subscribed", locations: [] },
+        guard: { status: "active", locations: [] },
+      }],
+    }
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_portal_products_v1") return commercial
+      throw new Error("function customer_portal_onboarding_status_v1 does not exist")
+    })
+    const missing = await loadProductHub()
+    expect(missing.status).toBe("ready")
+    if (missing.status !== "ready") return
+    expect(missing.products[2].statusLabel).toBe("Status temporarily unavailable")
+    expect(missing.products[2].statusLabel).not.toBe("Not subscribed")
+    expect(missing.products[2].statusLabel).not.toBe("Active")
+    expect(missing.products[2].group).toBe("unconfirmed")
+    expect(missing.products[1].statusLabel).toBe("Active")
+
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_portal_products_v1") return {
+        ...commercial,
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "setup", locations: [] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      }
+      return { requests: [{ statusLabel: "Active", extra: true }] }
+    })
+    const preserved = await loadProductHub()
+    expect(preserved.status).toBe("ready")
+    if (preserved.status !== "ready") return
+    expect(preserved.products[2].statusLabel).toBe("Setup in progress")
+    expect(preserved.products[2].group).toBe("yours")
+
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_portal_products_v1") return commercial
+      return { unexpected: true }
+    })
+    const unreadable = await loadProductHub()
+    expect(unreadable.status).toBe("ready")
+    if (unreadable.status !== "ready") return
+    expect(unreadable.products[2].statusLabel).toBe("Status temporarily unavailable")
+    expect(unreadable.products[2].statusLabel).not.toBe("Not subscribed")
+    expect(JSON.stringify(unreadable.products[2])).not.toMatch(/\bActive\b/)
   })
 
   it("drops a payload that carries a Stripe identifier or a provider reference", () => {

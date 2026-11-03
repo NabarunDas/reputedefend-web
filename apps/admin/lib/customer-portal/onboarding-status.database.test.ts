@@ -407,11 +407,18 @@ describe("customer_portal_onboarding_status_v1", () => {
     const seen = await status(alexSession)
     expect(seen?.requests[0]).toMatchObject({
       stage: "offer_preparation",
-      statusLabel: "Offer being prepared",
+      statusLabel: "Offer prepared",
       waitingFor: "us",
       customerActionRequired: false,
-      nextStep: "We are preparing the offer. There is nothing to accept or pay yet.",
+      nextStep: "An offer has been prepared. There is nothing to accept or pay on this page.",
     })
+    const preparing = await rows<{ value: { statusLabel: string; nextStep: string } }>(
+      `select admin_private.customer_portal_onboarding_projection_v1(
+        'OFFERED', 'verified', true, 1, true, null, false, null, false
+      ) as value`,
+    )
+    expect(preparing[0].value.statusLabel).toBe("Offer being prepared")
+    expect(preparing[0].value.nextStep).toContain("nothing to accept or pay yet")
     const serialised = JSON.stringify(seen)
     expect(serialised).not.toMatch(/cus_|sub_|4900|Awaiting your payment|Ready for use|Active/)
     expect(await counts()).toEqual(before)
@@ -438,11 +445,13 @@ describe("customer_portal_onboarding_status_v1", () => {
     const paid = await status(alexSession)
     expect(paid?.requests[0]).toMatchObject({
       stage: "awaiting_customer",
-      statusLabel: "Awaiting your payment",
+      statusLabel: "Payment recorded",
       waitingFor: "us",
       customerActionRequired: false,
+      nextStep: "A payment has been recorded. We are checking it.",
     })
     expect(paid?.requests[0].completed).toContain("Payment recorded")
+    expect(JSON.stringify(paid)).not.toContain("Awaiting your payment")
     expect(JSON.stringify(paid)).not.toContain("evt_OnboardingHidden1")
     expect(JSON.stringify(paid)).not.toContain("4900")
 
@@ -465,7 +474,134 @@ describe("customer_portal_onboarding_status_v1", () => {
        where conname = 'service_provisions_live_closed'`,
     )
     expect(closed[0]?.definition).toMatch(/LIVE/)
+    await db.exec("SAVEPOINT live_closed")
+    await db.exec("set local session_replication_role = replica")
+    const blocked = randomUUID()
+    await db.query(
+      `insert into public.product_entitlements(
+        id, business_id, location_id, component_code, source_kind, commercial_subscription_id, state
+      ) values ($1, $2, $3, 'TELLOYA', 'COMMERCIAL_SUBSCRIPTION', $4, 'PENDING')`,
+      [blocked, bakery, high, sub],
+    )
+    await expect(db.query(
+      `insert into public.service_provisions(entitlement_id, business_id, location_id, state)
+       values ($1, $2, $3, 'LIVE')`,
+      [blocked, bakery, high],
+    )).rejects.toThrow(/service_provisions_live_closed/)
+    await db.exec("ROLLBACK TO SAVEPOINT live_closed")
     expect(await counts()).toMatchObject({ provisions: 0, guard_subscriptions: before.guard_subscriptions, entitlements: before.entitlements })
+  })
+
+  it("does not let one subscription's provision advance another request", async () => {
+    const older = randomUUID()
+    const newer = randomUUID()
+    const entitlement = randomUUID()
+    await db.exec("set local session_replication_role = replica")
+    await db.query(
+      `insert into public.commercial_subscriptions(
+        id, public_ref, customer_id, business_id, plan_family, plan_version_id, grant_kind, state,
+        amount_minor, currency, tax_behaviour, cadence_snapshot, terms_ref
+      ) values ($1, 'VC-26-CB2347', $2, $3, 'VOICE', $4, 'BILLABLE', 'ACTIVE', 4900, 'GBP', 'NOT_APPLICABLE', 'MONTH', 'TELLOYA-TERMS-1')`,
+      [older, alex, bakery, plan],
+    )
+    await db.query(
+      `insert into public.commercial_subscriptions(
+        id, public_ref, customer_id, business_id, plan_family, plan_version_id, grant_kind, state,
+        amount_minor, currency, tax_behaviour, cadence_snapshot, terms_ref
+      ) values ($1, 'VC-26-DB2347', $2, $3, 'VOICE', $4, 'BILLABLE', 'OFFERED', 4900, 'GBP', 'NOT_APPLICABLE', 'MONTH', 'TELLOYA-TERMS-1')`,
+      [newer, alex, bakery, plan],
+    )
+    await db.query(
+      `insert into public.product_entitlements(
+        id, business_id, location_id, component_code, source_kind, commercial_subscription_id, state
+      ) values ($1, $2, $3, 'TELLOYA', 'COMMERCIAL_SUBSCRIPTION', $4, 'ELIGIBLE')`,
+      [entitlement, bakery, high, older],
+    )
+    await db.query(
+      `insert into public.service_provisions(entitlement_id, business_id, location_id, state)
+       values ($1, $2, $3, 'AWAITING_CONFIRMATION')`,
+      [entitlement, bakery, high],
+    )
+    await db.exec("set local session_replication_role = origin")
+    const closedRequest = await request({
+      state: "DECLINED",
+      subscription: older,
+      decline: "An earlier request was declined.",
+      createdAt: "2026-11-01T09:00:00.000Z",
+    })
+    await db.query(
+      "insert into admin_private.onboarding_request_locations(onboarding_request_id, location_id) values ($1, $2)",
+      [closedRequest, high],
+    )
+    const openRequest = await request({
+      state: "IN_REVIEW",
+      subscription: newer,
+      createdAt: "2026-11-03T09:00:00.000Z",
+    })
+    await db.query(
+      "insert into admin_private.onboarding_request_locations(onboarding_request_id, location_id) values ($1, $2), ($1, $3)",
+      [openRequest, high, dock],
+    )
+    const unlinked = await request({
+      business: yard,
+      state: "IN_REVIEW",
+      subscription: null,
+      createdAt: "2026-11-02T09:00:00.000Z",
+    })
+    await db.query(
+      "insert into admin_private.onboarding_request_locations(onboarding_request_id, location_id) values ($1, $2)",
+      [unlinked, yardLoc],
+    )
+    const seen = await status(alexSession)
+    expect(seen?.requests.map(item => [item.businessName, item.statusLabel, item.stage])).toEqual([
+      ["Harbour Bakery", "Request closed", "declined"],
+      ["North Yard", "Request in progress", "under_review"],
+      ["Harbour Bakery", "Offer prepared", "offer_preparation"],
+    ])
+    expect(JSON.stringify(seen)).not.toMatch(/Ready for use|Service setup|Active/)
+  })
+
+  it("does not treat one provisioned location as ready while another is not", async () => {
+    const sub = randomUUID()
+    const entitled = randomUUID()
+    await db.exec("set local session_replication_role = replica")
+    await db.query(
+      `insert into public.commercial_subscriptions(
+        id, public_ref, customer_id, business_id, plan_family, plan_version_id, grant_kind, state,
+        amount_minor, currency, tax_behaviour, cadence_snapshot, terms_ref
+      ) values ($1, 'VC-26-EB2347', $2, $3, 'VOICE', $4, 'BILLABLE', 'ACTIVE', 4900, 'GBP', 'NOT_APPLICABLE', 'MONTH', 'TELLOYA-TERMS-1')`,
+      [sub, alex, bakery, plan],
+    )
+    await db.query(
+      `insert into public.product_entitlements(
+        id, business_id, location_id, component_code, source_kind, commercial_subscription_id, state
+      ) values ($1, $2, $3, 'TELLOYA', 'COMMERCIAL_SUBSCRIPTION', $4, 'ELIGIBLE')`,
+      [entitled, bakery, high, sub],
+    )
+    await db.query(
+      `insert into public.service_provisions(
+        entitlement_id, business_id, location_id, state,
+        profile_ready_at, agent_configured_at, number_allocated_at, forwarding_instructed_at,
+        customer_confirmed_at, provider_binding_ref, provider_test_outcome, provider_test_call_ref, agent_test_passed_at
+      ) values (
+        $1, $2, $3, 'READY_FOR_PROVIDER_VERIFICATION',
+        now(), now(), now(), now(), now(), 'bind-hidden', 'PASSED', 'call-hidden', now()
+      )`,
+      [entitled, bakery, high],
+    )
+    await db.exec("set local session_replication_role = origin")
+    const openRequest = await request({ state: "PROVISIONING", subscription: sub })
+    await db.query(
+      "insert into admin_private.onboarding_request_locations(onboarding_request_id, location_id) values ($1, $2), ($1, $3)",
+      [openRequest, high, dock],
+    )
+    const seen = await status(alexSession)
+    expect(seen?.requests).toHaveLength(1)
+    expect(seen?.requests[0].statusLabel).not.toBe("Ready for use")
+    expect(seen?.requests[0].stage).toBe("service_setup")
+    expect(seen?.requests[0].customerActionRequired).toBe(false)
+    expect(seen?.requests[0].locations).toEqual(["Dock", "High Street"])
+    expect(JSON.stringify(seen)).not.toMatch(/bind-hidden|call-hidden|Active/)
   })
 
   it("returns nothing after sign-out, idle timeout, or expiry", async () => {

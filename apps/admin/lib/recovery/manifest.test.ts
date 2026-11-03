@@ -96,8 +96,8 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // The Telloya repository head is DEV-applied; no migration remains pending
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
+    // Telloya is the DEV-applied head. The repository head is the unapplied onboarding read.
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     const onboardingSql = readFileSync(new URL("20261101180000_admin_commercial_onboarding_v1.sql", directory), "utf8")
@@ -128,8 +128,8 @@ describe("the migration chain manifest", () => {
       safeToReplay: false,
     })
     const onboardingStatusSql = readFileSync(new URL("20261103120000_customer_portal_onboarding_status_v1.sql", directory), "utf8")
-    expect(onboardingStatusSql.length).toBe(13473)
-    expect(createHash("sha256").update(onboardingStatusSql).digest("hex")).toBe("0c370084c1e705bcf2d5bea091b06de6ec29fd072c8232d55bce3f6ab8b5562b")
+    expect(onboardingStatusSql.length).toBe(15951)
+    expect(createHash("sha256").update(onboardingStatusSql).digest("hex")).toBe("9df00b0908cde7a0fe6ccdf4790b238cde2f9d9c7ddbf209438feacce46c515c")
     expect(findMigration("20261103120000_customer_portal_onboarding_status_v1.sql")).toMatchObject({
       appliedToDev: false,
       containsDataChange: false,

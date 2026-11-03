@@ -6,32 +6,71 @@ import { ArrowLeft, ArrowRight, Check, Mail } from "lucide-react"
 import styles from "./telloya-enquiry-form.module.css"
 import type { TelloyaEnquiryRequest, TelloyaEnquiryResponse, TelloyaEnquiryCapabilities } from "@/lib/enquiry-contract"
 import { legalIdentity } from "@/lib/legal"
+import { telloyaPlans, formatGbpPrice, formatMinutes, type TelloyaPlanTier } from "@/lib/pricing"
 
-const PRODUCT_OPTIONS = [
-  { value: "telloya", label: "Telloya", description: "AI receptionist for missed-call enquiries" },
-  { value: "complete", label: "Complete", description: "Proposed package: Telloya plus Relaunch Guard profile monitoring" },
-] as const
-
-type ProductInterest = "telloya" | "complete" | ""
+type PlanTierInterest = TelloyaPlanTier | ""
+type VoicePreferenceChoice = "female" | "male" | "no-preference" | ""
+type SpeakingStyleChoice = "friendly" | "professional" | "calm" | "no-preference" | ""
 
 type EnquiryValues = {
-  product: ProductInterest
+  // Legacy product field for backward compatibility
+  product: "telloya" | "complete" | ""
+  // Plan tier selection
+  planTier: PlanTierInterest
+  // Relaunch Guard add-on
+  guardInterested: boolean
+  guardLocationCount: string
+  // Custom plan requirements
+  customMonthlyMinutes: string
+  customMonthlyCalls: string
+  customPhoneNumbers: string
+  customLocations: string
+  customLanguages: string
+  customRequirements: string
+  // Voice and language preferences
+  voicePreference: VoicePreferenceChoice
+  voiceAccent: string
+  primaryLanguage: string
+  speakingStyle: SpeakingStyleChoice
+  additionalLanguages: string
+  // Overage interest
+  overageInterested: boolean
+  overageMonthlyCapGbp: string
+  // Business details
   businessName: string
   country: string
   trade: string
   locations: string
   websiteUrl: string
+  // Contact details
   fullName: string
   email: string
   phone: string
   missedCallProblem: string
   phoneSetup: string
   contactPreference: string
+  // Consent
   privacyAccepted: boolean
 }
 
 const INITIAL_VALUES: EnquiryValues = {
   product: "",
+  planTier: "",
+  guardInterested: false,
+  guardLocationCount: "",
+  customMonthlyMinutes: "",
+  customMonthlyCalls: "",
+  customPhoneNumbers: "",
+  customLocations: "",
+  customLanguages: "",
+  customRequirements: "",
+  voicePreference: "",
+  voiceAccent: "",
+  primaryLanguage: "",
+  speakingStyle: "",
+  additionalLanguages: "",
+  overageInterested: false,
+  overageMonthlyCapGbp: "",
   businessName: "",
   country: "",
   trade: "",
@@ -49,16 +88,16 @@ const INITIAL_VALUES: EnquiryValues = {
 type EnquiryFieldErrors = Partial<Record<keyof EnquiryValues, string>>
 
 const STEP_TITLES = {
-  1: "What are you interested in?",
+  1: "Choose your plan",
   2: "About your business",
-  3: "Contact and calling requirements",
+  3: "Contact and preferences",
   4: "Review and submit",
 } as const
 
-export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capabilities?: TelloyaEnquiryCapabilities; initialProduct?: ProductInterest }) {
+export function TelloyaEnquiryForm({ capabilities, initialPlanTier = "" }: { capabilities?: TelloyaEnquiryCapabilities; initialPlanTier?: PlanTierInterest }) {
   const submissionEnabled = capabilities?.submissionEnabled ?? false
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
-  const [values, setValues] = useState<EnquiryValues>({ ...INITIAL_VALUES, product: initialProduct })
+  const [values, setValues] = useState<EnquiryValues>({ ...INITIAL_VALUES, planTier: initialPlanTier })
   const [errors, setErrors] = useState<EnquiryFieldErrors>({})
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle")
   const [deliveryError, setDeliveryError] = useState(false)
@@ -198,7 +237,23 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
 
     // Create payload to check if it has changed
     const payload: TelloyaEnquiryRequest = {
-      product: values.product,
+      product: values.product || "telloya",
+      planTier: values.planTier,
+      guardInterested: values.guardInterested,
+      guardLocationCount: values.guardLocationCount ? parseInt(values.guardLocationCount, 10) : undefined,
+      customMonthlyMinutes: values.customMonthlyMinutes ? parseInt(values.customMonthlyMinutes, 10) : undefined,
+      customMonthlyCalls: values.customMonthlyCalls ? parseInt(values.customMonthlyCalls, 10) : undefined,
+      customPhoneNumbers: values.customPhoneNumbers ? parseInt(values.customPhoneNumbers, 10) : undefined,
+      customLocations: values.customLocations ? parseInt(values.customLocations, 10) : undefined,
+      customLanguages: values.customLanguages || undefined,
+      customRequirements: values.customRequirements || undefined,
+      voicePreference: values.voicePreference || undefined,
+      voiceAccent: values.voiceAccent || undefined,
+      primaryLanguage: values.primaryLanguage || undefined,
+      speakingStyle: values.speakingStyle || undefined,
+      additionalLanguages: values.additionalLanguages || undefined,
+      overageInterested: values.overageInterested,
+      overageMonthlyCapGbp: values.overageMonthlyCapGbp ? parseFloat(values.overageMonthlyCapGbp) : undefined,
       businessName: values.businessName,
       country: values.country,
       trade: values.trade,
@@ -218,6 +273,22 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
     // Generate canonical payload fingerprint (without submissionKey)
     const payloadFingerprint = JSON.stringify({
       product: payload.product,
+      planTier: payload.planTier,
+      guardInterested: payload.guardInterested,
+      guardLocationCount: payload.guardLocationCount,
+      customMonthlyMinutes: payload.customMonthlyMinutes,
+      customMonthlyCalls: payload.customMonthlyCalls,
+      customPhoneNumbers: payload.customPhoneNumbers,
+      customLocations: payload.customLocations,
+      customLanguages: payload.customLanguages,
+      customRequirements: payload.customRequirements,
+      voicePreference: payload.voicePreference,
+      voiceAccent: payload.voiceAccent,
+      primaryLanguage: payload.primaryLanguage,
+      speakingStyle: payload.speakingStyle,
+      additionalLanguages: payload.additionalLanguages,
+      overageInterested: payload.overageInterested,
+      overageMonthlyCapGbp: payload.overageMonthlyCapGbp,
       businessName: payload.businessName,
       country: payload.country,
       trade: payload.trade,
@@ -388,30 +459,165 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
 
       <div className={styles.panel}>
         {step === 1 && (
-          <fieldset className={styles.options}>
-            <legend className={styles.visuallyHidden}>Choose your product interest</legend>
-            {PRODUCT_OPTIONS.map((option) => {
-              const selected = values.product === option.value
-              return (
-                <label key={option.value} className={`${styles.option} ${selected ? styles.optionSelected : ""}`}>
+          <>
+            <fieldset className={styles.options}>
+              <legend className={styles.visuallyHidden}>Choose your Telloya plan</legend>
+              {telloyaPlans.map((plan) => {
+                const selected = values.planTier === plan.tier
+                const priceDisplay = plan.monthlyPriceGbp !== null
+                  ? `${formatGbpPrice(plan.monthlyPriceGbp)}/month`
+                  : "Contact for quotation"
+                const minutesDisplay = plan.minutesPerMonth !== null
+                  ? formatMinutes(plan.minutesPerMonth)
+                  : "Tailored to your needs"
+                return (
+                  <label key={plan.tier} className={`${styles.option} ${selected ? styles.optionSelected : ""}`}>
+                    <input
+                      id={`${formId}-${plan.tier}`}
+                      type="radio"
+                      name="planTier"
+                      value={plan.tier}
+                      checked={selected}
+                      onChange={() => update("planTier", plan.tier)}
+                    />
+                    <span className={styles.optionMark} aria-hidden="true">{selected && <Check size={14} />}</span>
+                    <span>
+                      <span className={styles.optionLabel}>
+                        {plan.name}
+                        {plan.popular && <span className={styles.optionBadge}>Recommended</span>}
+                      </span>
+                      <span className={styles.optionCopy}>{priceDisplay} • {minutesDisplay}</span>
+                    </span>
+                  </label>
+                )
+              })}
+              {errors.planTier && <p className={styles.error}>{errors.planTier}</p>}
+            </fieldset>
+
+            {values.planTier && values.planTier !== "custom" && (
+              <div className={styles.fields} style={{ marginTop: "2rem" }}>
+                <label className={styles.check} htmlFor={`${formId}-guardInterested`}>
                   <input
-                    id={`${formId}-${option.value}`}
-                    type="radio"
-                    name="product"
-                    value={option.value}
-                    checked={selected}
-                    onChange={() => update("product", option.value)}
+                    id={`${formId}-guardInterested`}
+                    type="checkbox"
+                    checked={values.guardInterested}
+                    onChange={(e) => update("guardInterested", e.target.checked)}
                   />
-                  <span className={styles.optionMark} aria-hidden="true">{selected && <Check size={14} />}</span>
                   <span>
-                    <span className={styles.optionLabel}>{option.label}</span>
-                    <span className={styles.optionCopy}>{option.description}</span>
+                    Add Relaunch Guard monitoring at £9.99/location/month
                   </span>
                 </label>
-              )
-            })}
-            {errors.product && <p className={styles.error}>{errors.product}</p>}
-          </fieldset>
+                {values.guardInterested && (
+                  <Field id={`${formId}-guardLocationCount`} label="How many locations need Guard protection?" error={errors.guardLocationCount}>
+                    <input
+                      name="guardLocationCount"
+                      type="number"
+                      min="1"
+                      value={values.guardLocationCount}
+                      onChange={(e) => update("guardLocationCount", e.target.value)}
+                      required
+                    />
+                  </Field>
+                )}
+              </div>
+            )}
+
+            {values.planTier === "custom" && (
+              <div className={styles.fields} style={{ marginTop: "2rem" }}>
+                <p className={styles.sectionNote}>Tell us about your requirements so we can prepare a tailored quotation</p>
+                <div className={styles.twoCol}>
+                  <Field id={`${formId}-customMonthlyMinutes`} label="Monthly minutes needed" error={errors.customMonthlyMinutes}>
+                    <input
+                      name="customMonthlyMinutes"
+                      type="number"
+                      min="1"
+                      value={values.customMonthlyMinutes}
+                      onChange={(e) => update("customMonthlyMinutes", e.target.value)}
+                      placeholder="e.g., 1000"
+                      required
+                    />
+                  </Field>
+                  <Field id={`${formId}-customMonthlyCalls`} label="Expected calls per month" error={errors.customMonthlyCalls}>
+                    <input
+                      name="customMonthlyCalls"
+                      type="number"
+                      min="1"
+                      value={values.customMonthlyCalls}
+                      onChange={(e) => update("customMonthlyCalls", e.target.value)}
+                      placeholder="e.g., 200"
+                      required
+                    />
+                  </Field>
+                </div>
+                <div className={styles.twoCol}>
+                  <Field id={`${formId}-customPhoneNumbers`} label="Phone numbers needed" error={errors.customPhoneNumbers}>
+                    <input
+                      name="customPhoneNumbers"
+                      type="number"
+                      min="1"
+                      value={values.customPhoneNumbers}
+                      onChange={(e) => update("customPhoneNumbers", e.target.value)}
+                      placeholder="e.g., 3"
+                      required
+                    />
+                  </Field>
+                  <Field id={`${formId}-customLocations`} label="Number of locations" error={errors.customLocations}>
+                    <input
+                      name="customLocations"
+                      type="number"
+                      min="1"
+                      value={values.customLocations}
+                      onChange={(e) => update("customLocations", e.target.value)}
+                      placeholder="e.g., 5"
+                      required
+                    />
+                  </Field>
+                </div>
+                <Field id={`${formId}-customLanguages`} label="Languages required" optional error={errors.customLanguages}>
+                  <input
+                    name="customLanguages"
+                    value={values.customLanguages}
+                    onChange={(e) => update("customLanguages", e.target.value)}
+                    maxLength={500}
+                    placeholder="e.g., English, Spanish, French"
+                  />
+                </Field>
+                <Field id={`${formId}-customRequirements`} label="Additional requirements" optional error={errors.customRequirements}>
+                  <textarea
+                    name="customRequirements"
+                    value={values.customRequirements}
+                    onChange={(e) => update("customRequirements", e.target.value)}
+                    maxLength={2000}
+                    rows={4}
+                    placeholder="Please describe any specific needs or integration requirements"
+                  />
+                </Field>
+                <label className={styles.check} htmlFor={`${formId}-guardInterested-custom`}>
+                  <input
+                    id={`${formId}-guardInterested-custom`}
+                    type="checkbox"
+                    checked={values.guardInterested}
+                    onChange={(e) => update("guardInterested", e.target.checked)}
+                  />
+                  <span>
+                    Add Relaunch Guard monitoring at £9.99/location/month
+                  </span>
+                </label>
+                {values.guardInterested && (
+                  <Field id={`${formId}-guardLocationCount-custom`} label="How many locations need Guard protection?" error={errors.guardLocationCount}>
+                    <input
+                      name="guardLocationCount"
+                      type="number"
+                      min="1"
+                      value={values.guardLocationCount}
+                      onChange={(e) => update("guardLocationCount", e.target.value)}
+                      required
+                    />
+                  </Field>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {step === 2 && (
@@ -458,14 +664,115 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
             <Field id={`${formId}-contactPreference`} label="Best time to contact you" optional error={errors.contactPreference}>
               <input name="contactPreference" value={values.contactPreference} onChange={(e) => update("contactPreference", e.target.value)} maxLength={100} placeholder="e.g., Weekday mornings" />
             </Field>
+
+            <div style={{ marginTop: "2rem", paddingTop: "2rem", borderTop: "1px solid #e5e7eb" }}>
+              <p className={styles.sectionNote} style={{ marginBottom: "1.5rem" }}>Voice and language preferences (optional, subject to provider compatibility)</p>
+              <div className={styles.twoCol}>
+                <Field id={`${formId}-voicePreference`} label="Voice preference" optional error={errors.voicePreference}>
+                  <select
+                    name="voicePreference"
+                    value={values.voicePreference}
+                    onChange={(e) => update("voicePreference", e.target.value as VoicePreferenceChoice)}
+                  >
+                    <option value="">No preference</option>
+                    <option value="female">Female</option>
+                    <option value="male">Male</option>
+                    <option value="no-preference">No preference</option>
+                  </select>
+                </Field>
+                <Field id={`${formId}-voiceAccent`} label="Preferred accent" optional error={errors.voiceAccent}>
+                  <input
+                    name="voiceAccent"
+                    value={values.voiceAccent}
+                    onChange={(e) => update("voiceAccent", e.target.value)}
+                    maxLength={100}
+                    placeholder="e.g., British, American"
+                  />
+                </Field>
+              </div>
+              <div className={styles.twoCol}>
+                <Field id={`${formId}-primaryLanguage`} label="Primary language" optional error={errors.primaryLanguage}>
+                  <input
+                    name="primaryLanguage"
+                    value={values.primaryLanguage}
+                    onChange={(e) => update("primaryLanguage", e.target.value)}
+                    maxLength={100}
+                    placeholder="e.g., English"
+                  />
+                </Field>
+                <Field id={`${formId}-speakingStyle`} label="Speaking style" optional error={errors.speakingStyle}>
+                  <select
+                    name="speakingStyle"
+                    value={values.speakingStyle}
+                    onChange={(e) => update("speakingStyle", e.target.value as SpeakingStyleChoice)}
+                  >
+                    <option value="">No preference</option>
+                    <option value="friendly">Friendly</option>
+                    <option value="professional">Professional</option>
+                    <option value="calm">Calm</option>
+                    <option value="no-preference">No preference</option>
+                  </select>
+                </Field>
+              </div>
+              <Field id={`${formId}-additionalLanguages`} label="Additional languages" optional error={errors.additionalLanguages}>
+                <input
+                  name="additionalLanguages"
+                  value={values.additionalLanguages}
+                  onChange={(e) => update("additionalLanguages", e.target.value)}
+                  maxLength={500}
+                  placeholder="e.g., Spanish, French"
+                />
+              </Field>
+            </div>
+
+            <div style={{ marginTop: "2rem", paddingTop: "2rem", borderTop: "1px solid #e5e7eb" }}>
+              <p className={styles.sectionNote} style={{ marginBottom: "1.5rem" }}>Overage protection (optional)</p>
+              <label className={styles.check} htmlFor={`${formId}-overageInterested`}>
+                <input
+                  id={`${formId}-overageInterested`}
+                  type="checkbox"
+                  checked={values.overageInterested}
+                  onChange={(e) => update("overageInterested", e.target.checked)}
+                />
+                <span>
+                  Enable overage at £0.25/minute with monthly spending cap
+                </span>
+              </label>
+              {values.overageInterested && (
+                <Field id={`${formId}-overageMonthlyCapGbp`} label="Monthly spending cap (£)" optional error={errors.overageMonthlyCapGbp} hint="Maximum overage spend per month">
+                  <input
+                    name="overageMonthlyCapGbp"
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    value={values.overageMonthlyCapGbp}
+                    onChange={(e) => update("overageMonthlyCapGbp", e.target.value)}
+                    placeholder="e.g., 50"
+                  />
+                </Field>
+              )}
+            </div>
           </div>
         )}
 
         {step === 4 && (
           <div className={styles.reviewIntro}>
             <p className={styles.reviewIntro}>Check the details below before submitting your enquiry. You can go back and change anything that doesn&apos;t look right.</p>
-            <ReviewBlock title="Product interest" onEdit={() => goToStep(1)}>
-              <ReviewItem label="Product" value={values.product ? PRODUCT_OPTIONS.find(p => p.value === values.product)?.label || values.product : "Not selected"} />
+            <ReviewBlock title="Plan selection" onEdit={() => goToStep(1)}>
+              <ReviewItem label="Plan" value={values.planTier ? telloyaPlans.find(p => p.tier === values.planTier)?.name || values.planTier : "Not selected"} />
+              {values.guardInterested && (
+                <ReviewItem label="Relaunch Guard" value={`Yes (${values.guardLocationCount || 0} locations)`} />
+              )}
+              {values.planTier === "custom" && (
+                <>
+                  <ReviewItem label="Monthly minutes" value={values.customMonthlyMinutes} />
+                  <ReviewItem label="Monthly calls" value={values.customMonthlyCalls} />
+                  <ReviewItem label="Phone numbers" value={values.customPhoneNumbers} />
+                  <ReviewItem label="Locations" value={values.customLocations} />
+                  {values.customLanguages && <ReviewItem label="Languages" value={values.customLanguages} />}
+                  {values.customRequirements && <ReviewItem label="Additional requirements" value={values.customRequirements} wide />}
+                </>
+              )}
             </ReviewBlock>
             <ReviewBlock title="Your business" onEdit={() => goToStep(2)}>
               <ReviewItem label="Business name" value={values.businessName} />
@@ -481,6 +788,18 @@ export function TelloyaEnquiryForm({ capabilities, initialProduct = "" }: { capa
               <ReviewItem label="Missed-call challenge" value={values.missedCallProblem} wide />
               <ReviewItem label="Phone setup" value={values.phoneSetup} />
               <ReviewItem label="Contact preference" value={values.contactPreference} />
+              {(values.voicePreference || values.voiceAccent || values.primaryLanguage || values.speakingStyle || values.additionalLanguages) && (
+                <>
+                  {values.voicePreference && <ReviewItem label="Voice preference" value={values.voicePreference} />}
+                  {values.voiceAccent && <ReviewItem label="Accent" value={values.voiceAccent} />}
+                  {values.primaryLanguage && <ReviewItem label="Primary language" value={values.primaryLanguage} />}
+                  {values.speakingStyle && <ReviewItem label="Speaking style" value={values.speakingStyle} />}
+                  {values.additionalLanguages && <ReviewItem label="Additional languages" value={values.additionalLanguages} />}
+                </>
+              )}
+              {values.overageInterested && (
+                <ReviewItem label="Overage protection" value={values.overageMonthlyCapGbp ? `Enabled (cap: £${values.overageMonthlyCapGbp}/month)` : "Enabled"} />
+              )}
             </ReviewBlock>
             <label className={styles.check} htmlFor={`${formId}-privacyAccepted`}>
               <input

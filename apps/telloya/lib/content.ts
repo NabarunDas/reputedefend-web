@@ -3,11 +3,14 @@
  * 
  * All customer-facing copy, CTAs, and page metadata are defined here
  * to enable consistent content management and testing.
+ * 
+ * Pricing data is imported from pricing.ts as the single source of truth.
  */
 
 import { brandName } from "@/lib/brand"
 import { getCustomerPortalHref } from "@/lib/customer-portal"
 import { legalIdentity } from "../../../lib/legal"
+import { telloyaPlans, relaunchGuardAddon, overagePolicy, formatGbpPrice, formatMinutes } from "./pricing"
 
 // Homepage content
 export const homepageContent = {
@@ -119,48 +122,25 @@ export const homepageContent = {
     title: "Four plans to fit your business",
     lead:
       "Choose from Basic, Growth, Pro or Custom. All plans include core AI receptionist capabilities. Optional Relaunch Guard profile monitoring available as an add-on.",
-    tiers: [
-      {
-        name: "Basic",
-        price: "£49",
-        minutes: "120 minutes/month",
-        description: "Essential AI receptionist for smaller call volumes",
-        popular: false,
-        cta: "View pricing",
-        href: "/pricing",
-      },
-      {
-        name: "Growth",
-        price: "£79",
-        minutes: "300 minutes/month",
-        description: "Most popular plan for growing businesses",
-        popular: true,
-        cta: "View pricing",
-        href: "/pricing",
-      },
-      {
-        name: "Pro",
-        price: "£120",
-        minutes: "500 minutes/month",
-        description: "Maximum included usage for high call volumes",
-        popular: false,
-        cta: "View pricing",
-        href: "/pricing",
-      },
-      {
-        name: "Custom",
-        price: "By quotation",
-        minutes: "Tailored allowance",
-        description: "Bespoke solution for specific requirements",
-        popular: false,
-        cta: "View pricing",
-        href: "/pricing",
-      },
-    ],
+    tiers: telloyaPlans.map(p => ({
+      name: p.name,
+      price: p.monthlyPriceGbp !== null ? formatGbpPrice(p.monthlyPriceGbp) : "By quotation",
+      minutes: p.minutesPerMonth !== null ? formatMinutes(p.minutesPerMonth) : "Tailored allowance",
+      description: p.tier === "basic"
+        ? "Essential AI receptionist for smaller call volumes"
+        : p.tier === "growth"
+        ? "Recommended plan for growing businesses"
+        : p.tier === "pro"
+        ? "Maximum included usage for high call volumes"
+        : "Bespoke solution for specific requirements",
+      popular: p.popular ?? false,
+      cta: "View pricing",
+      href: "/pricing",
+    })),
     guard: {
-      name: "Relaunch Guard",
-      description: "Optional profile monitoring add-on",
-      price: "£9.99/location/month",
+      name: relaunchGuardAddon.name,
+      description: relaunchGuardAddon.description,
+      price: `${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)}/location/month`,
       note: "Add Google Business Profile monitoring to any plan. Separate optional service.",
     },
   },
@@ -637,119 +617,65 @@ export const pricingContent = {
   currency: {
     note: "Prices are shown in GBP. Where supported, your local currency and applicable exchange rate will be shown at checkout.",
   },
-  plans: [
-    {
-      tier: "basic" as const,
-      name: "Basic",
-      monthlyPriceGbp: 49,
-      minutesPerMonth: 120,
-      popular: false,
-      tagline: "Essential AI receptionist",
-      description:
-        "Everything you need to handle missed-call enquiries professionally while you're working on site.",
-      features: [
-        "Missed-call answering",
-        "Conversational enquiry collection",
-        "Lead summaries with callback preferences",
-        "Business-specific configuration",
-        "Usage visibility",
-      ],
-      cta: "Enquire about Basic",
-      href: "/enquire?plan=basic",
-    },
-    {
-      tier: "growth" as const,
-      name: "Growth",
-      monthlyPriceGbp: 79,
-      minutesPerMonth: 300,
-      popular: true,
-      tagline: "Most popular",
-      description:
-        "Ideal for growing businesses with higher call volumes. Same core features with increased monthly minutes.",
-      features: [
-        "Missed-call answering",
-        "Conversational enquiry collection",
-        "Lead summaries with callback preferences",
-        "Business-specific configuration",
-        "Usage visibility",
-      ],
-      cta: "Enquire about Growth",
-      href: "/enquire?plan=growth",
-    },
-    {
-      tier: "pro" as const,
-      name: "Pro",
-      monthlyPriceGbp: 120,
-      minutesPerMonth: 500,
-      popular: false,
-      tagline: "Maximum included usage",
-      description:
-        "For established businesses with consistent high call volumes. Same core features with substantial monthly minutes.",
-      features: [
-        "Missed-call answering",
-        "Conversational enquiry collection",
-        "Lead summaries with callback preferences",
-        "Business-specific configuration",
-        "Usage visibility",
-      ],
-      cta: "Enquire about Pro",
-      href: "/enquire?plan=pro",
-    },
-    {
-      tier: "custom" as const,
-      name: "Custom",
-      monthlyPriceGbp: null,
-      minutesPerMonth: null,
-      popular: false,
-      tagline: "Tailored to your requirements",
-      description:
-        "For businesses with specific needs, unusual volumes, multiple locations or language requirements. Custom quotation based on your exact situation.",
-      features: [
-        "Bespoke minute allowances",
-        "Multiple business numbers",
-        "Multi-location support",
-        "Additional language requests",
-        "Custom configuration",
-      ],
-      cta: "Request a tailored quote",
-      href: "/enquire?plan=custom",
-    },
-  ],
+  plans: telloyaPlans.map((plan) => ({
+    tier: plan.tier,
+    name: plan.name,
+    monthlyPriceGbp: plan.monthlyPriceGbp,
+    minutesPerMonth: plan.minutesPerMonth,
+    popular: plan.popular ?? false,
+    tagline: plan.tier === "basic" 
+      ? "Essential AI receptionist"
+      : plan.tier === "growth"
+      ? "Recommended"
+      : plan.tier === "pro"
+      ? "Maximum included usage"
+      : "Tailored to your requirements",
+    description: plan.tier === "basic"
+      ? "Everything you need to handle missed-call enquiries professionally while you're working on site."
+      : plan.tier === "growth"
+      ? "Ideal for growing businesses with higher call volumes. Same core features with increased monthly minutes."
+      : plan.tier === "pro"
+      ? "For established businesses with consistent high call volumes. Same core features with substantial monthly minutes."
+      : "For businesses with specific needs, unusual volumes, multiple locations or language requirements. Custom quotation based on your exact situation.",
+    features: plan.tier === "custom"
+      ? [
+          "Bespoke minute allowances",
+          "Multiple business numbers",
+          "Multi-location support",
+          "Additional language requests",
+          "Custom configuration",
+        ]
+      : [
+          "Missed-call answering",
+          "Conversational enquiry collection",
+          "Lead summaries with callback preferences",
+          "Business-specific configuration",
+          "Usage visibility",
+        ],
+    cta: plan.tier === "custom" ? "Request a tailored quote" : `Enquire about ${plan.name}`,
+    href: `/enquire?plan=${plan.tier}`,
+  })),
   guard: {
     eyebrow: "Optional add-on",
-    title: "Relaunch Guard",
+    title: relaunchGuardAddon.name,
     lead:
       "Add Google Business Profile monitoring to any Telloya plan. Relaunch Guard is a separate optional service, not a mandatory component.",
-    pricePerLocationGbp: 9.99,
-    infoUrl: "https://profilerelaunch.com/relaunch-guard",
+    pricePerLocationGbp: relaunchGuardAddon.pricePerLocationGbp,
+    infoUrl: relaunchGuardAddon.infoUrl,
     features: [
       "Profile observation and reporting",
       "Monitoring per business location",
       "Subject to technical eligibility",
     ],
-    examples: [
-      {
-        plan: "Basic",
+    examples: telloyaPlans
+      .filter(p => p.monthlyPriceGbp !== null)
+      .map(p => ({
+        plan: p.name,
         locations: 1,
-        telloyaPrice: 49,
-        guardPrice: 9.99,
-        combinedPrice: 58.99,
-      },
-      {
-        plan: "Growth",
-        locations: 1,
-        telloyaPrice: 79,
-        guardPrice: 9.99,
-        combinedPrice: 88.99,
-      },
-      {
-        plan: "Pro",
-        locations: 1,
-        telloyaPrice: 120,
-        guardPrice: 9.99,
-        combinedPrice: 129.99,
-      },
-    ],
+        telloyaPrice: p.monthlyPriceGbp!,
+        guardPrice: relaunchGuardAddon.pricePerLocationGbp,
+        combinedPrice: p.monthlyPriceGbp! + relaunchGuardAddon.pricePerLocationGbp,
+      })),
     note:
       "Subscriptions, technical eligibility and Guard activation are subject to confirmation. Relaunch Guard references the existing ProfileRelaunch Guard product. One-off ProfileRelaunch recovery services are not included in Guard.",
     telloyaCompleteName: "Telloya Complete",
@@ -763,15 +689,15 @@ export const pricingContent = {
     table: {
       headers: ["Feature", "Basic", "Growth", "Pro", "Custom"],
       rows: [
-        ["Monthly price", "£49", "£79", "£120", "By quotation"],
-        ["Included minutes/month", "120", "300", "500", "Custom"],
+        ["Monthly price", formatGbpPrice(telloyaPlans[0].monthlyPriceGbp!), formatGbpPrice(telloyaPlans[1].monthlyPriceGbp!), formatGbpPrice(telloyaPlans[2].monthlyPriceGbp!), "By quotation"],
+        ["Included minutes/month", telloyaPlans[0].minutesPerMonth!.toString(), telloyaPlans[1].minutesPerMonth!.toString(), telloyaPlans[2].minutesPerMonth!.toString(), "Custom"],
         ["Missed-call answering", true, true, true, true],
         ["Enquiry collection", true, true, true, true],
         ["Lead summaries", true, true, true, true],
         ["Business configuration", true, true, true, true],
         ["Usage visibility", true, true, true, true],
-        ["Multiple locations", false, false, false, "Available"],
-        ["Additional languages", false, false, false, "Available"],
+        ["Voice & language preferences", "Request", "Request", "Request", "Request"],
+        ["Multiple locations", "Single", "Single", "Single", "Multiple"],
       ],
     },
   },
@@ -779,7 +705,7 @@ export const pricingContent = {
     eyebrow: "Additional usage",
     title: "Extra minutes",
     lead:
-      "If you need more AI call minutes beyond your monthly allowance, you can opt in to additional usage at £0.25 per minute.",
+      `If you need more AI call minutes beyond your monthly allowance, you can opt in to additional usage at ${formatGbpPrice(overagePolicy.pricePerMinuteGbp)} per minute.`,
     points: [
       "Only available after explicit opt-in",
       "Requires agreed monthly spending cap",
@@ -803,9 +729,9 @@ export const pricingContent = {
           "Additional numbers, unusual carrier configurations and complex multi-location setups may require individual quotations.",
       },
       {
-        title: "No mandatory minimum term",
+        title: "Subscription terms",
         description:
-          "Subscription terms will be confirmed during commercial acceptance. No long-term commitment unless explicitly agreed.",
+          "Subscription terms, duration and cancellation policies will be confirmed during commercial acceptance.",
       },
       {
         title: "Provider-dependent compatibility",
@@ -839,7 +765,7 @@ export const pricingContent = {
       },
       {
         q: "Can I cancel my subscription?",
-        a: "Cancellation terms will be confirmed in your subscription agreement. Unless otherwise agreed, there is no mandatory long-term commitment.",
+        a: "Cancellation terms and any applicable notice periods will be confirmed in your subscription agreement during commercial acceptance.",
       },
       {
         q: "Do unused minutes roll over?",

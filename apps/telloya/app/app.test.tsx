@@ -215,7 +215,7 @@ describe("Marketing Claims", () => {
     expect(tiers).toContain("custom")
   })
 
-  it("marks Growth as popular, not other plans", async () => {
+  it("marks Growth as recommended, not other plans", async () => {
     const contentModule = await import("@/lib/content")
     const pricingContent = contentModule.pricingContent
     
@@ -226,6 +226,7 @@ describe("Marketing Claims", () => {
     
     expect(basicPlan?.popular).toBeFalsy()
     expect(growthPlan?.popular).toBe(true)
+    expect(growthPlan?.tagline).toBe("Recommended")
     expect(proPlan?.popular).toBeFalsy()
     expect(customPlan?.popular).toBeFalsy()
   })
@@ -277,6 +278,25 @@ describe("Marketing Claims", () => {
     
     expect(customPlan?.monthlyPriceGbp).toBeNull()
     expect(customPlan?.minutesPerMonth).toBeNull()
+  })
+  
+  it("uses pricing.ts as single source of truth for all commercial data", async () => {
+    const pricingModule = await import("@/lib/pricing")
+    const contentModule = await import("@/lib/content")
+    
+    // Verify plan data derives from pricing.ts
+    const pricingPlans = pricingModule.telloyaPlans
+    const contentPlans = contentModule.pricingContent.plans
+    
+    expect(contentPlans.length).toBe(pricingPlans.length)
+    
+    // Verify Guard pricing derives from pricing.ts
+    const guardAddon = pricingModule.relaunchGuardAddon
+    expect(contentModule.pricingContent.guard.pricePerLocationGbp).toBe(guardAddon.pricePerLocationGbp)
+    
+    // Verify overage pricing derives from pricing.ts
+    const overagePolicy = pricingModule.overagePolicy
+    expect(contentModule.pricingContent.overage.lead).toContain("£0.25")
   })
 })
 

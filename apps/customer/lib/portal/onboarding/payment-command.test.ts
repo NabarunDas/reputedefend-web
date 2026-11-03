@@ -5,7 +5,16 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   priceAmounts: [] as number[],
   priceIds: [] as string[],
+  checkoutCreates: 0,
+  retrieves: 0,
   failPrice: false,
+  failRetrieve: false,
+  recordedSession: null as string | null,
+  resetProvider: true,
+  provider: null as {
+    objects: Map<string, Record<string, unknown>>
+    checkouts: number
+  } | null,
 }))
 
 vi.mock("@/lib/backend", async original => ({
@@ -16,27 +25,48 @@ vi.mock("@/lib/backend", async original => ({
 
 vi.mock("../../../../../lib/payments/fake", async () => {
   const actual = await vi.importActual<typeof import("../../../../../lib/payments/fake")>("../../../../../lib/payments/fake")
+  let shared: ReturnType<typeof actual.createFakePaymentProvider> | null = null
   return {
     ...actual,
     createFakePaymentProvider: () => {
-      const provider = actual.createFakePaymentProvider()
-      const createRecurringPrice = provider.createRecurringPrice.bind(provider)
-      provider.createRecurringPrice = async input => {
-        mocks.priceAmounts.push(input.amountMinor)
-        const created = await createRecurringPrice(input)
-        mocks.priceIds.push(created.priceId)
-        if (mocks.failPrice) {
-          mocks.failPrice = false
-          throw new Error("provider timeout")
+      if (mocks.resetProvider || !shared) {
+        mocks.resetProvider = false
+        const provider = actual.createFakePaymentProvider()
+        const createRecurringPrice = provider.createRecurringPrice.bind(provider)
+        const createSubscriptionCheckout = provider.createSubscriptionCheckout.bind(provider)
+        const retrieveCheckout = provider.retrieveCheckout.bind(provider)
+        provider.createRecurringPrice = async input => {
+          mocks.priceAmounts.push(input.amountMinor)
+          const created = await createRecurringPrice(input)
+          mocks.priceIds.push(created.priceId)
+          if (mocks.failPrice) {
+            mocks.failPrice = false
+            throw new Error("provider timeout")
+          }
+          return created
         }
-        return created
+        provider.createSubscriptionCheckout = async input => {
+          mocks.checkoutCreates += 1
+          return createSubscriptionCheckout(input)
+        }
+        provider.retrieveCheckout = async id => {
+          mocks.retrieves += 1
+          if (mocks.failRetrieve) {
+            mocks.failRetrieve = false
+            throw new Error("provider timeout")
+          }
+          return retrieveCheckout(id)
+        }
+        shared = provider
+        mocks.provider = provider
       }
-      return provider
+      return shared
     },
   }
 })
 
-import { portalCommercialPaymentCommand } from "./payment-command"
+import { openCommercialCheckout, portalCommercialPaymentCommand } from "./payment-command"
+import { PaymentsDisabledError, type PaymentProvider } from "../../../../../lib/payments/provider"
 import { portalSessionCookieName } from "@/lib/portal/config"
 
 const origin = "https://customer.profilerelaunch.com"
@@ -101,9 +131,24 @@ beforeEach(() => {
   mocks.rpc.mockReset()
   mocks.priceAmounts.length = 0
   mocks.priceIds.length = 0
+  mocks.checkoutCreates = 0
+  mocks.retrieves = 0
   mocks.failPrice = false
-  mocks.rpc.mockImplementation(async (name: string) => {
-    if (name === "customer_portal_commercial_payment_prepare_v1") return prepared
+  mocks.failRetrieve = false
+  mocks.recordedSession = null
+  mocks.resetProvider = true
+  mocks.provider = null
+  mocks.rpc.mockImplementation(async (name: string, args?: { p_session_id?: string }) => {
+    if (name === "customer_portal_commercial_payment_prepare_v1") {
+      if (!mocks.recordedSession) return prepared
+      return {
+        ...prepared,
+        existing: true,
+        checkoutSessionId: mocks.recordedSession,
+        stripeCustomerId: "cus_commercialtest1",
+        stripePriceId: mocks.priceIds[0] ?? null,
+      }
+    }
     if (name === "payment_prepare_customer_v1") {
       return {
         status: "success",
@@ -113,7 +158,10 @@ beforeEach(() => {
     }
     if (name === "payment_record_customer_map_v1") return { status: "success", stripeCustomerId: "cus_commercialtest1" }
     if (name === "commercial_payment_record_price_v1") return { status: "success" }
-    if (name === "commercial_payment_record_checkout_v1") return { status: "success", activated: false }
+    if (name === "commercial_payment_record_checkout_v1") {
+      mocks.recordedSession = args?.p_session_id ?? null
+      return { status: "success", activated: false }
+    }
     return null
   })
 })
@@ -179,6 +227,129 @@ describe("commercial payment preparation command", () => {
     expect(JSON.stringify(confirmingBody)).not.toMatch(/checkoutUrl/)
     expect(mocks.priceIds).toHaveLength(before)
     expect(mocks.rpc.mock.calls.filter(call => call[0] === "commercial_payment_record_checkout_v1")).toHaveLength(1)
+  })
+
+  it("does not reserve a provider checkout when tax is not supported", async () => {
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_portal_commercial_payment_prepare_v1") {
+        return { status: "unsupported", cadence: "MONTH", currency: "GBP", taxBehaviour: "EXCLUSIVE" }
+      }
+      return null
+    })
+    const refused = await portalCommercialPaymentCommand(req({ selector }))
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toMatchObject({ message: expect.stringMatching(/not ready for secure payment/) })
+    expect(mocks.priceAmounts).toEqual([])
+    expect(mocks.checkoutCreates).toBe(0)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["customer_portal_commercial_payment_prepare_v1"])
+
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_portal_commercial_payment_prepare_v1") return { ...prepared, taxBehaviour: "INCLUSIVE" }
+      return { status: "success", activated: true }
+    })
+    const provider = { mode: "fake" } as PaymentProvider
+    await expect(openCommercialCheckout(origin, { ...prepared, taxBehaviour: "EXCLUSIVE" }, provider)).rejects.toBeInstanceOf(PaymentsDisabledError)
+    await expect(openCommercialCheckout(origin, { ...prepared, taxBehaviour: "INCLUSIVE" }, provider)).rejects.toBeInstanceOf(PaymentsDisabledError)
+    mocks.rpc.mockClear()
+    const blocked = await portalCommercialPaymentCommand(req({ selector }))
+    expect(blocked.status).toBe(503)
+    expect(mocks.priceAmounts).toEqual([])
+    expect(mocks.checkoutCreates).toBe(0)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["customer_portal_commercial_payment_prepare_v1"])
+  })
+
+  it("reuses one verified open Checkout for repeated and different request keys", async () => {
+    const first = await portalCommercialPaymentCommand(req({ selector }))
+    const firstBody = await first.json()
+    expect(first.status).toBe(200)
+    expect(mocks.checkoutCreates).toBe(1)
+    expect(mocks.recordedSession).toMatch(/^cs_[A-Za-z0-9]+$/)
+    const again = await portalCommercialPaymentCommand(req({ selector }))
+    const againBody = await again.json()
+    expect(again.status).toBe(200)
+    expect(againBody.checkoutUrl).toBe(firstBody.checkoutUrl)
+    const otherKey = "12121212-1212-4121-8121-121212121212"
+    const different = await portalCommercialPaymentCommand(req({ selector }, `${origin}/api/portal/onboarding/payment`, {
+      "idempotency-key": otherKey,
+    }))
+    const differentBody = await different.json()
+    expect(different.status).toBe(200)
+    expect(differentBody.checkoutUrl).toBe(firstBody.checkoutUrl)
+    expect(mocks.checkoutCreates).toBe(1)
+    expect(mocks.retrieves).toBe(2)
+    expect(mocks.rpc.mock.calls.filter(call => call[0] === "commercial_payment_record_checkout_v1")).toHaveLength(1)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).not.toContain("commercial_payment_evidence")
+    expect(JSON.stringify(againBody)).not.toMatch(/activated|ACTIVE/)
+  })
+
+  it("fails closed for an expired Checkout and shows confirmation pending when the session is unsettled", async () => {
+    const opened = await portalCommercialPaymentCommand(req({ selector }))
+    expect(opened.status).toBe(200)
+    const session = mocks.provider?.objects.get(mocks.recordedSession || "")
+    expect(session).toBeTruthy()
+    session!.status = "expired"
+    const expired = await portalCommercialPaymentCommand(req({ selector }))
+    expect(expired.status).toBe(409)
+    expect(await expired.json()).toMatchObject({ message: expect.stringMatching(/can no longer be used/) })
+    session!.status = "canceled"
+    const cancelled = await portalCommercialPaymentCommand(req({ selector }, `${origin}/api/portal/onboarding/payment`, {
+      "idempotency-key": "13131313-1313-4131-8131-131313131313",
+    }))
+    expect(cancelled.status).toBe(409)
+    session!.status = "complete"
+    session!.paymentStatus = "unpaid"
+    const unsettled = await portalCommercialPaymentCommand(req({ selector }))
+    const unsettledBody = await unsettled.json()
+    expect(unsettled.status).toBe(200)
+    expect(unsettledBody).toMatchObject({ status: "confirming" })
+    expect(JSON.stringify(unsettledBody)).not.toMatch(/checkoutUrl/)
+    session!.status = "open"
+    session!.paymentStatus = "paid"
+    const paid = await portalCommercialPaymentCommand(req({ selector }))
+    expect(await paid.json()).toMatchObject({ status: "confirming" })
+    session!.paymentStatus = "processing"
+    const processing = await portalCommercialPaymentCommand(req({ selector }))
+    expect(await processing.json()).toMatchObject({ status: "confirming" })
+    expect(mocks.checkoutCreates).toBe(1)
+    expect(mocks.rpc.mock.calls.filter(call => call[0] === "commercial_payment_record_checkout_v1")).toHaveLength(1)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).not.toContain("commercial_payment_evidence")
+  })
+
+  it("retries a Checkout retrieve timeout and refuses a mismatched customer, metadata, or livemode", async () => {
+    const opened = await portalCommercialPaymentCommand(req({ selector }))
+    const openedBody = await opened.json()
+    expect(opened.status).toBe(200)
+    mocks.failRetrieve = true
+    const timedOut = await portalCommercialPaymentCommand(req({ selector }))
+    expect(timedOut.status).toBe(503)
+    const retried = await portalCommercialPaymentCommand(req({ selector }))
+    expect(retried.status).toBe(200)
+    expect((await retried.json()).checkoutUrl).toBe(openedBody.checkoutUrl)
+    const session = mocks.provider?.objects.get(mocks.recordedSession || "")
+    session!.customerId = "cus_othercustomer1"
+    const customer = await portalCommercialPaymentCommand(req({ selector }))
+    expect(customer.status).toBe(409)
+    expect(await customer.json()).toMatchObject({ message: expect.stringMatching(/does not match this offer/) })
+    session!.customerId = "cus_commercialtest1"
+    const metadata = session!.metadata as Record<string, string>
+    metadata.acceptanceId = "99999999-9999-4999-8999-999999999998"
+    const metadataMismatch = await portalCommercialPaymentCommand(req({ selector }))
+    expect(metadataMismatch.status).toBe(409)
+    metadata.acceptanceId = acceptanceId
+    metadata.extra = "no"
+    const extra = await portalCommercialPaymentCommand(req({ selector }))
+    expect(extra.status).toBe(409)
+    delete metadata.extra
+    session!.livemode = true
+    const live = await portalCommercialPaymentCommand(req({ selector }))
+    expect(live.status).toBe(409)
+    session!.livemode = false
+    mocks.recordedSession = "cs_missing00000001"
+    const missing = await portalCommercialPaymentCommand(req({ selector }))
+    expect(missing.status).toBe(409)
+    expect(mocks.checkoutCreates).toBe(1)
+    expect(mocks.rpc.mock.calls.filter(call => call[0] === "commercial_payment_record_checkout_v1")).toHaveLength(1)
+    expect(mocks.rpc.mock.calls.map(call => call[0])).not.toContain("commercial_payment_evidence")
   })
 
   it("does not reserve a checkout on a deployed lane when payments are not enabled", async () => {

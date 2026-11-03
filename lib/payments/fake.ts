@@ -13,7 +13,7 @@ type StoredCheckout = {
   setupIntentId: string | null
   customerId: string
   metadata: Record<string, string>
-  livemode: false
+  livemode: boolean
   currency: string
 }
 
@@ -269,7 +269,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
     },
     async retrieveCheckout(id) {
       const found = [...sessions.values()].find(session => session.id === id) || objects.get(id) as StoredCheckout | undefined
-      return found ? { ...found, metadata: found.metadata ?? {}, livemode: false as const } : null
+      return found ? { ...found, metadata: found.metadata ?? {}, livemode: found.livemode === true } : null
     },
     async expireCheckout(input) {
       state.idempotency.add(input.idempotencyKey)
@@ -426,6 +426,9 @@ export function createFakePaymentProvider(): PaymentProvider & {
         throw new PaymentsDisabledError("Commercial price product is not approved.")
       }
       if (commercial && input.currency !== "GBP") throw new PaymentsDisabledError("Commercial price currency is not GBP.")
+      if (commercial && commercial.taxBehaviour !== "NOT_APPLICABLE") {
+        throw new PaymentsDisabledError("Commercial tax is not ready for secure payment.")
+      }
       if (objects.has(input.idempotencyKey)) {
         const existing = objects.get(input.idempotencyKey) as { productId: string; priceId: string; amountMinor: number }
         return { ...existing, livemode: false as const }
@@ -476,8 +479,14 @@ export function createFakePaymentProvider(): PaymentProvider & {
         livemode: false,
         currency: "gbp",
       }
+      Object.assign(created, {
+        stripePriceId: input.stripePriceId,
+        quantity: 1,
+        trialEnd: input.trialEnd ?? null,
+        ...(commercial ? { automaticTax: false } : {}),
+      })
       sessions.set(input.idempotencyKey, created)
-      objects.set(created.id, { ...created, stripePriceId: input.stripePriceId, quantity: 1, trialEnd: input.trialEnd ?? null })
+      objects.set(created.id, created)
       state.checkouts += 1
       state.idempotency.add(input.idempotencyKey)
       return { id: created.id, url: created.url, mode: "subscription", amountMinor: 0, livemode: false as const }

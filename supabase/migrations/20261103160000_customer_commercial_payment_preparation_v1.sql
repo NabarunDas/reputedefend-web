@@ -79,7 +79,7 @@ CREATE TABLE public.commercial_checkout_preparations (
   amount_minor integer NOT NULL CHECK (amount_minor > 0),
   currency char(3) NOT NULL CHECK (currency = 'GBP'),
   cadence text NOT NULL CHECK (cadence = 'MONTH'),
-  tax_behaviour text NOT NULL CHECK (tax_behaviour IN ('INCLUSIVE', 'EXCLUSIVE', 'NOT_APPLICABLE')),
+  tax_behaviour text NOT NULL CHECK (tax_behaviour = 'NOT_APPLICABLE'),
   tax_amount_minor integer,
   guard_quantity integer NOT NULL CHECK (guard_quantity >= 0),
   guard_charge_minor integer NOT NULL CHECK (guard_charge_minor >= 0),
@@ -93,8 +93,7 @@ CREATE TABLE public.commercial_checkout_preparations (
   livemode boolean NOT NULL DEFAULT admin_private.payment_expected_livemode_v1(),
   created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
   CONSTRAINT commercial_checkout_preparations_tax_shape CHECK (
-    (tax_behaviour = 'NOT_APPLICABLE' AND tax_amount_minor IS NULL)
-    OR (tax_behaviour IN ('INCLUSIVE', 'EXCLUSIVE') AND tax_amount_minor IS NOT NULL AND tax_amount_minor >= 0)
+    tax_behaviour = 'NOT_APPLICABLE' AND tax_amount_minor IS NULL
   ),
   CONSTRAINT commercial_checkout_preparations_guard_shape CHECK (
     (guard_quantity = 0 AND guard_charge_minor = 0)
@@ -386,7 +385,8 @@ BEGIN
       'acceptedAt', p_classified ->> 'acceptedAt',
       'payment', jsonb_build_object(
         'state', CASE
-          WHEN p_classified ->> 'cadence' IS DISTINCT FROM 'MONTH' THEN 'unsupported'
+          WHEN p_classified ->> 'cadence' IS DISTINCT FROM 'MONTH'
+            OR p_classified ->> 'taxBehaviour' IS DISTINCT FROM 'NOT_APPLICABLE' THEN 'unsupported'
           WHEN p_classified ->> 'subscriptionState' = 'PAYMENT_PENDING' THEN 'started'
           ELSE 'preparing'
         END,
@@ -402,7 +402,8 @@ BEGIN
         END
       ),
       'nextStep', CASE
-        WHEN p_classified ->> 'cadence' IS DISTINCT FROM 'MONTH' THEN
+        WHEN p_classified ->> 'cadence' IS DISTINCT FROM 'MONTH'
+          OR p_classified ->> 'taxBehaviour' IS DISTINCT FROM 'NOT_APPLICABLE' THEN
           'This offer is accepted. This billing arrangement is not ready for secure payment. Nothing has been paid and the service has not started.'
         WHEN p_classified ->> 'subscriptionState' = 'PAYMENT_PENDING' THEN
           'This offer is accepted. Payment has not been completed. Returning from a payment page does not record a payment. Nothing has been paid and the service has not started.'
@@ -700,10 +701,18 @@ BEGIN
     );
   END IF;
 
-  IF acceptance.cadence IS DISTINCT FROM 'MONTH' OR acceptance.currency IS DISTINCT FROM 'GBP' THEN
+  IF acceptance.cadence IS DISTINCT FROM 'MONTH'
+    OR acceptance.currency IS DISTINCT FROM 'GBP'
+    OR acceptance.tax_behaviour IS DISTINCT FROM 'NOT_APPLICABLE'
+  THEN
     RETURN admin_private.commercial_payment_remember_v1(
       p_request, customer, fingerprint,
-      jsonb_build_object('status', 'unsupported', 'cadence', acceptance.cadence, 'currency', acceptance.currency)
+      jsonb_build_object(
+        'status', 'unsupported',
+        'cadence', acceptance.cadence,
+        'currency', acceptance.currency,
+        'taxBehaviour', acceptance.tax_behaviour
+      )
     );
   END IF;
 
@@ -961,7 +970,8 @@ BEGIN
             ELSE 'null'::jsonb
           END,
           'state', CASE
-            WHEN acceptance.cadence IS DISTINCT FROM 'MONTH' THEN 'unsupported'
+            WHEN acceptance.cadence IS DISTINCT FROM 'MONTH'
+              OR acceptance.tax_behaviour IS DISTINCT FROM 'NOT_APPLICABLE' THEN 'unsupported'
             WHEN sub.state = 'PAYMENT_PENDING' THEN 'started'
             ELSE 'preparing'
           END

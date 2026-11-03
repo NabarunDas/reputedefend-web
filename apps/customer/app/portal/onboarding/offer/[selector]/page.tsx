@@ -27,6 +27,7 @@ export default async function CommercialOfferPage({ params }: { params: Promise<
     && commercialCheckoutEnabled()
     && (paymentsEnabled() || paymentLane() === "local")
     && loaded.cadence === "MONTH"
+    && loaded.taxBehaviour === "NOT_APPLICABLE"
     && (loaded.payment?.state === "preparing" || loaded.payment?.state === "started")
   return <OfferView offer={loaded} paymentAction={paymentAction} />
 }

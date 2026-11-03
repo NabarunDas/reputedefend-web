@@ -380,6 +380,44 @@ describe("payment provider contract", () => {
       },
       trialEnd: Math.floor(Date.now() / 1000) + (72 * 3600),
     })).rejects.toThrow(/does not start a trial/)
+    expect(provider.checkouts).toBe(1)
+    const open = await provider.retrieveCheckout(checkout.id)
+    expect(open).toMatchObject({
+      id: checkout.id,
+      mode: "subscription",
+      status: "open",
+      paymentStatus: "unpaid",
+      customerId: "cus_commercialabc",
+      currency: "gbp",
+      livemode: false,
+      metadata: {
+        customerId,
+        commercialSubscriptionId: subscriptionId,
+        acceptanceId,
+        providerOperationId: checkoutOperationId,
+      },
+    })
+    expect(provider.objects.get(checkout.id)).toMatchObject({ automaticTax: false })
+    const taxed = { ...priceInput.commercial, taxBehaviour: "EXCLUSIVE" as const }
+    await expect(provider.createRecurringPrice({
+      ...priceInput,
+      idempotencyKey: "21212121-2121-4121-8121-212121212121",
+      commercial: taxed,
+    })).rejects.toThrow(/tax is not ready/)
+    await expect(provider.createRecurringPrice({
+      ...priceInput,
+      idempotencyKey: "23232323-2323-4232-8232-232323232323",
+      commercial: { ...priceInput.commercial, taxBehaviour: "INCLUSIVE" },
+    })).rejects.toThrow(/tax is not ready/)
+    expect(provider.objects.has("21212121-2121-4121-8121-212121212121")).toBe(false)
+    expect(provider.objects.has("23232323-2323-4232-8232-232323232323")).toBe(false)
+    const storedSession = provider.objects.get(checkout.id) as { status: string; paymentStatus: string | null; livemode: boolean; customerId: string }
+    storedSession.status = "expired"
+    expect((await provider.retrieveCheckout(checkout.id))?.status).toBe("expired")
+    storedSession.status = "complete"
+    storedSession.paymentStatus = "unpaid"
+    storedSession.livemode = true
+    expect(await provider.retrieveCheckout(checkout.id)).toMatchObject({ status: "complete", paymentStatus: "unpaid", livemode: true })
   })
 
   it("reuses one hosted invoice and stores a 14-day due date", async () => {

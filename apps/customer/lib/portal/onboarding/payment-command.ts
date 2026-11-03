@@ -7,7 +7,7 @@ import { isUuid } from "@/lib/uuid"
 import { createFakePaymentProvider } from "../../../../../lib/payments/fake"
 import { paymentLane, paymentsEnabled } from "../../../../../lib/payments/config"
 import { declaredLivemodeArgument, guardExternalPayment } from "../../../../../lib/payments/lane-agreement"
-import type { CommercialMetadata } from "../../../../../lib/payments/model"
+import type { CommercialMetadata, RetrievedCheckout } from "../../../../../lib/payments/model"
 import { paymentProviderWithLane } from "../../../../../lib/payments"
 import { PaymentsDisabledError, type PaymentProvider } from "../../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
@@ -20,6 +20,9 @@ const UNAVAILABLE = "We couldn't start secure payment for this offer just now. N
 const STALE = "This page is out of date. Refresh it and try again. Nothing has been paid."
 const UNSUPPORTED = "This billing arrangement is not ready for secure payment. Nothing has been paid and the service has not started."
 const RETURN_NOTE = "Returning from the payment page does not record a payment."
+const CONFIRMING = `Payment has not been completed. ${RETURN_NOTE} Nothing has been paid and the service has not started.`
+const SESSION_CLOSED = "This payment session can no longer be used. Nothing has been paid and the service has not started."
+const SESSION_MISMATCH = "The recorded payment session does not match this offer. Nothing has been paid and the service has not started."
 
 const reply = (message: string, http = 401) =>
   NextResponse.json({ message }, { status: http, headers: privateResponseHeaders })
@@ -91,7 +94,7 @@ type ReservedPreparation = Prepared & {
   currency: "GBP"
   cadence: "MONTH"
   productName: "Telloya" | "Complete"
-  taxBehaviour: "INCLUSIVE" | "EXCLUSIVE" | "NOT_APPLICABLE"
+  taxBehaviour: "NOT_APPLICABLE"
   guardQuantity: number
   guardChargeMinor: number
   overageOptIn: boolean
@@ -106,7 +109,7 @@ function preparedOk(value: unknown): value is ReservedPreparation {
   if (!isUuid(row.acceptanceId)) return false
   if (row.currency !== "GBP" || row.cadence !== "MONTH") return false
   if (row.productName !== "Telloya" && row.productName !== "Complete") return false
-  if (row.taxBehaviour !== "INCLUSIVE" && row.taxBehaviour !== "EXCLUSIVE" && row.taxBehaviour !== "NOT_APPLICABLE") return false
+  if (row.taxBehaviour !== "NOT_APPLICABLE") return false
   if (!Number.isInteger(row.amountMinor) || (row.amountMinor ?? 0) < 1) return false
   if (!Number.isInteger(row.guardQuantity) || (row.guardQuantity ?? -1) < 0) return false
   if (!Number.isInteger(row.guardChargeMinor) || (row.guardChargeMinor ?? -1) < 0) return false
@@ -151,19 +154,59 @@ async function ensureCustomer(customerId: string, provider: PaymentProvider): Pr
   return mapped.stripeCustomerId
 }
 
+const confirming = () => NextResponse.json({
+  status: "confirming",
+  message: CONFIRMING,
+}, { headers: privateResponseHeaders })
+
+function sessionFactsMatch(session: RetrievedCheckout, prepared: ReservedPreparation, stripeCustomer: string, metadata: CommercialMetadata) {
+  const keys = ["acceptanceId", "commercialSubscriptionId", "customerId", "providerOperationId"]
+  const recorded = Object.keys(session.metadata).sort()
+  if (session.id !== prepared.checkoutSessionId || session.mode !== "subscription") return false
+  if (session.customerId !== stripeCustomer) return false
+  if ((session.currency || "").toLowerCase() !== "gbp") return false
+  if (recorded.length !== keys.length || keys.some(key => session.metadata[key] !== metadata[key as keyof CommercialMetadata])) return false
+  if (typeof session.amountMinor === "number" && session.amountMinor > 0 && session.amountMinor !== prepared.amountMinor) return false
+  return true
+}
+
+function recordedSessionOutcome(session: RetrievedCheckout) {
+  if (session.status === "complete" || session.paymentStatus === "paid" || session.paymentStatus === "processing") return "confirming" as const
+  if (session.status === "open" && (session.paymentStatus == null || session.paymentStatus === "unpaid")) return "open" as const
+  return "closed" as const
+}
+
 /**
  * Opens the reserved commercial Checkout. The amount, price, and customer come
  * from the preparation row. A returned URL is not payment evidence.
  */
 export async function openCommercialCheckout(origin: string, prepared: Prepared, provider: PaymentProvider) {
   if (!preparedOk(prepared)) throw new PaymentsDisabledError(UNAVAILABLE)
-  if (prepared.providerOperationStatus === "SUCCEEDED") {
-    return NextResponse.json({
-      status: "confirming",
-      message: `Payment has not been completed. ${RETURN_NOTE} Nothing has been paid and the service has not started.`,
-    }, { headers: privateResponseHeaders })
+  if (prepared.providerOperationStatus === "SUCCEEDED") return confirming()
+  const metadata: CommercialMetadata = {
+    customerId: prepared.customerId,
+    commercialSubscriptionId: prepared.commercialSubscriptionId,
+    acceptanceId: prepared.acceptanceId,
+    providerOperationId: prepared.providerOperationId,
   }
   const stripeCustomer = prepared.stripeCustomerId || await ensureCustomer(prepared.customerId, provider)
+  if (prepared.checkoutSessionId) {
+    const found = await provider.retrieveCheckout(prepared.checkoutSessionId)
+    const live = provider.mode === "stripe_live"
+    if (!found || found.livemode !== live || !sessionFactsMatch(found, prepared, stripeCustomer, metadata)) {
+      return reply(SESSION_MISMATCH, 409)
+    }
+    const outcome = recordedSessionOutcome(found)
+    if (outcome === "confirming") return confirming()
+    if (outcome !== "open") return reply(SESSION_CLOSED, 409)
+    const trusted = trustedStripeUrl(found.url, "checkout")
+    if (!trusted) throw new PaymentsDisabledError("Stripe Checkout URL was rejected.")
+    return NextResponse.json({
+      status: "ok",
+      checkoutUrl: trusted,
+      message: `Continue to secure payment. ${RETURN_NOTE} Nothing has been paid and the service has not started.`,
+    }, { headers: privateResponseHeaders })
+  }
   let stripePriceId = prepared.stripePriceId
   if (!stripePriceId) {
     const price = await provider.createRecurringPrice({
@@ -177,7 +220,7 @@ export async function openCommercialCheckout(origin: string, prepared: Prepared,
         customerId: prepared.customerId,
         commercialSubscriptionId: prepared.commercialSubscriptionId,
         acceptanceId: prepared.acceptanceId,
-        taxBehaviour: prepared.taxBehaviour,
+        taxBehaviour: "NOT_APPLICABLE",
       },
     })
     if (price.amountMinor !== prepared.amountMinor || !PROVIDER_REF.price.test(price.priceId) || !PROVIDER_REF.product.test(price.productId)) {
@@ -191,12 +234,6 @@ export async function openCommercialCheckout(origin: string, prepared: Prepared,
     if (recorded.status !== "success") throw new PaymentsDisabledError(UNAVAILABLE)
     stripePriceId = price.priceId
   }
-  const metadata: CommercialMetadata = {
-    customerId: prepared.customerId,
-    commercialSubscriptionId: prepared.commercialSubscriptionId,
-    acceptanceId: prepared.acceptanceId,
-    providerOperationId: prepared.providerOperationId,
-  }
   const checkout = await provider.createSubscriptionCheckout({
     idempotencyKey: prepared.idempotencyKey,
     stripeCustomerId: stripeCustomer,
@@ -205,7 +242,9 @@ export async function openCommercialCheckout(origin: string, prepared: Prepared,
     cancelUrl: `${origin}/pay/return`,
     metadata,
   })
-  if (checkout.amountMinor !== 0) throw new PaymentsDisabledError(UNAVAILABLE)
+  if (checkout.amountMinor !== 0 || checkout.livemode !== (provider.mode === "stripe_live")) {
+    throw new PaymentsDisabledError(UNAVAILABLE)
+  }
   const recorded = await backend().rpc<{ status?: string; activated?: boolean }>("commercial_payment_record_checkout_v1", {
     p_operation: prepared.providerOperationId,
     p_session_id: checkout.id,

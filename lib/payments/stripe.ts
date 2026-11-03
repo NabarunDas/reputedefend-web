@@ -316,11 +316,9 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
       if (commercial && input.currency !== "GBP") {
         throw new PaymentsDisabledError("Commercial price currency is not GBP.")
       }
-      const taxBehaviour = commercial?.taxBehaviour === "INCLUSIVE"
-        ? "inclusive"
-        : commercial?.taxBehaviour === "EXCLUSIVE"
-          ? "exclusive"
-          : "unspecified"
+      if (commercial && commercial.taxBehaviour !== "NOT_APPLICABLE") {
+        throw new PaymentsDisabledError("Commercial tax is not ready for secure payment.")
+      }
       const stripe = client(env)
       const product = await stripe.products.create({
         name: commercial ? commercial.productName : GUARD_PRODUCT_NAME,
@@ -333,7 +331,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
         recurring: { interval: "month" },
         product: product.id,
         metadata: meta,
-        ...(commercial ? { tax_behavior: taxBehaviour } : {}),
+        ...(commercial ? { tax_behavior: "unspecified" as const } : {}),
       }, { idempotencyKey: input.idempotencyKey })
       lane(price, "Stripe object")
       if (price.unit_amount !== input.amountMinor || (price.currency || "").toLowerCase() !== "gbp" || price.type !== "recurring") {
@@ -345,7 +343,9 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
     },
     async createSubscriptionCheckout(input) {
       let meta: Record<string, string>
+      let commercial = false
       if (isCommercialMetadata(input.metadata)) {
+        commercial = true
         meta = commercialMetadata(input.metadata)
         assertSafeCommercialMetadata(meta)
         if (input.trialEnd != null) throw new PaymentsDisabledError("Commercial Checkout does not start a trial.")
@@ -368,6 +368,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
           ...(input.trialEnd ? { trial_end: input.trialEnd } : {}),
         },
         metadata: meta,
+        ...(commercial ? { automatic_tax: { enabled: false } } : {}),
       }, { idempotencyKey: input.idempotencyKey })
       lane(session, "Stripe object")
       return { id: session.id, url: requireCheckoutUrl(session.url), mode: "subscription", amountMinor: 0, livemode: expectedLivemode }

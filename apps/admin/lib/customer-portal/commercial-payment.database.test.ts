@@ -79,6 +79,8 @@ async function offer(options: {
   locations?: string[]
   cadence?: "MONTH" | "YEAR" | "ONCE"
   amount?: number
+  tax?: "NOT_APPLICABLE" | "INCLUSIVE" | "EXCLUSIVE"
+  taxMinor?: number | null
   guardQuantity?: number
   guardUnit?: number
   state?: string
@@ -92,12 +94,15 @@ async function offer(options: {
   const id = randomUUID()
   const version = ++planNumber
   const limit = Math.max(quantity, guardQuantity, 1)
+  const amount = options.amount ?? 4900
+  const tax = options.tax ?? "NOT_APPLICABLE"
+  const taxMinor = tax === "NOT_APPLICABLE" ? null : (options.taxMinor ?? 980)
   await db.query(
     `insert into public.plan_versions(
       id, product_code, version_number, status, effective_from, billing_cadence, currency,
       amount_minor, tax_behaviour, terms_ref
-    ) values ($1, $2, $3, 'DRAFT', now() - interval '30 days' + make_interval(mins => $3), $4, 'GBP', $5, 'NOT_APPLICABLE', $6)`,
-    [id, product, version, options.cadence ?? "MONTH", options.amount ?? 4900, terms],
+    ) values ($1, $2, $3, 'DRAFT', now() - interval '30 days' + make_interval(mins => $3), $4, 'GBP', $5, $7, $6)`,
+    [id, product, version, options.cadence ?? "MONTH", amount, terms, tax],
   )
   await db.query(
     `insert into public.plan_components(plan_version_id, component_code, quantity_limit, scope)
@@ -122,14 +127,13 @@ async function offer(options: {
   const subscription = randomUUID()
   const business = options.business ?? bakery
   const customer = options.customer ?? alex
-  const amount = options.amount ?? 4900
   if (options.replica) await db.exec("set local session_replication_role = replica")
   await db.query(
     `insert into public.commercial_subscriptions(
       id, public_ref, customer_id, business_id, plan_family, plan_version_id, grant_kind, state,
-      amount_minor, currency, tax_behaviour, cadence_snapshot, terms_ref
-    ) values ($1, $2, $3, $4, 'VOICE', $5, 'BILLABLE', 'DRAFT', $6, 'GBP', 'NOT_APPLICABLE', $7, $8)`,
-    [subscription, options.ref, customer, business, id, amount, options.cadence ?? "MONTH", terms],
+      amount_minor, currency, tax_behaviour, tax_amount_minor, cadence_snapshot, terms_ref
+    ) values ($1, $2, $3, $4, 'VOICE', $5, 'BILLABLE', 'DRAFT', $6, 'GBP', $7, $8, $9, $10)`,
+    [subscription, options.ref, customer, business, id, amount, tax, taxMinor, options.cadence ?? "MONTH", terms],
   )
   await db.query(
     `insert into public.commercial_subscription_items(subscription_id, component_code, quantity, quantity_limit_snapshot)
@@ -190,7 +194,10 @@ async function offer(options: {
     `select record_version from public.commercial_subscriptions where id = $1`,
     [subscription],
   )
-  return { subscription, terms, version: versionRow[0].record_version, ref: options.ref, conditions: commercial, amount, cadence: options.cadence ?? "MONTH" }
+  return {
+    subscription, terms, version: versionRow[0].record_version, ref: options.ref, conditions: commercial,
+    amount, cadence: options.cadence ?? "MONTH", taxBehaviour: tax, taxMinor,
+  }
 }
 
 function consent(prepared: {
@@ -198,13 +205,15 @@ function consent(prepared: {
   terms: string
   amount?: number
   cadence?: string
+  taxBehaviour?: string
+  taxMinor?: number | null
   conditions: Record<string, unknown>
 }, overageOptIn = false, overageCapMinor: number | null = null) {
   return {
     offerVersion: prepared.version,
     priceMinor: prepared.amount ?? 4900,
-    taxBehaviour: "NOT_APPLICABLE",
-    taxMinor: null,
+    taxBehaviour: prepared.taxBehaviour ?? "NOT_APPLICABLE",
+    taxMinor: prepared.taxMinor ?? null,
     cadence: prepared.cadence ?? "MONTH",
     agreementRef: prepared.terms,
     agreementAccepted: true,
@@ -526,5 +535,38 @@ describe("commercial payment preparation", () => {
       `update public.commercial_subscriptions set state = 'ACTIVE' where id = $1`,
       [complete.subscription],
     )).rejects.toThrow(/trusted payment evidence/)
+  })
+
+  it("does not reserve checkout for an accepted offer whose tax is not yet supported", async () => {
+    const exclusive = await offer({ ref: "VC-26-PAY2AR", tax: "EXCLUSIVE", taxMinor: 980 })
+    await accept(alexSession, exclusive)
+    const before = await counts()
+    const refused = await prepare(alexSession, exclusive.ref)
+    expect(refused).toMatchObject({ status: "unsupported", cadence: "MONTH", currency: "GBP", taxBehaviour: "EXCLUSIVE" })
+    expect((await rows<{ state: string }>(`select state from public.commercial_subscriptions where id = $1`, [exclusive.subscription]))[0].state).toBe("ACCEPTED")
+    expect(await counts()).toEqual(before)
+    const seen = await rpc<Row>("customer_portal_commercial_offer_v1", [alexSession, exclusive.ref])
+    expect(seen).toMatchObject({
+      status: "accepted",
+      taxBehaviour: "EXCLUSIVE",
+      priceMinor: 4900,
+      totalMinor: 5880,
+      payment: { state: "unsupported", cadence: "MONTH", totalMinor: 5880, guardChargeMinor: null },
+    })
+    expect(String(seen.nextStep)).toContain("not ready for secure payment")
+
+    const inclusive = await offer({ ref: "VC-26-PAY2AS", business: yard, tax: "INCLUSIVE", taxMinor: 817, amount: 4900 })
+    await accept(alexSession, inclusive)
+    expect(await prepare(alexSession, inclusive.ref)).toMatchObject({ status: "unsupported", taxBehaviour: "INCLUSIVE" })
+    expect((await rows<{ state: string }>(`select state from public.commercial_subscriptions where id = $1`, [inclusive.subscription]))[0].state).toBe("ACCEPTED")
+    expect((await counts()).preparations).toBe(0)
+    expect((await counts()).prices).toBe(0)
+    expect((await counts()).checkouts).toBe(0)
+    const inclusiveSeen = await rpc<Row>("customer_portal_commercial_offer_v1", [alexSession, inclusive.ref])
+    expect(inclusiveSeen).toMatchObject({
+      taxBehaviour: "INCLUSIVE",
+      totalMinor: 4900,
+      payment: { state: "unsupported", totalMinor: 4900 },
+    })
   })
 })

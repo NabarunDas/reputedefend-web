@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import type { CustomerCaseRow, CustomerDashboard } from "@/lib/portal/cases/parse"
+import type { OnboardingRequestView } from "@/lib/portal/onboarding/types"
 import { presentProducts, type ProductCard, type ProductKey, type ProductSources } from "./present"
 
 const submittedAt = "2026-10-08T12:00:00.000Z"
@@ -606,5 +607,312 @@ describe("product launcher", () => {
     expect(guard.statusLabel).toBe("Active")
     expect(guard.actions).toEqual([])
     expect(guard.unavailableReason).toMatch(/does not say whether coverage has changed/)
+  })
+
+  it("shows a Telloya or Complete request without replacing Recovery, Guard, or a real entitlement", () => {
+    const progress = (overrides: Partial<OnboardingRequestView> = {}): OnboardingRequestView => ({
+      product: "Telloya",
+      stage: "under_review",
+      statusLabel: "Request in progress",
+      waitingFor: "us",
+      customerActionRequired: false,
+      businessName: "Harbour Bakery",
+      locations: ["High Street"],
+      completed: ["Request received", "Under review"],
+      nextStep: "We are reviewing this request.",
+      receivedAt: "2026-11-01T09:00:00.000Z",
+      updatedAt: "2026-11-01T09:30:00.000Z",
+      ...overrides,
+    })
+    const commercial = {
+      reads: { telloya: "ok" as const, guard: "ok" as const },
+      businesses: [{
+        businessName: "Harbour Bakery",
+        telloya: { status: "not_subscribed" as const, locations: [] },
+        guard: { status: "not_subscribed" as const, locations: [] },
+      }],
+    }
+    const shown = presentProducts(sources({
+      commercial,
+      onboarding: { status: "ready", requests: [progress()] },
+    }))
+    expect(tile(shown, "recovery").actions).toEqual([openRecovery])
+    expect(tile(shown, "guard").statusLabel).toBe("Not subscribed")
+    expect(tile(shown, "guard").actions).toEqual([guardEnquiry])
+    expect(tile(shown, "telloya").group).toBe("yours")
+    expect(tile(shown, "telloya").statusLabel).toBe("Request in progress")
+    expect(tile(shown, "telloya").actions).toEqual([{ label: "Track setup", href: "/portal/onboarding" }])
+    expect(tile(shown, "telloya").context).toContain("Harbour Bakery")
+    expect(text(shown)).not.toContain("/portal/telloya")
+    expect(tile(shown, "telloya").actions.map(action => action.label)).not.toContain("Open dashboard")
+
+    const complete = presentProducts(sources({
+      commercial,
+      onboarding: { status: "ready", requests: [progress({ product: "Complete", statusLabel: "Offer being prepared", stage: "offer_preparation" })] },
+    }))
+    expect(tile(complete, "telloya").statusLabel).toBe("Offer being prepared")
+    expect(tile(complete, "telloya").context).toContain("Complete for Harbour Bakery")
+    expect(tile(complete, "guard").statusLabel).toBe("Not subscribed")
+    expect(tile(complete, "guard").actions).toEqual([guardEnquiry])
+
+    const both = presentProducts(sources({
+      commercial,
+      onboarding: {
+        status: "ready",
+        requests: [
+          progress({ businessName: null, locations: null, statusLabel: "Awaiting verification" }),
+          progress({
+            product: "Complete",
+            businessName: "North Yard",
+            statusLabel: "Offer being prepared",
+            receivedAt: "2026-11-02T09:00:00.000Z",
+          }),
+        ],
+      },
+    }))
+    expect(tile(both, "telloya").statusLabel).toBe("Status varies by request")
+    expect(tile(both, "telloya").context).toContain("Telloya: Awaiting verification")
+    expect(tile(both, "telloya").context).toContain("Complete for North Yard: Offer being prepared")
+    expect(tile(both, "telloya").context?.indexOf("Awaiting verification")).toBeLessThan(tile(both, "telloya").context?.indexOf("North Yard") ?? 0)
+
+    const active = presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "active", locations: [{ locationName: "High Street", status: "active", nextStep: null }] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      },
+      onboarding: { status: "ready", requests: [progress({ stage: "ready", statusLabel: "Ready for use" })] },
+    }))
+    expect(tile(active, "telloya").statusLabel).toBe("Active")
+    expect(tile(active, "telloya").actions).toEqual([{ label: "View progress", href: "/portal/onboarding" }])
+    expect(tile(active, "telloya").actions.map(action => action.label)).not.toContain("Open dashboard")
+
+    const missed = presentProducts(sources({ commercial, onboarding: { status: "unavailable" } }))
+    expect(tile(missed, "telloya").statusLabel).toBe("Status temporarily unavailable")
+    expect(tile(missed, "telloya").statusLabel).not.toBe("Not subscribed")
+    expect(tile(missed, "telloya").actions).toEqual([])
+
+    const closed = presentProducts(sources({ onboarding: { status: "unavailable" } }))
+    expect(tile(closed, "telloya").group).toBe("explore")
+    expect(tile(closed, "telloya").statusLabel).toBeUndefined()
+    expect(tile(closed, "telloya").actions).toEqual([telloyaEmail])
+    expect(text([tile(closed, "telloya")])).not.toMatch(/\bActive\b|Not subscribed/)
+
+    const unknownService = presentProducts(sources({
+      commercial: { reads: { telloya: "unavailable", guard: "ok" }, businesses: [] },
+      onboarding: { status: "ready", requests: [progress({ businessName: null, locations: null, statusLabel: "Awaiting verification" })] },
+    }))
+    expect(tile(unknownService, "telloya").statusLabel).toBe("Awaiting verification")
+    expect(tile(unknownService, "telloya").statusLabel).not.toBe("Not subscribed")
+    expect(tile(unknownService, "telloya").statusLabel).not.toBe("Active")
+    expect(tile(unknownService, "telloya").actions).toEqual([{ label: "Track setup", href: "/portal/onboarding" }])
+  })
+
+  it("keeps a closed request out of Your services and does not infer Active", () => {
+    const progress = (overrides: Partial<OnboardingRequestView> = {}): OnboardingRequestView => ({
+      product: "Telloya",
+      stage: "closed",
+      statusLabel: "Request closed",
+      waitingFor: "us",
+      customerActionRequired: false,
+      businessName: "Harbour Bakery",
+      locations: ["High Street"],
+      completed: ["Request received"],
+      nextStep: "This request is closed.",
+      receivedAt: "2026-11-01T09:00:00.000Z",
+      updatedAt: "2026-11-01T09:30:00.000Z",
+      ...overrides,
+    })
+    const commercial = {
+      reads: { telloya: "ok" as const, guard: "ok" as const },
+      businesses: [{
+        businessName: "Harbour Bakery",
+        telloya: { status: "not_subscribed" as const, locations: [] },
+        guard: { status: "not_subscribed" as const, locations: [] },
+      }],
+    }
+    const closed = presentProducts(sources({
+      commercial,
+      onboarding: { status: "ready", requests: [progress({ stage: "declined" })] },
+    }))
+    expect(tile(closed, "telloya").group).toBe("explore")
+    expect(tile(closed, "telloya").statusLabel).toBe("Not subscribed")
+    expect(tile(closed, "telloya").actions).toEqual([
+      telloyaEmail,
+      { label: "View previous request", href: "/portal/onboarding" },
+    ])
+    expect(tile(closed, "telloya").context).toContain("Request closed")
+    expect(tile(closed, "guard").statusLabel).toBe("Not subscribed")
+    expect(tile(closed, "guard").actions).toEqual([guardEnquiry])
+
+    const mixed = presentProducts(sources({
+      commercial,
+      onboarding: {
+        status: "ready",
+        requests: [
+          progress(),
+          progress({
+            stage: "under_review",
+            statusLabel: "Request in progress",
+            businessName: "North Yard",
+            receivedAt: "2026-11-02T09:00:00.000Z",
+          }),
+        ],
+      },
+    }))
+    expect(tile(mixed, "telloya").group).toBe("yours")
+    expect(tile(mixed, "telloya").statusLabel).toBe("Request in progress")
+    expect(tile(mixed, "telloya").statusLabel).not.toBe("Active")
+    expect(tile(mixed, "telloya").context).not.toContain("Request closed")
+    expect(tile(mixed, "telloya").actions).toEqual([{ label: "Track setup", href: "/portal/onboarding" }])
+
+    const setup = presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "setup", locations: [] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      },
+      onboarding: { status: "ready", requests: [progress()] },
+    }))
+    expect(tile(setup, "telloya").statusLabel).toBe("Setup in progress")
+    expect(tile(setup, "telloya").actions).toEqual([{ label: "View previous request", href: "/portal/onboarding" }])
+
+    const claimed = presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "not_subscribed", locations: [] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      },
+      onboarding: { status: "ready", requests: [progress({ stage: "ready", statusLabel: "Active" })] },
+    }))
+    expect(tile(claimed, "telloya").statusLabel).toBe("Request in progress")
+    expect(tile(claimed, "telloya").statusLabel).not.toBe("Active")
+
+    const pilot = presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "pilot", locations: [] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      },
+      onboarding: { status: "unavailable" },
+    }))
+    expect(tile(pilot, "telloya").statusLabel).toBe("Pilot")
+    expect(tile(pilot, "telloya").group).toBe("yours")
+
+    const missed = presentProducts(sources({
+      commercial,
+      onboarding: { status: "unavailable" },
+    }))
+    expect(tile(missed, "telloya").statusLabel).toBe("Status temporarily unavailable")
+    expect(tile(missed, "telloya").statusLabel).not.toBe("Not subscribed")
+    expect(tile(missed, "telloya").statusLabel).not.toBe("Active")
+    expect(tile(missed, "telloya").group).toBe("unconfirmed")
+  })
+
+  it("keeps mixed commercial statuses when the onboarding read fails", () => {
+    const onboarding = { status: "unavailable" as const }
+    const guard = { status: "not_subscribed" as const, locations: [] }
+    const location = (status: "active" | "ready_for_provider" | "suspended" | "expired" | "setup" | "cancelled" | "pending" | "pilot") => ({
+      locationName: status,
+      status,
+      nextStep: null,
+    })
+    const mixedLocations = tile(presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: {
+            status: "active",
+            locations: [
+              { locationName: "High Street", status: "active", nextStep: null },
+              { locationName: "Dock", status: "ready_for_provider", nextStep: "This location is waiting for provider verification." },
+            ],
+          },
+          guard,
+        }],
+      },
+      onboarding,
+    })), "telloya")
+    expect(mixedLocations.group).toBe("yours")
+    expect(mixedLocations.status).toBe("exploring")
+    expect(mixedLocations.statusLabel).toBe("Partially active")
+    expect(mixedLocations.context).toContain("Harbour Bakery, High Street: Active")
+    expect(mixedLocations.context).toContain("Harbour Bakery, Dock: Ready for provider verification")
+    expect(mixedLocations.attention).toBe("This location is waiting for provider verification.")
+    expect(mixedLocations.actions).toEqual([])
+    expect(mixedLocations.unavailableReason).toBe("There is no Telloya workspace to open yet.")
+
+    const mixedBusinesses = tile(presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [
+          {
+            businessName: "Harbour Bakery",
+            telloya: { status: "suspended", locations: [location("suspended")] },
+            guard,
+          },
+          {
+            businessName: "North Yard",
+            telloya: { status: "expired", locations: [{ locationName: "Yard Gate", status: "expired", nextStep: null }] },
+            guard,
+          },
+        ],
+      },
+      onboarding,
+    })), "telloya")
+    expect(mixedBusinesses.group).toBe("yours")
+    expect(mixedBusinesses.statusLabel).toBe("Status varies by location")
+    expect(mixedBusinesses.context).toContain("Harbour Bakery, suspended: Suspended")
+    expect(mixedBusinesses.context).toContain("North Yard, Yard Gate: Expired")
+    expect(mixedBusinesses.actions).toEqual([])
+    expect(mixedBusinesses.statusLabel).not.toBe("Status temporarily unavailable")
+
+    const kept = [
+      ["pilot", "Pilot"],
+      ["pending", "Pending"],
+      ["setup", "Setup in progress"],
+      ["ready_for_provider", "Ready for provider verification"],
+      ["suspended", "Suspended"],
+      ["expired", "Expired"],
+      ["cancelled", "Cancelled"],
+    ] as const
+    for (const [status, label] of kept) {
+      const card = tile(presentProducts(sources({
+        commercial: {
+          reads: { telloya: "ok", guard: "ok" },
+          businesses: [{
+            businessName: "Harbour Bakery",
+            telloya: { status, locations: [] },
+            guard,
+          }],
+        },
+        onboarding,
+      })), "telloya")
+      expect(card.statusLabel).toBe(label)
+      expect(card.group).toBe("yours")
+      expect(card.context).toBe(`Harbour Bakery: ${label}.`)
+      expect(card.actions).toEqual([])
+    }
+
+    const commercialDown = tile(presentProducts(sources({
+      commercial: { reads: { telloya: "unavailable", guard: "ok" }, businesses: [] },
+      onboarding,
+    })), "telloya")
+    expect(commercialDown.group).toBe("unconfirmed")
+    expect(commercialDown.statusLabel).toBe("Status temporarily unavailable")
+    expect(commercialDown.actions).toEqual([])
   })
 })

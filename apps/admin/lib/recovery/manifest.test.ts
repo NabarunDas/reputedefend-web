@@ -22,8 +22,8 @@ describe("the migration chain manifest", () => {
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261103120000_customer_portal_onboarding_status_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
@@ -38,7 +38,9 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261103120000_customer_portal_onboarding_status_v1.sql",
+    ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
@@ -94,8 +96,8 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // The Telloya repository head is DEV-applied; no migration remains pending
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
+    // Telloya is the DEV-applied head. The repository head is the unapplied onboarding read.
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     const onboardingSql = readFileSync(new URL("20261101180000_admin_commercial_onboarding_v1.sql", directory), "utf8")
@@ -125,6 +127,18 @@ describe("the migration chain manifest", () => {
       containsDataChange: true,
       safeToReplay: false,
     })
+    const onboardingStatusSql = readFileSync(new URL("20261103120000_customer_portal_onboarding_status_v1.sql", directory), "utf8")
+    expect(onboardingStatusSql.length).toBe(16642)
+    expect(createHash("sha256").update(onboardingStatusSql).digest("hex")).toBe("52d52ca3a03354a457025344cbd865d7216c893e232c95bf7552d6b03fb3d4fd")
+    expect(findMigration("20261103120000_customer_portal_onboarding_status_v1.sql")).toMatchObject({
+      appliedToDev: false,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
+    expect(onboardingStatusSql).toContain("REVOKE ALL ON FUNCTION public.customer_portal_onboarding_status_v1(text)")
+    expect(onboardingStatusSql).toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_onboarding_status_v1(text) TO service_role;")
+    expect(onboardingStatusSql).not.toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_onboarding_status_v1(text) TO anon")
+    expect(onboardingStatusSql).not.toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_onboarding_status_v1(text) TO authenticated")
     const paymentSql = readFileSync(new URL("20261030200000_guided_payment_request_after_acceptance_v1.sql", directory), "utf8")
     expect(createHash("sha256").update(paymentSql).digest("hex")).toBe("32195da0c20f665e87cfeaa9f5e2b9600341f2c02502c140c403cf9ec2d40ca5")
     expect(paymentSql).toContain("SECURITY DEFINER")

@@ -48,21 +48,21 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(100)
+    expect(migrationChain).toHaveLength(101)
     // A clean rebuild includes the seven historical DEV statements, Step 10B,
     // Step 12A, DEV-applied E2E-02, E2E-03 and E2E-04, and the DEV mail claim.
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    // DEV applied head and repository head are 20261102200000 telloya_enquiry_infrastructure_v1.
-    // The preceding 20261102110000 customer_invitation_dispatch_v1 is also applied to DEV.
+    // The DEV applied head is 20261102200000 telloya_enquiry_infrastructure_v1 (applied, do not replay, not Production).
+    // The repository head is 20261103120000 customer_portal_onboarding_status_v1 (not applied to DEV).
     // It was applied once and must not be replayed. 20261101200000, 20261101190000, 20261101180000,
     // 20261101170000, 20261031160000, 20261031150000, 20261031140000 and 20261031120000
     // were applied once and must not be replayed.
     // Do not replay 20261101200000. Do not apply 20261101200000 to Production.
     // Production stays at SEC-08.
-    expect(migrationHead.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261103120000_customer_portal_onboarding_status_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")

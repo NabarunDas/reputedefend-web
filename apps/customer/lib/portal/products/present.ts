@@ -1,4 +1,5 @@
 import type { CustomerDashboard } from "@/lib/portal/cases/parse"
+import type { OnboardingRead } from "@/lib/portal/onboarding/types"
 import { requestAccessAction } from "./enquiry"
 
 /**
@@ -86,7 +87,11 @@ export type ProductSources = {
   guard: { status: "ready"; locations: readonly GuardProductLocation[] } | { status: "unavailable" }
   /** Absent when CUSTOMER_PRODUCTS_READ_ENABLED is not exactly true. */
   commercial?: CommercialProjection
+  /** Absent when the onboarding read was not attempted. Unavailable is not "no request". */
+  onboarding?: OnboardingRead
 }
+
+const PROGRESS_HREF = "/portal/onboarding"
 
 const UNAVAILABLE = "We couldn't confirm this service just now. Refresh the page. This does not say whether it has been set up."
 const GUARD_UNCONFIRMED = "We couldn't confirm Relaunch Guard just now. This does not say whether it has been set up."
@@ -359,6 +364,81 @@ function telloyaTile(commercial?: CommercialProjection): ProductCard {
   }
 }
 
+function requestLines(requests: readonly { product: string; businessName: string | null; statusLabel: string }[]): string {
+  return requests.map(request => {
+    const place = request.businessName ? `${request.product} for ${request.businessName}` : request.product
+    return `${place}: ${request.statusLabel}.`
+  }).join(" ")
+}
+
+function historyRequest(request: { stage: string; statusLabel: string }) {
+  return request.stage === "declined" || request.stage === "closed" || request.statusLabel === "Request closed"
+}
+
+/**
+ * A recorded onboarding request is less authoritative than a real entitlement.
+ * It never replaces that status, and a failed read never becomes Not subscribed.
+ * A closed request stays in history and does not make the service look active.
+ * A failed onboarding read keeps a known commercial status, including a mixed
+ * location or business summary and the access already decided for that card.
+ * It is unconfirmed only when the commercial read is already unavailable, or
+ * the only known value is Not subscribed and an unseen request may exist.
+ */
+function applyOnboarding(card: ProductCard, onboarding: ProductSources["onboarding"]): ProductCard {
+  if (!onboarding) return card
+  if (onboarding.status !== "ready") {
+    if (card.statusLabel === STATUS_UNAVAILABLE || card.group === "unconfirmed") return card
+    if (card.statusLabel === STATUS_LABEL.not_subscribed) {
+      return {
+        ...card,
+        group: "unconfirmed",
+        status: "unavailable",
+        statusLabel: STATUS_UNAVAILABLE,
+        context: null,
+        actions: [],
+        attention: null,
+        unavailableReason: "We couldn't confirm the service status just now. This does not say whether the service is active.",
+      }
+    }
+    return card
+  }
+  if (onboarding.requests.length === 0) return card
+  const open = onboarding.requests.filter(request => !historyRequest(request))
+  const historyOnly = open.length === 0
+  const visible = historyOnly ? onboarding.requests : open
+  const lines = requestLines(visible)
+  const labels = [...new Set(visible.map(request => request.statusLabel))]
+  const recorded = labels.length === 1 ? labels[0] : "Status varies by request"
+  const summary = recorded === STATUS_LABEL.active ? "Request in progress" : recorded
+  const authoritative = !!card.statusLabel
+    && card.statusLabel !== STATUS_LABEL.not_subscribed
+    && card.statusLabel !== STATUS_UNAVAILABLE
+  const progress = {
+    label: historyOnly ? "View previous request" : authoritative ? "View progress" : "Track setup",
+    href: PROGRESS_HREF,
+  }
+  if (authoritative || historyOnly) {
+    return {
+      ...card,
+      context: joinParts([card.context, lines]),
+      actions: [...card.actions.filter(action => action.href !== PROGRESS_HREF), progress],
+    }
+  }
+  const serviceUnknown = card.statusLabel === STATUS_UNAVAILABLE || card.group === "unconfirmed"
+  return {
+    ...card,
+    group: "yours",
+    status: "exploring",
+    statusLabel: summary,
+    context: lines,
+    actions: [progress],
+    attention: visible.length === 1 ? visible[0].nextStep : null,
+    unavailableReason: serviceUnknown
+      ? "We couldn't confirm the service status just now. This does not say whether the service is active."
+      : TELLOYA_NO_WORKSPACE,
+  }
+}
+
 export function presentProducts(sources: ProductSources): ProductCard[] {
-  return [recoveryTile(sources), guardTile(sources), telloyaTile(sources.commercial)]
+  return [recoveryTile(sources), guardTile(sources), applyOnboarding(telloyaTile(sources.commercial), sources.onboarding)]
 }

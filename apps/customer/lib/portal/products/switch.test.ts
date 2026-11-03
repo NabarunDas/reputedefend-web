@@ -84,5 +84,66 @@ describe("product switch choices", () => {
     expect(currentProductKey("/portal/guard/document")).toBe("guard")
     expect(currentProductKey("/portal/account")).toBeNull()
     expect(currentProductKey("/portal/products")).toBeNull()
+    expect(currentProductKey("/portal/onboarding")).toBeNull()
+  })
+
+  it("keeps setup progress off the operational workspace list", () => {
+    const choices = productSwitchChoices(presentProducts({
+      recovery: { status: "ready", dashboard: dashboard(1) },
+      guard: { status: "ready", locations: [] },
+      onboarding: {
+        status: "ready",
+        requests: [{
+          product: "Telloya",
+          stage: "verification",
+          statusLabel: "Awaiting verification",
+          waitingFor: "us",
+          customerActionRequired: false,
+          businessName: null,
+          locations: null,
+          completed: ["Request received"],
+          nextStep: "We are checking that you can act for this business.",
+          receivedAt: "2026-11-01T09:00:00.000Z",
+          updatedAt: "2026-11-01T09:30:00.000Z",
+        }],
+      },
+    }))
+    expect(choices[0]).toMatchObject({ kind: "open", href: "/portal/recovery" })
+    expect(choices[2].kind).not.toBe("open")
+    expect(choices[2].href).toBeUndefined()
+    expect(choices[2].action).toEqual({ label: "Track setup", href: "/portal/onboarding" })
+    expect(JSON.stringify(choices)).not.toContain("/portal/telloya")
+
+    const previous = productSwitchChoices(presentProducts({
+      recovery: { status: "ready", dashboard: dashboard(0) },
+      guard: { status: "ready", locations: [] },
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: { status: "not_subscribed", locations: [] },
+          guard: { status: "not_subscribed", locations: [] },
+        }],
+      },
+      onboarding: {
+        status: "ready",
+        requests: [{
+          product: "Telloya",
+          stage: "declined",
+          statusLabel: "Request closed",
+          waitingFor: "us",
+          customerActionRequired: false,
+          businessName: "Harbour Bakery",
+          locations: ["High Street"],
+          completed: ["Request received"],
+          nextStep: "This request is closed.",
+          receivedAt: "2026-11-01T09:00:00.000Z",
+          updatedAt: "2026-11-01T09:30:00.000Z",
+        }],
+      },
+    }))
+    expect(previous[2].kind).toBe("pending")
+    expect(previous[2].href).toBeUndefined()
+    expect(previous[2].action).toEqual({ label: "View previous request", href: "/portal/onboarding" })
   })
 })

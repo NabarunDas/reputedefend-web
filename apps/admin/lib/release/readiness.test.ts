@@ -152,12 +152,14 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261103120000_customer_portal_onboarding_status_v1.sql",
+    ])
     expect(appliedMigrationHead.version).toBe("20261102200000")
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261103120000_customer_portal_onboarding_status_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -213,6 +215,11 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("Do not replay 20261102110000.")
     expect(supabase?.requirement).toContain("Do not apply 20261102110000 to Production.")
     expect(supabase?.requirement).toContain("pendingMigrations() is empty.")
+    expect(supabase?.requirement).toContain("Do not replay 20261102200000 or apply it to Production.")
+    expect(supabase?.requirement).not.toContain("Do not apply 20261102200000 to DEV")
+    expect(supabase?.requirement).toContain("Do not apply 20261103120000 to DEV")
+    expect(supabase?.requirement).toContain("Do not apply 20261103120000 to Production")
+    expect(supabase?.requirement).toContain("public.customer_portal_onboarding_status_v1(text) is service-role-only.")
     expect(supabase?.requirement).toContain("53,986 characters")
     expect(supabase?.requirement).toContain("2576c03b855fbe7238d7cf8bae5e9eb0649a5fdf72de26ff87b08d86967fa44f")
     expect(supabase?.requirement).toContain("Exactly one APPROVED CUSTOMER_PORTAL_INVITATION template exists.")

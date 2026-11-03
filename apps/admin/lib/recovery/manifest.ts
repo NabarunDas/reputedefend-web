@@ -1363,6 +1363,21 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya enquiry persistence", probe: "public.generate_enquiry_public_ref" },
   },
+  {
+    // Customer Portal onboarding progress. Repository source only.
+    // Not applied to DEV. Do not apply it to DEV. Do not apply it to Production.
+    // Do not replay it. Read-only function. containsDataChange stays false.
+    // It creates no customer, subscription, entitlement, provision, payment,
+    // or invitation rows. safeToReplay stays false.
+    version: "20261103120000",
+    filename: "20261103120000_customer_portal_onboarding_status_v1.sql",
+    step: "Customer Portal onboarding progress",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Customer onboarding progress", probe: "public.customer_portal_onboarding_status_v1" },
+  },
 ]
 
 /**
@@ -1430,7 +1445,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` contains only
+ * `20261103120000` customer_portal_onboarding_status_v1, which is repository
+ * source and is not applied to DEV or Production. Do not replay it.
  * `20261102110000` is already applied on DEV and must not be replayed.
  * Do not apply `20261102110000` to Production.
  * containsDataChange is true because the file inserts one communication

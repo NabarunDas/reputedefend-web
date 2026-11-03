@@ -19,17 +19,29 @@ const UNCONFIRMED = "Status temporarily unavailable"
  * Switcher rows follow the launcher. They do not invent access, a Telloya
  * workspace, or a subscription. An unconfirmed read stays unconfirmed.
  */
+function workspaceHref(href: string): boolean {
+  return href === "/portal/recovery" || href.startsWith("/portal/recovery/")
+    || href === "/portal/guard" || href.startsWith("/portal/guard/")
+}
+
 export function productSwitchChoices(products: readonly ProductCard[]): ProductSwitchChoice[] {
   return products.map(product => {
-    const workspace = product.actions.find(action => action.href.startsWith("/portal/"))
+    const workspace = product.actions.find(action => workspaceHref(action.href))
     if (workspace) {
       return { key: product.key, name: product.name, kind: "open", href: workspace.href, note: null }
     }
+    const progress = product.actions.find(action => action.href === "/portal/onboarding")
     if (product.group === "unconfirmed" || product.status === "unavailable") {
-      return { key: product.key, name: product.name, kind: "unconfirmed", note: UNCONFIRMED }
+      return {
+        key: product.key,
+        name: product.name,
+        kind: "unconfirmed",
+        note: UNCONFIRMED,
+        ...(progress ? { action: { label: progress.label, href: progress.href } } : {}),
+      }
     }
     const contact = product.actions.find(action => action.href.startsWith("http") || action.href.startsWith("mailto:"))
-    if (contact) {
+    if (contact && !progress) {
       return {
         key: product.key,
         name: product.name,
@@ -43,6 +55,7 @@ export function productSwitchChoices(products: readonly ProductCard[]): ProductS
       name: product.name,
       kind: "pending",
       note: product.unavailableReason,
+      ...(progress ? { action: { label: progress.label, href: progress.href } } : {}),
     }
   })
 }

@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "plugins": []
+  },
+  "include": [
+    "next-env.d.ts",
+    "../../lib/billing/fontkit.d.ts",
+    "lib/portal/onboarding/payment-replay.database.test.ts"
+  ],
+  "exclude": ["node_modules"]
+}

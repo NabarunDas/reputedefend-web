@@ -696,9 +696,10 @@ describe("product launcher", () => {
     expect(tile(missed, "telloya").actions).toEqual([])
 
     const closed = presentProducts(sources({ onboarding: { status: "unavailable" } }))
-    expect(tile(closed, "telloya").statusLabel).toBe("Status temporarily unavailable")
-    expect(tile(closed, "telloya").statusLabel).not.toBe("Not subscribed")
-    expect(text([tile(closed, "telloya")])).not.toMatch(/\bActive\b/)
+    expect(tile(closed, "telloya").group).toBe("explore")
+    expect(tile(closed, "telloya").statusLabel).toBeUndefined()
+    expect(tile(closed, "telloya").actions).toEqual([telloyaEmail])
+    expect(text([tile(closed, "telloya")])).not.toMatch(/\bActive\b|Not subscribed/)
 
     const unknownService = presentProducts(sources({
       commercial: { reads: { telloya: "unavailable", guard: "ok" }, businesses: [] },
@@ -818,5 +819,100 @@ describe("product launcher", () => {
     expect(tile(missed, "telloya").statusLabel).not.toBe("Not subscribed")
     expect(tile(missed, "telloya").statusLabel).not.toBe("Active")
     expect(tile(missed, "telloya").group).toBe("unconfirmed")
+  })
+
+  it("keeps mixed commercial statuses when the onboarding read fails", () => {
+    const onboarding = { status: "unavailable" as const }
+    const guard = { status: "not_subscribed" as const, locations: [] }
+    const location = (status: "active" | "ready_for_provider" | "suspended" | "expired" | "setup" | "cancelled" | "pending" | "pilot") => ({
+      locationName: status,
+      status,
+      nextStep: null,
+    })
+    const mixedLocations = tile(presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Harbour Bakery",
+          telloya: {
+            status: "active",
+            locations: [
+              { locationName: "High Street", status: "active", nextStep: null },
+              { locationName: "Dock", status: "ready_for_provider", nextStep: "This location is waiting for provider verification." },
+            ],
+          },
+          guard,
+        }],
+      },
+      onboarding,
+    })), "telloya")
+    expect(mixedLocations.group).toBe("yours")
+    expect(mixedLocations.status).toBe("exploring")
+    expect(mixedLocations.statusLabel).toBe("Partially active")
+    expect(mixedLocations.context).toContain("Harbour Bakery, High Street: Active")
+    expect(mixedLocations.context).toContain("Harbour Bakery, Dock: Ready for provider verification")
+    expect(mixedLocations.attention).toBe("This location is waiting for provider verification.")
+    expect(mixedLocations.actions).toEqual([])
+    expect(mixedLocations.unavailableReason).toBe("There is no Telloya workspace to open yet.")
+
+    const mixedBusinesses = tile(presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [
+          {
+            businessName: "Harbour Bakery",
+            telloya: { status: "suspended", locations: [location("suspended")] },
+            guard,
+          },
+          {
+            businessName: "North Yard",
+            telloya: { status: "expired", locations: [{ locationName: "Yard Gate", status: "expired", nextStep: null }] },
+            guard,
+          },
+        ],
+      },
+      onboarding,
+    })), "telloya")
+    expect(mixedBusinesses.group).toBe("yours")
+    expect(mixedBusinesses.statusLabel).toBe("Status varies by location")
+    expect(mixedBusinesses.context).toContain("Harbour Bakery, suspended: Suspended")
+    expect(mixedBusinesses.context).toContain("North Yard, Yard Gate: Expired")
+    expect(mixedBusinesses.actions).toEqual([])
+    expect(mixedBusinesses.statusLabel).not.toBe("Status temporarily unavailable")
+
+    const kept = [
+      ["pilot", "Pilot"],
+      ["pending", "Pending"],
+      ["setup", "Setup in progress"],
+      ["ready_for_provider", "Ready for provider verification"],
+      ["suspended", "Suspended"],
+      ["expired", "Expired"],
+      ["cancelled", "Cancelled"],
+    ] as const
+    for (const [status, label] of kept) {
+      const card = tile(presentProducts(sources({
+        commercial: {
+          reads: { telloya: "ok", guard: "ok" },
+          businesses: [{
+            businessName: "Harbour Bakery",
+            telloya: { status, locations: [] },
+            guard,
+          }],
+        },
+        onboarding,
+      })), "telloya")
+      expect(card.statusLabel).toBe(label)
+      expect(card.group).toBe("yours")
+      expect(card.context).toBe(`Harbour Bakery: ${label}.`)
+      expect(card.actions).toEqual([])
+    }
+
+    const commercialDown = tile(presentProducts(sources({
+      commercial: { reads: { telloya: "unavailable", guard: "ok" }, businesses: [] },
+      onboarding,
+    })), "telloya")
+    expect(commercialDown.group).toBe("unconfirmed")
+    expect(commercialDown.statusLabel).toBe("Status temporarily unavailable")
+    expect(commercialDown.actions).toEqual([])
   })
 })

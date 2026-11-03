@@ -371,13 +371,6 @@ function requestLines(requests: readonly { product: string; businessName: string
   }).join(" ")
 }
 
-const PRESERVED_SERVICE = new Set([
-  STATUS_LABEL.active,
-  STATUS_LABEL.pilot,
-  STATUS_LABEL.setup,
-  STATUS_LABEL.pending,
-])
-
 function historyRequest(request: { stage: string; statusLabel: string }) {
   return request.stage === "declined" || request.stage === "closed" || request.statusLabel === "Request closed"
 }
@@ -386,21 +379,28 @@ function historyRequest(request: { stage: string; statusLabel: string }) {
  * A recorded onboarding request is less authoritative than a real entitlement.
  * It never replaces that status, and a failed read never becomes Not subscribed.
  * A closed request stays in history and does not make the service look active.
+ * A failed onboarding read keeps a known commercial status, including a mixed
+ * location or business summary and the access already decided for that card.
+ * It is unconfirmed only when the commercial read is already unavailable, or
+ * the only known value is Not subscribed and an unseen request may exist.
  */
 function applyOnboarding(card: ProductCard, onboarding: ProductSources["onboarding"]): ProductCard {
   if (!onboarding) return card
   if (onboarding.status !== "ready") {
-    if (PRESERVED_SERVICE.has(card.statusLabel ?? "") || card.statusLabel === STATUS_UNAVAILABLE) return card
-    return {
-      ...card,
-      group: "unconfirmed",
-      status: "unavailable",
-      statusLabel: STATUS_UNAVAILABLE,
-      context: null,
-      actions: [],
-      attention: null,
-      unavailableReason: "We couldn't confirm the service status just now. This does not say whether the service is active.",
+    if (card.statusLabel === STATUS_UNAVAILABLE || card.group === "unconfirmed") return card
+    if (card.statusLabel === STATUS_LABEL.not_subscribed) {
+      return {
+        ...card,
+        group: "unconfirmed",
+        status: "unavailable",
+        statusLabel: STATUS_UNAVAILABLE,
+        context: null,
+        actions: [],
+        attention: null,
+        unavailableReason: "We couldn't confirm the service status just now. This does not say whether the service is active.",
+      }
     }
+    return card
   }
   if (onboarding.requests.length === 0) return card
   const open = onboarding.requests.filter(request => !historyRequest(request))

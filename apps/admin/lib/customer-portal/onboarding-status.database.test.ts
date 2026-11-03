@@ -412,13 +412,15 @@ describe("customer_portal_onboarding_status_v1", () => {
       customerActionRequired: false,
       nextStep: "An offer has been prepared. There is nothing to accept or pay on this page.",
     })
-    const preparing = await rows<{ value: { statusLabel: string; nextStep: string } }>(
+    const preparing = await rows<{ value: { statusLabel: string; nextStep: string; completed: string[] } }>(
       `select admin_private.customer_portal_onboarding_projection_v1(
         'OFFERED', 'verified', true, 1, true, null, false, null, false
       ) as value`,
     )
     expect(preparing[0].value.statusLabel).toBe("Offer being prepared")
     expect(preparing[0].value.nextStep).toContain("nothing to accept or pay yet")
+    expect(preparing[0].value.completed).not.toContain("Offer recorded")
+    expect(seen?.requests[0].completed).toContain("Offer recorded")
     const serialised = JSON.stringify(seen)
     expect(serialised).not.toMatch(/cus_|sub_|4900|Awaiting your payment|Ready for use|Active/)
     expect(await counts()).toEqual(before)
@@ -450,6 +452,7 @@ describe("customer_portal_onboarding_status_v1", () => {
       customerActionRequired: false,
       nextStep: "A payment has been recorded. We are checking it.",
     })
+    expect(paid?.requests[0].completed).toContain("Offer recorded")
     expect(paid?.requests[0].completed).toContain("Payment recorded")
     expect(JSON.stringify(paid)).not.toContain("Awaiting your payment")
     expect(JSON.stringify(paid)).not.toContain("evt_OnboardingHidden1")
@@ -599,9 +602,63 @@ describe("customer_portal_onboarding_status_v1", () => {
     expect(seen?.requests).toHaveLength(1)
     expect(seen?.requests[0].statusLabel).not.toBe("Ready for use")
     expect(seen?.requests[0].stage).toBe("service_setup")
+    expect(seen?.requests[0].completed).not.toContain("Service setup recorded")
+    expect(seen?.requests[0].completed).not.toContain("Ready for use")
+    expect(seen?.requests[0].completed).toContain("Offer recorded")
     expect(seen?.requests[0].customerActionRequired).toBe(false)
     expect(seen?.requests[0].locations).toEqual(["Dock", "High Street"])
     expect(JSON.stringify(seen)).not.toMatch(/bind-hidden|call-hidden|Active/)
+  })
+
+  it("does not complete an offer or setup without the recorded evidence", async () => {
+    const projected = async (args: unknown[]) => rows<{ value: { stage: string; statusLabel: string; completed: string[] } }>(
+      `select admin_private.customer_portal_onboarding_projection_v1(
+        $1, 'verified', true, 2, true, $2, false, $3, $4
+      ) as value`,
+      args,
+    )
+    const offered = await projected(["OFFERED", null, null, false])
+    expect(offered[0].value).toMatchObject({ stage: "offer_preparation", statusLabel: "Offer being prepared" })
+    expect(offered[0].value.completed).not.toContain("Offer recorded")
+
+    const activeOnly = await projected(["IN_REVIEW", "ACTIVE", null, false])
+    expect(activeOnly[0].value).toMatchObject({ stage: "service_setup", statusLabel: "Service setup" })
+    expect(activeOnly[0].value.completed).toContain("Offer recorded")
+    expect(activeOnly[0].value.completed).not.toContain("Service setup recorded")
+    expect(activeOnly[0].value.completed).not.toContain("Ready for use")
+
+    const provisioningOnly = await projected(["PROVISIONING", null, null, false])
+    expect(provisioningOnly[0].value).toMatchObject({ stage: "service_setup", statusLabel: "Service setup" })
+    expect(provisioningOnly[0].value.completed).not.toContain("Offer recorded")
+    expect(provisioningOnly[0].value.completed).not.toContain("Service setup recorded")
+
+    const evidenced = await projected(["PROVISIONING", "ACTIVE", "AWAITING_CONFIRMATION", false])
+    expect(evidenced[0].value.statusLabel).toBe("Service setup")
+    expect(evidenced[0].value.completed).toContain("Service setup recorded")
+    expect(evidenced[0].value.completed).not.toContain("Ready for use")
+
+    const unverifiedLive = await projected(["READY", "ACTIVE", "LIVE", false])
+    expect(unverifiedLive[0].value.statusLabel).not.toBe("Ready for use")
+    expect(unverifiedLive[0].value.completed).not.toContain("Service setup recorded")
+    expect(unverifiedLive[0].value.completed).not.toContain("Ready for use")
+
+    const ready = await projected(["PROVISIONING", "ACTIVE", "LIVE", true])
+    expect(ready[0].value).toMatchObject({ stage: "ready", statusLabel: "Ready for use" })
+    expect(ready[0].value.completed).toEqual(expect.arrayContaining(["Offer recorded", "Service setup recorded", "Ready for use"]))
+
+    const opened = await request({ state: "OFFERED", subscription: null })
+    const seen = await status(alexSession)
+    expect(seen?.requests).toEqual([expect.objectContaining({
+      statusLabel: "Offer being prepared",
+      stage: "offer_preparation",
+    })])
+    expect(seen?.requests[0].completed).not.toContain("Offer recorded")
+    expect(seen?.requests[0].completed).not.toContain("Service setup recorded")
+    const stored = await rows<{ commercial_subscription_id: string | null }>(
+      "select commercial_subscription_id from public.onboarding_requests where id = $1",
+      [opened],
+    )
+    expect(stored[0].commercial_subscription_id).toBeNull()
   })
 
   it("returns nothing after sign-out, idle timeout, or expiry", async () => {

@@ -128,8 +128,8 @@ describe("the migration chain manifest", () => {
       safeToReplay: false,
     })
     const onboardingStatusSql = readFileSync(new URL("20261103120000_customer_portal_onboarding_status_v1.sql", directory), "utf8")
-    expect(onboardingStatusSql.length).toBe(15951)
-    expect(createHash("sha256").update(onboardingStatusSql).digest("hex")).toBe("9df00b0908cde7a0fe6ccdf4790b238cde2f9d9c7ddbf209438feacce46c515c")
+    expect(onboardingStatusSql.length).toBe(16642)
+    expect(createHash("sha256").update(onboardingStatusSql).digest("hex")).toBe("52d52ca3a03354a457025344cbd865d7216c893e232c95bf7552d6b03fb3d4fd")
     expect(findMigration("20261103120000_customer_portal_onboarding_status_v1.sql")).toMatchObject({
       appliedToDev: false,
       containsDataChange: false,

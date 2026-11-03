@@ -96,6 +96,19 @@ BEGIN
     END IF;
   END IF;
 
+  -- Offer recorded follows a linked subscription whose state already holds
+  -- an offer. A request marked OFFERED with no subscription does not.
+  -- Service setup recorded follows a matching provision that has left
+  -- NOT_STARTED. ACTIVE, PROVISIONING, or an unverified LIVE state can show
+  -- the current stage and do not complete it. Ready for use still requires
+  -- p_provision_ready, which is genuine LIVE evidence at every location.
+  IF p_subscription_state IN (
+    'OFFERED', 'ACCEPTED', 'PAYMENT_PENDING',
+    'ACTIVE', 'PAST_DUE', 'PAUSED', 'CANCEL_AT_PERIOD_END'
+  ) THEN
+    completed := completed || jsonb_build_array('Offer recorded');
+  END IF;
+
   IF p_provision_ready THEN
     stage := 'ready';
     label := 'Ready for use';
@@ -107,7 +120,13 @@ BEGIN
   THEN
     stage := 'service_setup';
     label := 'Service setup';
-    completed := completed || jsonb_build_array('Service setup recorded');
+    IF p_provision_state IN (
+      'PROFILE_REQUIRED', 'AGENT_REQUIRED', 'NUMBER_REQUIRED',
+      'FORWARDING_REQUIRED', 'TEST_REQUIRED', 'AWAITING_CONFIRMATION',
+      'READY_FOR_PROVIDER_VERIFICATION', 'SUSPENDED'
+    ) THEN
+      completed := completed || jsonb_build_array('Service setup recorded');
+    END IF;
     IF p_provision_state = 'AWAITING_CONFIRMATION' THEN
       waiting := 'you';
       action_needed := true;
@@ -117,7 +136,6 @@ BEGIN
     END IF;
   ELSIF p_request_state = 'AWAITING_PAYMENT' OR p_subscription_state = 'PAYMENT_PENDING' THEN
     stage := 'awaiting_customer';
-    completed := completed || jsonb_build_array('Offer recorded');
     IF p_payment_recorded THEN
       label := 'Payment recorded';
       completed := completed || jsonb_build_array('Payment recorded');
@@ -132,17 +150,15 @@ BEGIN
     stage := 'awaiting_customer';
     label := 'Acceptance recorded';
     next_step := 'Your acceptance is recorded. We will confirm the next step.';
-    completed := completed || jsonb_build_array('Offer recorded', 'Acceptance recorded');
+    completed := completed || jsonb_build_array('Acceptance recorded');
   ELSIF p_subscription_state = 'OFFERED' THEN
     stage := 'offer_preparation';
     label := 'Offer prepared';
     next_step := 'An offer has been prepared. There is nothing to accept or pay on this page.';
-    completed := completed || jsonb_build_array('Offer recorded');
   ELSIF p_request_state = 'OFFERED' THEN
     stage := 'offer_preparation';
     label := 'Offer being prepared';
     next_step := 'We are preparing the offer. There is nothing to accept or pay yet.';
-    completed := completed || jsonb_build_array('Offer recorded');
   ELSIF reveal AND p_email_verified AND p_mark_ready AND coalesce(p_location_count, 0) > 0 AND p_request_state = 'IN_REVIEW' THEN
     stage := 'offer_preparation';
     label := 'Offer being prepared';

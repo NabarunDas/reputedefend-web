@@ -150,7 +150,15 @@ export function TelloyaEnquiryForm({ capabilities, initialPlanTier = "" }: { cap
   }
 
   function update<K extends keyof EnquiryValues>(key: K, value: EnquiryValues[K]) {
-    setValues((current) => ({ ...current, [key]: value }))
+    setValues((current) => {
+      const next = { ...current, [key]: value }
+      // Auto-set product to "telloya" when any plan tier is selected
+      // This maintains backward compatibility with validation that checks product field
+      if (key === "planTier" && value && !current.product) {
+        next.product = "telloya"
+      }
+      return next
+    })
     setErrors((current) => {
       if (!current[key]) return current
       const next = { ...current }
@@ -163,7 +171,10 @@ export function TelloyaEnquiryForm({ capabilities, initialPlanTier = "" }: { cap
     const stepErrors: EnquiryFieldErrors = {}
 
     if (nextStep >= 1) {
-      if (!values.product) stepErrors.product = "Please select a product option."
+      // Check for plan tier selection (or legacy product field for backward compatibility)
+      if (!values.planTier && !values.product) {
+        stepErrors.planTier = "Please select a plan."
+      }
     }
 
     if (nextStep >= 2) {

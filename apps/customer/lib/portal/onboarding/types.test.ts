@@ -13,6 +13,8 @@ const row = {
   nextStep: "We are reviewing this request.",
   receivedAt: "2026-11-01T09:00:00.000Z",
   updatedAt: "2026-11-01T09:30:00.000Z",
+  offerRef: null,
+  offerState: null,
 }
 
 describe("onboarding progress parser", () => {
@@ -24,6 +26,21 @@ describe("onboarding progress parser", () => {
     expect(parseOnboardingStatus({
       requests: [{ ...row, nextStep: "Use cus_secret to pay." }],
     })).toBeNull()
+    expect(parseOnboardingStatus({
+      requests: [{ ...row, businessName: "Stripe Bakery", nextStep: "Payment is collected by Stripe later." }],
+    })?.requests[0].businessName).toBe("Stripe Bakery")
     expect(parseOnboardingStatus(null)).toBeNull()
+    expect(parseOnboardingStatus({
+      requests: [{ ...row, offerRef: "VC-26-AB2347", offerState: "eligible" }],
+    })?.requests[0].offerState).toBe("eligible")
+    expect(parseOnboardingStatus({
+      requests: [{ ...row, offerRef: "VC-26-AB2347", offerState: null }],
+    })).toBeNull()
+    expect(parseOnboardingStatus({
+      requests: [{ ...row, offerRef: null, offerState: "accepted" }],
+    })).toBeNull()
+    expect(parseOnboardingStatus({
+      requests: [{ ...row, offerRef: "sub_secret", offerState: "eligible" }],
+    })).toBeNull()
   })
 })

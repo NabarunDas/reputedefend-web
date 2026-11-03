@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import React from "react"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
@@ -186,16 +186,15 @@ describe("portal shell", () => {
     expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled()
   })
 
-  it("keeps My Products out of navigation until the hub flag is on", () => {
+  it("keeps My Products out of the product navigation and the legacy bar unchanged", () => {
     const closed = render(<PortalNav />)
     expect(screen.queryByRole("link", { name: "Back to My Products" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Switch product" })).toBeNull()
     expect(screen.getByRole("link", { name: "Relaunch Guard" })).toHaveAttribute("href", "/portal/guard")
     closed.unmount()
     nav.pathname = "/portal/recovery"
     render(<PortalNav mode="recovery" />)
-    const link = screen.getByRole("link", { name: "Back to My Products" })
-    expect(link).toHaveAttribute("href", "/portal/products")
-    expect(link).not.toHaveAttribute("aria-current")
+    expect(screen.queryByRole("link", { name: "Back to My Products" })).toBeNull()
     const dashboard = screen.getByRole("link", { name: "Dashboard" })
     expect(dashboard).toHaveAttribute("href", "/portal/recovery")
     expect(dashboard).toHaveAttribute("aria-current", "page")
@@ -224,13 +223,18 @@ describe("portal shell", () => {
     renderPortal()
     expect(screen.queryByRole("heading", { level: 1, name: "Relaunch Guard" })).toBeNull()
     const labels = [...screen.getByRole("navigation", { name: "Customer portal" }).querySelectorAll("a")].map(item => item.textContent?.trim())
-    expect(labels).toEqual(["Back to My Products", "Relaunch Guard", "Account"])
+    expect(labels).toEqual(["Relaunch Guard", "Account"])
+    expect(document.querySelector(".portal-context-product")).toHaveTextContent("Relaunch Guard")
+    expect(document.querySelector(".portal-context-title")).toHaveTextContent("Dashboard")
+    expect(screen.getByRole("button", { name: "Switch product" })).toBeEnabled()
+    expect(screen.queryByRole("link", { name: "Back to My Products" })).toBeNull()
     expect(screen.getByRole("link", { name: "Relaunch Guard" })).toHaveAttribute("aria-current", "page")
     expect(screen.queryByRole("link", { name: "Cases" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Documents" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Messages" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Payments" })).toBeNull()
     expect(screen.queryByRole("button", { name: "More" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Back to My Products" })).toBeNull()
     vi.unstubAllEnvs()
   })
 
@@ -244,6 +248,7 @@ describe("portal shell", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Account" })).toBeTruthy()
     expect(screen.getByRole("link", { name: "Cases" })).toHaveAttribute("href", "/portal/cases")
     expect(screen.queryByRole("link", { name: "Back to My Products" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Switch product" })).toBeNull()
   })
 
   it("uses a neutral Account shell when the hub is on", () => {
@@ -253,8 +258,10 @@ describe("portal shell", () => {
     expect(document.querySelector(".portal-context-title")).toHaveTextContent("Account")
     expect(document.querySelector(".portal-context-title")?.tagName).not.toBe("H1")
     const labels = [...screen.getByRole("navigation", { name: "Customer portal" }).querySelectorAll("a")].map(item => item.textContent?.trim())
-    expect(labels).toEqual(["Back to My Products", "Account"])
-    expect(screen.getByRole("link", { name: "Back to My Products" })).toHaveAttribute("href", "/portal/products")
+    expect(labels).toEqual(["Account"])
+    expect(screen.getByRole("button", { name: "Switch product" })).toBeEnabled()
+    expect(screen.queryByRole("link", { name: "Back to My Products" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "My Products" })).toBeNull()
     expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("aria-current", "page")
     expect(screen.getByRole("heading", { level: 1, name: "Account" })).toBeTruthy()
     expect(screen.queryByRole("link", { name: "Cases" })).toBeNull()
@@ -264,6 +271,22 @@ describe("portal shell", () => {
     expect(screen.queryByRole("link", { name: "Relaunch Guard" })).toBeNull()
     expect(screen.queryByRole("button", { name: "More" })).toBeNull()
     expect(screen.getAllByRole("button", { name: "Sign out" }).length).toBeGreaterThan(0)
+  })
+
+  it("puts the welcome heading before the case summary", () => {
+    render(<PortalHome context="Recovery & Review Support / Dashboard" accountName="Ada Okonkwo" dashboard={emptyDashboard} />)
+    const heading = screen.getByRole("heading", { level: 1, name: "Welcome back, Ada Okonkwo" })
+    const summary = screen.getByText("Active cases")
+    expect(heading.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1)
+    expect(screen.getByText("Recovery & Review Support / Dashboard")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Back to My Products" })).toBeNull()
+    const css = readFileSync(join(process.cwd(), "app/globals.css"), "utf8")
+    const grid = css.slice(css.lastIndexOf(".portal-dashboard {"))
+    expect(grid).toContain('"head head"')
+    expect(grid).toContain('"main side"')
+    expect(grid).toContain('"below below"')
+    expect(grid).not.toMatch(/\.portal-main \{[^}]*grid-row:\s*2/)
   })
 
   it("signs out from My Products and still checks the idle session", async () => {

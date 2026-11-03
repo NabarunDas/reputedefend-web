@@ -30,10 +30,12 @@ export function GuardView({
   locations,
   focused,
   documents = [],
+  context,
 }: {
   locations: GuardLocation[]
   focused: boolean
   documents?: GuardDocumentSummary[]
+  context?: string
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
@@ -69,7 +71,7 @@ export function GuardView({
   return (
     <div className={`guard-page ${styles.page}`}>
       <header className={styles.summary}>
-        <p className={styles.kicker}>Relaunch Guard</p>
+        <p className={styles.kicker}>{context ?? "Relaunch Guard"}</p>
         <h1>{focused ? "Relaunch Guard location" : "Relaunch Guard"}</h1>
         {locations.length > 0 ? <p>Monitoring follows the arrangement recorded for each location. Checks are scheduled. They are not continuous, and they do not change your Google profile.</p> : null}
       </header>

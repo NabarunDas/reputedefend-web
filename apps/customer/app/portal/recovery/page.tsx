@@ -18,5 +18,5 @@ export default async function RecoveryPage() {
   if (loaded.status === "unauthenticated") redirect("/login")
   if (loaded.status === "unavailable") return <PortalUnavailable />
   const accountName = await loadPortalHeaderName()
-  return <PortalHome dashboard={loaded.dashboard} accountName={accountName} productsReturn />
+  return <PortalHome dashboard={loaded.dashboard} accountName={accountName} context="Recovery & Review Support / Dashboard" />
 }

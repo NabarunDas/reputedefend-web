@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation"
 import { portalAvailable } from "@/lib/portal/config"
+import { productsHubEnabled } from "@/lib/portal/products-hub"
 import { isGuardSelector } from "@/lib/portal/guard/parse"
 import { loadCustomerGuardLocation } from "@/lib/portal/guard/queries"
 import { GuardUnavailable, GuardView } from "../guard-view"
@@ -14,5 +15,5 @@ export default async function CustomerGuardLocationPage({ params }: { params: Pr
   if (loaded.status === "unauthenticated") redirect("/login")
   if (loaded.status === "not_found") notFound()
   if (loaded.status === "unavailable") return <GuardUnavailable />
-  return <GuardView locations={[loaded.location]} focused />
+  return <GuardView locations={[loaded.location]} focused context={productsHubEnabled() ? "Relaunch Guard / Location" : undefined} />
 }

@@ -18,11 +18,11 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261103140000_customer_commercial_offer_acceptance_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261103200518_telloya_enquiry_phase_05a_02_validation.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261103140000_customer_commercial_offer_acceptance_v1.sql")
+    expect(migrationHead.filename).toBe("20261103200518_telloya_enquiry_phase_05a_02_validation.sql")
     expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
@@ -94,7 +94,7 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Commercial offer acceptance is the DEV-applied head and the repository head.
+    // Telloya Phase 05A-02 validation is the DEV-applied head and the repository head.
     expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
@@ -137,6 +137,15 @@ describe("the migration chain manifest", () => {
     expect(offerSql.length).toBe(60883)
     expect(createHash("sha256").update(offerSql).digest("hex")).toBe("8f9fbda50319486185648de6ebdeae0b433cba53215e1ba5be48460e2a268a76")
     expect(findMigration("20261103140000_customer_commercial_offer_acceptance_v1.sql")).toMatchObject({
+      appliedToDev: true,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
+    const validationSql = readFileSync(new URL("20261103200518_telloya_enquiry_phase_05a_02_validation.sql", directory), "utf8")
+    expect(validationSql.length).toBe(10317)
+    expect(createHash("md5").update(validationSql).digest("hex")).toBe("ce8975868e0727760bb283a99b2f5dc9")
+    expect(createHash("sha256").update(validationSql).digest("hex")).toBe("d2b402acd545a05b251cffb61c0a0a4b8028cb220ead5525ff122cbf97cfb0ab")
+    expect(findMigration("20261103200518_telloya_enquiry_phase_05a_02_validation.sql")).toMatchObject({
       appliedToDev: true,
       containsDataChange: false,
       safeToReplay: false,

@@ -1381,7 +1381,7 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Customer commercial offer acceptance. Applied once to DEV.
-    // The verified DEV ledger contains 99 entries and ends at 20261103140000.
+    // When it was applied, the verified DEV ledger contained 99 entries and ended at 20261103140000.
     // The previous ledger contained 98 entries and ended at 20261103120000.
     // Do not replay it. Do not apply it to Production.
     // Schema and function changes only. containsDataChange stays false.
@@ -1399,6 +1399,29 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Customer commercial offer acceptance", probe: "public.customer_portal_commercial_offer_v1" },
   },
+  {
+    // Telloya Phase 05A-02 enquiry validation. Applied once to profilerelaunch-dev.
+    // The verified DEV ledger contains 100 entries and ends at 20261103200518.
+    // The previous ledger contained 99 entries and ended at 20261103140000.
+    // Canonical version recorded once. Repository file is 10,317 characters.
+    // MD5 ce8975868e0727760bb283a99b2f5dc9.
+    // SHA-256 d2b402acd545a05b251cffb61c0a0a4b8028cb220ead5525ff122cbf97cfb0ab.
+    // CREATE OR REPLACE of admin_private.valid_enquiry_v1 only. Signature,
+    // volatility, search_path and grants stay as applied in 20261102200000.
+    // Live validator checks passed. Permissions are unchanged.
+    // No enquiry or email was created. Telloya feature flags remain false.
+    // Schema and function changes only, so containsDataChange stays false.
+    // Do not replay 20261103200518. Do not apply 20261103200518 to Production.
+    // safeToReplay stays false.
+    version: "20261103200518",
+    filename: "20261103200518_telloya_enquiry_phase_05a_02_validation.sql",
+    step: "Telloya enquiry Phase 05A-02 validation",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya enquiry validation", probe: "admin_private.valid_enquiry_v1" },
+  },
 ]
 
 /**
@@ -1410,8 +1433,17 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261103140000`. The live DEV ledger contains 99 entries. The previous
- * head `20261103120000` had 98 entries. Commercial offer acceptance was
+ * `20261103200518`. The live DEV ledger contains 100 entries. The previous
+ * head `20261103140000` had 99 entries. Telloya Phase 05A-02 validation was
+ * applied once to DEV. The repository file is 10,317 characters. MD5
+ * ce8975868e0727760bb283a99b2f5dc9. SHA-256
+ * d2b402acd545a05b251cffb61c0a0a4b8028cb220ead5525ff122cbf97cfb0ab.
+ * CREATE OR REPLACE of admin_private.valid_enquiry_v1 only. Signature,
+ * IMMUTABLE, search_path and grants are unchanged. containsDataChange is
+ * false. Live validator checks passed. Permissions are unchanged. No enquiry
+ * or email was created. Telloya feature flags remain false. Do not replay
+ * `20261103200518` or apply it to Production. The previous head
+ * `20261103120000` had 98 entries. Commercial offer acceptance was
  * applied once to DEV. The repository file is 60,883 characters. SHA-256
  * 8f9fbda50319486185648de6ebdeae0b433cba53215e1ba5be48460e2a268a76.
  * containsDataChange is false. No plan, agreement, subscription, payment,
@@ -1475,6 +1507,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
  * applied and must not be replayed. `pendingMigrations()` is empty.
+ * `20261103200518` is already applied on DEV and must not be replayed.
+ * Do not apply 20261103200518 to Production.
  * `20261103140000` is already applied on DEV and must not be replayed.
  * Do not apply 20261103140000 to Production.
  * Do not replay it. `20261103120000` is already applied on DEV and must not be replayed.

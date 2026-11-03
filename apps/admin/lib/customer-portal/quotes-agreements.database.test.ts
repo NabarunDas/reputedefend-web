@@ -78,6 +78,7 @@ const upgradedFiles = [
   "20261102110000_customer_invitation_dispatch_v1.sql",
   "20261102200000_telloya_enquiry_infrastructure_v1.sql",
   "20261103120000_customer_portal_onboarding_status_v1.sql",
+  "20261103140000_customer_commercial_offer_acceptance_v1.sql",
   migrationHead.filename,
 ].join(",")
 const db = new PGlite()

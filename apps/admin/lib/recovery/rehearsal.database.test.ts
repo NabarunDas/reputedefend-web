@@ -48,26 +48,27 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(102)
+    expect(migrationChain).toHaveLength(103)
     // A clean rebuild includes the seven historical DEV statements, Step 10B,
     // Step 12A, DEV-applied E2E-02, E2E-03 and E2E-04, and the DEV mail claim.
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    // The DEV applied head is 20261103140000 customer_commercial_offer_acceptance_v1 (applied, do not replay, not Production).
-    // The repository head is the same file.
+    // The DEV applied head and repository head are 20261103200518 telloya_enquiry_phase_05a_02_validation.
+    // It was applied once. Do not replay 20261103200518. Do not apply 20261103200518 to Production.
+    // The previous DEV head is 20261103140000 customer_commercial_offer_acceptance_v1.
     // Do not replay 20261103140000. Do not apply 20261103140000 to Production.
     // It was applied once and must not be replayed. 20261101200000, 20261101190000, 20261101180000,
     // 20261101170000, 20261031160000, 20261031150000, 20261031140000 and 20261031120000
     // were applied once and must not be replayed.
     // Do not replay 20261101200000. Do not apply 20261101200000 to Production.
     // Production stays at SEC-08.
-    expect(migrationHead.filename).toBe("20261103140000_customer_commercial_offer_acceptance_v1.sql")
+    expect(migrationHead.filename).toBe("20261103200518_telloya_enquiry_phase_05a_02_validation.sql")
     expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
-    expect(appliedMigrationHead.filename).toBe("20261103140000_customer_commercial_offer_acceptance_v1.sql")
-    expect(appliedMigrationHead.version).toBe("20261103140000")
+    expect(appliedMigrationHead.filename).toBe("20261103200518_telloya_enquiry_phase_05a_02_validation.sql")
+    expect(appliedMigrationHead.version).toBe("20261103200518")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)

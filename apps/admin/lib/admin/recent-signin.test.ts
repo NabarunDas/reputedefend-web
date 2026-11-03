@@ -42,7 +42,7 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       containsDataChange: false,
       safeToReplay: false,
     })
-    // Commercial offer acceptance 20261103140000 is DEV-applied. Nothing is pending.
+    // Telloya validation 20261103200518 is DEV-applied. Nothing is pending.
     expect(pendingMigrations().map(m => m.filename)).toEqual([])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])

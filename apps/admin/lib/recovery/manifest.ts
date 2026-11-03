@@ -1347,8 +1347,9 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Customer invitation dispatch", probe: "public.admin_customer_invitation_command_v1" },
   },
   {
-    // Telloya enquiry infrastructure. Repository source only.
-    // Not applied to DEV. Do not apply it to Production. Do not replay it.
+    // Telloya enquiry infrastructure. Applied once to profilerelaunch-dev on 2026-11-03.
+    // The DEV ledger stores version 20261102200000 with the original 14,815-character SQL.
+    // Not applied to Production. Do not replay or repair migration history.
     // Extends existing enquiries table with public_ref column and TY reference generation.
     // Updates create_general_enquiry_v1 and Admin RPC functions backwards-compatibly.
     // Schema and function changes only. containsDataChange stays false.
@@ -1357,7 +1358,7 @@ export const migrationChain: readonly MigrationEntry[] = [
     filename: "20261102200000_telloya_enquiry_infrastructure_v1.sql",
     step: "Telloya enquiry infrastructure",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Telloya enquiry persistence", probe: "public.generate_enquiry_public_ref" },
@@ -1388,19 +1389,17 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261102110000`. The verified live DEV ledger contains 96 entries and ends
- * there. The invitation file performs catalogue DML outside a function body,
- * so containsDataChange stays true. Do not replay `20261102110000`. It is not
- * applied to Production. The ledger statement is one statement of 53,986
- * characters. The repository file SHA-256 is
- * 2576c03b855fbe7238d7cf8bae5e9eb0649a5fdf72de26ff87b08d86967fa44f.
- * Exactly one APPROVED CUSTOMER_PORTAL_INVITATION template exists.
- * Invitations, commercial subscriptions and product entitlements are 0.
- * The three public invitation functions are service-role-only.
- * `CUSTOMER_INVITED_LOGIN_ENABLED` and `CUSTOMER_INVITATION_DISPATCH_ENABLED`
- * stay disabled. Telloya marketing and enquiry pull request 398 stays
- * separate. Any migration it adds must be reconciled against `20261102110000`
- * before a later merge.
+ * `20261102200000`. The live DEV ledger contains 97 entries. Telloya
+ * enquiry infrastructure was applied once to DEV on 2026-11-03, preserving
+ * its canonical version and complete original 14,815-character SQL.
+ * Schema/function changes only: nullable public_ref, TY reference generation,
+ * backward-compatible enquiry and Admin RPCs. containsDataChange is false.
+ * The public enquiry RPCs grant EXECUTE only to service_role; enquiries RLS
+ * remains enabled. Verification created no enquiry or email. Do not replay
+ * `20261102200000` or apply it to Production. The preceding DEV head
+ * `20261102110000` had 96 ledger entries. Its invitation catalogue DML
+ * sets containsDataChange true. Do not replay it or apply it to Production.
+ * TELLOYA_ENQUIRY_ENABLED remains false in Vercel Preview/develop.
  * The previous head `20261101200000` remains applied. The verified live DEV
  * ledger previously contained 95 entries and ended there. The products file is
  * schema only, so containsDataChange stays false.
@@ -1446,7 +1445,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` contains only
+ * `20261103120000` customer_portal_onboarding_status_v1, which is repository
+ * source and is not applied to DEV or Production. Do not replay it.
  * `20261102110000` is already applied on DEV and must not be replayed.
  * Do not apply `20261102110000` to Production.
  * containsDataChange is true because the file inserts one communication

@@ -54,9 +54,8 @@ describe("rebuilding the whole schema from zero", () => {
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    // The DEV applied head is 20261102110000 customer_invitation_dispatch_v1.
-    // The repository head is 20261103120000 customer_portal_onboarding_status_v1 (pending, not applied to DEV).
-    // 20261102200000 telloya_enquiry_infrastructure_v1 is also pending and is not applied to DEV.
+    // The DEV applied head is 20261102200000 telloya_enquiry_infrastructure_v1 (applied, do not replay, not Production).
+    // The repository head is 20261103120000 customer_portal_onboarding_status_v1 (not applied to DEV).
     // It was applied once and must not be replayed. 20261101200000, 20261101190000, 20261101180000,
     // 20261101170000, 20261031160000, 20261031150000, 20261031140000 and 20261031120000
     // were applied once and must not be replayed.
@@ -66,10 +65,10 @@ describe("rebuilding the whole schema from zero", () => {
     expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
-    expect(appliedMigrationHead.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")
-    expect(appliedMigrationHead.version).toBe("20261102110000")
+    expect(appliedMigrationHead.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")
+    expect(appliedMigrationHead.version).toBe("20261102200000")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(appliedMigrationHead.containsDataChange).toBe(true)
+    expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
   })
 

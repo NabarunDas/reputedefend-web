@@ -42,8 +42,8 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       containsDataChange: false,
       safeToReplay: false,
     })
-    // Telloya migration is pending (not yet applied to DEV)
-    expect(pendingMigrations().map(m => m.filename)).toEqual(["20261102200000_telloya_enquiry_infrastructure_v1.sql", "20261103120000_customer_portal_onboarding_status_v1.sql"])
+    // Telloya 20261102200000 is DEV-applied. Only the onboarding progress migration is pending.
+    expect(pendingMigrations().map(m => m.filename)).toEqual(["20261103120000_customer_portal_onboarding_status_v1.sql"])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])
     expect(sql).not.toContain("interval '5 minutes'")

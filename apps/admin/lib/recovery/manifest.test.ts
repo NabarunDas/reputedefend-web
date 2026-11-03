@@ -18,9 +18,9 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(appliedMigrationHead.containsDataChange).toBe(true)
+    expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     expect(migrationHead.filename).toBe("20261103120000_customer_portal_onboarding_status_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
@@ -39,7 +39,6 @@ describe("the migration chain manifest", () => {
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261102200000_telloya_enquiry_infrastructure_v1.sql",
       "20261103120000_customer_portal_onboarding_status_v1.sql",
     ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
@@ -95,10 +94,10 @@ describe("the migration chain manifest", () => {
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
-    expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(true)
+    expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Check that the pending repository head (Telloya) is correctly marked as unapplied
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
+    // The Telloya repository head is DEV-applied; no migration remains pending
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     const onboardingSql = readFileSync(new URL("20261101180000_admin_commercial_onboarding_v1.sql", directory), "utf8")
@@ -200,7 +199,7 @@ describe("the migration chain manifest", () => {
     expect(basisSql).not.toContain("admin_case_assessment_command_v1")
     expect(findMigration("20261031160000_customer_portal_idle_timeout_v1.sql")?.containsDataChange).toBe(true)
     expect(findMigration("20261031160000_customer_portal_idle_timeout_v1.sql")?.safeToReplay).toBe(false)
-    expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(true)
+    expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration("20261101200000_customer_portal_products_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration("20261024233701_admin_reconcile_accepted_service_v1.sql")?.appliedToDev).toBe(true)

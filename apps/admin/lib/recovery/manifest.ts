@@ -1365,7 +1365,7 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Customer Portal onboarding progress. Applied once to DEV.
-    // The verified DEV ledger contains 98 entries and ends at 20261103120000.
+    // When it was applied, the verified DEV ledger contained 98 entries and ended at 20261103120000.
     // Do not replay it. Do not apply it to Production.
     // Read-only function. containsDataChange stays false.
     // It creates no customer, subscription, entitlement, provision, payment,
@@ -1380,17 +1380,21 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Customer onboarding progress", probe: "public.customer_portal_onboarding_status_v1" },
   },
   {
-    // Customer commercial offer acceptance. Repository source only.
-    // Do not apply 20261103140000 to DEV. Do not apply 20261103140000 to Production.
-    // Do not replay it. It adds the offer read, the acceptance command,
-    // agreement catalogue and immutable acceptance evidence. It does not
-    // approve a plan or an agreement, and it does not seed a price.
-    // containsDataChange stays false. safeToReplay stays false.
+    // Customer commercial offer acceptance. Applied once to DEV.
+    // The verified DEV ledger contains 99 entries and ends at 20261103140000.
+    // The previous ledger contained 98 entries and ended at 20261103120000.
+    // Do not replay it. Do not apply it to Production.
+    // Schema and function changes only. containsDataChange stays false.
+    // It approves no plan or agreement and creates no subscription, payment,
+    // or acceptance. The public offer functions are service-role-only.
+    // RLS is enabled. An invalid session is rejected.
+    // Customer commercial offer read and accept flags stay off.
+    // safeToReplay stays false.
     version: "20261103140000",
     filename: "20261103140000_customer_commercial_offer_acceptance_v1.sql",
     step: "Customer commercial offer acceptance",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Customer commercial offer acceptance", probe: "public.customer_portal_commercial_offer_v1" },
@@ -1406,8 +1410,15 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261103120000`. The live DEV ledger contains 98 entries. The previous
- * head `20261102200000` had 97 entries. Telloya
+ * `20261103140000`. The live DEV ledger contains 99 entries. The previous
+ * head `20261103120000` had 98 entries. Commercial offer acceptance was
+ * applied once to DEV. The repository file is 60,883 characters. SHA-256
+ * 8f9fbda50319486185648de6ebdeae0b433cba53215e1ba5be48460e2a268a76.
+ * containsDataChange is false. No plan, agreement, subscription, payment,
+ * or acceptance was created. The public offer functions are service-role-only.
+ * RLS is enabled. An invalid session is rejected. Customer commercial offer
+ * read and accept flags remain off. Do not replay `20261103140000` or apply
+ * it to Production. The previous head `20261102200000` had 97 entries. Telloya
  * enquiry infrastructure was applied once to DEV on 2026-11-03, preserving
  * its canonical version and complete original 14,815-character SQL.
  * Schema/function changes only: nullable public_ref, TY reference generation,
@@ -1463,9 +1474,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` contains only
- * `20261103140000` customer_commercial_offer_acceptance_v1, which is repository
- * source. Do not apply 20261103140000 to DEV. Do not apply 20261103140000 to Production.
+ * applied and must not be replayed. `pendingMigrations()` is empty.
+ * `20261103140000` is already applied on DEV and must not be replayed.
+ * Do not apply 20261103140000 to Production.
  * Do not replay it. `20261103120000` is already applied on DEV and must not be replayed.
  * `20261102110000` is already applied on DEV and must not be replayed.
  * Do not apply `20261102110000` to Production.

@@ -52,8 +52,8 @@ export type TelloyaEnquiryInput = {
   email: string
   phone: string
 
-  // Product interest (legacy compatibility)
-  product: TelloyaProduct
+  // Product interest (legacy compatibility - optional when planTier is provided)
+  product?: TelloyaProduct
   
   // Plan tier selection (required unless legacy product is provided)
   planTier?: TelloyaPlanTier

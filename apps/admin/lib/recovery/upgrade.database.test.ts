@@ -60,8 +60,8 @@ describe("upgrading a database that is already running", () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
     // The repository head is 20261103140000 customer_commercial_offer_acceptance_v1.
-    // Do not apply 20261103140000 to DEV. Do not apply 20261103140000 to Production.
-    // The DEV applied head is 20261103120000 customer_portal_onboarding_status_v1 (already applied, must not be replayed).
+    // It is already applied on DEV. Do not replay 20261103140000. Do not apply 20261103140000 to Production.
+    // The preceding DEV migration is 20261103120000 customer_portal_onboarding_status_v1 (already applied, must not be replayed).
     // The preceding DEV migration is 20261102110000 customer_invitation_dispatch_v1 (already applied, must not be replayed).
     // 20261101200000 remains applied on DEV and must not be replayed.
     // 20261101190000 remains applied on DEV and must not be replayed.
@@ -73,7 +73,7 @@ describe("upgrading a database that is already running", () => {
     // request 20261030200000 is applied on DEV and must not be replayed. This
     // disposable rebuild is not a live apply. Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261103140000_customer_commercial_offer_acceptance_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261103120000_customer_portal_onboarding_status_v1.sql")

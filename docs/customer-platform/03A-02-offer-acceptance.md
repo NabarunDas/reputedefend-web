@@ -48,6 +48,6 @@ Both flags stay off until the migration, the agreements, and the plans are verif
 
 ## Migration
 
-`20261103120000_customer_portal_onboarding_status_v1` is applied on DEV. The verified DEV ledger contains 98 entries and ends there. Do not replay it. Production is unchanged.
+`20261103120000_customer_portal_onboarding_status_v1` remains applied on DEV. When it was applied, the verified DEV ledger contained 98 entries and ended there. Do not replay it. Do not apply it to Production.
 
-`20261103140000_customer_commercial_offer_acceptance_v1` is repository source only. Do not apply `20261103140000` to DEV. Do not apply `20261103140000` to Production. Do not replay it. It replaces the private onboarding status function so an eligible offer can be reviewed and an accepted subscription can show Offer accepted. The original onboarding file is not rewritten.
+`20261103140000_customer_commercial_offer_acceptance_v1` was applied once to DEV. The verified DEV ledger contains 99 entries and ends there. Do not replay `20261103140000`. Do not apply `20261103140000` to Production. Production is unchanged. It did not approve a plan or an agreement, and it did not create a subscription, payment, or acceptance. Customer commercial offer read and accept flags remain off. It replaces the private onboarding status function so an eligible offer can be reviewed and an accepted subscription can show Offer accepted. The original onboarding file is not rewritten.

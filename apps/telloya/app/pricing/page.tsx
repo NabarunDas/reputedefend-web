@@ -48,7 +48,7 @@ export default function Pricing() {
                 className={`${styles.planCard} ${plan.popular ? styles.popularPlan : ""}`}
                 data-tier={plan.tier}
               >
-                {plan.popular && <div className={styles.popularBadge}>Popular</div>}
+                {plan.popular && <div className={styles.popularBadge}>Recommended</div>}
                 <div className={styles.planHeader}>
                   <h2>{plan.name}</h2>
                   <p className={styles.planTagline}>{plan.tagline}</p>

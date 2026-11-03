@@ -153,7 +153,6 @@ describe("readiness model", () => {
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261101200000_customer_portal_products_v1.sql",
       "20261102200000_telloya_enquiry_infrastructure_v1.sql",
     ])
     expect(appliedMigrationHead.version).toBe("20261102110000")

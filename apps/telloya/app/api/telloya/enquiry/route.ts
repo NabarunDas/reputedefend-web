@@ -79,16 +79,20 @@ export async function POST(request: Request) {
     // Persist enquiry to database
     const result = await persistTelloyaEnquiry(data, submissionKey)
 
-    if (!result.ok) {
+    // Reject any response that is not genuinely persisted
+    if (!result.ok || result.simulated || !result.persisted) {
       return NextResponse.json(
-        { ok: false, message: result.message },
+        { ok: false, message: result.message || "Unable to process this enquiry right now." },
         { status: 503 }
       )
     }
 
-    // Successful submission must have a real enquiry reference
-    if (!result.enquiryRef) {
-      console.error("[telloya-enquiry] Success without reference", { simulated: result.simulated })
+    // Successful submission must have a valid TY reference
+    if (!result.enquiryRef || !/^TY-\d\d-[A-HJ-NP-Z2-9]{6}$/.test(result.enquiryRef)) {
+      console.error("[telloya-enquiry] Success without valid TY reference", { 
+        ref: result.enquiryRef, 
+        simulated: result.simulated 
+      })
       return NextResponse.json(
         { ok: false, message: "Unable to complete this enquiry right now." },
         { status: 500 }

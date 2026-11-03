@@ -39,7 +39,6 @@ describe("the migration chain manifest", () => {
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261101200000_customer_portal_products_v1.sql",
       "20261102200000_telloya_enquiry_infrastructure_v1.sql",
     ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)

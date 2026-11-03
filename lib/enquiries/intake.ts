@@ -53,18 +53,7 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
   const shouldSendAck = options.sendCustomerAck !== undefined ? options.sendCustomerAck : config.sendCustomerAck
   
   if (!options.create && !readSupabaseConfig().ready) {
-    if (runtimeAllowsSimulation(nodeEnv)) {
-      // Generate mock reference for Telloya in simulation mode
-      const mockRef = (data.source as string) === "telloya" 
-        ? `TY-${new Date().getFullYear().toString().slice(-2)}-${Math.random().toString(36).slice(2, 8).toUpperCase().replace(/[IL01O]/g, "X")}`
-        : undefined
-      return { 
-        ok: true, 
-        simulated: true, 
-        message: "Development simulation only. No enquiry has been saved or sent.",
-        enquiryRef: mockRef,
-      }
-    }
+    // No simulation mode for public API - enquiry must be persisted before returning success
     return { ok: false, message: ENQUIRY_UNAVAILABLE }
   }
   let receipt: EnquiryReceipt

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { persistGeneralEnquiry } from "@shared/enquiries/intake"
 import type { EnquiryInput } from "@shared/enquiry"
 
-describe("Telloya enquiry simulation mode", () => {
+describe("Telloya enquiry fail-closed behavior", () => {
   const telloyaEnquiry: EnquiryInput = {
     fullName: "John Smith",
     email: "john@example.com",
@@ -20,35 +20,19 @@ describe("Telloya enquiry simulation mode", () => {
     source: "homepage" as const,
   }
 
-  it("generates mock TY reference in simulation mode when database unavailable", async () => {
-    // Simulate Telloya enquiry without database (no create function)
-    const result = await persistGeneralEnquiry(
-      { ...telloyaEnquiry, source: "homepage" as const },
-      "12345678-1234-1234-1234-123456789012",
-      {
-        nodeEnv: "development",
-        // No create function = simulation mode for non-telloya
-      }
-    )
-
-    expect(result.ok).toBe(true)
-    expect(result.simulated).toBe(true)
-    expect(result.enquiryRef).toBeUndefined()
-  })
-
-  it("returns success with simulation flag when database unavailable", async () => {
+  it("returns error when database unavailable (no fake success)", async () => {
     const result = await persistGeneralEnquiry(
       telloyaEnquiry,
       "12345678-1234-1234-1234-123456789012",
       {
         nodeEnv: "development",
-        // No create function and Supabase not configured = simulation mode
+        // No create function and Supabase not configured = fail closed
       }
     )
 
-    expect(result.ok).toBe(true)
-    expect(result.simulated).toBe(true)
-    expect(result.message).toContain("Development simulation")
+    expect(result.ok).toBe(false)
+    expect(result.simulated).toBeUndefined()
+    expect(result.enquiryRef).toBeUndefined()
   })
 
   it("returns error in production when database unavailable", async () => {

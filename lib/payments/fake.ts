@@ -1,5 +1,5 @@
 import { GUARD_PRODUCT_NAME, normalisedCheckoutEmail, requireCheckoutPresentation } from "./checkout-presentation"
-import { assertGuardScheduleSubscription, assertSafeGuardMetadata, assertSafeMetadata, guardMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type MappedProviderEvent, type ProviderPaymentIntent } from "./model"
+import { assertGuardScheduleSubscription, assertSafeCommercialMetadata, assertSafeGuardMetadata, assertSafeMetadata, commercialMetadata, guardMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, isCommercialMetadata, isStripeTrialEndAllowed, mapBoundedProviderEvent, paymentMetadata, type MappedProviderEvent, type ProviderPaymentIntent } from "./model"
 import { PaymentsDisabledError, type PaymentProvider } from "./provider"
 
 type StoredCheckout = {
@@ -411,16 +411,33 @@ export function createFakePaymentProvider(): PaymentProvider & {
       return found
     },
     async createRecurringPrice(input) {
-      assertSafeGuardMetadata({ priceVersionId: input.priceVersionId, providerOperationId: input.providerOperationId })
+      const commercial = input.commercial
+      const meta = commercial
+        ? commercialMetadata({
+          customerId: commercial.customerId,
+          commercialSubscriptionId: commercial.commercialSubscriptionId,
+          acceptanceId: commercial.acceptanceId,
+          providerOperationId: input.providerOperationId,
+        })
+        : { priceVersionId: input.priceVersionId, providerOperationId: input.providerOperationId }
+      if (commercial) assertSafeCommercialMetadata(meta)
+      else assertSafeGuardMetadata(meta)
+      if (commercial && commercial.productName !== "Telloya" && commercial.productName !== "Complete") {
+        throw new PaymentsDisabledError("Commercial price product is not approved.")
+      }
+      if (commercial && input.currency !== "GBP") throw new PaymentsDisabledError("Commercial price currency is not GBP.")
       if (objects.has(input.idempotencyKey)) {
         const existing = objects.get(input.idempotencyKey) as { productId: string; priceId: string; amountMinor: number }
         return { ...existing, livemode: false as const }
       }
+      const identity = (commercial ? commercial.acceptanceId : input.priceVersionId).replace(/-/g, "").slice(0, 14)
       const created = {
-        productId: `prod_test_${input.priceVersionId.replace(/-/g, "").slice(0, 12)}`,
-        priceId: `price_test_${input.priceVersionId.replace(/-/g, "").slice(0, 12)}`,
+        productId: commercial ? `prod_${identity}` : `prod_test_${input.priceVersionId.replace(/-/g, "").slice(0, 12)}`,
+        priceId: commercial ? `price_${identity}` : `price_test_${input.priceVersionId.replace(/-/g, "").slice(0, 12)}`,
         amountMinor: input.amountMinor,
-        productName: GUARD_PRODUCT_NAME,
+        productName: commercial ? commercial.productName : GUARD_PRODUCT_NAME,
+        metadata: meta,
+        taxBehaviour: commercial?.taxBehaviour ?? null,
       }
       objects.set(input.idempotencyKey, created)
       objects.set(created.priceId, created)
@@ -428,14 +445,25 @@ export function createFakePaymentProvider(): PaymentProvider & {
       return { ...created, livemode: false as const }
     },
     async createSubscriptionCheckout(input) {
-      const meta = guardMetadata(input.metadata)
-      assertSafeGuardMetadata(meta)
-      if (input.trialEnd != null && !isStripeTrialEndAllowed(input.trialEnd)) {
-        throw new PaymentsDisabledError("Delayed Guard Checkout requires a Stripe trial_end at least 48 hours in the future.")
+      let meta: Record<string, string>
+      let commercial = false
+      if (isCommercialMetadata(input.metadata)) {
+        commercial = true
+        meta = commercialMetadata(input.metadata)
+        assertSafeCommercialMetadata(meta)
+        if (input.trialEnd != null) throw new PaymentsDisabledError("Commercial Checkout does not start a trial.")
+      } else {
+        meta = guardMetadata(input.metadata)
+        assertSafeGuardMetadata(meta)
+        if (input.trialEnd != null && !isStripeTrialEndAllowed(input.trialEnd)) {
+          throw new PaymentsDisabledError("Delayed Guard Checkout requires a Stripe trial_end at least 48 hours in the future.")
+        }
       }
       if (sessions.has(input.idempotencyKey)) return { ...sessions.get(input.idempotencyKey)!, livemode: false as const }
       const created: StoredCheckout = {
-        id: `cs_test_sub_${input.idempotencyKey.replace(/-/g, "").slice(0, 12)}`,
+        id: commercial
+          ? `cs_${input.idempotencyKey.replace(/-/g, "").slice(0, 16)}`
+          : `cs_test_sub_${input.idempotencyKey.replace(/-/g, "").slice(0, 12)}`,
         url: `https://checkout.stripe.test/sub/${input.idempotencyKey}`,
         mode: "subscription",
         amountMinor: 0,

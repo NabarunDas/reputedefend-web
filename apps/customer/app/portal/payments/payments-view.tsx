@@ -10,6 +10,7 @@ import {
   obligationHeadline,
   trackLabel,
 } from "@/lib/portal/payments/model"
+import type { CommercialPaymentNotice } from "@/lib/portal/onboarding/payment-notice"
 import type { PaymentAction, PaymentCase, PaymentObligation, PaymentOrder } from "@/lib/portal/payments/parse"
 import { formatPortalDate } from "@/lib/portal/cases/model"
 import { assignTrustedStripeCheckout } from "../../../../../lib/payments/stripe-url"
@@ -80,14 +81,28 @@ export function PaymentsUnavailable() {
   )
 }
 
+function cadenceLabel(cadence: CommercialPaymentNotice["cadence"]) {
+  if (cadence === "MONTH") return "Monthly"
+  if (cadence === "YEAR") return "Yearly"
+  return "One-time"
+}
+
+function commercialNext(notice: CommercialPaymentNotice) {
+  if (notice.state === "unsupported") return "This billing arrangement is not ready for secure payment."
+  if (notice.state === "started") return "Payment has not been completed. Returning from a payment page does not record a payment."
+  return "Payment has not been completed. Payment setup is being prepared."
+}
+
 export function PaymentsView({
   cases,
   focused,
   freshOrders = [],
+  commercialNotices = [],
 }: {
   cases: PaymentCase[]
   focused: boolean
   freshOrders?: string[]
+  commercialNotices?: CommercialPaymentNotice[]
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
@@ -154,6 +169,23 @@ export function PaymentsView({
         <p>Your payments and receipts.</p>
       </header>
       {notice ? <p className="payments-notice" role="alert">{notice}</p> : null}
+      {commercialNotices.length > 0 ? (
+        <section aria-labelledby="commercial-payment-readiness">
+          <h2 id="commercial-payment-readiness">Accepted offers</h2>
+          <ul>
+            {commercialNotices.map(item => (
+              <li key={item.offerRef}>
+                <p>{item.product} · {item.offerRef}</p>
+                <p>Offer accepted. Payment has not been completed.</p>
+                <p>Contractual charge {moneyLabel(item.totalMinor, "GBP")}. {cadenceLabel(item.cadence)}.</p>
+                {item.guardChargeMinor != null ? <p>Included Relaunch Guard {moneyLabel(item.guardChargeMinor, "GBP")}.</p> : null}
+                <p>{commercialNext(item)}</p>
+                <p><a href={`/portal/onboarding/offer/${item.offerRef}`}>Review this offer</a></p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {cases.length === 0 ? <p className="state-panel">You don&apos;t have any payments yet.</p> : null}
       {cases.map(item => (
         <PaymentCaseSection

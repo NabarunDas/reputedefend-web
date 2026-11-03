@@ -153,13 +153,28 @@ export type GuardMetadata = {
   guardRefundId?: string
 }
 
+export type CommercialMetadata = {
+  customerId: string
+  commercialSubscriptionId: string
+  acceptanceId: string
+  providerOperationId: string
+}
+
+export type CommercialPriceDescriptor = {
+  productName: "Telloya" | "Complete"
+  customerId: string
+  commercialSubscriptionId: string
+  acceptanceId: string
+  taxBehaviour: "INCLUSIVE" | "EXCLUSIVE" | "NOT_APPLICABLE"
+}
+
 export type CreateSubscriptionCheckoutInput = {
   idempotencyKey: string
   stripeCustomerId: string
   stripePriceId: string
   successUrl: string
   cancelUrl: string
-  metadata: GuardMetadata
+  metadata: GuardMetadata | CommercialMetadata
   trialEnd?: number
 }
 
@@ -177,6 +192,8 @@ export type CreateRecurringPriceInput = {
   currency: "GBP"
   priceVersionId: string
   providerOperationId: string
+  /** Present only for an accepted commercial subscription. Guard prices omit it. */
+  commercial?: CommercialPriceDescriptor
 }
 
 export type ProviderRecurringPrice = {
@@ -492,6 +509,33 @@ export function assertSafeGuardMetadata(meta: Record<string, string>) {
       throw new Error("Stripe metadata contains a disallowed key")
     }
     if (!isUuid(value)) {
+      throw new Error("Stripe metadata must use opaque internal identifiers")
+    }
+  }
+}
+
+const COMMERCIAL_METADATA_KEYS = ["customerId", "commercialSubscriptionId", "acceptanceId", "providerOperationId"]
+
+export function isCommercialMetadata(value: GuardMetadata | CommercialMetadata): value is CommercialMetadata {
+  return "commercialSubscriptionId" in value && !("guardSubscriptionId" in value)
+}
+
+export function commercialMetadata(input: CommercialMetadata): Record<string, string> {
+  return {
+    customerId: input.customerId,
+    commercialSubscriptionId: input.commercialSubscriptionId,
+    acceptanceId: input.acceptanceId,
+    providerOperationId: input.providerOperationId,
+  }
+}
+
+export function assertSafeCommercialMetadata(meta: Record<string, string>) {
+  const keys = Object.keys(meta)
+  if (keys.length !== COMMERCIAL_METADATA_KEYS.length || COMMERCIAL_METADATA_KEYS.some(key => !Object.hasOwn(meta, key))) {
+    throw new Error("Stripe metadata contains a disallowed key")
+  }
+  for (const [key, value] of Object.entries(meta)) {
+    if (!COMMERCIAL_METADATA_KEYS.includes(key) || !isUuid(value)) {
       throw new Error("Stripe metadata must use opaque internal identifiers")
     }
   }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { createFakePaymentProvider } from "../../../../lib/payments/fake"
 import { disabledPaymentProvider, PaymentsDisabledError } from "../../../../lib/payments/provider"
 import { isStripeTestSecret, liveSecretRejected, paymentsEnabled, resolvePaymentProviderMode } from "../../../../lib/payments/config"
-import { assertSafeGuardMetadata, assertSafeMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, mapBoundedProviderEvent, STRIPE_SDK_API_VERSION, STRIPE_SDK_VERSION } from "../../../../lib/payments/model"
+import { assertSafeCommercialMetadata, assertSafeGuardMetadata, assertSafeMetadata, HOSTED_INVOICE_DAYS_UNTIL_DUE, mapBoundedProviderEvent, STRIPE_SDK_API_VERSION, STRIPE_SDK_VERSION } from "../../../../lib/payments/model"
 
 describe("payment provider contract", () => {
   it("pins the official Stripe SDK version and fail-closes by default", async () => {
@@ -296,6 +296,90 @@ describe("payment provider contract", () => {
       nextPriceId: "price_newguard1",
       periodEnd,
     })).rejects.toBeInstanceOf(PaymentsDisabledError)
+  })
+
+  it("creates one commercial price from the accepted amount and does not reuse Guard metadata", async () => {
+    const provider = createFakePaymentProvider()
+    const acceptanceId = "12121212-1212-4121-8121-121212121212"
+    const subscriptionId = "13131313-1313-4131-8131-131313131313"
+    const customerId = "14141414-1414-4141-8141-141414141414"
+    const priceOperationId = "15151515-1515-4151-8151-151515151515"
+    const checkoutOperationId = "16161616-1616-4161-8161-161616161616"
+    const priceInput = {
+      idempotencyKey: "17171717-1717-4171-8171-171717171717",
+      amountMinor: 8900,
+      currency: "GBP" as const,
+      priceVersionId: acceptanceId,
+      providerOperationId: priceOperationId,
+      commercial: {
+        productName: "Complete" as const,
+        customerId,
+        commercialSubscriptionId: subscriptionId,
+        acceptanceId,
+        taxBehaviour: "NOT_APPLICABLE" as const,
+      },
+    }
+    const first = await provider.createRecurringPrice(priceInput)
+    const second = await provider.createRecurringPrice(priceInput)
+    expect(first.priceId).toBe(second.priceId)
+    expect(first.priceId).toMatch(/^price_[A-Za-z0-9]+$/)
+    expect(first.amountMinor).toBe(8900)
+    const stored = provider.objects.get(priceInput.idempotencyKey)
+    expect(stored).toMatchObject({ productName: "Complete", amountMinor: 8900, taxBehaviour: "NOT_APPLICABLE" })
+    expect(stored).not.toMatchObject({ productName: "Relaunch Guard" })
+    expect(JSON.stringify(stored)).not.toMatch(/serviceOrderId|guardSubscriptionId|priceVersionId/)
+    const checkoutKey = "18181818-1818-4181-8181-181818181818"
+    const checkout = await provider.createSubscriptionCheckout({
+      idempotencyKey: checkoutKey,
+      stripeCustomerId: "cus_commercialabc",
+      stripePriceId: first.priceId,
+      successUrl: "https://customer.example/pay/return",
+      cancelUrl: "https://customer.example/pay/return",
+      metadata: {
+        customerId,
+        commercialSubscriptionId: subscriptionId,
+        acceptanceId,
+        providerOperationId: checkoutOperationId,
+      },
+    })
+    expect(checkout.amountMinor).toBe(0)
+    expect(checkout.id).toMatch(/^cs_[A-Za-z0-9]+$/)
+    const again = await provider.createSubscriptionCheckout({
+      idempotencyKey: checkoutKey,
+      stripeCustomerId: "cus_commercialabc",
+      stripePriceId: first.priceId,
+      successUrl: "https://customer.example/pay/return",
+      cancelUrl: "https://customer.example/pay/return",
+      metadata: {
+        customerId,
+        commercialSubscriptionId: subscriptionId,
+        acceptanceId,
+        providerOperationId: checkoutOperationId,
+      },
+    })
+    expect(again.id).toBe(checkout.id)
+    expect(JSON.stringify(provider.objects.get(checkout.id))).not.toMatch(/serviceOrderId|guardSubscriptionId|priceVersionId/)
+    expect(() => assertSafeCommercialMetadata({
+      customerId,
+      commercialSubscriptionId: subscriptionId,
+      acceptanceId,
+      providerOperationId: checkoutOperationId,
+      serviceOrderId: "19191919-1919-4191-8191-191919191919",
+    })).toThrow(/disallowed/)
+    await expect(provider.createSubscriptionCheckout({
+      idempotencyKey: "20202020-2020-4202-8202-202020202020",
+      stripeCustomerId: "cus_commercialabc",
+      stripePriceId: first.priceId,
+      successUrl: "https://customer.example/pay/return",
+      cancelUrl: "https://customer.example/pay/return",
+      metadata: {
+        customerId,
+        commercialSubscriptionId: subscriptionId,
+        acceptanceId,
+        providerOperationId: checkoutOperationId,
+      },
+      trialEnd: Math.floor(Date.now() / 1000) + (72 * 3600),
+    })).rejects.toThrow(/does not start a trial/)
   })
 
   it("reuses one hosted invoice and stores a 14-day due date", async () => {

@@ -22,7 +22,7 @@ describe("the migration chain manifest", () => {
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(true)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")
+    expect(migrationHead.filename).toBe("20261103120000_customer_portal_onboarding_status_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
@@ -40,6 +40,7 @@ describe("the migration chain manifest", () => {
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261102200000_telloya_enquiry_infrastructure_v1.sql",
+      "20261103120000_customer_portal_onboarding_status_v1.sql",
     ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
@@ -127,6 +128,18 @@ describe("the migration chain manifest", () => {
       containsDataChange: true,
       safeToReplay: false,
     })
+    const onboardingStatusSql = readFileSync(new URL("20261103120000_customer_portal_onboarding_status_v1.sql", directory), "utf8")
+    expect(onboardingStatusSql.length).toBe(13473)
+    expect(createHash("sha256").update(onboardingStatusSql).digest("hex")).toBe("0c370084c1e705bcf2d5bea091b06de6ec29fd072c8232d55bce3f6ab8b5562b")
+    expect(findMigration("20261103120000_customer_portal_onboarding_status_v1.sql")).toMatchObject({
+      appliedToDev: false,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
+    expect(onboardingStatusSql).toContain("REVOKE ALL ON FUNCTION public.customer_portal_onboarding_status_v1(text)")
+    expect(onboardingStatusSql).toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_onboarding_status_v1(text) TO service_role;")
+    expect(onboardingStatusSql).not.toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_onboarding_status_v1(text) TO anon")
+    expect(onboardingStatusSql).not.toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_onboarding_status_v1(text) TO authenticated")
     const paymentSql = readFileSync(new URL("20261030200000_guided_payment_request_after_acceptance_v1.sql", directory), "utf8")
     expect(createHash("sha256").update(paymentSql).digest("hex")).toBe("32195da0c20f665e87cfeaa9f5e2b9600341f2c02502c140c403cf9ec2d40ca5")
     expect(paymentSql).toContain("SECURITY DEFINER")

@@ -89,6 +89,7 @@ export const PORTAL_ROUTES: readonly PortalRoute[] = [
     ["/messages/[selector]", "app/portal/messages/[selector]/page.tsx", "loadCustomerMessage"],
     ["/account", "app/portal/account/page.tsx", "loadCustomerAccount"],
     ["/products", "app/portal/products/page.tsx", "loadProductHub"],
+    ["/onboarding", "app/portal/onboarding/page.tsx", "loadOnboardingStatus"],
     ["/recovery", "app/portal/recovery/page.tsx", "loadCustomerDashboard"],
   ].map(([suffix, file, loader]): PortalRoute => ({
     path: `/portal${suffix === "/" ? "" : suffix}`,
@@ -101,7 +102,7 @@ export const PORTAL_ROUTES: readonly PortalRoute[] = [
     origin: "none",
     contentType: "none",
     effect: "read",
-    authority: `${loader} re-reads the portal session and returns only that customer's rows. The layout is not the boundary.${suffix === "/" ? " When CUSTOMER_PRODUCTS_HUB_ENABLED is exactly true, a valid session redirects to /portal/products and this dashboard does not render." : ""}${suffix === "/products" || suffix === "/recovery" ? " CUSTOMER_PRODUCTS_HUB_ENABLED must be exactly true. Otherwise a valid session is redirected to /portal and this page does not render." : ""}`,
+    authority: `${loader} re-reads the portal session and returns only that customer's rows. The layout is not the boundary.${suffix === "/" ? " When CUSTOMER_PRODUCTS_HUB_ENABLED is exactly true, a valid session redirects to /portal/products and this dashboard does not render." : ""}${suffix === "/products" || suffix === "/recovery" || suffix === "/onboarding" ? " CUSTOMER_PRODUCTS_HUB_ENABLED must be exactly true. Otherwise a valid session is redirected to /portal and this page does not render." : ""}`,
     unauthenticated: "Gate off redirects to /. Gate on without a portal session redirects to /login. A portal cookie that fails server validation redirects to /login?ended=security. An action session is not accepted.",
     proxyClass: "portal-page",
   })),

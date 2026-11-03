@@ -47,6 +47,10 @@ describe("My Products commercial read", () => {
 
   it("does not call the products read while the flag is off", async () => {
     jar.set("pr-portal-dev", token)
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_portal_onboarding_status_v1") return { requests: [] }
+      throw new Error(`unexpected ${name}`)
+    })
     const loaded = await loadProductHub()
     expect(loaded.status).toBe("ready")
     if (loaded.status !== "ready") return
@@ -58,22 +62,29 @@ describe("My Products commercial read", () => {
     expect(loaded.products[2].actions.map(action => action.href).join(" ")).not.toMatch(/\/portal\/telloya|telloya\.com\/enquire/)
     expect(loaded.products[1].actions).toContainEqual({ label: "Open dashboard", href: "/portal/guard" })
     expect(loaded.products[0].actions).toContainEqual({ label: "Open dashboard", href: "/portal/recovery" })
-    expect(rpc).not.toHaveBeenCalled()
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith("customer_portal_onboarding_status_v1", {
+      p_token_hash: createHash("sha256").update(token).digest("hex"),
+    })
+    expect(rpc).not.toHaveBeenCalledWith("customer_portal_products_v1", expect.anything())
     expect(JSON.stringify(loaded.products)).not.toMatch(/Not subscribed|Subscribe|\/portal\/telloya/)
   })
 
   it("sends only the session token hash and keeps a failed read from becoming not subscribed", async () => {
     jar.set("pr-portal-dev", token)
     vi.stubEnv("CUSTOMER_PRODUCTS_READ_ENABLED", "true")
-    rpc.mockRejectedValueOnce(new Error("products read failed"))
+    const hash = createHash("sha256").update(token).digest("hex")
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "customer_portal_products_v1") throw new Error("products read failed")
+      if (name === "customer_portal_onboarding_status_v1") return { requests: [] }
+      throw new Error(name)
+    })
     const failed = await loadProductHub()
     expect(failed.status).toBe("ready")
     if (failed.status !== "ready") return
-    expect(rpc).toHaveBeenCalledTimes(1)
-    expect(rpc).toHaveBeenCalledWith("customer_portal_products_v1", {
-      p_token_hash: createHash("sha256").update(token).digest("hex"),
-    })
-    expect(Object.keys(rpc.mock.calls[0][1])).toEqual(["p_token_hash"])
+    expect(rpc).toHaveBeenCalledWith("customer_portal_products_v1", { p_token_hash: hash })
+    expect(rpc).toHaveBeenCalledWith("customer_portal_onboarding_status_v1", { p_token_hash: hash })
+    expect(rpc.mock.calls.every(call => Object.keys(call[1]).join() === "p_token_hash")).toBe(true)
     expect(failed.products[0].status).toBe("open")
     expect(failed.products[0].actions).toContainEqual({ label: "Open dashboard", href: "/portal/recovery" })
     expect(failed.products[1].statusLabel).toBeUndefined()
@@ -85,7 +96,7 @@ describe("My Products commercial read", () => {
     expect(failed.products[2].statusLabel).toBe("Status temporarily unavailable")
     expect(JSON.stringify(failed.products)).not.toMatch(/Not subscribed/)
 
-    rpc.mockResolvedValueOnce(null)
+    rpc.mockImplementation(async (name: string) => name === "customer_portal_products_v1" ? null : { requests: [] })
     await expect(loadProductHub()).resolves.toEqual({ status: "unauthenticated" })
   })
 

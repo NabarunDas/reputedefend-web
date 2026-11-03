@@ -1,4 +1,4 @@
-export type PortalShell = "legacy" | "launcher" | "recovery" | "guard" | "account"
+export type PortalShell = "legacy" | "launcher" | "recovery" | "guard" | "account" | "onboarding"
 
 /**
  * The product launcher is not a workspace. Hub off keeps the original bar.
@@ -10,6 +10,7 @@ export function selectPortalShell(pathname: string, hub: boolean): PortalShell {
   if (pathname === "/portal" || pathname === "/portal/products" || pathname.startsWith("/portal/products/")) return "launcher"
   if (pathname === "/portal/guard" || pathname.startsWith("/portal/guard/")) return "guard"
   if (pathname === "/portal/account" || pathname.startsWith("/portal/account/")) return "account"
+  if (pathname === "/portal/onboarding" || pathname.startsWith("/portal/onboarding/")) return "onboarding"
   return "recovery"
 }
 
@@ -36,5 +37,6 @@ export function workspaceHeading(pathname: string, shell: PortalShell): { produc
     return { product: "Recovery & Review Support", destination }
   }
   if (shell === "account") return { product: null, destination: "Account" }
+  if (shell === "onboarding") return { product: null, destination: "Setup progress" }
   return { product: null, destination: "My ProfileRelaunch" }
 }

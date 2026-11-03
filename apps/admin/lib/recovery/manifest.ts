@@ -1362,6 +1362,21 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya enquiry persistence", probe: "public.generate_enquiry_public_ref" },
   },
+  {
+    // Customer Portal onboarding progress. Repository source only.
+    // Not applied to DEV. Do not apply it to DEV. Do not apply it to Production.
+    // Do not replay it. Read-only function. containsDataChange stays false.
+    // It creates no customer, subscription, entitlement, provision, payment,
+    // or invitation rows. safeToReplay stays false.
+    version: "20261103120000",
+    filename: "20261103120000_customer_portal_onboarding_status_v1.sql",
+    step: "Customer Portal onboarding progress",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Customer onboarding progress", probe: "public.customer_portal_onboarding_status_v1" },
+  },
 ]
 
 /**

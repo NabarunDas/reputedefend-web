@@ -17,8 +17,12 @@ export function PortalChrome({ hub, children }: { hub: boolean; children: ReactN
   const pathname = usePathname() ?? ""
   const shell = selectPortalShell(pathname, hub)
   const heading = workspaceHeading(pathname, shell)
-  const navMode = shell === "guard" || shell === "recovery" || shell === "account" ? shell : "legacy"
-  const workspace = shell === "recovery" || shell === "guard" || shell === "account"
+  const navMode = shell === "guard" || shell === "recovery" || shell === "account"
+    ? shell
+    : shell === "onboarding"
+      ? "account"
+      : "legacy"
+  const workspace = shell === "recovery" || shell === "guard" || shell === "account" || shell === "onboarding"
 
   return (
     <div className={shell === "launcher" ? "portal-shell portal-shell-launcher" : "portal-shell"}>

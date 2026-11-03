@@ -105,6 +105,8 @@ describe("product switch choices", () => {
           nextStep: "We are checking that you can act for this business.",
           receivedAt: "2026-11-01T09:00:00.000Z",
           updatedAt: "2026-11-01T09:30:00.000Z",
+          offerRef: null,
+          offerState: null,
         }],
       },
     }))
@@ -139,6 +141,8 @@ describe("product switch choices", () => {
           nextStep: "This request is closed.",
           receivedAt: "2026-11-01T09:00:00.000Z",
           updatedAt: "2026-11-01T09:30:00.000Z",
+          offerRef: null,
+          offerState: null,
         }],
       },
     }))

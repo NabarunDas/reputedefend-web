@@ -31,6 +31,8 @@ export type OnboardingRequestView = {
   nextStep: string
   receivedAt: string
   updatedAt: string
+  offerRef: string | null
+  offerState: "eligible" | "accepted" | null
 }
 
 export type OnboardingRead =
@@ -52,7 +54,11 @@ const KEYS = [
   "nextStep",
   "receivedAt",
   "updatedAt",
+  "offerRef",
+  "offerState",
 ] as const
+
+const OFFER_REF = /^VC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$/
 
 function text(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null
@@ -110,6 +116,11 @@ export function parseOnboardingStatus(value: unknown): { requests: OnboardingReq
       if (!step) return null
       completed.push(step)
     }
+    const offerRef = row.offerRef == null ? null : text(row.offerRef, 20)
+    if (row.offerRef != null && (!offerRef || !OFFER_REF.test(offerRef))) return null
+    if (row.offerState != null && row.offerState !== "eligible" && row.offerState !== "accepted") return null
+    if (row.offerState != null && !offerRef) return null
+    if (row.offerState == null && offerRef) return null
     requests.push({
       product: product as OnboardingProductName,
       stage: stage as OnboardingStage,
@@ -122,6 +133,8 @@ export function parseOnboardingStatus(value: unknown): { requests: OnboardingReq
       nextStep,
       receivedAt,
       updatedAt,
+      offerRef,
+      offerState: row.offerState === "eligible" || row.offerState === "accepted" ? row.offerState : null,
     })
   }
   return { requests }

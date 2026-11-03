@@ -1,5 +1,6 @@
 import type { CustomerDashboard } from "@/lib/portal/cases/parse"
-import type { OnboardingRead } from "@/lib/portal/onboarding/types"
+import { commercialOfferReadEnabled } from "@/lib/portal/onboarding/flag"
+import type { OnboardingRead, OnboardingRequestView } from "@/lib/portal/onboarding/types"
 import { requestAccessAction } from "./enquiry"
 
 /**
@@ -371,6 +372,18 @@ function requestLines(requests: readonly { product: string; businessName: string
   }).join(" ")
 }
 
+function offerActions(requests: readonly OnboardingRequestView[]): ProductAction[] {
+  if (!commercialOfferReadEnabled()) return []
+  return requests.flatMap(request => {
+    if (!request.offerRef || !request.offerState) return []
+    const place = request.businessName ? ` for ${request.businessName}` : ""
+    const label = request.offerState === "eligible"
+      ? `Review ${request.product} offer${place}`
+      : `View accepted ${request.product} offer${place}`
+    return [{ label, href: `/portal/onboarding/offer/${request.offerRef}` }]
+  })
+}
+
 function historyRequest(request: { stage: string; statusLabel: string }) {
   return request.stage === "declined" || request.stage === "closed" || request.statusLabel === "Request closed"
 }
@@ -417,11 +430,12 @@ function applyOnboarding(card: ProductCard, onboarding: ProductSources["onboardi
     label: historyOnly ? "View previous request" : authoritative ? "View progress" : "Track setup",
     href: PROGRESS_HREF,
   }
+  const offers = offerActions(open)
   if (authoritative || historyOnly) {
     return {
       ...card,
       context: joinParts([card.context, lines]),
-      actions: [...card.actions.filter(action => action.href !== PROGRESS_HREF), progress],
+      actions: [...card.actions.filter(action => action.href !== PROGRESS_HREF), progress, ...offers],
     }
   }
   const serviceUnknown = card.statusLabel === STATUS_UNAVAILABLE || card.group === "unconfirmed"
@@ -431,7 +445,7 @@ function applyOnboarding(card: ProductCard, onboarding: ProductSources["onboardi
     status: "exploring",
     statusLabel: summary,
     context: lines,
-    actions: [progress],
+    actions: [progress, ...offers],
     attention: visible.length === 1 ? visible[0].nextStep : null,
     unavailableReason: serviceUnknown
       ? "We couldn't confirm the service status just now. This does not say whether the service is active."

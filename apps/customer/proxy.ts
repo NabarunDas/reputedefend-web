@@ -49,6 +49,7 @@ export async function proxy(request: NextRequest) {
     || pathname === "/api/portal/payments"
     || pathname === "/api/portal/guard"
     || pathname === "/api/portal/documents/handover"
+    || pathname === "/api/portal/onboarding/offer"
   )
   const portalRead = method === "GET" && (
     pathname === "/api/portal/auth/session"

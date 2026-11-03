@@ -59,8 +59,8 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The repository head is 20261102200000 telloya_enquiry_infrastructure_v1 (pending, not applied to DEV).
-    // The DEV head is 20261102110000 customer_invitation_dispatch_v1 (already applied, must not be replayed).
+    // The repository and DEV applied head is 20261102200000 telloya_enquiry_infrastructure_v1.
+    // The preceding DEV migration is 20261102110000 customer_invitation_dispatch_v1 (already applied, must not be replayed).
     // 20261101200000 remains applied on DEV and must not be replayed.
     // 20261101190000 remains applied on DEV and must not be replayed.
     // The Admin onboarding migration before it is already applied on DEV and must not be replayed.
@@ -71,7 +71,7 @@ describe("upgrading a database that is already running", () => {
     // request 20261030200000 is applied on DEV and must not be replayed. This
     // disposable rebuild is not a live apply. Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261102110000_customer_invitation_dispatch_v1.sql")

@@ -192,18 +192,30 @@ export default function Home() {
 
         <section className={styles.plans} aria-labelledby="plans-title">
           <div className={styles.sectionHeader}>
-            <div><Eyebrow>{plans.eyebrow}</Eyebrow><h2 id="plans-title">Find the right <em>fit for your business.</em></h2></div>
+            <div><Eyebrow>{plans.eyebrow}</Eyebrow><h2 id="plans-title">Four plans <em>to fit your needs.</em></h2></div>
             <p>{plans.lead}</p>
           </div>
           <div className={styles.planGrid}>
-            {[plans.telloya, plans.complete].map((plan) => (
-              <article className={styles.planCard} key={plan.name}>
-                <h3>{plan.name}</h3><p>{plan.description}</p>
-                <ul>{plan.features.map(f => <li key={f}><Check size={17} aria-hidden="true" />{f}</li>)}</ul>
-                {"note" in plan && <p className={styles.planNote}>{plan.note}</p>}
-                <Link href={plan.href}>Explore {plan.name} <ArrowRight size={17} aria-hidden="true" /></Link>
+            {plans.tiers.map((tier) => (
+              <article className={`${styles.planCard} ${tier.popular ? styles.popularCard : ""}`} key={tier.name}>
+                {tier.popular && <div className={styles.popularLabel}>Recommended</div>}
+                <div className={styles.planPricing}>
+                  <div className={styles.planPrice}>{tier.price}</div>
+                  <div className={styles.planMinutes}>{tier.minutes}</div>
+                </div>
+                <h3>{tier.name}</h3>
+                <p>{tier.description}</p>
+                <Link href={tier.href} className={styles.planLink}>View pricing <ArrowRight size={17} aria-hidden="true" /></Link>
               </article>
             ))}
+          </div>
+          <div className={styles.planGuard}>
+            <div className={styles.planGuardContent}>
+              <h3>{plans.guard.name}</h3>
+              <p className={styles.planGuardDescription}>{plans.guard.description}</p>
+              <div className={styles.planGuardPrice}>{plans.guard.price}</div>
+              <p className={styles.planGuardNote}>{plans.guard.note}</p>
+            </div>
           </div>
         </section>
 

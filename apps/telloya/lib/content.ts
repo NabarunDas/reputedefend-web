@@ -3,11 +3,14 @@
  * 
  * All customer-facing copy, CTAs, and page metadata are defined here
  * to enable consistent content management and testing.
+ * 
+ * Pricing data is imported from pricing.ts as the single source of truth.
  */
 
 import { brandName } from "@/lib/brand"
 import { getCustomerPortalHref } from "@/lib/customer-portal"
 import { legalIdentity } from "../../../lib/legal"
+import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes } from "./pricing"
 
 // Homepage content
 export const homepageContent = {
@@ -116,32 +119,29 @@ export const homepageContent = {
   },
   plans: {
     eyebrow: "Service plans",
-    title: "Telloya and Complete",
+    title: "Four plans to fit your business",
     lead:
-      "Choose standalone Telloya for AI receptionist service, or the proposed Complete package for Telloya plus Relaunch Guard profile monitoring. Final pricing and Complete package details are being confirmed.",
-    telloya: {
-      name: "Telloya",
-      description: "AI receptionist for missed-call enquiries",
-      features: [
-        "Missed-call assistance",
-        "Enquiry collection",
-        "Lead summaries",
-        "Usage visibility",
-      ],
+      "Choose from Basic, Growth, Pro or Custom. All plans include core AI receptionist capabilities. Optional Relaunch Guard profile monitoring available as an add-on.",
+    tiers: telloyaPlans.map(p => ({
+      name: p.name,
+      price: p.monthlyPriceGbp !== null ? formatGbpPrice(p.monthlyPriceGbp) : "By quotation",
+      minutes: p.minutesPerMonth !== null ? formatMinutes(p.minutesPerMonth) : "Tailored allowance",
+      description: p.tier === "basic"
+        ? "Essential AI receptionist for smaller call volumes"
+        : p.tier === "growth"
+        ? "Recommended plan for growing businesses"
+        : p.tier === "pro"
+        ? "Maximum included usage for high call volumes"
+        : "Bespoke solution for specific requirements",
+      popular: p.popular ?? false,
       cta: "View pricing",
       href: "/pricing",
-    },
-    complete: {
-      name: "Complete",
-      description: "Proposed package combining Telloya plus Relaunch Guard",
-      features: [
-        "Everything in Telloya",
-        "Google Business Profile monitoring (proposed)",
-        "Profile observation and reporting (proposed)",
-      ],
-      cta: "View pricing",
-      href: "/pricing",
-      note: "Proposed package combining two distinct services. Final scope and feature entitlements pending approval.",
+    })),
+    guard: {
+      name: relaunchGuardAddon.name,
+      description: relaunchGuardAddon.description,
+      price: `${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)}/location/month`,
+      note: "Add Google Business Profile monitoring to any plan. Separate optional service.",
     },
   },
   faq: {
@@ -399,7 +399,7 @@ export const featuresContent = {
     points: [
       "Real-time conversation processing",
       "Natural language understanding",
-      "UK-based phone numbers (provider dependent)",
+      "Phone number provisioning (provider and location dependent)",
       "Telephony routing and call handling",
     ],
   },
@@ -606,126 +606,201 @@ export const pricingContent = {
   seo: {
     title: "Pricing – Telloya AI Receptionist",
     description:
-      "Telloya standalone or Complete with Relaunch Guard. Pricing being finalised for launch.",
+      `Telloya AI receptionist plans from ${formatGbpPrice(telloyaPlans[0].monthlyPriceGbp!)}/month. Basic, Growth, Pro and Custom plans with optional Relaunch Guard profile monitoring add-on.`,
   },
   hero: {
     eyebrow: "Pricing",
-    title: "Two options to fit your needs",
+    title: "Choose your plan",
     lead:
-      "Choose standalone Telloya for AI receptionist service, or Complete for Telloya plus Google Business Profile monitoring with Relaunch Guard.",
+      "Four Telloya plans to fit your business needs. All plans include core AI receptionist capabilities. Higher tiers provide more included monthly minutes.",
   },
-  plans: [
-    {
-      name: "Telloya",
-      tagline: "AI receptionist for missed calls",
-      description:
-        "Everything you need to handle missed-call enquiries professionally while you're working on site.",
-      status: "Pricing being finalised",
-      features: [
-        "Missed-call answering",
-        "Conversational enquiry collection",
-        "Lead summaries with callback preferences",
-        "Business-specific configuration",
-        "Usage visibility",
-        "UK-based phone number",
-      ],
-      notes: [
-        "Minute allowance and overage rates to be confirmed",
-        "Call forwarding setup depends on your telephone provider",
-      ],
-      cta: "Contact us for details",
-      href: "/enquire?product=telloya",
-    },
-    {
-      name: "Complete",
-      tagline: "Telloya plus Relaunch Guard",
-      description:
-        "Proposed package combining Telloya AI receptionist with Relaunch Guard Google Business Profile monitoring. Package scope, pricing and specific feature entitlements pending final approval.",
-      status: "Proposed package — pricing pending approval",
-      features: [
-        "Everything included in Telloya",
-        "Google Business Profile monitoring (proposed)",
-        "Profile observation and reporting (proposed)",
-      ],
-      notes: [
-        "Complete is a proposed package combining two distinct ProfileRelaunch services",
-        "Specific monitoring features, alert types, and reporting frequency are being confirmed against existing Guard capabilities",
-        "Minute allowance and subscription terms to be confirmed",
-      ],
-      cta: "Enquire about Complete",
-      href: "/enquire?product=complete",
-    },
-  ],
+  currency: {
+    note: "Prices are shown in GBP. Where supported, your local currency and applicable exchange rate will be shown at checkout.",
+  },
+  plans: telloyaPlans.map((plan) => ({
+    tier: plan.tier,
+    name: plan.name,
+    monthlyPriceGbp: plan.monthlyPriceGbp,
+    minutesPerMonth: plan.minutesPerMonth,
+    popular: plan.popular ?? false,
+    tagline: plan.tier === "basic" 
+      ? "Essential AI receptionist"
+      : plan.tier === "growth"
+      ? "Recommended"
+      : plan.tier === "pro"
+      ? "Maximum included usage"
+      : "Tailored to your requirements",
+    description: plan.tier === "basic"
+      ? "Everything you need to handle missed-call enquiries professionally while you're working on site."
+      : plan.tier === "growth"
+      ? "Ideal for growing businesses with higher call volumes. Same core features with increased monthly minutes."
+      : plan.tier === "pro"
+      ? "For established businesses with consistent high call volumes. Same core features with substantial monthly minutes."
+      : "For businesses with specific needs, unusual volumes, multiple locations or language requirements. Custom quotation based on your exact situation.",
+    features: plan.tier === "custom"
+      ? [
+          "Bespoke minute allowances",
+          "Multiple business numbers",
+          "Multi-location support",
+          "Additional language requests",
+          "Custom configuration",
+        ]
+      : [
+          "Missed-call answering",
+          "Conversational enquiry collection",
+          "Lead summaries with callback preferences",
+          "Business-specific configuration",
+          "Usage visibility",
+        ],
+    cta: plan.tier === "custom" ? "Request a tailored quote" : `Enquire about ${plan.name}`,
+    href: `/enquire?plan=${plan.tier}`,
+  })),
+  guard: {
+    eyebrow: "Optional add-on",
+    title: relaunchGuardAddon.name,
+    lead:
+      "Add Google Business Profile monitoring to any Telloya plan. Relaunch Guard is a separate optional service, not a mandatory component.",
+    pricePerLocationGbp: relaunchGuardAddon.pricePerLocationGbp,
+    infoUrl: relaunchGuardAddon.infoUrl,
+    features: [
+      "Profile observation and reporting",
+      "Monitoring per business location",
+      "Subject to technical eligibility",
+    ],
+    examples: telloyaPlans
+      .filter(p => p.monthlyPriceGbp !== null)
+      .map(p => ({
+        plan: p.name,
+        locations: 1,
+        telloyaPrice: p.monthlyPriceGbp!,
+        guardPrice: relaunchGuardAddon.pricePerLocationGbp,
+        combinedPrice: calculateCombinedPrice(p.monthlyPriceGbp!, 1),
+      })),
+    note:
+      "Subscriptions, technical eligibility and Guard activation are subject to confirmation. Relaunch Guard references the existing ProfileRelaunch Guard product. One-off ProfileRelaunch recovery services are not included in Guard.",
+    telloyaCompleteName: "Telloya Complete",
+    telloyaCompleteNote:
+      "\"Telloya Complete\" may be used as a descriptive name for Telloya plus Guard, but is not a competing fifth AI plan.",
+  },
   comparison: {
-    eyebrow: "What's the difference?",
-    title: "Telloya vs Complete",
-    lead: "Both plans include full Telloya AI receptionist features. Complete adds ongoing profile monitoring.",
+    eyebrow: "Compare plans",
+    title: "Features and allowances",
+    lead: "All plans include the same core Telloya AI receptionist capabilities. Choose based on your expected monthly call volume.",
     table: {
-      headers: ["Feature", "Telloya", "Complete"],
+      headers: ["Feature", "Basic", "Growth", "Pro", "Custom"],
       rows: [
-        ["Missed-call answering", true, true],
-        ["Enquiry collection", true, true],
-        ["Lead summaries", true, true],
-        ["Business configuration", true, true],
-        ["Profile monitoring (proposed)", false, true],
+        ["Monthly price", formatGbpPrice(telloyaPlans[0].monthlyPriceGbp!), formatGbpPrice(telloyaPlans[1].monthlyPriceGbp!), formatGbpPrice(telloyaPlans[2].monthlyPriceGbp!), "By quotation"],
+        ["Included minutes/month", telloyaPlans[0].minutesPerMonth!.toString(), telloyaPlans[1].minutesPerMonth!.toString(), telloyaPlans[2].minutesPerMonth!.toString(), "Custom"],
+        ["Missed-call answering", true, true, true, true],
+        ["Enquiry collection", true, true, true, true],
+        ["Lead summaries", true, true, true, true],
+        ["Business configuration", true, true, true, true],
+        ["Usage visibility", true, true, true, true],
+        ["Voice & language preferences", "Request", "Request", "Request", "Request"],
+        ["Multiple locations", "Single", "Single", "Single", "Multiple"],
       ],
     },
   },
-  commercial: {
-    eyebrow: "Important to know",
-    title: "Pricing and terms",
+  overage: {
+    eyebrow: "Additional usage",
+    title: "Extra minutes",
+    lead:
+      `If you need more AI call minutes beyond your monthly allowance, you can opt in to additional usage at ${formatGbpPrice(overagePolicy.pricePerMinuteGbp)} per minute.`,
+    points: [
+      "Only available after explicit opt-in",
+      "Requires agreed monthly spending cap",
+      "No unapproved automatic billing",
+      "Unused minutes do not roll over",
+    ],
+    note:
+      "Additional minute pricing and policy must be confirmed and agreed during commercial acceptance. This form does not authorise usage billing.",
+  },
+  setup: {
+    title: "Setup and terms",
     points: [
       {
-        title: "Pricing not finalised",
+        title: "Standard setup included",
         description:
-          "We're finalising pricing, minute allowances, and subscription terms before public launch. Contact us for current details.",
+          "Initial configuration and call forwarding guidance are included with all plans.",
       },
       {
-        title: "No purchase available yet",
+        title: "Complex setups quoted separately",
         description:
-          "Telloya is not currently available for self-service purchase. Early access is by enquiry only.",
+          "Additional numbers, unusual carrier configurations and complex multi-location setups may require individual quotations.",
       },
       {
-        title: "Not unlimited",
+        title: "Subscription terms",
         description:
-          "Both plans will include a monthly minute allowance. Overage handling and rates are being confirmed.",
+          "Subscription terms, duration and cancellation policies will be confirmed during commercial acceptance.",
       },
       {
-        title: "Proposed package structure",
+        title: "Provider-dependent compatibility",
         description:
-          "Complete is a proposed package combining Telloya and Relaunch Guard. Final package terms, feature scope, and pricing are being confirmed before launch.",
+          "Call forwarding, numbers, languages and activation depend on provider and location compatibility.",
       },
     ],
+  },
+  international: {
+    title: "International availability",
+    points: [
+      "Prices shown in GBP (UK Pounds Sterling)",
+      "Where supported, local currency conversion available at checkout",
+      "Call forwarding and number availability varies by location",
+      "Language support and voice options depend on provider compatibility",
+      "Activation subject to provider and regional availability",
+    ],
+    note:
+      "Telloya is not restricted to UK-only operation, but capabilities depend on provider support in each region.",
   },
   faq: {
     title: "Pricing questions",
     questions: [
       {
-        q: "When will pricing be confirmed?",
-        a: "We're finalising pricing and packaging before public launch. If you're interested in Telloya, enquire now and we'll share details as soon as they're available.",
+        q: "What's included in the monthly minutes?",
+        a: "The minute allowance covers time Telloya spends actively handling calls. This includes greeting the caller, collecting enquiry details, and wrapping up the conversation. Time spent on hold or during call transfer is handled according to the agreed service terms.",
       },
       {
-        q: "Can I sign up now?",
-        a: "Not yet. We're in the final stages before launch. Email us to express interest and we'll contact you when subscriptions open.",
+        q: "What happens if I exceed my minutes?",
+        a: `By default, no additional minutes are charged. If you want the option to exceed your allowance, you can opt in to additional usage at ${formatGbpPrice(overagePolicy.pricePerMinuteGbp)} per minute with an agreed monthly spending cap. This must be explicitly confirmed during commercial acceptance—this enquiry form does not authorise automatic billing.`,
       },
       {
-        q: "What's included in the minute allowance?",
-        a: "The minute allowance covers time Telloya spends on calls. We'll provide full details on how minutes are calculated and what happens if you exceed your allowance.",
+        q: "Can I cancel my subscription?",
+        a: "Cancellation terms and any applicable notice periods will be confirmed in your subscription agreement during commercial acceptance.",
       },
       {
-        q: "Is there a contract?",
-        a: "Subscription terms, minimum commitment and cancellation policies will be confirmed before launch.",
+        q: "Do unused minutes roll over?",
+        a: "No. Your monthly minute allowance resets each billing period. Unused minutes do not carry forward.",
       },
       {
-        q: "Do I need Relaunch Guard to use Telloya?",
-        a: "No. Telloya is available as a standalone service. Complete is a proposed package option for businesses that want both AI receptionist and profile monitoring, subject to final terms.",
+        q: "What's included in the setup?",
+        a: "Standard initial setup and call forwarding guidance are included. Complex setups, additional phone numbers, or unusual carrier configurations may need individual quotations.",
+      },
+      {
+        q: "How does Relaunch Guard work with multiple locations?",
+        a: `Relaunch Guard costs ${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} per monitored location per month. If you have three locations, Guard adds ${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp * 3)} to your chosen Telloya plan. Subscriptions and technical eligibility are confirmed separately.`,
+      },
+      {
+        q: "Is Relaunch Guard required?",
+        a: "No. Relaunch Guard is an optional add-on. You can subscribe to any Telloya plan without Guard. Guard is a separate service for Google Business Profile monitoring.",
+      },
+      {
+        q: "Can I use Telloya outside the UK?",
+        a: "Telloya is not restricted to UK-only use, but availability depends on call forwarding support, number provisioning, and language compatibility in your location. We'll confirm compatibility during the enquiry process.",
+      },
+      {
+        q: "What currencies are supported?",
+        a: "Plan prices are shown in GBP. Where supported by the payment provider, your local currency and applicable exchange rate will be shown at checkout. We cannot promise local-currency settlement in every country.",
+      },
+      {
+        q: "Do you support languages other than English?",
+        a: "Every Telloya plan allows you to request preferred voice, accent and language options. Availability and combinations depend on provider, voice and regional compatibility and must be confirmed during setup.",
       },
     ],
   },
   cta: {
-    title: "Interested in Telloya?",
-    description: "Enquire now and we'll keep you informed as we approach launch.",
-    cta: "Get in touch",
+    title: "Ready to get started?",
+    description: "All plans are enquiry-only at this stage. Choose your preferred plan and we'll help you get set up.",
+    cta: "Enquire now",
     href: "/enquire",
   },
 } as const

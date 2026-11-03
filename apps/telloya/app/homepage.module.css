@@ -226,15 +226,23 @@
 .industryLabel {display:flex; justify-content:space-between; align-items:center; padding:13px 16px; color:#e9f8e7; font-size:.79rem; font-weight:750; gap:5px; }
 .industryLabel svg {flex-shrink:0;color:#bdf79d;}
 .plans {padding-block:94px 100px; border-bottom:1px solid rgba(198,242,188,.16); }
-.planGrid {display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
-.planCard {border:1px solid var(--glass-line); border-radius:26px; background:linear-gradient(150deg,rgba(11,70,48,.54),rgba(3,33,27,.75)); padding:33px 34px; }
-.planCard h3 {font-family:Georgia,"Times New Roman",serif;font-size:2rem;font-weight:400; }
-.planCard > p {color:#b4cdbb; margin-top:12px; }
-.planCard ul {list-style:none;padding:15px 0 0;margin:12px 0 25px;display:grid;gap:13px;}
-.planCard li {display:flex;gap:12px;align-items:flex-start;color:#e1f0e0;font-size:.91rem;}
-.planCard li svg {color:#bafa8a;flex-shrink:0;}
-.planNote {font-size:.82rem;line-height:1.55;}
-.planCard > a {display:inline-flex;align-items:center;gap:10px;color:#c9ff9a;font-weight:800;border-bottom:1px solid rgba(193,250,148,.42);padding-bottom:7px;}
+.planGrid {display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; max-width:1080px; margin-inline:auto; }
+.planCard {position:relative; border:1px solid var(--glass-line); border-radius:24px; background:linear-gradient(150deg,rgba(11,70,48,.54),rgba(3,33,27,.75)); padding:36px; display:flex; flex-direction:column; gap:10px; }
+.popularCard {border-color:rgba(208,255,156,.38); background:linear-gradient(150deg,rgba(11,97,60,.42),rgba(4,36,28,.60)); }
+.popularLabel {position:absolute; top:-11px; left:50%; transform:translateX(-50%); padding:5px 16px; background:linear-gradient(135deg,#7cd14a,#5fb832); color:#001a12; border-radius:99px; font-size:.70rem; font-weight:900; letter-spacing:.06em; text-transform:uppercase; box-shadow:0 4px 14px rgba(124,209,74,.32); }
+.planPricing {margin-bottom:8px; }
+.planPrice {font-size:1.95rem; font-weight:800; color:#fffdf6; letter-spacing:-.04em; line-height:1; }
+.planMinutes {margin-top:5px; color:#b9ec8a; font-size:.87rem; font-weight:600; letter-spacing:-.01em; }
+.planCard h3 {font-family:Georgia,"Times New Roman",serif; font-size:1.65rem; font-weight:500; color:#fffdf6; letter-spacing:-.03em; margin-bottom:8px; }
+.planCard > p {color:#b4cdbb; font-size:.91rem; line-height:1.55; flex-grow:1; margin-top:4px; }
+.planLink {display:inline-flex; align-items:center; gap:10px; color:#c9ff9a; font-weight:700; font-size:.92rem; border-bottom:1px solid rgba(193,250,148,.38); padding-bottom:6px; margin-top:auto; transition:all .2s ease; }
+.planLink:hover {color:#d9ff94; border-color:rgba(193,250,148,.55); }
+.planGuard {max-width:1080px; margin:42px auto 0; padding:32px 38px; border:1px solid rgba(199,250,190,.22); border-radius:22px; background:linear-gradient(145deg,rgba(11,97,60,.28),rgba(4,36,28,.48)); }
+.planGuardContent {display:flex; flex-direction:column; gap:8px; }
+.planGuardContent h3 {font-family:Georgia,"Times New Roman",serif; font-size:1.75rem; font-weight:500; color:#fffdf6; letter-spacing:-.03em; }
+.planGuardDescription {color:#b4cdbb; font-size:.94rem; line-height:1.58; }
+.planGuardPrice {font-size:1.6rem; font-weight:800; color:#c5ef9d; letter-spacing:-.03em; margin-top:8px; }
+.planGuardNote {color:rgba(244,248,239,.75); font-size:.87rem; line-height:1.55; font-style:italic; margin-top:6px; }
 .faq {display:grid;grid-template-columns:.8fr 1.2fr;gap:75px;padding-block:102px;}
 .faqList details {border-bottom:1px solid rgba(198,242,188,.22);}
 .faqList summary {cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:18px;list-style:none;color:#ecf8eb;font-size:1.04rem;font-weight:700;padding:20px 0;}
@@ -288,7 +296,7 @@
   .benefitGrid{grid-template-columns:1fr;}.benefitCard{min-height:unset;padding:24px;}.benefitIcon{margin-bottom:15px;}
   .leadCard{padding:22px;}.leadCard dl div{grid-template-columns:75px 1fr;font-size:.83rem;gap:12px;}
   .industryGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}.industryTile{min-height:150px;}.industryArt{height:105px;}
-  .planGrid{grid-template-columns:1fr;}.planCard{padding:26px;}
+  .planGrid{grid-template-columns:1fr; max-width:600px;}.planCard{padding:28px;} .planGuard{padding:28px;}
   .finalCta{padding:28px 24px;border-radius:23px;}
 }
 @media (prefers-reduced-motion:reduce){

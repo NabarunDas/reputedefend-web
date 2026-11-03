@@ -352,7 +352,12 @@ describe("commercial payment preparation", () => {
     expect(first?.commercialSubscriptionId).toBe(prepared.subscription)
     expect(JSON.stringify(first)).not.toMatch(/checkoutUrl|success_url/)
     const again = await prepare(alexSession, prepared.ref, request)
-    expect(again).toEqual(first)
+    expect(again).toEqual({ ...first, existing: true })
+    const receipt = await rows<{ response: Row }>(
+      `select response from admin_private.customer_commercial_command_receipts where request_id = $1`,
+      [request],
+    )
+    expect(receipt[0].response).toEqual(first)
     const later = await prepare(alexSession, prepared.ref)
     expect(later).toMatchObject({ status: "success", existing: true, providerOperationId: first?.providerOperationId, priceOperationId: first?.priceOperationId })
     const after = await counts()

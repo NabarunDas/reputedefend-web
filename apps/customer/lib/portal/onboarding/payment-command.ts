@@ -20,7 +20,7 @@ const UNAVAILABLE = "We couldn't start secure payment for this offer just now. N
 const STALE = "This page is out of date. Refresh it and try again. Nothing has been paid."
 const UNSUPPORTED = "This billing arrangement is not ready for secure payment. Nothing has been paid and the service has not started."
 const RETURN_NOTE = "Returning from the payment page does not record a payment."
-const CONFIRMING = `Payment has not been completed. ${RETURN_NOTE} Nothing has been paid and the service has not started.`
+const CONFIRMING = "Your payment is being verified. Your service will become available after payment confirmation and setup."
 const SESSION_CLOSED = "This payment session can no longer be used. Nothing has been paid and the service has not started."
 const SESSION_MISMATCH = "The recorded payment session does not match this offer. Nothing has been paid and the service has not started."
 
@@ -166,7 +166,7 @@ function sessionFactsMatch(session: RetrievedCheckout, prepared: ReservedPrepara
   if (session.customerId !== stripeCustomer) return false
   if ((session.currency || "").toLowerCase() !== "gbp") return false
   if (recorded.length !== keys.length || keys.some(key => session.metadata[key] !== metadata[key as keyof CommercialMetadata])) return false
-  if (typeof session.amountMinor === "number" && session.amountMinor > 0 && session.amountMinor !== prepared.amountMinor) return false
+  if (typeof session.amountMinor !== "number" || session.amountMinor !== prepared.amountMinor) return false
   return true
 }
 

@@ -6,7 +6,8 @@ type StoredCheckout = {
   id: string
   url: string
   mode: "payment" | "setup" | "subscription"
-  amountMinor: number
+  /** Commercial retrieval stores the accepted total. Creation still reports zero. */
+  amountMinor: number | null
   status: string
   paymentStatus: string | null
   paymentIntentId: string | null
@@ -462,14 +463,22 @@ export function createFakePaymentProvider(): PaymentProvider & {
           throw new PaymentsDisabledError("Delayed Guard Checkout requires a Stripe trial_end at least 48 hours in the future.")
         }
       }
-      if (sessions.has(input.idempotencyKey)) return { ...sessions.get(input.idempotencyKey)!, livemode: false as const }
+      if (sessions.has(input.idempotencyKey)) {
+        return { ...sessions.get(input.idempotencyKey)!, amountMinor: 0, livemode: false as const }
+      }
+      const priced = commercial
+        ? objects.get(input.stripePriceId) as { amountMinor?: unknown } | undefined
+        : undefined
+      const verifiedTotal = typeof priced?.amountMinor === "number" && Number.isInteger(priced.amountMinor) && priced.amountMinor > 0
+        ? priced.amountMinor
+        : null
       const created: StoredCheckout = {
         id: commercial
           ? `cs_${input.idempotencyKey.replace(/-/g, "").slice(0, 16)}`
           : `cs_test_sub_${input.idempotencyKey.replace(/-/g, "").slice(0, 12)}`,
         url: `https://checkout.stripe.test/sub/${input.idempotencyKey}`,
         mode: "subscription",
-        amountMinor: 0,
+        amountMinor: commercial ? verifiedTotal : 0,
         status: "open",
         paymentStatus: "unpaid",
         paymentIntentId: null,

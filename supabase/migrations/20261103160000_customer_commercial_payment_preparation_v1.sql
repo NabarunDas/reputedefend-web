@@ -531,6 +531,25 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION admin_private.commercial_payment_finish_v1(
+  p_request uuid,
+  p_customer uuid,
+  p_fingerprint text,
+  p_response jsonb,
+  p_replay boolean
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF p_replay THEN
+    RETURN p_response;
+  END IF;
+  RETURN admin_private.commercial_payment_remember_v1(p_request, p_customer, p_fingerprint, p_response);
+END;
+$$;
+
 CREATE FUNCTION admin_private.commercial_payment_preparation_response_v1(
   p_preparation uuid,
   p_existing boolean
@@ -615,6 +634,7 @@ DECLARE
   item_guard integer;
   occupying uuid;
   result jsonb;
+  replay_success boolean := false;
 BEGIN
   sess := admin_private.customer_portal_session_v1(p_token_hash);
   IF sess IS NULL OR (sess ->> 'customerId') IS NULL OR (sess ->> 'authUserId') IS NULL THEN
@@ -633,7 +653,12 @@ BEGIN
     IF prior.customer_id IS DISTINCT FROM customer OR prior.fingerprint IS DISTINCT FROM fingerprint THEN
       RETURN jsonb_build_object('status', 'conflict');
     END IF;
-    RETURN prior.response;
+    -- A stored refusal stays immutable. A stored success is not authority:
+    -- the same lock order below rechecks membership and the current records.
+    IF coalesce(prior.response ->> 'status', '') IS DISTINCT FROM 'success' THEN
+      RETURN prior.response;
+    END IF;
+    replay_success := true;
   END IF;
 
   SELECT * INTO sub
@@ -675,8 +700,8 @@ BEGIN
     OR acceptance.cadence IS DISTINCT FROM sub.cadence_snapshot
     OR acceptance.agreement_version_ref IS DISTINCT FROM sub.terms_ref
   THEN
-    RETURN admin_private.commercial_payment_remember_v1(
-      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict')
+    RETURN admin_private.commercial_payment_finish_v1(
+      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict'), replay_success
     );
   END IF;
   IF acceptance.cadence = 'MONTH' AND acceptance.recurring_consent_at IS NULL THEN
@@ -687,8 +712,8 @@ BEGIN
   WHERE item.subscription_id = sub.id
     AND item.component_code = 'GUARD';
   IF item_guard IS DISTINCT FROM acceptance.guard_quantity THEN
-    RETURN admin_private.commercial_payment_remember_v1(
-      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict')
+    RETURN admin_private.commercial_payment_finish_v1(
+      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict'), replay_success
     );
   END IF;
   guard_charge := CASE
@@ -696,8 +721,8 @@ BEGIN
     ELSE 0
   END;
   IF acceptance.base_amount_minor + guard_charge IS DISTINCT FROM acceptance.amount_minor THEN
-    RETURN admin_private.commercial_payment_remember_v1(
-      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict')
+    RETURN admin_private.commercial_payment_finish_v1(
+      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict'), replay_success
     );
   END IF;
 
@@ -705,14 +730,15 @@ BEGIN
     OR acceptance.currency IS DISTINCT FROM 'GBP'
     OR acceptance.tax_behaviour IS DISTINCT FROM 'NOT_APPLICABLE'
   THEN
-    RETURN admin_private.commercial_payment_remember_v1(
+    RETURN admin_private.commercial_payment_finish_v1(
       p_request, customer, fingerprint,
       jsonb_build_object(
         'status', 'unsupported',
         'cadence', acceptance.cadence,
         'currency', acceptance.currency,
         'taxBehaviour', acceptance.tax_behaviour
-      )
+      ),
+      replay_success
     );
   END IF;
 
@@ -721,8 +747,8 @@ BEGIN
   END IF;
 
   IF sub.stripe_subscription_id IS NOT NULL THEN
-    RETURN admin_private.commercial_payment_remember_v1(
-      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict', 'reason', 'existing_subscription')
+    RETURN admin_private.commercial_payment_finish_v1(
+      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict', 'reason', 'existing_subscription'), replay_success
     );
   END IF;
   SELECT existing.id INTO occupying
@@ -731,19 +757,22 @@ BEGIN
     AND existing.id IS DISTINCT FROM sub.id
     AND existing.state IN ('ACTIVE', 'PAUSED', 'PAST_DUE', 'CANCEL_AT_PERIOD_END');
   IF occupying IS NOT NULL THEN
-    RETURN admin_private.commercial_payment_remember_v1(
-      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict', 'reason', 'existing_subscription')
+    RETURN admin_private.commercial_payment_finish_v1(
+      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict', 'reason', 'existing_subscription'), replay_success
     );
   END IF;
 
   SELECT * INTO prep FROM public.commercial_checkout_preparations WHERE subscription_id = sub.id;
   IF prep.id IS NOT NULL THEN
     result := admin_private.commercial_payment_preparation_response_v1(prep.id, true);
-    RETURN admin_private.commercial_payment_remember_v1(p_request, customer, fingerprint, result);
+    RETURN admin_private.commercial_payment_finish_v1(p_request, customer, fingerprint, result, replay_success);
+  END IF;
+  IF replay_success THEN
+    RETURN jsonb_build_object('status', 'unavailable');
   END IF;
   IF sub.state IS DISTINCT FROM 'ACCEPTED' THEN
-    RETURN admin_private.commercial_payment_remember_v1(
-      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict')
+    RETURN admin_private.commercial_payment_finish_v1(
+      p_request, customer, fingerprint, jsonb_build_object('status', 'conflict'), replay_success
     );
   END IF;
 
@@ -790,7 +819,7 @@ BEGIN
   THEN
     RAISE EXCEPTION 'commercial payment preparation response did not match the acceptance';
   END IF;
-  RETURN admin_private.commercial_payment_remember_v1(p_request, customer, fingerprint, result);
+  RETURN admin_private.commercial_payment_finish_v1(p_request, customer, fingerprint, result, false);
 END;
 $$;
 
@@ -993,6 +1022,7 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION admin_private.commercial_payment_remember_v1(uuid, uuid, text, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.commercial_payment_finish_v1(uuid, uuid, text, jsonb, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION admin_private.commercial_payment_preparation_response_v1(uuid, boolean) FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION public.customer_portal_commercial_payment_prepare_v1(text, uuid, text, boolean) FROM PUBLIC, anon, authenticated;
@@ -1005,7 +1035,7 @@ REVOKE ALL ON FUNCTION public.customer_portal_commercial_payment_notice_v1(text)
 GRANT EXECUTE ON FUNCTION public.customer_portal_commercial_payment_notice_v1(text) TO service_role;
 
 COMMENT ON FUNCTION public.customer_portal_commercial_payment_prepare_v1(text, uuid, text, boolean) IS
-  'Reserves one commercial price operation and one checkout operation for an accepted monthly offer. It does not collect money, store payment evidence, grant an entitlement, or activate a service.';
+  'Reserves one commercial price operation and one checkout operation for an accepted monthly offer. A repeated successful request rechecks authority and returns the current preparation. It does not collect money, store payment evidence, grant an entitlement, or activate a service.';
 
 COMMENT ON FUNCTION public.commercial_payment_record_checkout_v1(uuid, text) IS
   'Stores a checkout session id on the reserved commercial operation. The session is not payment evidence and cannot make the subscription ACTIVE.';

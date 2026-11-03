@@ -358,6 +358,7 @@ describe("payment provider contract", () => {
       },
     })
     expect(again.id).toBe(checkout.id)
+    expect(again.amountMinor).toBe(0)
     expect(JSON.stringify(provider.objects.get(checkout.id))).not.toMatch(/serviceOrderId|guardSubscriptionId|priceVersionId/)
     expect(() => assertSafeCommercialMetadata({
       customerId,
@@ -390,6 +391,7 @@ describe("payment provider contract", () => {
       customerId: "cus_commercialabc",
       currency: "gbp",
       livemode: false,
+      amountMinor: 8900,
       metadata: {
         customerId,
         commercialSubscriptionId: subscriptionId,

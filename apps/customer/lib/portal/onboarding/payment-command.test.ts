@@ -223,8 +223,11 @@ describe("commercial payment preparation command", () => {
     const confirming = await portalCommercialPaymentCommand(req({ selector }))
     expect(confirming.status).toBe(200)
     const confirmingBody = await confirming.json()
-    expect(confirmingBody).toMatchObject({ status: "confirming" })
-    expect(JSON.stringify(confirmingBody)).not.toMatch(/checkoutUrl/)
+    expect(confirmingBody).toMatchObject({
+      status: "confirming",
+      message: "Your payment is being verified. Your service will become available after payment confirmation and setup.",
+    })
+    expect(JSON.stringify(confirmingBody)).not.toMatch(/checkoutUrl|has not been completed|Nothing has been paid/)
     expect(mocks.priceIds).toHaveLength(before)
     expect(mocks.rpc.mock.calls.filter(call => call[0] === "commercial_payment_record_checkout_v1")).toHaveLength(1)
   })
@@ -301,8 +304,11 @@ describe("commercial payment preparation command", () => {
     const unsettled = await portalCommercialPaymentCommand(req({ selector }))
     const unsettledBody = await unsettled.json()
     expect(unsettled.status).toBe(200)
-    expect(unsettledBody).toMatchObject({ status: "confirming" })
-    expect(JSON.stringify(unsettledBody)).not.toMatch(/checkoutUrl/)
+    expect(unsettledBody).toMatchObject({
+      status: "confirming",
+      message: "Your payment is being verified. Your service will become available after payment confirmation and setup.",
+    })
+    expect(JSON.stringify(unsettledBody)).not.toMatch(/checkoutUrl|has not been completed|Nothing has been paid|ACTIVE/)
     session!.status = "open"
     session!.paymentStatus = "paid"
     const paid = await portalCommercialPaymentCommand(req({ selector }))
@@ -344,6 +350,16 @@ describe("commercial payment preparation command", () => {
     const live = await portalCommercialPaymentCommand(req({ selector }))
     expect(live.status).toBe(409)
     session!.livemode = false
+    session!.amountMinor = 0
+    const zero = await portalCommercialPaymentCommand(req({ selector }))
+    expect(zero.status).toBe(409)
+    session!.amountMinor = null
+    const missingAmount = await portalCommercialPaymentCommand(req({ selector }))
+    expect(missingAmount.status).toBe(409)
+    session!.amountMinor = 1
+    const wrongAmount = await portalCommercialPaymentCommand(req({ selector }))
+    expect(wrongAmount.status).toBe(409)
+    session!.amountMinor = 8900
     mocks.recordedSession = "cs_missing00000001"
     const missing = await portalCommercialPaymentCommand(req({ selector }))
     expect(missing.status).toBe(409)

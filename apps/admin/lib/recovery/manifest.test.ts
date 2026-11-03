@@ -18,11 +18,11 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261102200000_telloya_enquiry_infrastructure_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261103120000_customer_portal_onboarding_status_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261103120000_customer_portal_onboarding_status_v1.sql")
+    expect(migrationHead.filename).toBe("20261103140000_customer_commercial_offer_acceptance_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
@@ -39,7 +39,7 @@ describe("the migration chain manifest", () => {
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261103120000_customer_portal_onboarding_status_v1.sql",
+      "20261103140000_customer_commercial_offer_acceptance_v1.sql",
     ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
@@ -96,7 +96,7 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Telloya is the DEV-applied head. The repository head is the unapplied onboarding read.
+    // Onboarding progress is the DEV-applied head. The repository head is the unapplied offer acceptance.
     expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
@@ -131,10 +131,22 @@ describe("the migration chain manifest", () => {
     expect(onboardingStatusSql.length).toBe(16642)
     expect(createHash("sha256").update(onboardingStatusSql).digest("hex")).toBe("52d52ca3a03354a457025344cbd865d7216c893e232c95bf7552d6b03fb3d4fd")
     expect(findMigration("20261103120000_customer_portal_onboarding_status_v1.sql")).toMatchObject({
+      appliedToDev: true,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
+    const offerSql = readFileSync(new URL("20261103140000_customer_commercial_offer_acceptance_v1.sql", directory), "utf8")
+    expect(offerSql.length).toBe(60883)
+    expect(createHash("sha256").update(offerSql).digest("hex")).toBe("8f9fbda50319486185648de6ebdeae0b433cba53215e1ba5be48460e2a268a76")
+    expect(findMigration("20261103140000_customer_commercial_offer_acceptance_v1.sql")).toMatchObject({
       appliedToDev: false,
       containsDataChange: false,
       safeToReplay: false,
     })
+    expect(offerSql).toContain("REVOKE ALL ON FUNCTION public.customer_portal_commercial_offer_v1(text, text)")
+    expect(offerSql).toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_commercial_offer_v1(text, text) TO service_role;")
+    expect(offerSql).not.toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_commercial_offer_v1(text, text) TO anon")
+    expect(offerSql).not.toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_commercial_offer_command_v1(text, uuid, text, jsonb) TO authenticated")
     expect(onboardingStatusSql).toContain("REVOKE ALL ON FUNCTION public.customer_portal_onboarding_status_v1(text)")
     expect(onboardingStatusSql).toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_onboarding_status_v1(text) TO service_role;")
     expect(onboardingStatusSql).not.toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_onboarding_status_v1(text) TO anon")

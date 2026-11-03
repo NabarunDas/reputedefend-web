@@ -622,6 +622,8 @@ describe("product launcher", () => {
       nextStep: "We are reviewing this request.",
       receivedAt: "2026-11-01T09:00:00.000Z",
       updatedAt: "2026-11-01T09:30:00.000Z",
+      offerRef: null,
+      offerState: null,
       ...overrides,
     })
     const commercial = {
@@ -724,6 +726,8 @@ describe("product launcher", () => {
       nextStep: "This request is closed.",
       receivedAt: "2026-11-01T09:00:00.000Z",
       updatedAt: "2026-11-01T09:30:00.000Z",
+      offerRef: null,
+      offerState: null,
       ...overrides,
     })
     const commercial = {

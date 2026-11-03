@@ -43,6 +43,8 @@ function allowedPortalHref(href: string) {
     /^\/portal\/messages#\$\{[^}]+\}$/,
     /^\/portal\/account$/,
     /^\/portal\/products$/,
+    /^\/portal\/onboarding$/,
+    /^\/portal\/onboarding\/offer\/\$\{[^}]+\}$/,
     /^\/portal\/recovery$/,
     /^\/api\/portal\/documents\/download\?reference=\$\{[^}]+\}\&selector=\$\{[^}]+\}$/,
     /^\/api\/portal\/documents\/archive\?reference=\$\{[^}]+\}$/,

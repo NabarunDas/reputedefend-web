@@ -43,7 +43,7 @@ enquiry
 
 These request states exist on the table and have no writer in the current commands: `INVITED`, `AWAITING_PAYMENT`, `PROVISIONING`, `READY`, `CLOSED`. `mark_ready` does not set `INVITED`. Invitation dispatch updates `updated_at` only.
 
-Customer acceptance is not implemented. Nothing moves a commercial subscription from `OFFERED` to `ACCEPTED`.
+Customer acceptance of a commercial offer is a later command. This progress read does not itself move a subscription from `OFFERED` to `ACCEPTED`.
 
 Payment evidence has a table. Nothing in this onboarding path writes it. The customer progress read reports a payment stage only when `AWAITING_PAYMENT`, `PAYMENT_PENDING`, or a payment-evidence row is already stored, and it never returns the provider event id or an amount.
 
@@ -61,11 +61,11 @@ My Products keeps Recovery and Guard as they are. While `CUSTOMER_ONBOARDING_STA
 
 `/portal/onboarding` is a neutral page. It uses the same portal session, the products hub gate, and the onboarding read flag. With the flag off it returns to My Products and does not query the function. It does not use the Recovery navigation.
 
-The migration `20261103120000_customer_portal_onboarding_status_v1` is repository source only. It is not applied to DEV or Production. Do not replay it. `20261102200000_telloya_enquiry_infrastructure_v1` is already applied on DEV. The verified DEV ledger contains 97 entries and ends there. Do not replay it and do not apply it to Production. A provision advances only the request whose commercial subscription and selected locations own it. An offered subscription is Offer prepared and completes Offer recorded. A request marked OFFERED with no linked subscription is Offer being prepared and does not complete Offer recorded. ACTIVE or PROVISIONING can show Service setup and does not complete Service setup recorded unless a matching provision has left NOT_STARTED. Ready for use still requires verified LIVE evidence at every selected location. Recorded payment evidence is Payment recorded, not Awaiting your payment.
+The migration `20261103120000_customer_portal_onboarding_status_v1` is applied on DEV. The verified DEV ledger contains 98 entries and ends there. Do not replay it and do not apply it to Production. `20261102200000_telloya_enquiry_infrastructure_v1` remains applied. The previous ledger contained 97 entries and ended there. A provision advances only the request whose commercial subscription and selected locations own it. An offered subscription is Offer prepared and completes Offer recorded. A request marked OFFERED with no linked subscription is Offer being prepared and does not complete Offer recorded. ACTIVE or PROVISIONING can show Service setup and does not complete Service setup recorded unless a matching provision has left NOT_STARTED. Ready for use still requires verified LIVE evidence at every selected location. Recorded payment evidence is Payment recorded, not Awaiting your payment.
 
 ## Later phases
 
-03A-02 agreement acceptance needs one approved priced plan version and a recorded transition from `OFFERED` to `ACCEPTED`. The progress page can name that stage only after the row exists. It must not grow an acceptance button before that command exists.
+03A-02 records customer acceptance of an eligible Telloya or Complete offer. The request stays `OFFERED`. The accepted stage comes from the linked subscription and the immutable acceptance row. See `03A-02-offer-acceptance.md`.
 
 03A-03 payments need a commercial payment record of their own. Recovery guided checkout and standalone Guard billing stay separate. The progress read can say a payment was recorded only from `commercial_payment_evidence` while the request is `AWAITING_PAYMENT` or the subscription is `PAYMENT_PENDING`. It must not return Stripe ids or amounts, and it must not offer a payment button.
 

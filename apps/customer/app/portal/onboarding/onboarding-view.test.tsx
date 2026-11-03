@@ -20,6 +20,8 @@ function request(overrides: Partial<OnboardingRequestView> = {}): OnboardingRequ
     nextStep: "We are reviewing this request.",
     receivedAt: "2026-11-01T09:00:00.000Z",
     updatedAt: "2026-11-01T10:00:00.000Z",
+    offerRef: null,
+    offerState: null,
     ...overrides,
   }
 }

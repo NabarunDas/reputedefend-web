@@ -1,3 +1,4 @@
+import { commercialOfferReadEnabled } from "@/lib/portal/onboarding/flag"
 import type { OnboardingRequestView, OnboardingStage } from "@/lib/portal/onboarding/types"
 import { legalIdentity } from "../../../../../lib/legal"
 import { brandSiteUrl } from "../../../../../lib/brand"
@@ -27,7 +28,7 @@ const STEP_EVIDENCE: Record<OnboardingStage, readonly string[]> = {
   under_review: ["Under review"],
   verification: ["Email checked", "Business authority checked"],
   offer_preparation: ["Offer recorded"],
-  awaiting_customer: ["Acceptance recorded", "Payment recorded"],
+  awaiting_customer: ["Acceptance recorded", "Offer accepted", "Payment recorded"],
   service_setup: ["Service setup recorded"],
   ready: ["Ready for use"],
   declined: [],
@@ -90,6 +91,13 @@ function RequestProgress({ request }: { request: OnboardingRequestView }) {
           })}
         </ol>
       )}
+      {commercialOfferReadEnabled() && request.offerRef && request.offerState ? (
+        <p>
+          <a className="portal-button" href={`/portal/onboarding/offer/${request.offerRef}`}>
+            {request.offerState === "eligible" ? "Review offer" : "View accepted offer"}
+          </a>
+        </p>
+      ) : null}
       <p className="onboarding-times">
         {received ? <span>Received {received}.</span> : null}{" "}
         {updated ? <span>Last updated {updated}.</span> : null}

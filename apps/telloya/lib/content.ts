@@ -10,7 +10,7 @@
 import { brandName } from "@/lib/brand"
 import { getCustomerPortalHref } from "@/lib/customer-portal"
 import { legalIdentity } from "../../../lib/legal"
-import { telloyaPlans, relaunchGuardAddon, overagePolicy, formatGbpPrice, formatMinutes } from "./pricing"
+import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes } from "./pricing"
 
 // Homepage content
 export const homepageContent = {
@@ -606,7 +606,7 @@ export const pricingContent = {
   seo: {
     title: "Pricing – Telloya AI Receptionist",
     description:
-      "Telloya AI receptionist plans from £49/month. Basic, Growth, Pro and Custom plans with optional Relaunch Guard profile monitoring add-on.",
+      `Telloya AI receptionist plans from ${formatGbpPrice(telloyaPlans[0].monthlyPriceGbp!)}/month. Basic, Growth, Pro and Custom plans with optional Relaunch Guard profile monitoring add-on.`,
   },
   hero: {
     eyebrow: "Pricing",
@@ -674,7 +674,7 @@ export const pricingContent = {
         locations: 1,
         telloyaPrice: p.monthlyPriceGbp!,
         guardPrice: relaunchGuardAddon.pricePerLocationGbp,
-        combinedPrice: p.monthlyPriceGbp! + relaunchGuardAddon.pricePerLocationGbp,
+        combinedPrice: calculateCombinedPrice(p.monthlyPriceGbp!, 1),
       })),
     note:
       "Subscriptions, technical eligibility and Guard activation are subject to confirmation. Relaunch Guard references the existing ProfileRelaunch Guard product. One-off ProfileRelaunch recovery services are not included in Guard.",
@@ -761,7 +761,7 @@ export const pricingContent = {
       },
       {
         q: "What happens if I exceed my minutes?",
-        a: "By default, no additional minutes are charged. If you want the option to exceed your allowance, you can opt in to additional usage at £0.25 per minute with an agreed monthly spending cap. This must be explicitly confirmed during commercial acceptance—this enquiry form does not authorise automatic billing.",
+        a: `By default, no additional minutes are charged. If you want the option to exceed your allowance, you can opt in to additional usage at ${formatGbpPrice(overagePolicy.pricePerMinuteGbp)} per minute with an agreed monthly spending cap. This must be explicitly confirmed during commercial acceptance—this enquiry form does not authorise automatic billing.`,
       },
       {
         q: "Can I cancel my subscription?",
@@ -777,7 +777,7 @@ export const pricingContent = {
       },
       {
         q: "How does Relaunch Guard work with multiple locations?",
-        a: "Relaunch Guard costs £9.99 per monitored location per month. If you have three locations, Guard adds £29.97 to your chosen Telloya plan. Subscriptions and technical eligibility are confirmed separately.",
+        a: `Relaunch Guard costs ${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} per monitored location per month. If you have three locations, Guard adds ${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp * 3)} to your chosen Telloya plan. Subscriptions and technical eligibility are confirmed separately.`,
       },
       {
         q: "Is Relaunch Guard required?",
@@ -793,7 +793,7 @@ export const pricingContent = {
       },
       {
         q: "Do you support languages other than English?",
-        a: "Language support depends on provider capabilities and must be confirmed during setup. Custom plans can include requests for additional languages, subject to technical compatibility.",
+        a: "Every Telloya plan allows you to request preferred voice, accent and language options. Availability and combinations depend on provider, voice and regional compatibility and must be confirmed during setup.",
       },
     ],
   },

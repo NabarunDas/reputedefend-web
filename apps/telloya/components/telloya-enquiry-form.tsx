@@ -187,6 +187,80 @@ export function TelloyaEnquiryForm({
       if (!values.planTier && !values.product) {
         stepErrors.planTier = "Please select a plan."
       }
+
+      // Validate Guard location count if Guard is interested
+      if (values.guardInterested) {
+        const guardCount = values.guardLocationCount?.trim()
+        if (!guardCount) {
+          stepErrors.guardLocationCount = "Please enter the number of locations."
+        } else {
+          const parsed = Number(guardCount)
+          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 999) {
+            stepErrors.guardLocationCount = "Please enter a whole number between 1 and 999."
+          }
+        }
+      }
+
+      // Validate Custom plan requirements
+      if (values.planTier === "custom") {
+        // Monthly minutes (required)
+        const minutes = values.customMonthlyMinutes?.trim()
+        if (!minutes) {
+          stepErrors.customMonthlyMinutes = "Please enter monthly minutes required."
+        } else {
+          const parsed = Number(minutes)
+          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1000000) {
+            stepErrors.customMonthlyMinutes = "Please enter a whole number between 1 and 1,000,000."
+          }
+        }
+
+        // Monthly calls (optional, but if provided must be valid)
+        const calls = values.customMonthlyCalls?.trim()
+        if (calls) {
+          const parsed = Number(calls)
+          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100000) {
+            stepErrors.customMonthlyCalls = "Please enter a whole number between 1 and 100,000."
+          }
+        }
+
+        // Phone numbers (required)
+        const phones = values.customPhoneNumbers?.trim()
+        if (!phones) {
+          stepErrors.customPhoneNumbers = "Please enter the number of phone numbers."
+        } else {
+          const parsed = Number(phones)
+          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 999) {
+            stepErrors.customPhoneNumbers = "Please enter a whole number between 1 and 999."
+          }
+        }
+
+        // Locations (required)
+        const locs = values.customLocations?.trim()
+        if (!locs) {
+          stepErrors.customLocations = "Please enter the number of locations."
+        } else {
+          const parsed = Number(locs)
+          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 9999) {
+            stepErrors.customLocations = "Please enter a whole number between 1 and 9,999."
+          }
+        }
+
+        // Custom requirements (optional text field, validated on server for length)
+      }
+
+      // Validate overage spending cap if overage is interested
+      if (values.overageInterested) {
+        const cap = values.overageMonthlyCapGbp?.trim()
+        if (!cap) {
+          stepErrors.overageMonthlyCapGbp = "Please enter a monthly spending cap."
+        } else {
+          const parsed = Number(cap)
+          // Allow decimal values for currency, but must be positive
+          if (isNaN(parsed) || parsed < 1 || parsed > 100000) {
+            stepErrors.overageMonthlyCapGbp = "Please enter an amount between £1 and £100,000."
+          }
+        }
+      }
     }
 
     if (nextStep >= 2) {

@@ -49,7 +49,7 @@ The accepted-offer page shows that the offer is accepted, payment is not complet
 
 ## Migration
 
-`20261103213000_customer_commercial_payment_preparation_v1` is in the repository and is not the DEV ledger head. The verified DEV ledger contains 100 entries and ends at `20261103200518`. Do not apply `20261103213000` to DEV. Do not apply `20261103213000` to Production. Do not replay `20261103200518`. Do not replay `20261103213000`. It does not seed a plan, an agreement, a subscription, an acceptance, or a payment.
+`20261103213000_customer_commercial_payment_preparation_v1` was applied once to DEV. The verified DEV ledger contains 101 entries and ends at `20261103213000`. The previous verified DEV ledger contained 100 entries and ended at `20261103200518`. The repository file is 44,920 characters. Its MD5 is `8db49c31c5d8b41e93e3768017120137`. Its SHA-256 is `8f4103468abc024f249d671fabea0e8587cb60093de3d7f5665f5c8f5bd90f8d`. Do not replay `20261103213000`. Do not apply `20261103213000` to Production. Do not replay `20261103200518`. Do not apply `20261103200518` to Production. No customer or payment records were created. Commercial feature flags remain OFF. It does not seed a plan, an agreement, a subscription, an acceptance, or a payment.
 
 ## 03A-03-02 verified Stripe webhook settlement
 

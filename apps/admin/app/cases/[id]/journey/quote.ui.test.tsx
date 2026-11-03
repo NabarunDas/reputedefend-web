@@ -26,9 +26,8 @@ vi.mock("next/link", () => ({
   },
 }))
 
-const NOW = "2026-10-03T12:00:00.000Z"
-// quoteActionExpiryWindow requires validUntil to stay ahead of the suite clock.
-const FUTURE = "2027-06-01T12:00:00.000Z"
+const NOW = new Date(Date.now() - 1000 * 60 * 60).toISOString() // 1 hour ago
+const FUTURE = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString() // 30 days in future
 const CASE_ID = "55555555-5555-4555-8555-555555555555"
 const CUSTOMER_ID = "11111111-1111-4111-8111-111111111111"
 const BUSINESS_ID = "22222222-2222-4222-8222-222222222222"

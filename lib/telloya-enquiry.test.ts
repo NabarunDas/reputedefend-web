@@ -18,6 +18,19 @@ describe("Telloya enquiry validation", () => {
     source: "telloya",
   }
 
+  const validTierEnquiry: TelloyaEnquiryInput = {
+    product: "telloya",
+    planTier: "growth",
+    businessName: "Test Plumbing Ltd",
+    country: "GB",
+    trade: "Plumbing services",
+    fullName: "John Smith",
+    email: "john@example.com",
+    phone: "+447700900000",
+    privacyAccepted: true,
+    source: "telloya",
+  }
+
   it("accepts valid Telloya enquiry", () => {
     const result = validateTelloyaEnquiry(validEnquiry)
     expect(result.valid).toBe(true)
@@ -269,5 +282,305 @@ describe("Telloya enquiry payload conversion", () => {
     expect(payload.phoneSetup).toBe("")
     expect(payload.contactPreference).toBe("")
     expect(payload.details).toContain("No additional details provided")
+  })
+})
+
+describe("Telloya enquiry validation - Phase 05A-02", () => {
+  const validTierEnquiry: TelloyaEnquiryInput = {
+    product: "telloya",
+    planTier: "growth",
+    businessName: "Test Plumbing Ltd",
+    country: "GB",
+    trade: "Plumbing services",
+    fullName: "John Smith",
+    email: "john@example.com",
+    phone: "+447700900000",
+    privacyAccepted: true,
+    source: "telloya",
+  }
+
+  it("accepts enquiry with plan tier", () => {
+    const result = validateTelloyaEnquiry(validTierEnquiry)
+    expect(result.valid).toBe(true)
+    if (result.valid) {
+      expect(result.data.planTier).toBe("growth")
+    }
+  })
+
+  it("accepts enquiry with Guard add-on", () => {
+    const enquiry = { 
+      ...validTierEnquiry, 
+      guardInterested: true, 
+      guardLocationCount: 3 
+    }
+    const result = validateTelloyaEnquiry(enquiry)
+    expect(result.valid).toBe(true)
+    if (result.valid) {
+      expect(result.data.guardInterested).toBe(true)
+      expect(result.data.guardLocationCount).toBe(3)
+    }
+  })
+
+  it("requires Guard location count if Guard interested", () => {
+    const enquiry = { 
+      ...validTierEnquiry, 
+      guardInterested: true 
+    }
+    const result = validateTelloyaEnquiry(enquiry)
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.errors?.guardLocationCount).toBeTruthy()
+    }
+  })
+
+  it("accepts custom plan with all required fields", () => {
+    const enquiry = { 
+      ...validTierEnquiry,
+      planTier: "custom" as const,
+      customMonthlyMinutes: 1000,
+      customMonthlyCalls: 200,
+      customPhoneNumbers: 3,
+      customLocations: 5,
+    }
+    const result = validateTelloyaEnquiry(enquiry)
+    expect(result.valid).toBe(true)
+  })
+
+  it("requires custom plan fields when planTier is custom", () => {
+    const enquiry = { 
+      ...validTierEnquiry,
+      planTier: "custom" as const,
+    }
+    const result = validateTelloyaEnquiry(enquiry)
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.errors?.customMonthlyMinutes).toBeTruthy()
+      expect(result.errors?.customMonthlyCalls).toBeTruthy()
+      expect(result.errors?.customPhoneNumbers).toBeTruthy()
+      expect(result.errors?.customLocations).toBeTruthy()
+    }
+  })
+
+  it("accepts voice preferences", () => {
+    const enquiry = { 
+      ...validTierEnquiry,
+      voicePreference: "female" as const,
+      voiceAccent: "British",
+      primaryLanguage: "English",
+      speakingStyle: "professional" as const,
+      additionalLanguages: "Spanish, French",
+    }
+    const result = validateTelloyaEnquiry(enquiry)
+    expect(result.valid).toBe(true)
+    if (result.valid) {
+      expect(result.data.voicePreference).toBe("female")
+      expect(result.data.voiceAccent).toBe("British")
+    }
+  })
+
+  it("rejects invalid voice preference enum", () => {
+    const enquiry = { 
+      ...validTierEnquiry,
+      voicePreference: "robot" as any,
+    }
+    const result = validateTelloyaEnquiry(enquiry)
+    expect(result.valid).toBe(false)
+    // Enum validation happens at input level, returns PROCESS_ERROR
+    if (!result.valid) {
+      expect(result.error).toBe("Unable to process this enquiry.")
+    }
+  })
+
+  it("accepts overage interest with cap", () => {
+    const enquiry = { 
+      ...validTierEnquiry,
+      overageInterested: true,
+      overageMonthlyCapGbp: 100,
+    }
+    const result = validateTelloyaEnquiry(enquiry)
+    expect(result.valid).toBe(true)
+    if (result.valid) {
+      expect(result.data.overageInterested).toBe(true)
+      expect(result.data.overageMonthlyCapGbp).toBe(100)
+    }
+  })
+
+  it("enforces character limits on new text fields", () => {
+    const longString = "a".repeat(3000)
+    const enquiry = { 
+      ...validTierEnquiry,
+      customRequirements: longString,
+    }
+    const result = validateTelloyaEnquiry(enquiry)
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.errors?.customRequirements).toBeTruthy()
+    }
+  })
+
+  it("rejects invalid plan tier enum", () => {
+    const enquiry = { 
+      ...validTierEnquiry,
+      planTier: "premium" as any,
+    }
+    const result = validateTelloyaEnquiry(enquiry)
+    expect(result.valid).toBe(false)
+    // Enum validation happens at input level, returns PROCESS_ERROR
+    if (!result.valid) {
+      expect(result.error).toBe("Unable to process this enquiry.")
+    }
+  })
+
+  it("maintains backward compatibility with legacy product-only enquiries", () => {
+    const legacyEnquiry: TelloyaEnquiryInput = {
+      product: "telloya",
+      businessName: "Test",
+      country: "GB",
+      trade: "Testing",
+      fullName: "Test User",
+      email: "test@example.com",
+      phone: "07700900000",
+      privacyAccepted: true,
+      source: "telloya",
+    }
+    const result = validateTelloyaEnquiry(legacyEnquiry)
+    expect(result.valid).toBe(true)
+  })
+})
+
+describe("Telloya enquiry payload - Phase 05A-02", () => {
+  it("includes plan tier in payload", () => {
+    const input: TelloyaEnquiryInput = {
+      product: "telloya",
+      planTier: "growth",
+      businessName: "Test",
+      country: "GB",
+      trade: "Testing",
+      fullName: "Test User",
+      email: "test@example.com",
+      phone: "07700900000",
+      privacyAccepted: true,
+      source: "telloya",
+    }
+    const payload = telloyaEnquiryToPayload(input)
+    expect(payload.planTier).toBe("growth")
+    expect(payload.details).toContain("Plan tier: growth")
+  })
+
+  it("includes Guard interest in payload", () => {
+    const input: TelloyaEnquiryInput = {
+      product: "telloya",
+      planTier: "pro",
+      guardInterested: true,
+      guardLocationCount: 3,
+      businessName: "Test",
+      country: "GB",
+      trade: "Testing",
+      fullName: "Test User",
+      email: "test@example.com",
+      phone: "07700900000",
+      privacyAccepted: true,
+      source: "telloya",
+    }
+    const payload = telloyaEnquiryToPayload(input)
+    expect(payload.guardInterested).toBe(true)
+    expect(payload.guardLocationCount).toBe(3)
+    expect(payload.details).toContain("Guard interested: Yes (3 locations)")
+  })
+
+  it("includes custom plan requirements in payload", () => {
+    const input: TelloyaEnquiryInput = {
+      product: "telloya",
+      planTier: "custom",
+      customMonthlyMinutes: 1000,
+      customMonthlyCalls: 200,
+      customPhoneNumbers: 3,
+      customLocations: 5,
+      customLanguages: "English, Spanish",
+      customRequirements: "Need integration with existing CRM",
+      businessName: "Test",
+      country: "GB",
+      trade: "Testing",
+      fullName: "Test User",
+      email: "test@example.com",
+      phone: "07700900000",
+      privacyAccepted: true,
+      source: "telloya",
+    }
+    const payload = telloyaEnquiryToPayload(input)
+    expect(payload.details).toContain("Custom requirements:")
+    expect(payload.details).toContain("Minutes: 1000/month")
+    expect(payload.details).toContain("Languages: English, Spanish")
+    expect(payload.details).toContain("Additional requirements:")
+    expect(payload.details).toContain("Need integration with existing CRM")
+  })
+
+  it("includes voice preferences in payload", () => {
+    const input: TelloyaEnquiryInput = {
+      product: "telloya",
+      planTier: "basic",
+      voicePreference: "female",
+      voiceAccent: "British",
+      primaryLanguage: "English",
+      speakingStyle: "professional",
+      additionalLanguages: "Spanish",
+      businessName: "Test",
+      country: "GB",
+      trade: "Testing",
+      fullName: "Test User",
+      email: "test@example.com",
+      phone: "07700900000",
+      privacyAccepted: true,
+      source: "telloya",
+    }
+    const payload = telloyaEnquiryToPayload(input)
+    expect(payload.details).toContain("Voice preferences:")
+    expect(payload.details).toContain("Voice: female")
+    expect(payload.details).toContain("Accent: British")
+    expect(payload.details).toContain("Speaking style: professional")
+  })
+
+  it("includes overage interest in payload", () => {
+    const input: TelloyaEnquiryInput = {
+      product: "telloya",
+      planTier: "basic",
+      overageInterested: true,
+      overageMonthlyCapGbp: 50,
+      businessName: "Test",
+      country: "GB",
+      trade: "Testing",
+      fullName: "Test User",
+      email: "test@example.com",
+      phone: "07700900000",
+      privacyAccepted: true,
+      source: "telloya",
+    }
+    const payload = telloyaEnquiryToPayload(input)
+    expect(payload.overageInterested).toBe(true)
+    expect(payload.overageMonthlyCapGbp).toBe(50)
+    expect(payload.details).toContain("Overage interested: Yes (cap: £50/month)")
+  })
+
+  it("respects 5000 character limit in details field", () => {
+    const longRequirements = "a".repeat(4000)
+    const input: TelloyaEnquiryInput = {
+      product: "telloya",
+      planTier: "custom",
+      customMonthlyMinutes: 1000,
+      customMonthlyCalls: 200,
+      customPhoneNumbers: 3,
+      customLocations: 5,
+      customRequirements: longRequirements,
+      businessName: "Test",
+      country: "GB",
+      trade: "Testing",
+      fullName: "Test User",
+      email: "test@example.com",
+      phone: "07700900000",
+      privacyAccepted: true,
+      source: "telloya",
+    }
+    const payload = telloyaEnquiryToPayload(input)
+    expect(payload.details.length).toBeLessThanOrEqual(5000)
   })
 })

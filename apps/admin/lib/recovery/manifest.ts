@@ -1475,11 +1475,25 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Customer commercial payment verification", probe: "public.commercial_payment_receipt_v1" },
   },
   {
+    // Commercial payment settlement. Applied once to profilerelaunch-dev.
+    // The verified DEV ledger contains 103 entries and ends at 20261104190000.
+    // The previous ledger contained 102 entries and ended at 20261103230000.
+    // Canonical version recorded once. Repository file is 71,495 characters.
+    // MD5 f09048135272dbc84b7ff1c794f18361.
+    // SHA-256 950af7786e449b1158b531d67f7a858ae9c59aad6a2496e227752bd3779961c1.
+    // Service-role-only settlement RPC permissions were verified.
+    // Ordinary payment-evidence inserts remain blocked.
+    // Invalid invoice claims and untrusted settlement payloads were rejected.
+    // No commercial subscription or payment evidence was created.
+    // Commercial feature flags remain OFF.
+    // Schema and function changes only. containsDataChange stays false.
+    // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
+    // safeToReplay stays false.
     version: "20261104190000",
     filename: "20261104190000_customer_commercial_payment_settlement_v1.sql",
     step: "Customer commercial payment settlement",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Customer commercial payment settlement", probe: "public.commercial_payment_settle_initial_invoice_v1" },
@@ -1495,7 +1509,17 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261103230000`. The live DEV ledger contains 102 entries. Commercial
+ * `20261104190000`. The live DEV ledger contains 103 entries. Commercial
+ * payment settlement was applied once to DEV. The repository file is
+ * 71,495 characters. MD5 f09048135272dbc84b7ff1c794f18361. SHA-256
+ * 950af7786e449b1158b531d67f7a858ae9c59aad6a2496e227752bd3779961c1.
+ * Service-role-only settlement RPC permissions were verified.
+ * Ordinary payment-evidence inserts remain blocked. Invalid invoice claims
+ * and untrusted settlement payloads were rejected. No commercial subscription
+ * or payment evidence was created. Commercial feature flags remain OFF.
+ * Schema and function changes only. containsDataChange is false.
+ * Do not replay `20261104190000` or apply it to Production. The previous
+ * head `20261103230000` had 102 entries. Commercial
  * payment verification was applied once to DEV. The repository file is
  * 12,838 characters. MD5 de03ef27a623a72ae3e4015a33782406. SHA-256
  * 9a761103c01d8bb50c1656fe81a35ccab349f862304c6a8044a6a327dac57d9a.
@@ -1587,10 +1611,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` contains only
- * `20261104190000`. That file is in the repository and is not the DEV ledger
- * head. Do not apply `20261104190000` to DEV. Do not apply `20261104190000`
- * to Production.
+ * applied and must not be replayed. `pendingMigrations()` is empty.
+ * `20261104190000` is already applied on DEV and must not be replayed.
+ * Do not replay `20261104190000`. Do not apply `20261104190000` to Production.
  * `20261103230000` is already applied on DEV and must not be replayed.
  * Do not apply 20261103230000 to Production.
  * `20261103213000` is already applied on DEV and must not be replayed.

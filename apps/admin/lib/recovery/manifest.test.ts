@@ -172,9 +172,9 @@ describe("the migration chain manifest", () => {
     expect(createHash("md5").update(verificationSql).digest("hex")).toBe("de03ef27a623a72ae3e4015a33782406")
     expect(createHash("sha256").update(verificationSql).digest("hex")).toBe("9a761103c01d8bb50c1656fe81a35ccab349f862304c6a8044a6a327dac57d9a")
     const settlementSql = readFileSync(new URL("20261104190000_customer_commercial_payment_settlement_v1.sql", directory), "utf8")
-    expect(settlementSql.length).toBe(48070)
-    expect(createHash("md5").update(settlementSql).digest("hex")).toBe("1b13e64494dd3e090e16d8221160b220")
-    expect(createHash("sha256").update(settlementSql).digest("hex")).toBe("304fe864217c321f018f3257d2c405fd6787578f59e360e547fa220916fecf6d")
+    expect(settlementSql.length).toBe(71495)
+    expect(createHash("md5").update(settlementSql).digest("hex")).toBe("f09048135272dbc84b7ff1c794f18361")
+    expect(createHash("sha256").update(settlementSql).digest("hex")).toBe("950af7786e449b1158b531d67f7a858ae9c59aad6a2496e227752bd3779961c1")
     expect(findMigration("20261104190000_customer_commercial_payment_settlement_v1.sql")).toMatchObject({
       appliedToDev: false,
       containsDataChange: false,

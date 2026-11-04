@@ -10,15 +10,15 @@ This phase records one verified initial Telloya or Complete invoice and moves on
 | --- | --- | --- |
 | Signed webhook | Stores one `stripe_event_receipts` row and enqueues `PROCESS_STRIPE_EVENT` | Unchanged. No second webhook. |
 | Verifier | `assessCommercialSettlement` returns `verified` for one paid initial invoice | Reused as a pre-check. Its boolean is not settlement authority. |
-| Invoice worker | Lists commercial invoice candidates and observes them | When both flags are exactly `true`, the same worker re-reads the provider, claims one invoice, and settles it. Otherwise it stays observation-only. |
+| Invoice worker | Lists commercial invoice candidates and observes them | When both flags are exactly `true`, the worker claims one invoice and reads the invoice, Checkout session, and Stripe subscription again. It re-runs the full verifier on that second read. Only an exact `verified` result is settled. Otherwise it stays observation-only. |
 | Recovery claim | `dev_payment_event_claim_v1` rejects `invoice.%` | Unchanged. Commercial invoices use `commercial_payment_invoice_claim_v1`. |
 | Evidence | Every insert raises | An insert is allowed only inside the leased settlement transaction, and only when the durable receipt, lease, amount, currency, period, and membership agree. |
 | Subscription | A billable `ACTIVE` transition always raises | `PAYMENT_PENDING` becomes `ACTIVE` only after that same transaction has inserted the matching evidence row. |
-| Customer view | A paid subscription with no provision can disappear from My Products | It stays pending. The next step says payment is recorded and setup has not started. It is not described as live. |
+| Customer view | A paid subscription with no provision can disappear from My Products | Telloya stays pending: "Payment received. Your AI receptionist setup has not started." Guard included in that package stays pending: "Included in your package. Monitoring setup is pending." It is not described as live, and a Telloya-only subscription still shows Guard as not subscribed. |
 
 ## One transaction
 
-`commercial_payment_settle_initial_invoice_v1` is service-role only. Anonymous and authenticated roles cannot execute it. The command requires an existing signed `invoice.paid` receipt, a running `dev-payment-events` lease, and structured provider facts. A payload that only says `verified: true` is rejected.
+`commercial_payment_settle_initial_invoice_v1` is service-role only. Anonymous and authenticated roles cannot execute it. The command requires an existing signed `invoice.paid` receipt, a running `dev-payment-events` lease, and structured provider facts. A payload that contains `verified` is rejected. After the claim, the worker reads the provider again, re-reads the signed receipt and the durable preparation, and runs `assessCommercialSettlement`. It calls the settlement command only when that second result is exactly `verified`. The command then compares Checkout mode, status, customer, commercial ids, acceptance, operation, subscription metadata, and invoice metadata with the locked preparation. A missing or contradictory fact returns without writing.
 
 Inside the transaction it locks the outbox, receipt, and job, then the Checkout preparation and the business's commercial subscriptions in id order. It re-reads the acceptance, approved plan, customer map, and membership. It requires a GBP payment equal to the accepted monthly amount, quantity 1, no trial, discount, automatic tax, refund, or dispute, and a non-overlapping paid period. It then inserts one `commercial_payment_evidence` row, sets the Stripe customer and subscription, records the paid period, moves that subscription to `ACTIVE`, appends `verified_initial_invoice`, marks the receipt processed, and completes the existing job. Those writes commit together or roll back together.
 
@@ -26,4 +26,4 @@ A provider failure before the claim leaves the receipt queued and writes nothing
 
 ## Flags
 
-`CUSTOMER_COMMERCIAL_PAYMENT_SETTLEMENT_ENABLED` defaults off. It does nothing unless `CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED` is also exactly `true` and the existing develop-preview worker block is open. No Vercel value is changed. Tests use the isolated database and the fake provider. No live Stripe call is made.
+`CUSTOMER_COMMERCIAL_PAYMENT_SETTLEMENT_ENABLED` defaults off. It does nothing unless `CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED` is also exactly `true` and the existing develop-preview worker block is open. No Vercel value is changed. Tests use an isolated database and the fake provider. The concurrent claim and settlement test opens two connections to a disposable local PostgreSQL cluster. It does not use DEV or Production. No live Stripe call is made.

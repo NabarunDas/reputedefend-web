@@ -613,6 +613,10 @@ BEGIN
   IF p_job IS NULL OR p_lease IS NULL OR p_facts IS NULL OR jsonb_typeof(p_facts) IS DISTINCT FROM 'object' THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'invalid', 'retryable', false);
   END IF;
+  -- A verified flag is not read. Settlement compares these structured facts with durable rows.
+  IF p_facts ? 'verified' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'invalid', 'retryable', false);
+  END IF;
   event_id := p_facts->>'eventId';
   invoice_id := p_facts->>'invoiceId';
   IF event_id IS NULL OR event_id !~ '^evt_[A-Za-z0-9_]{4,160}$' OR invoice_id IS NULL OR invoice_id !~ '^in_[A-Za-z0-9]+$' THEN
@@ -689,6 +693,24 @@ BEGIN
     OR p_facts->>'subscriptionPriceId' IS NULL
     OR p_facts->>'subscriptionPeriodStart' IS NULL
     OR p_facts->>'subscriptionPeriodEnd' IS NULL
+    OR p_facts->>'checkoutMode' IS NULL
+    OR p_facts->>'checkoutStatus' IS NULL
+    OR p_facts->>'checkoutPaymentStatus' IS NULL
+    OR p_facts->>'checkoutCustomerId' IS NULL
+    OR p_facts->>'commercialCustomerId' IS NULL
+    OR p_facts->>'commercialSubscriptionId' IS NULL
+    OR p_facts->>'acceptanceId' IS NULL
+    OR p_facts->>'checkoutOperationId' IS NULL
+    OR p_facts->>'checkoutMetadataCustomerId' IS NULL
+    OR p_facts->>'checkoutMetadataSubscriptionId' IS NULL
+    OR p_facts->>'checkoutMetadataAcceptanceId' IS NULL
+    OR p_facts->>'checkoutMetadataOperationId' IS NULL
+    OR p_facts->>'subscriptionMetadataCustomerId' IS NULL
+    OR p_facts->>'subscriptionMetadataSubscriptionId' IS NULL
+    OR p_facts->>'subscriptionMetadataAcceptanceId' IS NULL
+    OR p_facts->>'subscriptionMetadataOperationId' IS NULL
+    OR jsonb_typeof(p_facts->'checkoutLivemode') IS DISTINCT FROM 'boolean'
+    OR jsonb_typeof(p_facts->'conflictingMetadata') IS DISTINCT FROM 'boolean'
   THEN
     RETURN jsonb_build_object('status', 'pending', 'reason', 'provider_incomplete', 'retryable', true);
   END IF;
@@ -725,8 +747,22 @@ BEGIN
   stripe_subscription := p_facts->>'stripeSubscriptionId';
   stripe_price := p_facts->>'stripePriceId';
 
-  IF (p_facts->>'livemode')::boolean OR (p_facts->>'subscriptionLivemode')::boolean THEN
+  IF (p_facts->>'livemode')::boolean OR (p_facts->>'subscriptionLivemode')::boolean OR (p_facts->>'checkoutLivemode')::boolean THEN
     RETURN jsonb_build_object('status', 'mismatch', 'reason', 'livemode', 'retryable', false);
+  END IF;
+  IF (p_facts->>'conflictingMetadata')::boolean THEN
+    RETURN jsonb_build_object('status', 'mismatch', 'reason', 'conflicting_metadata', 'retryable', false);
+  END IF;
+  IF p_facts->>'checkoutMode' IS DISTINCT FROM 'subscription'
+    OR p_facts->>'checkoutStatus' IS DISTINCT FROM 'complete'
+  THEN
+    RETURN jsonb_build_object('status', 'mismatch', 'reason', 'session', 'retryable', false);
+  END IF;
+  IF p_facts->>'checkoutPaymentStatus' IS DISTINCT FROM 'paid' THEN
+    RETURN jsonb_build_object('status', 'mismatch', 'reason', 'payment_failed', 'retryable', false);
+  END IF;
+  IF p_facts->>'checkoutCustomerId' IS DISTINCT FROM stripe_customer THEN
+    RETURN jsonb_build_object('status', 'mismatch', 'reason', 'customer', 'retryable', false);
   END IF;
   IF p_facts->>'invoiceStatus' IS DISTINCT FROM 'paid' THEN
     IF p_facts->>'invoiceStatus' = 'open' THEN
@@ -791,6 +827,55 @@ BEGIN
       AND map.livemode = false
   ) THEN
     RETURN jsonb_build_object('status', 'mismatch', 'reason', 'customer', 'retryable', false);
+  END IF;
+  IF p_facts->>'commercialCustomerId' IS DISTINCT FROM prep.customer_id::text
+    OR p_facts->>'checkoutMetadataCustomerId' IS DISTINCT FROM prep.customer_id::text
+    OR p_facts->>'subscriptionMetadataCustomerId' IS DISTINCT FROM prep.customer_id::text
+  THEN
+    RETURN jsonb_build_object('status', 'mismatch', 'reason', 'metadata_customer', 'retryable', false);
+  END IF;
+  IF p_facts->>'commercialSubscriptionId' IS DISTINCT FROM prep.subscription_id::text
+    OR p_facts->>'checkoutMetadataSubscriptionId' IS DISTINCT FROM prep.subscription_id::text
+    OR p_facts->>'subscriptionMetadataSubscriptionId' IS DISTINCT FROM prep.subscription_id::text
+  THEN
+    RETURN jsonb_build_object('status', 'mismatch', 'reason', 'metadata_subscription', 'retryable', false);
+  END IF;
+  IF p_facts->>'acceptanceId' IS DISTINCT FROM prep.acceptance_id::text
+    OR p_facts->>'checkoutMetadataAcceptanceId' IS DISTINCT FROM prep.acceptance_id::text
+    OR p_facts->>'subscriptionMetadataAcceptanceId' IS DISTINCT FROM prep.acceptance_id::text
+  THEN
+    RETURN jsonb_build_object('status', 'mismatch', 'reason', 'metadata_acceptance', 'retryable', false);
+  END IF;
+  IF p_facts->>'checkoutOperationId' IS DISTINCT FROM prep.checkout_operation_id::text
+    OR p_facts->>'checkoutMetadataOperationId' IS DISTINCT FROM prep.checkout_operation_id::text
+    OR p_facts->>'subscriptionMetadataOperationId' IS DISTINCT FROM prep.checkout_operation_id::text
+  THEN
+    RETURN jsonb_build_object('status', 'mismatch', 'reason', 'metadata_operation', 'retryable', false);
+  END IF;
+  IF p_facts ? 'invoiceMetadataCustomerId'
+    OR p_facts ? 'invoiceMetadataSubscriptionId'
+    OR p_facts ? 'invoiceMetadataAcceptanceId'
+    OR p_facts ? 'invoiceMetadataOperationId'
+  THEN
+    IF coalesce(p_facts->>'invoiceMetadataCustomerId', '') = ''
+      OR coalesce(p_facts->>'invoiceMetadataSubscriptionId', '') = ''
+      OR coalesce(p_facts->>'invoiceMetadataAcceptanceId', '') = ''
+      OR coalesce(p_facts->>'invoiceMetadataOperationId', '') = ''
+    THEN
+      RETURN jsonb_build_object('status', 'pending', 'reason', 'provider_incomplete', 'retryable', true);
+    END IF;
+    IF p_facts->>'invoiceMetadataCustomerId' IS DISTINCT FROM prep.customer_id::text THEN
+      RETURN jsonb_build_object('status', 'mismatch', 'reason', 'metadata_customer', 'retryable', false);
+    END IF;
+    IF p_facts->>'invoiceMetadataSubscriptionId' IS DISTINCT FROM prep.subscription_id::text THEN
+      RETURN jsonb_build_object('status', 'mismatch', 'reason', 'metadata_subscription', 'retryable', false);
+    END IF;
+    IF p_facts->>'invoiceMetadataAcceptanceId' IS DISTINCT FROM prep.acceptance_id::text THEN
+      RETURN jsonb_build_object('status', 'mismatch', 'reason', 'metadata_acceptance', 'retryable', false);
+    END IF;
+    IF p_facts->>'invoiceMetadataOperationId' IS DISTINCT FROM prep.checkout_operation_id::text THEN
+      RETURN jsonb_build_object('status', 'mismatch', 'reason', 'metadata_operation', 'retryable', false);
+    END IF;
   END IF;
   PERFORM 1
   FROM public.commercial_subscriptions locked
@@ -935,6 +1020,332 @@ REVOKE ALL ON FUNCTION public.commercial_payment_settle_initial_invoice_v1(uuid,
 GRANT EXECUTE ON FUNCTION public.commercial_payment_invoice_claim_v1(text, text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.commercial_payment_settle_initial_invoice_v1(uuid, uuid, jsonb) TO service_role;
 
+-- The customer JSON below strips businessId. The private row keeps it so paid
+-- overlays match the business record when two businesses share a display name.
+CREATE OR REPLACE FUNCTION admin_private.customer_portal_products_v1(p_token_hash text)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  sess jsonb;
+  customer uuid;
+  telloya_rows jsonb := '[]'::jsonb;
+  guard_rows jsonb := '[]'::jsonb;
+  telloya_read text := 'ok';
+  guard_read text := 'ok';
+  businesses jsonb;
+BEGIN
+  sess := admin_private.customer_portal_session_v1(p_token_hash);
+  IF sess IS NULL THEN
+    RETURN NULL;
+  END IF;
+  customer := (sess ->> 'customerId')::uuid;
+
+  BEGIN
+    SELECT COALESCE(jsonb_agg(chosen.row_value ORDER BY chosen.row_value ->> 'businessName', chosen.row_value ->> 'businessId'), '[]'::jsonb)
+      INTO telloya_rows
+    FROM (
+      SELECT DISTINCT ON (combined.business_id)
+        combined.row_value
+      FROM (
+      SELECT grouped.business_id,
+        1 AS source_rank,
+        jsonb_build_object(
+        'businessId', grouped.business_id::text,
+        'businessName', grouped.business_name,
+        'telloya', jsonb_build_object(
+          'status', (array_agg(grouped.location_status ORDER BY admin_private.customer_portal_products_rank_v1(grouped.location_status), grouped.location_id))[1],
+          'locations', jsonb_agg(
+            jsonb_build_object(
+              'locationName', grouped.location_name,
+              'status', grouped.location_status,
+              'nextStep', step.next_step
+            )
+            ORDER BY grouped.location_name, grouped.location_id
+          )
+        )
+      ) AS row_value
+      FROM (
+        SELECT DISTINCT ON (entitlement.business_id, entitlement.location_id)
+          entitlement.business_id,
+          business.display_name AS business_name,
+          entitlement.location_id,
+          COALESCE(NULLIF(btrim(location.location_name), ''), 'This location') AS location_name,
+          admin_private.customer_portal_telloya_location_status_v1(
+            plan.status,
+            subscription.state,
+            subscription.grant_kind,
+            subscription.pilot_ends_at,
+            subscription.current_period_end,
+            EXISTS (
+              SELECT 1
+              FROM public.commercial_payment_evidence evidence
+              WHERE evidence.subscription_id = subscription.id
+                AND subscription.current_period_end IS NOT NULL
+                AND evidence.period_end = subscription.current_period_end
+                AND evidence.period_end > pg_catalog.now()
+            ),
+            entitlement.state,
+            entitlement.eligible_to,
+            provision.state,
+            provision.profile_ready_at,
+            provision.agent_configured_at,
+            provision.number_allocated_at,
+            provision.forwarding_instructed_at,
+            provision.customer_confirmed_at,
+            provision.provider_binding_ref IS NOT NULL AND btrim(provision.provider_binding_ref) <> '',
+            provision.provider_test_outcome = 'PASSED'
+              AND provision.provider_test_call_ref IS NOT NULL
+              AND btrim(provision.provider_test_call_ref) <> '',
+            provision.agent_test_passed_at,
+            provision.live_at
+          ) AS location_status,
+          CASE
+            WHEN subscription.state = 'PAST_DUE'
+              AND admin_private.customer_portal_telloya_location_status_v1(
+                plan.status, subscription.state, subscription.grant_kind, subscription.pilot_ends_at,
+                subscription.current_period_end,
+                EXISTS (
+                  SELECT 1 FROM public.commercial_payment_evidence evidence
+                  WHERE evidence.subscription_id = subscription.id
+                    AND subscription.current_period_end IS NOT NULL
+                    AND evidence.period_end = subscription.current_period_end
+                    AND evidence.period_end > pg_catalog.now()
+                ),
+                entitlement.state, entitlement.eligible_to, provision.state,
+                provision.profile_ready_at, provision.agent_configured_at, provision.number_allocated_at,
+                provision.forwarding_instructed_at, provision.customer_confirmed_at,
+                provision.provider_binding_ref IS NOT NULL AND btrim(provision.provider_binding_ref) <> '',
+                provision.provider_test_outcome = 'PASSED'
+                  AND provision.provider_test_call_ref IS NOT NULL
+                  AND btrim(provision.provider_test_call_ref) <> '',
+                provision.agent_test_passed_at, provision.live_at
+              ) = 'active'
+              THEN 'The current period continues. Renewal did not complete.'
+            ELSE NULL
+          END AS renewal_step
+        FROM public.product_entitlements entitlement
+        JOIN public.business_memberships membership
+          ON membership.business_id = entitlement.business_id
+         AND membership.customer_id = customer
+         AND membership.status = 'verified'
+        JOIN public.businesses business ON business.id = entitlement.business_id
+        JOIN public.locations location
+          ON location.id = entitlement.location_id
+         AND location.business_id = entitlement.business_id
+        JOIN public.commercial_subscriptions subscription
+          ON subscription.id = entitlement.commercial_subscription_id
+         AND subscription.business_id = entitlement.business_id
+        JOIN public.plan_versions plan ON plan.id = subscription.plan_version_id
+        LEFT JOIN public.service_provisions provision ON provision.entitlement_id = entitlement.id
+        WHERE entitlement.component_code = 'TELLOYA'
+        ORDER BY entitlement.business_id, entitlement.location_id,
+          CASE entitlement.state WHEN 'ELIGIBLE' THEN 0 WHEN 'PENDING' THEN 1 WHEN 'EXPIRED' THEN 2 ELSE 3 END,
+          entitlement.created_at DESC
+      ) grouped
+      CROSS JOIN LATERAL (
+        SELECT CASE grouped.location_status
+          WHEN 'setup' THEN 'Setup is still in progress at ' || grouped.location_name || '.'
+          WHEN 'ready_for_provider' THEN 'This location is waiting for provider verification.'
+          WHEN 'pilot' THEN 'This pilot is open until its approved end.'
+          WHEN 'expired' THEN 'This period has ended.'
+          WHEN 'pending' THEN 'Telloya is not active yet.'
+          WHEN 'suspended' THEN 'Telloya is suspended at this location.'
+          WHEN 'cancelled' THEN 'Telloya is cancelled at this location.'
+          WHEN 'unavailable' THEN 'Status temporarily unavailable.'
+          WHEN 'active' THEN grouped.renewal_step
+          ELSE NULL
+        END AS next_step
+      ) step
+      GROUP BY grouped.business_id, grouped.business_name
+      UNION ALL
+      SELECT subscription.business_id,
+        0 AS source_rank,
+        jsonb_build_object(
+          'businessId', subscription.business_id::text,
+          'businessName', business.display_name,
+          'telloya', jsonb_build_object('status', 'pending', 'locations', '[]'::jsonb)
+        )
+      FROM public.commercial_subscriptions subscription
+      JOIN public.businesses business ON business.id = subscription.business_id
+      JOIN public.business_memberships membership
+        ON membership.business_id = subscription.business_id
+       AND membership.customer_id = customer
+       AND membership.status = 'verified'
+      JOIN public.commercial_subscription_items item
+        ON item.subscription_id = subscription.id
+       AND item.component_code = 'TELLOYA'
+      JOIN public.plan_versions plan ON plan.id = subscription.plan_version_id
+      WHERE subscription.state IN ('ACCEPTED', 'PAYMENT_PENDING')
+        AND plan.status = 'APPROVED'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.product_entitlements entitlement
+          WHERE entitlement.business_id = subscription.business_id
+            AND entitlement.component_code = 'TELLOYA'
+            AND entitlement.state IN ('PENDING', 'ELIGIBLE')
+        )
+      ) combined
+      ORDER BY combined.business_id, combined.source_rank
+    ) chosen;
+  EXCEPTION WHEN OTHERS THEN
+    telloya_rows := '[]'::jsonb;
+    telloya_read := 'unavailable';
+  END;
+
+  BEGIN
+    SELECT COALESCE(jsonb_agg(row_value ORDER BY row_value ->> 'businessName', row_value ->> 'businessId'), '[]'::jsonb)
+      INTO guard_rows
+    FROM (
+      SELECT jsonb_build_object(
+        'businessId', grouped.business_id::text,
+        'businessName', grouped.business_name,
+        'guard', jsonb_build_object(
+          'status', (array_agg(grouped.location_status ORDER BY admin_private.customer_portal_products_rank_v1(grouped.location_status), grouped.location_id))[1],
+          'locations', jsonb_agg(
+            jsonb_build_object(
+              'locationName', grouped.location_name,
+              'status', grouped.location_status,
+              'monitoringRecorded', grouped.monitoring_recorded,
+              'allocation', grouped.allocation_kind,
+              'nextStep', grouped.next_step
+            )
+            ORDER BY grouped.location_name, grouped.location_id
+          )
+        )
+      ) AS row_value
+      FROM (
+        SELECT DISTINCT ON (visible.business_id, visible.location_id)
+          visible.business_id,
+          business.display_name AS business_name,
+          visible.location_id,
+          COALESCE(NULLIF(btrim(location.location_name), ''), 'This location') AS location_name,
+          COALESCE(
+            coverage.state = 'ACTIVE'
+            AND (
+              (billing.billing_state = 'CURRENT' AND billing.paid_through_at > pg_catalog.now())
+              OR billing.billing_state = 'NOT_REQUIRED'
+            ),
+            false
+          ) AS monitoring_recorded,
+          CASE
+            WHEN coverage.state = 'ACTIVE'
+              AND (
+                (billing.billing_state = 'CURRENT' AND billing.paid_through_at > pg_catalog.now())
+                OR billing.billing_state = 'NOT_REQUIRED'
+              )
+              THEN 'active'
+            WHEN allocation.state IN ('PREVIEW', 'RESERVED') OR coverage.id IS NOT NULL THEN 'pending'
+            ELSE 'not_subscribed'
+          END AS location_status,
+          CASE allocation.state
+            WHEN 'PREVIEW' THEN 'preview'
+            WHEN 'RESERVED' THEN 'reserved'
+            ELSE NULL
+          END AS allocation_kind,
+          CASE
+            WHEN coverage.state = 'ACTIVE'
+              AND (
+                (billing.billing_state = 'CURRENT' AND billing.paid_through_at > pg_catalog.now())
+                OR billing.billing_state = 'NOT_REQUIRED'
+              )
+              THEN NULL
+            WHEN allocation.state IN ('PREVIEW', 'RESERVED') THEN 'Guard monitoring is not active from this bundle.'
+            ELSE NULL
+          END AS next_step
+        FROM (
+          SELECT coverage_row.business_id, coverage_row.location_id
+          FROM public.guard_coverages coverage_row
+          JOIN public.business_memberships membership
+            ON membership.business_id = coverage_row.business_id
+           AND membership.customer_id = customer
+           AND membership.status = 'verified'
+          WHERE coverage_row.state <> 'ENDED'
+          UNION
+          SELECT allocation_row.business_id, allocation_row.location_id
+          FROM public.bundle_guard_allocations allocation_row
+          JOIN public.business_memberships membership
+            ON membership.business_id = allocation_row.business_id
+           AND membership.customer_id = customer
+           AND membership.status = 'verified'
+          WHERE allocation_row.state IN ('RESERVED', 'PREVIEW')
+        ) visible
+        JOIN public.businesses business ON business.id = visible.business_id
+        JOIN public.locations location
+          ON location.id = visible.location_id
+         AND location.business_id = visible.business_id
+        LEFT JOIN public.guard_coverages coverage
+          ON coverage.location_id = visible.location_id
+         AND coverage.business_id = visible.business_id
+         AND coverage.state <> 'ENDED'
+        LEFT JOIN public.guard_billing billing ON billing.coverage_id = coverage.id
+        LEFT JOIN public.bundle_guard_allocations allocation
+          ON allocation.location_id = visible.location_id
+         AND allocation.business_id = visible.business_id
+         AND allocation.state IN ('RESERVED', 'PREVIEW')
+        ORDER BY visible.business_id, visible.location_id
+      ) grouped
+      GROUP BY grouped.business_id, grouped.business_name
+    ) built;
+  EXCEPTION WHEN OTHERS THEN
+    guard_rows := '[]'::jsonb;
+    guard_read := 'unavailable';
+  END;
+
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'businessName', names.business_name,
+      'businessId', names.business_id,
+      'telloya', CASE
+        WHEN telloya_read = 'unavailable' THEN jsonb_build_object('status', 'unavailable', 'locations', '[]'::jsonb)
+        ELSE COALESCE(telloya_match.telloya, jsonb_build_object('status', 'not_subscribed', 'locations', '[]'::jsonb))
+      END,
+      'guard', CASE
+        WHEN guard_read = 'unavailable' THEN jsonb_build_object('status', 'unavailable', 'locations', '[]'::jsonb)
+        ELSE COALESCE(guard_match.guard, jsonb_build_object('status', 'not_subscribed', 'locations', '[]'::jsonb))
+      END
+    )
+    ORDER BY names.business_name, names.business_id
+  ), '[]'::jsonb)
+  INTO businesses
+  FROM (
+    SELECT DISTINCT ON (business_id) business_id, business_name
+    FROM (
+      SELECT value ->> 'businessId' AS business_id, value ->> 'businessName' AS business_name
+      FROM jsonb_array_elements(CASE WHEN telloya_read = 'ok' THEN telloya_rows ELSE '[]'::jsonb END) value
+      UNION ALL
+      SELECT value ->> 'businessId', value ->> 'businessName'
+      FROM jsonb_array_elements(CASE WHEN guard_read = 'ok' THEN guard_rows ELSE '[]'::jsonb END) value
+    ) found
+    WHERE business_id IS NOT NULL
+    ORDER BY business_id
+  ) names
+  LEFT JOIN LATERAL (
+    SELECT value -> 'telloya' AS telloya
+    FROM jsonb_array_elements(telloya_rows) value
+    WHERE telloya_read = 'ok' AND value ->> 'businessId' = names.business_id
+    ORDER BY value ->> 'businessId'
+    LIMIT 1
+  ) telloya_match ON true
+  LEFT JOIN LATERAL (
+    SELECT value -> 'guard' AS guard
+    FROM jsonb_array_elements(guard_rows) value
+    WHERE guard_read = 'ok' AND value ->> 'businessId' = names.business_id
+    ORDER BY value ->> 'businessId'
+    LIMIT 1
+  ) guard_match ON true;
+
+  RETURN jsonb_build_object(
+    'businesses', businesses,
+    'reads', jsonb_build_object('telloya', telloya_read, 'guard', guard_read)
+  );
+END;
+$$;
+
+
 CREATE OR REPLACE FUNCTION public.customer_portal_products_v1(p_token_hash text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -951,83 +1362,156 @@ DECLARE
   rebuilt jsonb;
   entry jsonb;
   found boolean;
+  telloya_pending jsonb;
+  guard_pending jsonb;
+  telloya_locations jsonb;
+  guard_locations jsonb;
 BEGIN
   base := admin_private.customer_portal_products_v1(p_token_hash);
-  IF base IS NULL OR coalesce(base #>> '{reads,telloya}', '') IS DISTINCT FROM 'ok' THEN
-    RETURN base;
+  IF base IS NOT NULL
+    AND coalesce(base #>> '{reads,telloya}', '') = 'ok'
+  THEN
+    sess := admin_private.customer_portal_session_v1(p_token_hash);
   END IF;
-  sess := admin_private.customer_portal_session_v1(p_token_hash);
-  IF sess IS NULL THEN
-    RETURN base;
-  END IF;
-  customer := (sess ->> 'customerId')::uuid;
-  businesses := coalesce(base -> 'businesses', '[]'::jsonb);
-  FOR paid IN
-    SELECT business.display_name AS business_name
-    FROM public.commercial_subscriptions subscription
-    JOIN public.businesses business ON business.id = subscription.business_id
-    JOIN public.business_memberships membership
-      ON membership.business_id = subscription.business_id
-     AND membership.customer_id = customer
-     AND membership.status = 'verified'
-    JOIN public.commercial_subscription_items item
-      ON item.subscription_id = subscription.id
-     AND item.component_code = 'TELLOYA'
-    WHERE subscription.state = 'ACTIVE'
-      AND subscription.grant_kind = 'BILLABLE'
-      AND EXISTS (
-        SELECT 1 FROM public.commercial_payment_evidence evidence
-        WHERE evidence.subscription_id = subscription.id
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM public.product_entitlements entitlement
-        WHERE entitlement.commercial_subscription_id = subscription.id
-          AND entitlement.state IN ('PENDING', 'ELIGIBLE')
-      )
-  LOOP
-    found := false;
-    rebuilt := '[]'::jsonb;
-    FOR entry IN SELECT value FROM jsonb_array_elements(businesses) AS listed(value)
+  IF sess IS NOT NULL THEN
+    customer := (sess ->> 'customerId')::uuid;
+    businesses := coalesce(base -> 'businesses', '[]'::jsonb);
+    FOR paid IN
+      SELECT
+        business.id AS business_id,
+        business.display_name AS business_name,
+        preparation.guard_quantity AS guard_quantity,
+        COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+            'locationName', COALESCE(NULLIF(btrim(location.location_name), ''), 'Selected location'),
+            'status', 'pending',
+            'nextStep', 'Payment received. Your AI receptionist setup has not started.'
+          ) ORDER BY location.id)
+          FROM public.onboarding_requests request
+          JOIN admin_private.onboarding_request_locations selected
+            ON selected.onboarding_request_id = request.id
+          JOIN public.locations location ON location.id = selected.location_id
+          WHERE request.commercial_subscription_id = subscription.id
+            AND request.business_id = business.id
+        ), '[]'::jsonb) AS telloya_locations,
+        COALESCE((
+          SELECT jsonb_agg(picked.location ORDER BY picked.location_id)
+          FROM (
+            SELECT
+              location.id AS location_id,
+              jsonb_build_object(
+                'locationName', COALESCE(NULLIF(btrim(location.location_name), ''), 'Selected location'),
+                'status', 'pending',
+                'monitoringRecorded', false,
+                'allocation', NULL,
+                'nextStep', 'Included in your package. Monitoring setup is pending.'
+              ) AS location
+            FROM public.onboarding_requests request
+            JOIN admin_private.onboarding_request_locations selected
+              ON selected.onboarding_request_id = request.id
+            JOIN public.locations location ON location.id = selected.location_id
+            WHERE request.commercial_subscription_id = subscription.id
+              AND request.business_id = business.id
+              AND preparation.guard_quantity > 0
+            ORDER BY location.id
+            LIMIT preparation.guard_quantity
+          ) picked
+        ), '[]'::jsonb) AS guard_locations
+      FROM public.commercial_subscriptions subscription
+      JOIN public.commercial_checkout_preparations preparation
+        ON preparation.subscription_id = subscription.id
+      JOIN public.businesses business ON business.id = subscription.business_id
+      JOIN public.business_memberships membership
+        ON membership.business_id = subscription.business_id
+       AND membership.customer_id = customer
+       AND membership.status = 'verified'
+      JOIN public.commercial_subscription_items item
+        ON item.subscription_id = subscription.id
+       AND item.component_code = 'TELLOYA'
+      WHERE subscription.state = 'ACTIVE'
+        AND subscription.grant_kind = 'BILLABLE'
+        AND EXISTS (
+          SELECT 1 FROM public.commercial_payment_evidence evidence
+          WHERE evidence.subscription_id = subscription.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM public.product_entitlements entitlement
+          WHERE entitlement.commercial_subscription_id = subscription.id
+            AND entitlement.state IN ('PENDING', 'ELIGIBLE')
+        )
+      ORDER BY business.id
     LOOP
-      IF entry ->> 'businessName' = paid.business_name THEN
-        found := true;
-        IF coalesce(entry #>> '{telloya,status}', '') IN ('not_subscribed', 'pending')
-          AND jsonb_array_length(coalesce(entry #> '{telloya,locations}', '[]'::jsonb)) = 0
-        THEN
-          entry := jsonb_set(entry, '{telloya}', jsonb_build_object(
-            'status', 'pending',
-            'locations', jsonb_build_array(jsonb_build_object(
-              'locationName', paid.business_name,
-              'status', 'pending',
-              'nextStep', 'Payment is recorded. Telloya setup has not started.'
-            ))
-          ), true);
-        END IF;
-      END IF;
-      rebuilt := rebuilt || jsonb_build_array(entry);
-    END LOOP;
-    IF NOT found THEN
-      rebuilt := rebuilt || jsonb_build_array(jsonb_build_object(
-        'businessName', paid.business_name,
-        'telloya', jsonb_build_object(
+      telloya_locations := paid.telloya_locations;
+      IF jsonb_array_length(telloya_locations) = 0 THEN
+        telloya_locations := jsonb_build_array(jsonb_build_object(
+          'locationName', 'Selected location',
           'status', 'pending',
-          'locations', jsonb_build_array(jsonb_build_object(
-            'locationName', paid.business_name,
-            'status', 'pending',
-            'nextStep', 'Payment is recorded. Telloya setup has not started.'
-          ))
-        ),
-        'guard', jsonb_build_object('status', 'not_subscribed', 'locations', '[]'::jsonb)
-      ));
-    END IF;
-    businesses := rebuilt;
-  END LOOP;
-  RETURN jsonb_set(base, '{businesses}', businesses, true);
+          'nextStep', 'Payment received. Your AI receptionist setup has not started.'
+        ));
+      END IF;
+      telloya_pending := jsonb_build_object('status', 'pending', 'locations', telloya_locations);
+      guard_locations := paid.guard_locations;
+      IF paid.guard_quantity > 0 AND jsonb_array_length(guard_locations) = 0 THEN
+        guard_locations := jsonb_build_array(jsonb_build_object(
+          'locationName', 'Selected location',
+          'status', 'pending',
+          'monitoringRecorded', false,
+          'allocation', NULL,
+          'nextStep', 'Included in your package. Monitoring setup is pending.'
+        ));
+      END IF;
+      guard_pending := CASE
+        WHEN paid.guard_quantity > 0 THEN jsonb_build_object('status', 'pending', 'locations', guard_locations)
+        ELSE NULL
+      END;
+      found := false;
+      rebuilt := '[]'::jsonb;
+      FOR entry IN SELECT value FROM jsonb_array_elements(businesses) AS listed(value)
+      LOOP
+        IF entry ->> 'businessId' = paid.business_id::text THEN
+          found := true;
+          IF coalesce(entry #>> '{telloya,status}', '') IN ('not_subscribed', 'pending')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(coalesce(entry #> '{telloya,locations}', '[]'::jsonb)) AS loc(value)
+              WHERE loc.value ->> 'status' IN ('active', 'ready_for_provider')
+            )
+          THEN
+            entry := jsonb_set(entry, '{telloya}', telloya_pending, true);
+          END IF;
+          IF guard_pending IS NOT NULL
+            AND coalesce(entry #>> '{guard,status}', '') IN ('not_subscribed', 'pending')
+            AND jsonb_array_length(coalesce(entry #> '{guard,locations}', '[]'::jsonb)) = 0
+          THEN
+            entry := jsonb_set(entry, '{guard}', guard_pending, true);
+          END IF;
+        END IF;
+        rebuilt := rebuilt || jsonb_build_array(entry);
+      END LOOP;
+      IF NOT found THEN
+        rebuilt := rebuilt || jsonb_build_array(jsonb_build_object(
+          'businessId', paid.business_id,
+          'businessName', paid.business_name,
+          'telloya', telloya_pending,
+          'guard', COALESCE(guard_pending, jsonb_build_object('status', 'not_subscribed', 'locations', '[]'::jsonb))
+        ));
+      END IF;
+      businesses := rebuilt;
+    END LOOP;
+    base := jsonb_set(base, '{businesses}', businesses, true);
+  END IF;
+  IF base IS NOT NULL AND jsonb_typeof(base -> 'businesses') = 'array' THEN
+    SELECT COALESCE(jsonb_agg(listed.entry - 'businessId' ORDER BY listed.ordinality), '[]'::jsonb)
+    INTO businesses
+    FROM jsonb_array_elements(base -> 'businesses') WITH ORDINALITY AS listed(entry, ordinality);
+    base := jsonb_set(base, '{businesses}', businesses, true);
+  END IF;
+  RETURN base;
 END;
 $$;
 
 COMMENT ON FUNCTION public.customer_portal_products_v1(text) IS
-  'Read-only Customer Portal products projection. Accepts only a portal session token hash. A paid commercial subscription without a provision stays pending and is not described as a live service.';
+  'Read-only Customer Portal products projection. Accepts only a portal session token hash. A paid commercial subscription stays pending until its own setup exists. Guard in a paid package stays pending and does not start monitoring.';
 
 REVOKE ALL ON FUNCTION public.customer_portal_products_v1(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.customer_portal_products_v1(text) TO service_role;

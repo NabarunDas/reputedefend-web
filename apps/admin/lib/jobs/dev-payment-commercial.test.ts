@@ -227,7 +227,10 @@ describe("DEV payment worker commercial routing", () => {
     expect(names).not.toContain("guard_apply_subscription_event_v1")
     expect(names).not.toContain("job_complete_v1")
     const settled = calls.find(call => call.name === "commercial_payment_settle_initial_invoice_v1")
-    expect(settled?.args.p_facts).toMatchObject({ eventId, invoiceId, amountPaidMinor: 7900, currency: "gbp" })
+    expect(settled?.args.p_facts).toMatchObject({
+      eventId, invoiceId, amountPaidMinor: 7900, currency: "gbp",
+      checkoutMode: "subscription", acceptanceId, checkoutOperationId, conflictingMetadata: false,
+    })
     expect(settled?.args.p_facts).not.toHaveProperty("verified")
   })
 
@@ -239,7 +242,7 @@ describe("DEV payment worker commercial routing", () => {
     })
     verifiedProvider()
     mocks.failAfter = 2
-    const { rpc, names } = verifiedRpc({
+    const { rpc, names, calls } = verifiedRpc({
       commercial_payment_invoice_claim_v1: () => ({ status: "success", jobId: "job-1", leaseToken: "lease-1" }),
       job_fail_v1: () => ({ status: "success", jobStatus: "RETRY" }),
     })
@@ -247,7 +250,72 @@ describe("DEV payment worker commercial routing", () => {
     expect(result.counts).toMatchObject({ claimed: 1, succeeded: 0, retried: 1 })
     expect(names).toContain("commercial_payment_invoice_claim_v1")
     expect(names).toContain("job_fail_v1")
+    expect(calls.find(call => call.name === "job_fail_v1")?.args.p_retryable).toBe(true)
     expect(names).not.toContain("commercial_payment_settle_initial_invoice_v1")
     expect(names).not.toContain("payment_apply_provider_event_v1")
+  })
+
+  const otherCustomer = "cus_OtherCustomer111"
+  const otherAcceptance = "00000000-0000-4000-8000-000000000099"
+  const otherOperation = "00000000-0000-4000-8000-000000000098"
+  const otherSubscription = "sub_otherSub0000001"
+
+  it.each([
+    ["checkout customer", () => {
+      mocks.checkout = { ...(mocks.checkout ?? {}), customerId: otherCustomer }
+    }],
+    ["acceptance id", () => {
+      const current = (mocks.checkout ?? {}) as { metadata?: Record<string, string> }
+      mocks.checkout = { ...current, metadata: { ...current.metadata, acceptanceId: otherAcceptance } }
+    }],
+    ["provider operation id", () => {
+      const current = (mocks.checkout ?? {}) as { metadata?: Record<string, string> }
+      mocks.checkout = { ...current, metadata: { ...current.metadata, providerOperationId: otherOperation } }
+    }],
+    ["guard metadata", () => {
+      const current = (mocks.checkout ?? {}) as { metadata?: Record<string, string> }
+      mocks.checkout = { ...current, metadata: { ...current.metadata, guardSubscriptionId: "guard-sub" } }
+    }],
+    ["checkout subscription", () => {
+      mocks.checkout = { ...(mocks.checkout ?? {}), subscriptionId: otherSubscription }
+    }],
+    ["subscription metadata", () => {
+      const current = (mocks.subscription ?? {}) as { metadata?: Record<string, string> }
+      mocks.subscription = { ...current, metadata: { ...current.metadata, customerId: otherAcceptance } }
+    }],
+    ["invoice customer", () => {
+      mocks.invoice = { ...(mocks.invoice ?? {}), customerId: otherCustomer }
+    }],
+    ["invoice price", () => {
+      mocks.invoice = { ...(mocks.invoice ?? {}), priceId: "price_otherpricevalue1" }
+    }],
+    ["refund", () => {
+      mocks.invoice = { ...(mocks.invoice ?? {}), refunded: true }
+    }],
+    ["dispute", () => {
+      mocks.invoice = { ...(mocks.invoice ?? {}), disputed: true }
+    }],
+  ])("does not settle when the second read sees a changed %s", async (_label, mutate) => {
+    apply({
+      ...preview,
+      CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED: "true",
+      CUSTOMER_COMMERCIAL_PAYMENT_SETTLEMENT_ENABLED: "true",
+    })
+    verifiedProvider()
+    const { rpc, names, calls } = verifiedRpc({
+      commercial_payment_invoice_claim_v1: () => {
+        mutate()
+        return { status: "success", jobId: "job-1", leaseToken: "lease-1" }
+      },
+      job_fail_v1: (args) => ({ status: "success", jobStatus: args.p_retryable === true ? "RETRY" : "DEAD_LETTER" }),
+    })
+    const result = await runDevPaymentEventWorker({ rpc })
+    expect(result.counts).toMatchObject({ claimed: 1, succeeded: 0, deadLettered: 1, retried: 0 })
+    expect(names).toContain("commercial_payment_invoice_claim_v1")
+    expect(names).toContain("job_fail_v1")
+    expect(calls.find(call => call.name === "job_fail_v1")?.args.p_retryable).toBe(false)
+    expect(names).not.toContain("commercial_payment_settle_initial_invoice_v1")
+    expect(names).not.toContain("payment_apply_provider_event_v1")
+    expect(names).not.toContain("guard_apply_subscription_event_v1")
   })
 })

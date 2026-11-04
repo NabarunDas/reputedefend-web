@@ -20,7 +20,7 @@ const periodEnd = "2026-12-01T00:00:00.000Z"
 type Row = Record<string, unknown>
 let session = ""
 let planNumber = 80
-const refs = ["VC-26-SET2AB", "VC-26-SET2AC", "VC-26-SET2AD", "VC-26-SET2AE", "VC-26-SET2AF", "VC-26-SET2AG", "VC-26-SET2AH", "VC-26-SET2AJ"]
+const refs = ["VC-26-SET2AB", "VC-26-SET2AC", "VC-26-SET2AD", "VC-26-SET2AE", "VC-26-SET2AF", "VC-26-SET2AG", "VC-26-SET2AH", "VC-26-SET2AJ", "VC-26-SET2AK", "VC-26-SET2AL", "VC-26-SET2AM", "VC-26-SET2AN"]
 let refNumber = 0
 
 async function rows<T>(sql: string, params: unknown[] = []): Promise<T[]> {
@@ -210,6 +210,33 @@ async function preparedCheckout(options: {
   return { prepared, started, priceId, sessionId, amount: prepared.amount }
 }
 
+function commercialIdentity(armed: { prepared: { subscription: string }; started: Row }) {
+  const customerId = alex
+  const subscriptionId = armed.prepared.subscription
+  const acceptanceId = String(armed.started.acceptanceId)
+  const operationId = String(armed.started.providerOperationId)
+  return {
+    commercialCustomerId: customerId,
+    commercialSubscriptionId: subscriptionId,
+    acceptanceId,
+    checkoutOperationId: operationId,
+    checkoutMode: "subscription",
+    checkoutStatus: "complete",
+    checkoutPaymentStatus: "paid",
+    checkoutLivemode: false,
+    checkoutCustomerId: stripeCustomer,
+    conflictingMetadata: false,
+    checkoutMetadataCustomerId: customerId,
+    checkoutMetadataSubscriptionId: subscriptionId,
+    checkoutMetadataAcceptanceId: acceptanceId,
+    checkoutMetadataOperationId: operationId,
+    subscriptionMetadataCustomerId: customerId,
+    subscriptionMetadataSubscriptionId: subscriptionId,
+    subscriptionMetadataAcceptanceId: acceptanceId,
+    subscriptionMetadataOperationId: operationId,
+  }
+}
+
 function facts(options: {
   eventId: string
   invoiceId: string
@@ -217,6 +244,7 @@ function facts(options: {
   sessionId: string
   amount: number
   subscriptionId?: string
+  identity: ReturnType<typeof commercialIdentity>
   overrides?: Record<string, unknown>
 }) {
   const subscriptionId = options.subscriptionId ?? "sub_1P2abcDEF3ghiJKL"
@@ -253,6 +281,7 @@ function facts(options: {
     subscriptionQuantity: 1,
     subscriptionPeriodStart: periodStart,
     subscriptionPeriodEnd: periodEnd,
+    ...options.identity,
     ...options.overrides,
   }
 }
@@ -375,7 +404,7 @@ describe("atomic commercial payment settlement", () => {
     expect(await receive(eventId, invoiceId)).toMatchObject({ status: "success", duplicate: true })
     const leased = await claim(eventId, armed.priceId)
     expect(leased.status).toBe("success")
-    const body = facts({ eventId, invoiceId, priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount })
+    const body = facts({ eventId, invoiceId, priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount, identity: commercialIdentity(armed) })
     const settled = await settle(leased.jobId, leased.leaseToken, body)
     expect(settled).toMatchObject({ status: "settled", state: "ACTIVE", retryable: false })
     const evidence = await rows<Row>(
@@ -429,7 +458,10 @@ describe("atomic commercial payment settlement", () => {
     expect(after).toEqual({ ...before, evidence: before.evidence + 1 })
     const products = await rpc<Row>("customer_portal_products_v1", [session])
     const text = JSON.stringify(products)
-    expect(text).toContain("Payment is recorded. Telloya setup has not started.")
+    expect(text).toContain("Payment received. Your AI receptionist setup has not started.")
+    expect(text).toContain("\"status\":\"not_subscribed\"")
+    expect(text).not.toContain("Monitoring setup is pending")
+    expect(text).not.toContain("businessId")
     expect(text).not.toContain("\"status\":\"active\"")
     expect(text).not.toContain("Ready for use")
     expect(text).not.toMatch(/cus_|sub_|si_|amount_minor|provider_event/)
@@ -456,7 +488,7 @@ describe("atomic commercial payment settlement", () => {
     const leased = await claim(eventId, armed.priceId)
     const settled = await settle(leased.jobId, leased.leaseToken, facts({
       eventId, invoiceId, priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount,
-      subscriptionId: "sub_1P2abcDEF3ghiJKM",
+      subscriptionId: "sub_1P2abcDEF3ghiJKM", identity: commercialIdentity(armed),
     }))
     expect(settled).toMatchObject({ status: "settled", state: "ACTIVE" })
     const evidence = await rows<{ amount_minor: number; provider_event_id: string }>(
@@ -464,6 +496,86 @@ describe("atomic commercial payment settlement", () => {
     )
     expect(evidence).toEqual([{ amount_minor: 14900, provider_event_id: eventId }])
     expect(await effects()).toEqual({ ...before, evidence: before.evidence + 1 })
+    const products = await rpc<{ businesses?: Array<Row> }>("customer_portal_products_v1", [session])
+    const kitchenView = (products.businesses ?? []).find(business => business.businessName === "Complete Kitchen") as Row | undefined
+    const guard = kitchenView?.guard as Row | undefined
+    const guardLocations = (guard?.locations ?? []) as Array<Row>
+    expect(guard?.status).toBe("pending")
+    expect(guardLocations).toEqual([expect.objectContaining({
+      locationName: "Oven",
+      status: "pending",
+      monitoringRecorded: false,
+      allocation: null,
+      nextStep: "Included in your package. Monitoring setup is pending.",
+    })])
+    expect(JSON.stringify(products)).not.toContain("businessId")
+    expect(JSON.stringify(products)).not.toContain("not_subscribed")
+    expect(JSON.stringify(guard)).not.toContain("Ready for use")
+  })
+
+  it("does not apply a paid overlay to the other business when display names match", async () => {
+    const left = "a033a000-0000-4000-8000-000000000031"
+    const right = "a033a000-0000-4000-8000-000000000032"
+    const leftLocation = "a033a000-0000-4000-8000-000000000033"
+    const rightLocation = "a033a000-0000-4000-8000-000000000034"
+    const before = await effects()
+    await db.query(
+      `insert into public.businesses(id, display_name) values ($1, 'Shared Counter'), ($2, 'Shared Counter')`,
+      [left, right],
+    )
+    await db.query(
+      `insert into public.locations(id, business_id, country, location_name) values
+        ($1, $2, 'GB', 'Counter Till'),
+        ($3, $4, 'GB', 'Counter Oven')`,
+      [leftLocation, left, rightLocation, right],
+    )
+    await db.query(
+      `insert into public.business_memberships(customer_id, business_id, status, verified_at, verified_by, evidence) values
+        ($1, $2, 'verified', now(), $3, 'Mailbox already proved for the left counter'),
+        ($1, $4, 'verified', now(), $3, 'Mailbox already proved for the right counter')`,
+      [alex, left, actor, right],
+    )
+    const telloya = await preparedCheckout({
+      product: "TELLOYA", business: left, locations: [leftLocation], amount: 7900,
+      priceId: "price_1P2abcDEF3ghiJKL", sessionId: "cs_test_a1B2c3D4e5F6g7H8i9J0k1L2",
+    })
+    const complete = await preparedCheckout({
+      product: "COMPLETE", business: right, locations: [rightLocation], amount: 14900,
+      priceId: "price_1P2abcDEF3ghiJKM", sessionId: "cs_test_b2C3d4E5f6G7h8I9j0K1l2M3n4",
+    })
+    await receive("evt_1P2abcDEF3ghiJKL", "in_1P2abcDEF3ghiJKL")
+    await receive("evt_1P2abcDEF3ghiJKM", "in_1P2abcDEF3ghiJKM")
+    const telloyaLease = await claim("evt_1P2abcDEF3ghiJKL", telloya.priceId)
+    const completeLease = await claim("evt_1P2abcDEF3ghiJKM", complete.priceId)
+    expect(await settle(telloyaLease.jobId, telloyaLease.leaseToken, facts({
+      eventId: "evt_1P2abcDEF3ghiJKL", invoiceId: "in_1P2abcDEF3ghiJKL", priceId: telloya.priceId,
+      sessionId: telloya.sessionId, amount: telloya.amount, identity: commercialIdentity(telloya),
+    }))).toMatchObject({ status: "settled" })
+    expect(await settle(completeLease.jobId, completeLease.leaseToken, facts({
+      eventId: "evt_1P2abcDEF3ghiJKM", invoiceId: "in_1P2abcDEF3ghiJKM", priceId: complete.priceId,
+      sessionId: complete.sessionId, amount: complete.amount, subscriptionId: "sub_1P2abcDEF3ghiJKM",
+      identity: commercialIdentity(complete),
+    }))).toMatchObject({ status: "settled" })
+    const products = await rpc<{ businesses?: Array<{ businessName?: string; telloya?: Row; guard?: Row }> }>("customer_portal_products_v1", [session])
+    const shared = (products.businesses ?? []).filter(business => business.businessName === "Shared Counter")
+    expect(shared).toHaveLength(2)
+    const till = shared.find(business => JSON.stringify(business.telloya).includes("Counter Till"))
+    const oven = shared.find(business => JSON.stringify(business.guard).includes("Counter Oven"))
+    expect(till?.guard).toMatchObject({ status: "not_subscribed", locations: [] })
+    expect(JSON.stringify(till?.telloya)).toContain("Payment received. Your AI receptionist setup has not started.")
+    expect(oven?.guard).toMatchObject({
+      status: "pending",
+      locations: [expect.objectContaining({
+        locationName: "Counter Oven",
+        status: "pending",
+        monitoringRecorded: false,
+        allocation: null,
+        nextStep: "Included in your package. Monitoring setup is pending.",
+      })],
+    })
+    expect(JSON.stringify(oven?.telloya)).toContain("Payment received. Your AI receptionist setup has not started.")
+    expect(JSON.stringify(products)).not.toContain("businessId")
+    expect(await effects()).toEqual({ ...before, evidence: before.evidence + 2 })
   })
 
   it("does not apply the same event twice, including another caller and an expired lease", async () => {
@@ -474,7 +586,7 @@ describe("atomic commercial payment settlement", () => {
     const first = await claim(eventId, armed.priceId)
     const second = await claim(eventId, armed.priceId)
     expect(second).toMatchObject({ status: "conflict", reason: "leased" })
-    const body = facts({ eventId, invoiceId, priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount })
+    const body = facts({ eventId, invoiceId, priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount, identity: commercialIdentity(armed) })
     await db.exec("SAVEPOINT crash")
     expect(await settle(first.jobId, first.leaseToken, body)).toMatchObject({ status: "settled" })
     await db.exec("ROLLBACK TO SAVEPOINT crash")
@@ -504,7 +616,7 @@ describe("atomic commercial payment settlement", () => {
     expect(restarted.leaseToken).not.toBe(leased.leaseToken)
     const otherBody = facts({
       eventId: otherEvent, invoiceId: "in_1P2abcDEF3ghiJKM", priceId: other.priceId, sessionId: other.sessionId,
-      amount: other.amount, subscriptionId: "sub_1P2abcDEF3ghiJKM",
+      amount: other.amount, subscriptionId: "sub_1P2abcDEF3ghiJKM", identity: commercialIdentity(other),
     })
     expect(await settle(restarted.jobId, leased.leaseToken, otherBody)).toMatchObject({ status: "denied", reason: "lease" })
     expect(await evidenceCount()).toBe(1)
@@ -518,9 +630,9 @@ describe("atomic commercial payment settlement", () => {
     const invoiceId = "in_1P2abcDEF3ghiJKL"
     await receive(eventId, invoiceId)
     const leased = await claim(eventId, armed.priceId)
-    const base = () => facts({ eventId, invoiceId, priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount })
+    const base = () => facts({ eventId, invoiceId, priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount, identity: commercialIdentity(armed) })
     const cases: Array<[Record<string, unknown>, string]> = [
-      [{ stripeCustomerId: "cus_WrongCustomer111", subscriptionCustomerId: "cus_WrongCustomer111" }, "customer"],
+      [{ stripeCustomerId: "cus_WrongCustomer111", subscriptionCustomerId: "cus_WrongCustomer111", checkoutCustomerId: "cus_WrongCustomer111" }, "customer"],
       [{ stripeSubscriptionId: "sub_wrongsubscription1" }, "subscription"],
       [{ checkoutSessionId: "cs_test_wrongSessionValue0001" }, "preparation"],
       [{ stripePriceId: "price_wrongpricevalue1", subscriptionPriceId: "price_wrongpricevalue1" }, "preparation"],
@@ -534,6 +646,18 @@ describe("atomic commercial payment settlement", () => {
       [{ subscriptionStatus: "incomplete" }, "subscription"],
       [{ refunded: true }, "refund"],
       [{ disputed: true }, "dispute"],
+      [{ acceptanceId: "00000000-0000-4000-8000-000000000099", checkoutMetadataAcceptanceId: "00000000-0000-4000-8000-000000000099", subscriptionMetadataAcceptanceId: "00000000-0000-4000-8000-000000000099" }, "metadata_acceptance"],
+      [{ checkoutOperationId: "00000000-0000-4000-8000-000000000098", checkoutMetadataOperationId: "00000000-0000-4000-8000-000000000098", subscriptionMetadataOperationId: "00000000-0000-4000-8000-000000000098" }, "metadata_operation"],
+      [{ conflictingMetadata: true }, "conflicting_metadata"],
+      [{ checkoutMode: "payment" }, "session"],
+      [{ checkoutSubscriptionId: "sub_otherSub0000001" }, "subscription"],
+      [{ commercialCustomerId: "00000000-0000-4000-8000-000000000097" }, "metadata_customer"],
+      [{
+        invoiceMetadataCustomerId: alex,
+        invoiceMetadataSubscriptionId: armed.prepared.subscription,
+        invoiceMetadataAcceptanceId: "00000000-0000-4000-8000-000000000096",
+        invoiceMetadataOperationId: String(armed.started.providerOperationId),
+      }, "metadata_acceptance"],
     ]
     for (const [overrides, reason] of cases) {
       await db.exec("SAVEPOINT mismatch")
@@ -542,6 +666,12 @@ describe("atomic commercial payment settlement", () => {
       expect(await evidenceCount()).toBe(0)
       await db.exec("ROLLBACK TO SAVEPOINT mismatch")
     }
+    const incomplete: Record<string, unknown> = { ...base() }
+    delete incomplete.acceptanceId
+    await db.exec("SAVEPOINT incomplete")
+    expect(await settle(leased.jobId, leased.leaseToken, incomplete)).toMatchObject({ status: "pending", reason: "provider_incomplete" })
+    expect(await evidenceCount()).toBe(0)
+    await db.exec("ROLLBACK TO SAVEPOINT incomplete")
     expect((await rows<{ state: string }>(
       `select state from public.commercial_subscriptions where id = $1`,
       [armed.prepared.subscription],
@@ -554,7 +684,7 @@ describe("atomic commercial payment settlement", () => {
     const invoiceId = "in_1P2abcDEF3ghiJKL"
     await receive(eventId, invoiceId)
     const leased = await claim(eventId, armed.priceId)
-    const body = facts({ eventId, invoiceId, priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount })
+    const body = facts({ eventId, invoiceId, priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount, identity: commercialIdentity(armed) })
     await db.exec("set local session_replication_role = replica")
     await db.query(
       `insert into public.commercial_payment_evidence(
@@ -588,7 +718,7 @@ describe("atomic commercial payment settlement", () => {
     const invoiceId = "in_1P2abcDEF3ghiJKL"
     await receive(eventId, invoiceId)
     const leased = await claim(eventId, armed.priceId)
-    const body = facts({ eventId, invoiceId, priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount })
+    const body = facts({ eventId, invoiceId, priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount, identity: commercialIdentity(armed) })
     await db.exec("SAVEPOINT active")
     await expect(db.query(
       `update public.commercial_subscriptions set state = 'ACTIVE' where id = $1`,
@@ -602,7 +732,8 @@ describe("atomic commercial payment settlement", () => {
     expect(second.status).toBe("success")
     const later = facts({
       eventId: secondEvent, invoiceId: "in_1P2abcDEF3ghiJKN", priceId: armed.priceId, sessionId: armed.sessionId,
-      amount: armed.amount, overrides: { periodStart: "2026-12-01T00:00:00.000Z", periodEnd: "2027-01-01T00:00:00.000Z", subscriptionPeriodStart: "2026-12-01T00:00:00.000Z", subscriptionPeriodEnd: "2027-01-01T00:00:00.000Z" },
+      amount: armed.amount, identity: commercialIdentity(armed),
+      overrides: { periodStart: "2026-12-01T00:00:00.000Z", periodEnd: "2027-01-01T00:00:00.000Z", subscriptionPeriodStart: "2026-12-01T00:00:00.000Z", subscriptionPeriodEnd: "2027-01-01T00:00:00.000Z" },
     })
     expect(await settle(second.jobId, second.leaseToken, later)).toMatchObject({ status: "mismatch", reason: "prior_settlement" })
     expect(await evidenceCount()).toBe(1)

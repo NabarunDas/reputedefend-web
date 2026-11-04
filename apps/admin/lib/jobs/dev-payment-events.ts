@@ -268,9 +268,18 @@ async function settleVerifiedCommercialInvoice(input: {
     invoiceId: input.invoiceId,
   })
   if (!latest.ok) {
+    const providerGap = latest.reason === "provider_timeout" || latest.reason === "provider_incomplete"
     return {
       claimed: true,
-      result: await failCommercialLease(input.rpc, claim.jobId, claim.leaseToken, "Commercial invoice evidence was not available.", true),
+      result: await failCommercialLease(
+        input.rpc,
+        claim.jobId,
+        claim.leaseToken,
+        providerGap
+          ? "Commercial invoice evidence was not available."
+          : "Commercial invoice identity changed before settlement.",
+        latest.retryable,
+      ),
     }
   }
   let settled: { status?: string; retryable?: boolean }

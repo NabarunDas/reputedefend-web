@@ -736,6 +736,20 @@ button, input, textarea, select { font: inherit; }
 
 .footer-legal-link:hover { color: #c0fc81; }
 
+button.footer-legal-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  text-align: inherit;
+}
+
+button.footer-legal-link:focus-visible {
+  outline: 3px solid #c0fc81;
+  outline-offset: 3px;
+}
+
 .footer-note {
   color: rgba(244, 248, 239, 0.6);
   font-size: .75rem;

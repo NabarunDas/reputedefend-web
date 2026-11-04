@@ -118,6 +118,7 @@ export async function POST(request: Request) {
         enquiryRef: result.enquiryRef,
         receiptEmailSent: result.receiptEmailSent,
         receiptEmailStatus: result.receiptEmailStatus,
+        leadConversion: result.leadConversion === true,
       },
       { status: 200 }
     )

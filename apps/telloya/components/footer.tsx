@@ -1,5 +1,7 @@
 import Link from "next/link"
 import { TelloyaLogo } from "@/components/telloya-logo"
+import { TelloyaCookieSettingsButton } from "@/components/analytics-consent"
+import { readTelloyaGaMeasurementId } from "@/lib/analytics"
 import { brandHomeLabel } from "@/lib/brand"
 import { publicLegalDisclosure } from "../../../lib/legal"
 import { footerContent } from "@/lib/content"
@@ -46,17 +48,31 @@ export function Footer() {
         <div className="footer-bottom">
           <div>
             <ul className="footer-legal">
-              {footerContent.legal.map((item) => (
-                <li key={item.href}>
-                  <a
-                    href={item.href}
-                    className="footer-legal-link"
-                    rel="noopener noreferrer"
-                  >
-                    {item.label}
-                  </a>
+              {footerContent.legal.map((item) => {
+                const isExternal = item.href.startsWith("http")
+                return (
+                  <li key={item.href}>
+                    {isExternal ? (
+                      <a
+                        href={item.href}
+                        className="footer-legal-link"
+                        rel="noopener noreferrer"
+                      >
+                        {item.label}
+                      </a>
+                    ) : (
+                      <Link href={item.href} className="footer-legal-link">
+                        {item.label}
+                      </Link>
+                    )}
+                  </li>
+                )
+              })}
+              {readTelloyaGaMeasurementId() ? (
+                <li>
+                  <TelloyaCookieSettingsButton />
                 </li>
-              ))}
+              ) : null}
             </ul>
             <p className="footer-note">{footerContent.note}</p>
           </div>

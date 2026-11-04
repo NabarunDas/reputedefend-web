@@ -97,4 +97,33 @@ describe("Telloya internal email builder path", () => {
     expect(message.html).not.toContain("<script>")
     expect(message.html).not.toContain("<b>and</b>")
   })
+
+  it("marks a lead only when storage reports a newly created valid TY enquiry", async () => {
+    persistGeneralEnquiry.mockImplementation(async (_data: EnquiryInput, _key: string, options: { onReceipt?: (receipt: { status: string; enquiryRef?: string }) => void }) => {
+      options.onReceipt?.({ status: "created", enquiryRef: "TY-26-ABCDEF" })
+      return { ok: true, persisted: true, simulated: false, message: "Your enquiry has been received.", enquiryRef: "TY-26-ABCDEF" }
+    })
+
+    const created = await persistTelloyaEnquiry(enquiry, "11111111-1111-4111-8111-111111111111")
+    expect(created.leadConversion).toBe(true)
+    expect(JSON.stringify(created)).not.toMatch(/submissionKey|ada@example.com|Harbour/)
+
+    persistGeneralEnquiry.mockImplementation(async (_data: EnquiryInput, _key: string, options: { onReceipt?: (receipt: { status: string; enquiryRef?: string }) => void }) => {
+      options.onReceipt?.({ status: "existing", enquiryRef: "TY-26-ABCDEF" })
+      return { ok: true, persisted: true, simulated: false, message: "Your enquiry has been received.", enquiryRef: "TY-26-ABCDEF" }
+    })
+    const duplicate = await persistTelloyaEnquiry(enquiry, "11111111-1111-4111-8111-111111111111")
+    expect(duplicate.ok).toBe(true)
+    expect(duplicate.leadConversion).toBe(false)
+
+    persistGeneralEnquiry.mockImplementation(async () => ({
+      ok: true,
+      persisted: false,
+      simulated: true,
+      message: "simulated",
+      enquiryRef: "TY-26-ABCDEF",
+    }))
+    const simulated = await persistTelloyaEnquiry(enquiry, "11111111-1111-4111-8111-111111111111")
+    expect(simulated.leadConversion).toBe(false)
+  })
 })

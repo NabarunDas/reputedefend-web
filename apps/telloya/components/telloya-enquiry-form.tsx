@@ -7,6 +7,7 @@ import styles from "./telloya-enquiry-form.module.css"
 import type { TelloyaEnquiryRequest, TelloyaEnquiryResponse, TelloyaEnquiryCapabilities } from "@/lib/enquiry-contract"
 import { legalIdentity } from "@/lib/legal"
 import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes, type TelloyaPlanTier } from "@/lib/pricing"
+import { sendTelloyaLeadConversion } from "@/lib/analytics"
 
 type PlanTierInterest = TelloyaPlanTier | ""
 type VoicePreferenceChoice = "female" | "male" | "no-preference" | ""
@@ -426,6 +427,12 @@ export function TelloyaEnquiryForm({
           setReceiptEmailStatus(json.receiptEmailStatus || "")
           setStatus("success")
           setStatusText("Your enquiry has been received.")
+          if (json.leadConversion === true) {
+            sendTelloyaLeadConversion({
+              planTier: values.planTier,
+              guardInterested: values.guardInterested,
+            })
+          }
           requestFocus("success")
           return
         } else {

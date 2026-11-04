@@ -139,14 +139,29 @@ export async function persistTelloyaEnquiry(
   // Convert Telloya fields to database payload format
   const payload = telloyaEnquiryToPayload(data)
 
+  let newlyCreated = false
+
   // Use existing enquiry persistence infrastructure with Telloya-specific settings
   const result = await persistGeneralEnquiry(payload as unknown as EnquiryInput, key, {
     customEmailBuilder: telloyaEmailBuilder,
     // Enable customer acknowledgement for Telloya (source-specific policy)
     sendCustomerAck: true,
+    onReceipt(receipt) {
+      newlyCreated = receipt.status === "created"
+    },
   })
 
-  // Return result in Telloya format
+  const reference = result.enquiryRef
+  const validReference = typeof reference === "string" && /^TY-\d\d-[A-HJ-NP-Z2-9]{6}$/.test(reference)
+  const leadConversion = Boolean(
+    result.ok
+    && result.persisted
+    && !result.simulated
+    && newlyCreated
+    && validReference,
+  )
+
+  // Return result in Telloya format. leadConversion never carries the reference.
   return {
     ok: result.ok,
     message: result.message,
@@ -155,5 +170,6 @@ export async function persistTelloyaEnquiry(
     enquiryRef: result.enquiryRef,
     receiptEmailSent: result.receiptEmailSent,
     receiptEmailStatus: result.receiptEmailStatus,
+    leadConversion,
   }
 }

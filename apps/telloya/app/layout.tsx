@@ -3,6 +3,8 @@ import { Inter, Manrope } from "next/font/google"
 import "./globals.css"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
+import { TelloyaAnalyticsRoot } from "@/components/analytics-root"
+import { readTelloyaGaMeasurementId } from "@/lib/analytics"
 import {
   brandColors,
   brandDescription,
@@ -78,6 +80,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Header />
         <main id="main-content">{children}</main>
         <Footer />
+        <TelloyaAnalyticsRoot measurementId={readTelloyaGaMeasurementId()} />
       </body>
     </html>
   )

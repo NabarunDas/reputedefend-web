@@ -25,6 +25,11 @@ export type GeneralIntakeOptions = {
    * When provided, overrides the global config.sendCustomerAck setting.
    */
   sendCustomerAck?: boolean
+  /**
+   * Observes the storage receipt after a row is created or already exists.
+   * Must not change the customer response. ProfileRelaunch ignores it.
+   */
+  onReceipt?: (receipt: EnquiryReceipt) => void
 }
 async function create(key: string, payload: EnquiryInput, ack: boolean): Promise<EnquiryReceipt> {
   const { data, error } = await createSupabaseServerClient().rpc("create_general_enquiry_v1", { p_key: key, p_data: payload as unknown as Json, p_ack: ack }).abortSignal(AbortSignal.timeout(8000))
@@ -61,6 +66,7 @@ export async function persistGeneralEnquiry(data: EnquiryInput, key: string, opt
   catch { return { ok: false, message: ENQUIRY_UNAVAILABLE } }
   if (receipt.status === "conflict" || receipt.status === "invalid") return { ok: false, message: "Please reload the form and submit your enquiry again." }
   if (receipt.status !== "created" && receipt.status !== "existing") return { ok: false, message: ENQUIRY_UNAVAILABLE }
+  try { options.onReceipt?.(receipt) } catch { /* Preference hooks must not change a saved enquiry. */ }
   const success = { ok: true, persisted: true, message: "Your enquiry has been received.", enquiryRef: receipt.enquiryRef }
   
   // For existing enquiries, return success with actual stored email status

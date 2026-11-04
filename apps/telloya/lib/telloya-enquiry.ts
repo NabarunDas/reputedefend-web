@@ -108,6 +108,8 @@ export type TelloyaEnquiryResult = {
   enquiryRef?: string
   receiptEmailSent?: boolean
   receiptEmailStatus?: "sent" | "suppressed" | "unavailable"
+  /** True only for a newly created, persisted, non-simulated enquiry with a valid TY reference. */
+  leadConversion?: boolean
 }
 
 const PROCESS_ERROR = "Unable to process this enquiry."

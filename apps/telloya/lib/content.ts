@@ -896,9 +896,10 @@ export const footerContent = {
     },
   ],
   legal: [
+    { label: "Cookies", href: "/cookies" },
     { label: "Privacy", href: "https://profilerelaunch.com/privacy" },
     { label: "Terms", href: "https://profilerelaunch.com/terms" },
   ],
   note:
-    "Privacy and Terms links above are company-wide website notices. Telloya-specific terms covering AI voice services, call recording, transcripts and data retention will be published before public launch.",
+    "The Cookies link describes storage on this Telloya website. Privacy and Terms are ProfileRelaunch Ltd's company-wide website notices. Telloya-specific terms covering AI voice services, call recording, transcripts and data retention will be published before public launch.",
 } as const

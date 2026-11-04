@@ -339,8 +339,9 @@ describe("Pre-launch Behavior", () => {
     
     const result = sitemap()
     expect(Array.isArray(result)).toBe(true)
-    expect(result.length).toBe(6)
+    expect(result.length).toBe(7)
     expect(result[0].url).toBe("https://telloya.com")
+    expect(result.some((entry) => entry.url === "https://telloya.com/cookies")).toBe(true)
     
     process.env = originalEnv
   })

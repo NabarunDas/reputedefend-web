@@ -69,6 +69,11 @@ export type TelloyaEnquiryResponse = {
   enquiryRef?: string
   receiptEmailSent?: boolean
   receiptEmailStatus?: "sent" | "suppressed" | "unavailable"
+  /**
+   * True only after a newly persisted enquiry with a valid TY reference.
+   * Analytics may use this flag. It is not billing authorisation.
+   */
+  leadConversion?: boolean
   errors?: Record<string, string>
   code?: string
 }

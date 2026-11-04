@@ -2,7 +2,7 @@
 
 This phase classifies and verifies Stripe events for an accepted Telloya or Complete subscription. It does not insert `commercial_payment_evidence`, move a subscription to `ACTIVE`, grant an entitlement, provision Telloya, start Guard coverage, or send billing mail.
 
-`20261103230000_customer_commercial_payment_verification_v1` was applied once to DEV. The verified DEV ledger contains 102 entries and ends at `20261103230000`. The previous ledger contained 101 entries and ended at `20261103213000`. The repository file is 12,838 characters. Its MD5 is `de03ef27a623a72ae3e4015a33782406`. Its SHA-256 is `9a761103c01d8bb50c1656fe81a35ccab349f862304c6a8044a6a327dac57d9a`. Do not replay `20261103230000`. Do not apply `20261103230000` to Production. No commercial subscription or payment evidence was created. Commercial feature flags remain OFF.
+`20261103230000_customer_commercial_payment_verification_v1` was applied once to DEV. When it was applied, the verified DEV ledger contained 102 entries and ended at `20261103230000`. The previous ledger contained 101 entries and ended at `20261103213000`. The current verified DEV ledger contains 103 entries and ends at `20261104190000`. The repository file is 12,838 characters. Its MD5 is `de03ef27a623a72ae3e4015a33782406`. Its SHA-256 is `9a761103c01d8bb50c1656fe81a35ccab349f862304c6a8044a6a327dac57d9a`. Do not replay `20261103230000`. Do not apply `20261103230000` to Production. No commercial subscription or payment evidence was created. Commercial feature flags remain OFF.
 
 ## Existing and proposed routing
 
@@ -42,7 +42,7 @@ The new database functions are `STABLE`, read-only, and service-role-only. `comm
 
 ## 03A-03-02-02 design
 
-The settlement command is now in the repository as `20261104190000_customer_commercial_payment_settlement_v1`. That file is not the DEV ledger head. Do not apply `20261104190000` to DEV. Do not apply `20261104190000` to Production. The behaviour below is the transaction that command performs. See `03A-03-02-02-atomic-payment-settlement.md`.
+The settlement command `20261104190000_customer_commercial_payment_settlement_v1` was applied once to DEV. Do not replay `20261104190000`. Do not apply `20261104190000` to Production. The behaviour below is the transaction that command performs. See `03A-03-02-02-atomic-payment-settlement.md`.
 
 The next phase may record payment and advance state only in one database transaction, after this verifier has returned `verified` for a specific receipt id:
 

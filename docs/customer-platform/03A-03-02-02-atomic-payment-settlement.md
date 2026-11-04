@@ -2,7 +2,7 @@
 
 This phase records one verified initial Telloya or Complete invoice and moves only that subscription from `PAYMENT_PENDING` to `ACTIVE`. It does not provision Telloya, buy a number, configure forwarding, enable live answering, activate Guard, start overage, grant an entitlement, or send mail.
 
-`20261104190000_customer_commercial_payment_settlement_v1` is in the repository and is not the DEV ledger head. The observed DEV ledger still contains 102 entries and ends at `20261103230000`. Do not apply `20261104190000` to DEV. Do not apply `20261104190000` to Production. Do not replay `20261103230000`. Production and AWS ApprovedMigrationHead remain `20261014170000`.
+`20261104190000_customer_commercial_payment_settlement_v1` was applied once to DEV. The verified DEV ledger contains 103 entries and ends at `20261104190000`. The previous ledger contained 102 entries and ended at `20261103230000`. The repository file is 71,495 characters. Its MD5 is `f09048135272dbc84b7ff1c794f18361`. Its SHA-256 is `950af7786e449b1158b531d67f7a858ae9c59aad6a2496e227752bd3779961c1`. Service-role-only settlement RPC permissions were verified. Ordinary payment-evidence inserts remain blocked. Invalid invoice claims and untrusted settlement payloads were rejected. No commercial subscription or payment evidence was created. Commercial feature flags remain OFF. Do not replay `20261104190000`. Do not apply `20261104190000` to Production. Do not replay `20261103230000`. Production and AWS ApprovedMigrationHead remain `20261014170000`.
 
 ## Current and proposed path
 

@@ -19,7 +19,8 @@ Each row has a recommendation so implementation can wait on a yes or a no. A rec
 | Emergency handling | The agent tells the caller it cannot contact emergency services and names the route the business supplies. It does not claim that help has been dispatched. | No approved sentence or number exists. Scenario 10 stays blocked. | OWNER DECISION REQUIRED. LEGAL REVIEW REQUIRED. |
 | Callback delivery | Email the structured summary to the business with the durable enquiry notification pattern. Do not wait for the customer dashboard. | The recipient address, the from-address, and whether DEV mail is suppressed are not chosen. | OWNER DECISION REQUIRED. |
 | Pilot eligibility | One DEV tenant, synthetic data first, then at most a number the business controls. No customer who has only submitted a sales enquiry. | Eligibility is a commercial choice. Enquiry interest is not a pilot agreement. | OWNER DECISION REQUIRED. |
-| Success criteria | Phase 1 mocks pass for the scenarios that do not need a provider. Phase 3, if approved, shows one sandbox event, one lead, no duplicate, no stored transcript, and no production credential. | Success of the historical POC is not this criterion. | OWNER DECISION REQUIRED. |
+| Success criteria | Phase 1 mocks pass for the scenarios that do not need a provider, including ended-then-analyzed and the usage-gap cases. Phase 3, if approved, shows one sandbox call, one lead, no stored transcript, and no production credential. | Success of the historical POC is not this criterion. | OWNER DECISION REQUIRED. |
+| Overage and a hard cap | Leave overage off until Retell can refuse or limit a call before the minutes are consumed. A post-call webhook only reconciles. The soft-stop rule for a call already in progress is still unchosen. | No provider admission test exists. Enquiry interest is not authorisation. | OWNER DECISION REQUIRED. PROVIDER CONFIRMATION REQUIRED. |
 
 ## Already settled in the repository
 

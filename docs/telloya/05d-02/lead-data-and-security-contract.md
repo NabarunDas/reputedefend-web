@@ -49,12 +49,13 @@ A later migration, not this PR, would add a server-only map:
 
 | Field | Rule |
 | --- | --- |
-| `provider_number_ref` | Opaque reference for the called number. Unique. The telephone number itself is not required in the lead row if the map is secret. |
+| `inbound_to_number` | The called number from `call.to_number` on an inbound event. Unique while active. This is the field Retell’s sample payload uses for the destination. It is not taken from caller-supplied metadata. |
+| `agent_id` | Retell `call.agent_id` for that number. Must resolve to the same location as `inbound_to_number`. |
 | `business_id`, `location_id` | Must match an existing location. |
 | `environment` | `dev` or `production`. A DEV webhook ignores a production row and the reverse. |
-| `active` | One active row per number reference. |
+| `active` | One active row per `inbound_to_number` in an environment. |
 
-`public.service_provisions.provider_binding_ref` is already unique and server-side. The pilot may store the same opaque reference there only after a reviewed change. It must not set `state` to `LIVE`. The current check `service_provisions_live_closed` forbids `LIVE` (`supabase/migrations/20261101170000_commercial_foundation_v1.sql`).
+`public.service_provisions.provider_binding_ref` is already unique and server-side. The pilot may store a binding for that inbound number there only after a reviewed change. It must not set `state` to `LIVE`. The current check `service_provisions_live_closed` forbids `LIVE` (`supabase/migrations/20261101170000_commercial_foundation_v1.sql`).
 
 The map is not editable from the marketing site or from the caller.
 
@@ -63,11 +64,13 @@ The map is not editable from the marketing site or from the caller.
 | Rule | Requirement |
 | --- | --- |
 | Access | Same posture as `public.enquiries`: no direct grant to `PUBLIC`, `anon`, or `authenticated`. Reads and writes go through security-definer functions. Admin or customer reads require a session bound to that tenant. |
-| Signature | Invalid signatures create no lead. They may create a security log line with no payload and no number. |
-| Idempotency | Unique `(tenant_location_id, provider_call_ref)`. Same hash returns the row. Different hash returns conflict and does not update. |
-| Replay window | Hash plus provider timestamp. The duration is OWNER DECISION REQUIRED. No number is chosen in this contract. |
-| Logs | Tenant id, call reference, status, notification status. No name, number, summary, transcript, or raw body. |
-| Notification | After commit. Idempotency key `{leadId}-business`. Status `SENT`, `FAILED`, or `SKIPPED`, using the enquiry delivery statuses as the model. The email contains the summary and the callback number because the business cannot act without them. It does not contain a transcript. |
+| Signature | `x-retell-signature` over the raw body, using that lane’s webhook-authorised Retell API key. Invalid signatures create no lead and no caller-field processing. The 401 body is empty. |
+| Event receipt | Unique `(environment, event, call_id)`. The stored hash is of the raw body. The body itself is not stored. A second type of event for the same `call_id` is a new receipt, not a hash conflict. |
+| Lead uniqueness | Unique `(tenant_location_id, provider_call_ref)` where `provider_call_ref` is `call.call_id`. All events for that call update this one row according to the lifecycle. |
+| Replay | Accept only a signature whose embedded `v` timestamp is inside Retell’s published five-minute window. Do not invent a second window. |
+| Unknown tenant | If `to_number` or `agent_id` is missing, unknown, or mapped to two locations, store no lead. Acknowledge a verified event so Retell does not retry it forever. Log `call_id` and the reason, not the number, the caller, or the body. |
+| Logs | Event name, `call_id`, status, notification status. No name, either telephone number, summary, transcript, recording URL, or raw body. |
+| Notification | After 204, from the worker. Idempotency key `{leadId}-business`. One send per lead. Status `SENT`, `FAILED`, or `SKIPPED`. The email contains the summary and the callback number. It does not contain a transcript or a recording link. |
 | Portal | Later. A customer session for business A receives no row for business B. The current portal does not offer this view. |
 | Encryption | Application code does not add field encryption in the first phase. Disk encryption is PROVIDER CONFIRMATION REQUIRED, as already recorded for Supabase. |
 | Deletion | No period is set. A later job deletes by `created_at` only after the owner sets a period. Admin physical deletion stays off unless a separate change enables it. |
@@ -78,12 +81,13 @@ Design only. Nothing in this section creates a price, a meter, or a Stripe call.
 
 | Control | Rule |
 | --- | --- |
-| Measurement | A later worker sums provider-reported billable seconds per `tenant_location_id` and calendar month. The application does not invent seconds that the provider did not report. Rounding rules are PROVIDER CONFIRMATION REQUIRED and OWNER DECISION REQUIRED. |
+| Pre-call eligibility | A separate check, before Retell accepts the call, reads the entitlement and any provider concurrency limit. The webhook is not this check. Whether Retell can refuse or cut a call is PROVIDER CONFIRMATION REQUIRED. |
+| Mid-call limit | Not assumed. If the provider cannot end a call at a minute limit, the pilot has no mid-call cap. |
+| Post-call reconciliation | Sum provider-reported seconds for `call_id`s already stored. Missing duration stays unknown. A missing webhook is not zero. Rounding is PROVIDER CONFIRMATION REQUIRED and OWNER DECISION REQUIRED. |
 | Included minutes | Basic 120, Growth 300, Pro 500, Custom as quoted. Source of the published figures: `apps/telloya/lib/pricing.ts`. The commercial offer, not the marketing page, is the entitlement. |
-| Reconciliation | Compare the provider usage export with the sum of call references stored for that tenant. A call reference with no lead, or a lead with no provider usage, is an exception. It is not silently billed. |
 | Overage | £0.25 per minute only after a separate opt-in and a monthly spending cap. An enquiry field, including `overageInterested` and `overageMonthlyCapGbp`, does not authorise a charge. |
-| Cap | The cap is a maximum, not a target. Raising it needs a new agreement. |
-| Fail closed | If the entitlement, the included minutes, the opt-in flag, or the cap cannot be read, do not accept another billable call and do not record a charge. A failed read is not unlimited usage. |
+| Hard cap | Do not activate overage, and do not claim a hard cap, until pre-call admission and concurrency control are confirmed. A completed-call webhook cannot retrospectively stop usage. The soft-stop rule for calls already in progress is OWNER DECISION REQUIRED. |
+| Charge fail-closed | If entitlement, reported usage, the opt-in, or the cap cannot be read, do not authorise a new charge. Still keep the lead. A failed read is not unlimited billing, and it is not a way to un-ring a completed call. |
 | Guard | Relaunch Guard minutes are not Telloya minutes. Guard is not measured by this meter. |
 
 The voice webhook must not call Stripe and must not write a payment receipt.

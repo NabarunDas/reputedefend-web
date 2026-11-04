@@ -30,7 +30,7 @@ That last rule is conditional on the provider. It is not an established Retell c
 | Processing | Working assumption for design | Evidence |
 | --- | --- | --- |
 | Temporary audio | A voice agent cannot hold a conversation unless the provider receives and processes audio during the call. “Not retained by our application” does not mean the audio never reaches Retell. | Stated as a design constraint in `docs/telloya/05d-01/draft-legal-documents.md`. Not measured on a Retell account. |
-| Independent retention by Retell | Retell may keep audio, transcripts, prompts, logs, or training data under its own account settings and contract, even if our database does not. | PROVIDER CONFIRMATION REQUIRED. No export is in the repository. |
+| Independent retention by Retell | Retell’s webhook page says the default `data_storage_setting` is `everything`, and that the webhook still carries the full call when a stricter setting is chosen. The owner’s account setting is not in this repository. | PROVIDER CONFIRMATION REQUIRED. Documentation is not the POC account. |
 | Our database | Stores the minimal lead in the later contract. It does not store the raw webhook body, the transcript, or the audio. | Not built. |
 
 Until a configuration export shows the account settings, the pilot must not use a real caller. Synthetic fixtures are the only authorised test data in the first backend phase.
@@ -78,20 +78,72 @@ The first implementation should follow patterns that already exist, without atta
 
 | Concern | Design | Existing pattern to copy | Do not do |
 | --- | --- | --- | --- |
-| Authentication | Verify the provider signature over the raw body with a DEV secret of at least 16 characters. Reject missing, stale, or invalid signatures before mapping a tenant. | `constructStripeEvent` in `lib/payments/stripe.ts` verifies before the event is trusted. Telloya needs its own verifier and its own secret. | Share `STRIPE_WEBHOOK_SECRET` or accept a JSON body that has already been re-serialised. |
-| Tenant isolation | Resolve the called number to one `business_id` and one `location_id`. The resolver is server-side. Two locations must not share a number. | `public.service_provisions` already has a unique `provider_binding_ref` and one active row per location (`supabase/migrations/20261101170000_commercial_foundation_v1.sql`). | Put the number map in the browser, or infer the tenant from a field the caller can edit. |
+| Authentication | Verify `x-retell-signature` over the raw body with the webhook-authorised Retell API key for that lane. Reject a bad signature before any caller field is read into a lead. | The check is Retell’s, not Stripe’s. `constructStripeEvent` is only a reminder that verification happens before trust. | Invent a standalone signing secret, share a key across DEV and production, or verify `JSON.stringify` of a parsed body. |
+| Tenant isolation | Map inbound `call.to_number` and `call.agent_id` to one location. Both must agree. Unknown or ambiguous maps create no lead. The map is server-side. | `public.service_provisions` has a unique `provider_binding_ref` and one active row per location (`supabase/migrations/20261101170000_commercial_foundation_v1.sql`). | Trust `metadata`, dynamic variables, or a caller-controlled webhook query parameter as the tenant. |
 | Live state | The pilot must not set `service_provisions.state` to `LIVE`. The table check `service_provisions_live_closed` rejects `LIVE`. | The commercial migration comment says provider fields wait for a later verified command. | Treat a DEV webhook as proof that a location is live. |
-| Idempotency | The unique key is the provider call reference scoped to the tenant. The same reference and the same content hash return the existing lead. The same reference with different content is a conflict and does not overwrite. | `create_general_enquiry_v1` uses `submission_key` plus a payload fingerprint. | Use the webhook delivery id alone if the provider can reuse it across calls. |
-| Replay | Store a hash of the raw body and the provider timestamp, not the body. Reject a hash that is reused with different content, and reject a timestamp outside an owner-chosen window. The window length is not chosen here. | Stripe receipts are applied once. The exact Telloya window is OWNER DECISION REQUIRED. | Store the raw payload in order to make replay easy. |
+| Idempotency | One lead per `call_id`. Duplicate detection is per event: `event` plus `call_id`. A later `call_analyzed` body is not a conflict with `call_ended`. | Enquiry fingerprints stop a replay of the same submission. They are the wrong key for two legitimate Retell event types. | Reject `call_analyzed` because its hash differs from `call_ended`. |
+| Replay | The signed `v` timestamp inside `x-retell-signature` is the replay clock. Retell’s published check is five minutes. An unsigned timestamp is not a substitute. | Documented with the HMAC construction on the Retell secure-webhook page, read 4 November 2026. | Choose a different window and call it Retell’s. |
 | Validation | A strict schema. Unknown fields are dropped. Strings have a maximum length. The callback number is a normalised telephone string or the lead is incomplete. | `admin_private.valid_enquiry_v1` is the strictness model for enquiries. The lead schema is separate. | Accept the provider’s full JSON as the lead. |
-| Minimal collection | Persist only the fields in `lead-data-and-security-contract.md`. | Enquiry minimisation is a different field list. | Store audio, transcript, or the raw event. |
-| Partial and failed calls | A hang-up or a provider failure still creates at most one lead, marked incomplete or failed. An answered call that was not forwarded creates nothing. | No voice equivalent exists. | Drop a partial call silently, or create a second row on retry. |
-| Observability | Log the tenant id, the call reference, the status, and the notification status. Do not log the callback number, the caller name, the summary, or the raw body. | Enquiry logs avoid treating the receipt as the only record. | Ship provider payloads to analytics. |
-| Notification | Persist the lead first. Then send email through the existing provider boundary with a stable idempotency key `{leadId}-business`. Record sent, skipped, or failed. A failed send leaves the lead visible to the operator. | `lib/enquiries/intake.ts` persists, sends with `{id}-internal` and `{id}-customer-ack`, then calls `finish_general_enquiry_notification_v1`. | Send the email before the lead exists, or send a caller transcript. |
+| Minimal collection | The signed body may contain `transcript`, `transcript_object`, and a recording URL. Copy only the lead fields, then discard the rest. Persist neither the raw body nor those fields. | The lead contract lists the columns. | Log the body while debugging a signature failure. |
+| Partial and failed calls | `call_analyzed` finalises a completed lead. `call_ended` alone can finalise an incomplete or failed lead only through the fallback worker. An answered call that was not forwarded creates nothing. | Retell’s webhook overview, read 4 November 2026. | Treat every `call_ended` as the finished summary, or drop a hang-up. |
+| Observability | Log the event name, `call_id`, status, and notification status. Do not log names, numbers, summaries, transcripts, recording URLs, or the raw body. | Enquiry logs are not a dumping ground for the payload. | Echo the request body in a 401 response. |
+| Notification | Acknowledge with 204 after the minimal receipt is durable. Send email afterwards with `{leadId}-business`. One notification per lead. A retry does not send a second email. | `lib/enquiries/intake.ts` persists first and uses a stable idempotency key. The voice path must return 204 before that send. | Call Resend inside the webhook request. |
 | Portal | A later read model shows a tenant only its own leads. The portal currently says Telloya is not open (`apps/customer/lib/portal/products/present.ts`). | The closed tile is the current VERIFIED behaviour. | Add `/portal/telloya` in the first backend phase. |
-| DEV and PROD | DEV uses a DEV Retell workspace, a DEV webhook secret, and the DEV database. Production refuses the DEV secret. Preview must not be able to initialise a production voice credential. | Payment lanes already separate sandbox and live. Voice is not one of those lanes. | Point a DEV webhook at production, or reuse the sales-enquiry flag as the voice switch. |
+| DEV and PROD | Each lane has its own Retell workspace and its own webhook-authorised API key. The DEV handler loads only the DEV key. Production refuses the DEV key. | Payment lanes already separate sandbox and live. Voice is not one of those lanes. | Point a DEV webhook at production, or reuse the sales-enquiry flag as the voice switch. |
 
 A new server flag, defaulting off, should gate the webhook. This document does not name it as enabled and does not set `TELLOYA_ENQUIRY_ENABLED` or `TELLOYA_LAUNCHED`.
+
+## Retell signature
+
+Checked against Retell’s secure-webhook page and `retell-sdk` 6.2.17 type definitions on 4 November 2026. This repository does not depend on `retell-sdk`. No key is stored here, and no webhook is registered.
+
+| Fact from the current docs and SDK | What the implementation must do |
+| --- | --- |
+| The header is `x-retell-signature`. The published format is `v={unix milliseconds},d={hex digest}`. | Read that header. A missing or malformed header is a rejection. |
+| The digest is HMAC-SHA256 of the raw body concatenated with the `v` timestamp, keyed by the Retell API key. | Verify the exact bytes received. Do not re-serialise parsed JSON. |
+| Only an API key that Retell marks with the webhook badge verifies webhooks. | Use that key. Do not substitute an independently generated signing secret unless Retell documents that mode. They do not, as of this reading. |
+| The published manual check rejects a `v` timestamp more than five minutes from the verifier’s clock. | Use that window because it is inside the signature. Do not add a second, unsigned replay clock and treat it as Retell’s. |
+| `retell-sdk` 6.2.17 exports `verify(body, apiKey, signature)` and `Retell.verify` with the same arguments. Both return a promise. Early 5.x releases did not have `Retell.verify`. | Pin a release whose types still export that function, and test a known fixture. Re-read the types before coding. The official sample uses `await Retell.verify(rawBody, apiKey, signature)`. |
+| Retell also documents the source IP `100.20.5.228` as an optional allowlist. | Signature verification remains mandatory. Recheck the address before relying on it. An allowlist is not a signature. |
+
+Rotation stays inside one lane. Create the replacement webhook-authorised key in that Retell workspace, deploy it only to that lane, and prove `verify` succeeds before the old key is revoked. Whether two webhook-badged keys can overlap is **PROVIDER CONFIRMATION REQUIRED**. Until Retell confirms an overlap, plan a short cutover rather than inventing dual-key acceptance. The DEV key never verifies a production webhook, and the production key is absent from DEV and preview.
+
+A failed verification returns 401 with an empty body. The handler does not parse caller fields, does not map a tenant, and does not write a lead.
+
+## Call lifecycle
+
+Retell’s webhook overview, read the same day, says a voice call can emit `call_started`, `call_ended`, and `call_analyzed`. `call_ended` omits `call_analysis`. `call_analyzed` includes it. The events share `call.call_id` and have different bodies. Delivery is ordered but not blocking: `call_ended` can arrive even when `call_started` failed. If no 2xx arrives within 10 seconds, Retell retries up to three times. `transcript_updated` can fire many times and carries transcript text. The pilot does not subscribe to it.
+
+| Event | Effect on the one lead |
+| --- | --- |
+| `call_started` | Store an event receipt only. Do not finalise a lead and do not notify the business. |
+| `call_ended` | Create or update the provisional lead from status, timestamps, and `disconnection_reason`. Do not treat this body as the finished summary. Do not notify yet. |
+| `call_analyzed` | Finalise that same lead. This is the event that may set `completed` and the short summary. Then the worker may notify, once. |
+| Same `event` and `call_id` with the same raw-body hash | Duplicate delivery. Acknowledge. Do not create a second lead or a second notification. |
+| Same `event` and `call_id` with a different raw-body hash | Conflict for that event identity. Do not overwrite. Acknowledge after the conflict is recorded, so Retell does not retry it forever. |
+| `call_analyzed` after `call_ended` | Expected. Apply the analysis onto the existing lead. The hash difference is not a conflict. |
+| `call_ended` after `call_analyzed` | Do not downgrade a finalised summary or status. Fill an empty duration or disconnection reason only. |
+| `call_ended` and no later `call_analyzed` | A worker finalises that lead as `incomplete` or `failed` from the ended facts. It notifies once. How long the worker waits is **OWNER DECISION REQUIRED**. No duration is chosen here. |
+| Analysis after that fallback notification | Update the lead in place. Do not send a second email in the pilot. A correction email is a later **OWNER DECISION REQUIRED**. |
+
+`call_started` is absent when Retell reports that the call did not connect. Those calls can still emit `call_ended` and `call_analyzed`. They must not become a `completed` lead. The disconnection reasons that mean “the AI never spoke” on an inbound forward are **PROVIDER CONFIRMATION REQUIRED**.
+
+The request path verifies the signature, copies the allowlisted fields, stores the event receipt and the raw-body hash, discards the body, and returns 204. Email and lead finalisation run after that acknowledgement. The raw body is not queued, because Retell’s own privacy note says the webhook carries the full unscrubbed call, including transcript and recording links, whatever `data_storage_setting` is. That setting controls what Retell keeps, not what the webhook contains. The documented default is `everything`, which means Retell keeps the call data. That is a provider fact from the documentation. It is not a reading of the owner’s account, and it is not evidence that the POC disabled retention.
+
+## Spending-cap limits
+
+A completed-call webhook cannot stop a call the provider has already accepted. The post-call handler records usage. It does not enforce the cap.
+
+| Moment | What it can do | Pilot status |
+| --- | --- | --- |
+| Before the call | Decide whether this number is allowed to receive forwarded calls, from entitlement and any provider concurrency limit. | Not built. Whether Retell can refuse the next call, or hang up during a call, is **PROVIDER CONFIRMATION REQUIRED**. |
+| During the call | Cut the call if the provider supports a mid-call limit. | Unverified. Do not describe it as available. |
+| After the call | Reconcile provider-reported duration with the lead. Unknown duration stays unknown. It is not estimated and it is not billed. | Design only. |
+| Charging | Authorise an overage charge only from a separate opt-in and a cap, after reconciliation. | Not activated. An enquiry preference is not authorisation. |
+
+Two calls can be in progress before either webhook arrives. Without a provider admission limit, both can complete and the cap can be exceeded. A missing webhook is not zero minutes. A provider outage therefore blocks reconciliation. It does not reset usage.
+
+Until pre-call admission and a tested concurrency limit exist, do not activate overage and do not claim a hard spending cap. The owner still has to choose the soft-stop or fair-use behaviour for calls that have already started. New charge authorisations fail closed when entitlement, usage, or the cap cannot be read. That failure does not reach back into a call that has already ended.
 
 ## Implementation phases
 
@@ -136,4 +188,4 @@ Production deployment, a live Retell agent on a customer number, recording or tr
 
 ## Relationship to commercial minutes
 
-Minute measurement, included allowances, overage opt-in, and spending caps are specified in `lead-data-and-security-contract.md`. They are not activated. An enquiry preference does not authorise a charge. If the entitlement or the cap cannot be read, the pilot fails closed and does not take another billable call. The fail-closed rule is a design requirement. It is not implemented.
+Minute measurement, included allowances, overage opt-in, and spending caps are specified in `lead-data-and-security-contract.md`. They are not activated. Post-call fail-closed behaviour applies to new charge authorisations only. It does not stop a call that Retell has already completed.

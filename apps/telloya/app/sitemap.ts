@@ -14,7 +14,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     return []
   }
 
-  // /demo permanently redirects to /enquire, so the public sitemap lists the destination.
+  // /demo calls Next.js redirect("/enquire"), which is a temporary 307.
+  // The public sitemap lists the destination rather than the redirect.
   const routes = [
     "",
     "/how-it-works",
@@ -27,7 +28,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   return routes.map((route) => ({
     url: `${brandSiteUrl}${route}`,
-    lastModified: new Date(),
     changeFrequency: "weekly" as const,
     priority: route === "" ? 1 : 0.8,
   }))

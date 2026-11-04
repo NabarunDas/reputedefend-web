@@ -228,9 +228,9 @@ export const howItWorksContent = {
         number: "05",
         title: "Lead summary delivered",
         description:
-          "You receive a clear summary with all the information Telloya collected. This appears in your dashboard and can be sent via notification.",
+          "You receive a clear summary of the information Telloya collected. Lead summaries are delivered through the method agreed for your service.",
         detail:
-          "The summary is designed to give you what you need to follow up confidently — no guessing what the customer wanted.",
+          "A customer dashboard for reviewing summaries and usage is planned and is not operational. The summary is designed to give you what you need to follow up.",
       },
       {
         number: "06",
@@ -381,14 +381,14 @@ export const featuresContent = {
       kicker: "Feature 06",
       title: "Usage visibility",
       description:
-        "See how many calls Telloya has handled, review lead summaries, and track your usage. Transparency matters.",
+        "A customer dashboard for call history, lead summaries and minute consumption is planned. It is not operational.",
       status: "Planned",
       points: [
-        "Dashboard with call history",
-        "Lead status tracking",
-        "Usage and minute consumption",
+        "Dashboard with call history (planned)",
+        "Lead status tracking (planned)",
+        "Usage and minute consumption (planned)",
       ],
-      note: "Dashboard features are being built. Initial subscribers will receive lead summaries via the agreed delivery method.",
+      note: "The customer dashboard is planned and is not available. Lead summaries are delivered through the agreed method.",
     },
   ],
   technical: {
@@ -615,7 +615,7 @@ export const pricingContent = {
       "Four Telloya plans to fit your business needs. All plans include core AI receptionist capabilities. Higher tiers provide more included monthly minutes.",
   },
   currency: {
-    note: "Prices are shown in GBP. Where supported, your local currency and applicable exchange rate will be shown at checkout.",
+    note: "Published prices are in GBP. Settlement currency and other payment terms are confirmed before you proceed. This page does not offer local-currency checkout or conversion.",
   },
   plans: telloyaPlans.map((plan) => ({
     tier: plan.tier,
@@ -648,9 +648,9 @@ export const pricingContent = {
       : [
           "Missed-call answering",
           "Conversational enquiry collection",
-          "Lead summaries with callback preferences",
+          "Lead summaries, including callback preferences, by the agreed delivery method",
           "Business-specific configuration",
-          "Usage visibility",
+          "Usage visibility in a customer dashboard (planned)",
         ],
     cta: plan.tier === "custom" ? "Request a tailored quote" : `Enquire about ${plan.name}`,
     href: `/enquire?plan=${plan.tier}`,
@@ -695,7 +695,7 @@ export const pricingContent = {
         ["Enquiry collection", true, true, true, true],
         ["Lead summaries", true, true, true, true],
         ["Business configuration", true, true, true, true],
-        ["Usage visibility", true, true, true, true],
+        ["Usage visibility", "Planned", "Planned", "Planned", "Planned"],
         ["Voice & language preferences", "Request", "Request", "Request", "Request"],
         ["Multiple locations", "Single", "Single", "Single", "Multiple"],
       ],
@@ -710,7 +710,6 @@ export const pricingContent = {
       "Only available after explicit opt-in",
       "Requires agreed monthly spending cap",
       "No unapproved automatic billing",
-      "Unused minutes do not roll over",
     ],
     note:
       "Additional minute pricing and policy must be confirmed and agreed during commercial acceptance. This form does not authorise usage billing.",
@@ -743,8 +742,8 @@ export const pricingContent = {
   international: {
     title: "International availability",
     points: [
-      "Prices shown in GBP (UK Pounds Sterling)",
-      "Where supported, local currency conversion available at checkout",
+      "Published prices are in GBP",
+      "Settlement currency and payment terms are confirmed before proceeding",
       "Call forwarding and number availability varies by location",
       "Language support and voice options depend on provider compatibility",
       "Activation subject to provider and regional availability",
@@ -768,10 +767,6 @@ export const pricingContent = {
         a: "Cancellation terms and any applicable notice periods will be confirmed in your subscription agreement during commercial acceptance.",
       },
       {
-        q: "Do unused minutes roll over?",
-        a: "No. Your monthly minute allowance resets each billing period. Unused minutes do not carry forward.",
-      },
-      {
         q: "What's included in the setup?",
         a: "Standard initial setup and call forwarding guidance are included. Complex setups, additional phone numbers, or unusual carrier configurations may need individual quotations.",
       },
@@ -789,7 +784,7 @@ export const pricingContent = {
       },
       {
         q: "What currencies are supported?",
-        a: "Plan prices are shown in GBP. Where supported by the payment provider, your local currency and applicable exchange rate will be shown at checkout. We cannot promise local-currency settlement in every country.",
+        a: "Published plan prices are in GBP. Actual settlement currency and payment terms are confirmed before you proceed. This website does not offer local-currency checkout or conversion.",
       },
       {
         q: "Do you support languages other than English?",

@@ -151,7 +151,9 @@ export function acceptVoiceWebhook(input: AcceptInput): AcceptResult {
       log: log({ event: projected.projected.event, callId: projected.callId, outcome: "unknown_tenant" }),
     }
   }
-  if (existingCall && existingCall.record.lead.tenantLocationId !== tenant.tenant.locationId) {
+  const lead = existingCall?.record.lead
+  const tenantChanged = lead != null && (lead.tenantLocationId !== tenant.tenant.locationId || lead.tenantBusinessId !== tenant.tenant.businessId)
+  if (tenantChanged) {
     return {
       state: putReceipt(state, receipt),
       status: 204,
@@ -216,6 +218,8 @@ export function markNotificationFailed(state: VoiceState, environment: VoiceEnvi
   }
 }
 
-export function listLeads(state: VoiceState, businessId: string) {
-  return state.calls.filter((call) => call.record.lead.tenantBusinessId === businessId).map((call) => call.record.lead)
+export function listLeads(state: VoiceState, environment: VoiceEnvironment, businessId: string) {
+  return state.calls
+    .filter((call) => call.environment === environment && call.record.lead.tenantBusinessId === businessId)
+    .map((call) => call.record.lead)
 }

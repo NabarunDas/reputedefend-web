@@ -315,8 +315,9 @@ describe("acceptance scenarios", () => {
   it("scenario 12 isolates tenants and rejects missing or conflicting maps", () => {
     const first = deliver(analyzedBody("call_test_012a"))
     const second = deliver(analyzedBody("call_test_012b", {}, { to_number: NUMBER_B, agent_id: "agent_test_b" }), { state: first.state })
-    expect(listLeads(second.state, BUSINESS_A).map((lead) => lead.providerCallRef)).toEqual(["call_test_012a"])
-    expect(listLeads(second.state, BUSINESS_B).map((lead) => lead.providerCallRef)).toEqual(["call_test_012b"])
+    expect(listLeads(second.state, "dev", BUSINESS_A).map((lead) => lead.providerCallRef)).toEqual(["call_test_012a"])
+    expect(listLeads(second.state, "dev", BUSINESS_B).map((lead) => lead.providerCallRef)).toEqual(["call_test_012b"])
+    expect(listLeads(second.state, "production", BUSINESS_A)).toEqual([])
 
     const unknown = deliver(analyzedBody("call_test_012c", {}, { to_number: "+440000000030" }))
     expect(unknown.status).toBe(204)
@@ -502,6 +503,76 @@ describe("acceptance scenarios", () => {
     expect(offer.hardCapGuaranteed).toBe(false)
     expect(offer.knownTelloyaSeconds).toBe(60)
     expect(offer.exceptions.some((item) => item.kind === "guard_ignored" && item.callId === "guard_test_001")).toBe(true)
+    expect(offer.knownTelloyaSeconds).not.toBe(1059)
+  })
+
+  it("does not total extra, duplicate, or unresolved provider durations", () => {
+    const readable = {
+      status: "readable" as const,
+      includedMinutes: 120,
+      overageOptIn: true,
+      monthlyCapGbp: 75,
+      authorisationSource: "commercial_offer" as const,
+    }
+    const extra = reconcileUsage({
+      leadCallIds: ["call_test_known"],
+      providerExport: [
+        { callId: "call_test_known", durationSeconds: 60, product: "telloya" },
+        { callId: "call_test_extra", durationSeconds: 30, product: "telloya" },
+        { callId: "guard_test_002", durationSeconds: 5000, product: "guard" },
+      ],
+      entitlement: readable,
+    })
+    expect(extra.knownTelloyaSeconds).toBeNull()
+    expect(extra.authorised).toBe(false)
+    expect(extra.overageActive).toBe(false)
+    expect(extra.hardCapGuaranteed).toBe(false)
+    expect(extra.reasons).toContain("unknown_usage")
+    expect(extra.exceptions).toContainEqual({ callId: "call_test_extra", kind: "missing_from_leads", recordedAsZero: false, billedSeconds: null })
+    expect(extra.exceptions.some((item) => item.kind === "guard_ignored")).toBe(true)
+    expect(extra.knownTelloyaSeconds).not.toBe(90)
+    expect(extra.knownTelloyaSeconds).not.toBe(5060)
+
+    const duplicate = reconcileUsage({
+      leadCallIds: ["call_test_dup"],
+      providerExport: [
+        { callId: "call_test_dup", durationSeconds: 60, product: "telloya" },
+        { callId: "call_test_dup", durationSeconds: 60, product: "telloya" },
+      ],
+      entitlement: readable,
+    })
+    expect(duplicate.knownTelloyaSeconds).toBeNull()
+    expect(duplicate.knownTelloyaSeconds).not.toBe(120)
+    expect(duplicate.knownTelloyaSeconds).not.toBe(60)
+    expect(duplicate.exceptions).toContainEqual({ callId: "call_test_dup", kind: "duplicate_call_id", recordedAsZero: false, billedSeconds: null })
+    expect(duplicate.authorised).toBe(false)
+    expect(duplicate.reasons).toContain("unknown_usage")
+
+    const invalidValues = [null, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY] as const
+    for (const durationSeconds of invalidValues) {
+      const decision = reconcileUsage({
+        leadCallIds: ["call_test_bad"],
+        providerExport: [{ callId: "call_test_bad", durationSeconds, product: "telloya" }],
+        entitlement: readable,
+      })
+      expect(decision.knownTelloyaSeconds).toBeNull()
+      expect(decision.unknownTreatedAsZero).toBe(false)
+      expect(decision.authorised).toBe(false)
+      expect(decision.overageActive).toBe(false)
+      expect(decision.unknownCallIds).toEqual(["call_test_bad"])
+      const kind = durationSeconds == null ? "unknown_duration" : "invalid_duration"
+      expect(decision.exceptions).toContainEqual({ callId: "call_test_bad", kind, recordedAsZero: false, billedSeconds: null })
+    }
+
+    const zero = reconcileUsage({
+      leadCallIds: ["call_test_zero"],
+      providerExport: [{ callId: "call_test_zero", durationSeconds: 0, product: "telloya" }],
+      entitlement: readable,
+    })
+    expect(zero.knownTelloyaSeconds).toBe(0)
+    expect(zero.authorised).toBe(false)
+    expect(zero.overageActive).toBe(false)
+    expect(zero.hardCapGuaranteed).toBe(false)
   })
 
   it("scenario 20 records usage gaps without treating them as zero or as charges", () => {
@@ -518,6 +589,44 @@ describe("acceptance scenarios", () => {
     ]))
     expect(decision.reasons).toContain("missing_entitlement")
     expect(decision.reasons).toContain("unknown_usage")
+  })
+
+  it("keeps the same business isolated between DEV and Production", () => {
+    const dev = deliver(analyzedBody("call_test_lane", { caller_name: "Ada Dev" }))
+    const both = deliver(analyzedBody("call_test_lane", { caller_name: "Ada Prod" }), {
+      state: dev.state,
+      environment: "production",
+      apiKey: PROD_KEY,
+    })
+    expect(both.state.calls).toHaveLength(2)
+    expect(listLeads(both.state, "dev", BUSINESS_A).map((lead) => lead.callerName)).toEqual(["Ada Dev"])
+    expect(listLeads(both.state, "production", BUSINESS_A).map((lead) => lead.callerName)).toEqual(["Ada Prod"])
+    expect(listLeads(both.state, "dev", BUSINESS_A).map((lead) => lead.providerCallRef)).toEqual(["call_test_lane"])
+    expect(JSON.stringify(listLeads(both.state, "dev", BUSINESS_A))).not.toContain("Ada Prod")
+    expect(JSON.stringify(listLeads(both.state, "production", BUSINESS_A))).not.toContain("Ada Dev")
+  })
+
+  it("rejects a later event that moves the call to another business or location", () => {
+    const opened = deliver(callBody("call_ended", baseCall({ call_id: "call_test_remap" })))
+    const original = structuredClone(onlyLead(opened.state).lead)
+    const movedBusiness = deliver(analyzedBody("call_test_remap", { caller_name: "Other Business" }), {
+      state: opened.state,
+      mapRows: [{ ...maps[0], businessId: BUSINESS_B }],
+    })
+    expect(movedBusiness.status).toBe(204)
+    expect(movedBusiness.log.outcome).toBe("unknown_tenant")
+    expect(movedBusiness.state.calls).toHaveLength(1)
+    expect(movedBusiness.state.calls[0].record.lead).toEqual(original)
+    expect(movedBusiness.state.calls[0].record.finalised).toBe(false)
+
+    const movedLocation = deliver(analyzedBody("call_test_remap", { caller_name: "Other Location" }), {
+      state: opened.state,
+      mapRows: [{ ...maps[0], locationId: LOCATION_B }],
+    })
+    expect(movedLocation.log.outcome).toBe("unknown_tenant")
+    expect(movedLocation.state.calls).toHaveLength(1)
+    expect(movedLocation.state.calls[0].record.lead).toEqual(original)
+    expect(JSON.stringify(movedLocation.state.calls[0].record.lead)).not.toContain("Other Location")
   })
 
   it("keeps call_started as a receipt and ignores caller-supplied tenant metadata", () => {

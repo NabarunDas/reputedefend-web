@@ -13,7 +13,9 @@ Signature checks use Retell’s published construction: header `x-retell-signatu
 
 The stored lead has the minimal fields from `docs/telloya/05d-02/lead-data-and-security-contract.md`. The event receipt keeps the raw-body hash and any conflicting hash, not the body. Duration and disconnection reason sit beside the lead so a later `call_ended` can fill an empty value. They are not lead columns. Transcripts, recording URLs, the raw body, and the network CLI are not stored. A provider failure is only Retell’s `call.call_status` of `error`. Disconnection reasons are not classified, because the list that means the AI never spoke is still unconfirmed. Notification output is an intent with key `{leadId}-business`, created after acceptance, never inside `acceptVoiceWebhook`. Nothing is sent.
 
-`reconcileUsage` never authorises a charge. Unknown duration is not zero. Enquiry preferences are not authorisation. Completed-call events do not set a hard cap and do not stop a call.
+A lead read takes an explicit environment and a business id. The same business id in DEV and Production stays in its own lane. A later event whose business or location does not match the stored lead is rejected and does not change that lead.
+
+`reconcileUsage` never authorises a charge. A known minute total is returned only when every Telloya export row matches a lead, call ids are unique, and every duration is a non-negative whole number of seconds. Extra export rows, duplicate call ids, and negative, fractional, missing, or non-finite durations leave the total unset. They are not stored as zero and they are not summed. Relaunch Guard rows stay out of the Telloya total. Enquiry preferences are not authorisation. Completed-call events do not set a hard cap and do not stop a call.
 
 ## Not executed
 

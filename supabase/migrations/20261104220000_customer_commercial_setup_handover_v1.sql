@@ -27,6 +27,8 @@ DECLARE
   preparation_customer uuid;
   preparation_business uuid;
   preparation_amount integer;
+  preparation_currency char(3);
+  preparation_cadence text;
   membership text;
   business_name text;
   customer_name text;
@@ -45,6 +47,7 @@ DECLARE
   financial text;
   operational text;
   preferences_complete boolean;
+  guard_assignment text;
   display text;
   message text;
   next_action text;
@@ -79,26 +82,50 @@ BEGIN
   SELECT display_name INTO business_name FROM public.businesses WHERE id = sub.business_id;
   SELECT full_name INTO customer_name FROM public.customers WHERE id = sub.customer_id;
 
-  SELECT id, acceptance_id, customer_id, business_id, amount_minor
-  INTO preparation_id, preparation_acceptance, preparation_customer, preparation_business, preparation_amount
+  SELECT id, acceptance_id, customer_id, business_id, amount_minor, currency, cadence
+  INTO preparation_id, preparation_acceptance, preparation_customer, preparation_business,
+       preparation_amount, preparation_currency, preparation_cadence
   FROM public.commercial_checkout_preparations
   WHERE subscription_id = sub.id;
 
+  -- One evidence row must be the subscription's recorded period. A stale,
+  -- renewal, or otherwise unrelated row is not proof of that period.
   SELECT count(*)::integer,
-         count(*) FILTER (WHERE amount_minor = acceptance.amount_minor AND currency = 'GBP')::integer,
-         min(created_at) FILTER (WHERE amount_minor = acceptance.amount_minor AND currency = 'GBP')
+         count(*) FILTER (
+           WHERE amount_minor = acceptance.amount_minor
+             AND currency = 'GBP'
+             AND sub.current_period_start IS NOT NULL
+             AND sub.current_period_end IS NOT NULL
+             AND period_start = sub.current_period_start
+             AND period_end = sub.current_period_end
+         )::integer,
+         min(created_at) FILTER (
+           WHERE amount_minor = acceptance.amount_minor
+             AND currency = 'GBP'
+             AND sub.current_period_start IS NOT NULL
+             AND sub.current_period_end IS NOT NULL
+             AND period_start = sub.current_period_start
+             AND period_end = sub.current_period_end
+         )
   INTO evidence_count, matching_count, confirmed_at
   FROM public.commercial_payment_evidence
   WHERE subscription_id = sub.id;
 
   verified := sub.state = 'ACTIVE'
+    AND sub.amount_minor = acceptance.amount_minor
+    AND sub.currency = 'GBP'
+    AND sub.current_period_start IS NOT NULL
+    AND sub.current_period_end IS NOT NULL
+    AND sub.current_period_end > sub.current_period_start
     AND evidence_count = 1
     AND matching_count = 1
     AND preparation_id IS NOT NULL
     AND preparation_acceptance = acceptance.id
     AND preparation_customer = sub.customer_id
     AND preparation_business = sub.business_id
-    AND preparation_amount = acceptance.amount_minor;
+    AND preparation_amount = acceptance.amount_minor
+    AND preparation_currency = 'GBP'
+    AND preparation_cadence = 'MONTH';
   IF sub.state = 'PAYMENT_PENDING' THEN
     financial := 'awaiting_payment';
   ELSIF verified THEN
@@ -125,31 +152,29 @@ BEGIN
       AND request.business_id = sub.business_id
   ) chosen;
 
+  -- Selected onboarding locations are not Guard assignments. Name a Guard
+  -- location only from an open bundle allocation for this subscription.
   IF acceptance.guard_quantity > 0 THEN
-    SELECT COALESCE(jsonb_agg(picked.location ORDER BY picked.location_id), '[]'::jsonb)
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+      'locationId', location.id,
+      'locationName', COALESCE(NULLIF(pg_catalog.btrim(location.location_name), ''), 'Selected location')
+    ) ORDER BY location.id), '[]'::jsonb)
     INTO guard_locations
-    FROM (
-      SELECT location.id AS location_id,
-             jsonb_build_object(
-               'locationId', location.id,
-               'locationName', COALESCE(NULLIF(pg_catalog.btrim(location.location_name), ''), 'Selected location')
-             ) AS location
-      FROM (
-        SELECT DISTINCT location_row.id, location_row.location_name
-        FROM public.onboarding_requests request
-        JOIN admin_private.onboarding_request_locations selected
-          ON selected.onboarding_request_id = request.id
-        JOIN public.locations location_row
-          ON location_row.id = selected.location_id
-         AND location_row.business_id = sub.business_id
-        WHERE request.commercial_subscription_id = sub.id
-          AND request.customer_id = sub.customer_id
-          AND request.business_id = sub.business_id
-        ORDER BY location_row.id
-        LIMIT acceptance.guard_quantity
-      ) location
-    ) picked;
+    FROM public.bundle_guard_allocations allocation
+    JOIN public.locations location
+      ON location.id = allocation.location_id
+     AND location.business_id = allocation.business_id
+    WHERE allocation.subscription_id = sub.id
+      AND allocation.customer_id = sub.customer_id
+      AND allocation.business_id = sub.business_id
+      AND allocation.component_code = 'GUARD'
+      AND allocation.state IN ('RESERVED', 'PREVIEW');
   END IF;
+  guard_assignment := CASE
+    WHEN acceptance.guard_quantity = 0 THEN 'not_applicable'
+    WHEN jsonb_array_length(guard_locations) = 0 THEN 'pending_confirmation'
+    ELSE 'recorded'
+  END;
 
   SELECT count(*)::integer,
          COALESCE(array_agg(provision.state), ARRAY[]::text[]),
@@ -160,7 +185,12 @@ BEGIN
            AND provision.forwarding_instructed_at IS NOT NULL
          ), false),
          COALESCE(bool_and(
-           provision.state <> 'NOT_STARTED'
+           provision.business_id = entitlement.business_id
+           AND provision.location_id = entitlement.location_id
+           AND entitlement.business_id = sub.business_id
+           AND entitlement.commercial_subscription_id = sub.id
+           AND provision.provider_test_call_ref IS NOT NULL
+           AND pg_catalog.btrim(provision.provider_test_call_ref) <> ''
            AND provision.provider_test_outcome = 'PASSED'
            AND provision.agent_test_passed_at IS NOT NULL
          ), false),
@@ -183,7 +213,10 @@ BEGIN
     operational := 'setup_started';
   END IF;
 
-  preferences_complete := jsonb_array_length(telloya_locations) > 0;
+  -- The schema has no authoritative business or voice-service preference
+  -- confirmation. Selected locations do not complete this step, and payment
+  -- does not record one. A later command has to store that evidence.
+  preferences_complete := false;
   IF financial = 'verified' AND operational = 'not_started' THEN
     display := 'Payment received — setup pending';
     message := 'Your subscription payment has been confirmed. We''re preparing your service and will guide you through the remaining setup steps.';
@@ -229,9 +262,13 @@ BEGIN
       'status', CASE WHEN acceptance.guard_quantity > 0 THEN 'pending_setup' ELSE 'not_subscribed' END,
       'quantity', acceptance.guard_quantity,
       'monitoringActive', false,
+      'assignment', guard_assignment,
       'locations', guard_locations
     ),
     'financialStatus', financial,
+    'paymentScope', CASE WHEN financial = 'verified' THEN 'initial_settlement' ELSE NULL END,
+    'periodStart', CASE WHEN financial = 'verified' THEN sub.current_period_start ELSE NULL END,
+    'periodEnd', CASE WHEN financial = 'verified' THEN sub.current_period_end ELSE NULL END,
     'operationalStatus', operational,
     'customerDisplay', display,
     'message', message,
@@ -320,7 +357,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.customer_portal_setup_handover_v1(text) IS
-  'Read-only setup handover for the signed-in customer. Payment is confirmed only from matching payment evidence. Setup pending is not setup in progress, and Guard monitoring is not started.';
+  'Read-only setup handover for the signed-in customer. Verified payment is the initial settlement for the subscription''s recorded period. Setup pending is not setup in progress. Guard locations come only from an open allocation, and monitoring is not started.';
 
 REVOKE ALL ON FUNCTION public.customer_portal_setup_handover_v1(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.customer_portal_setup_handover_v1(text) TO service_role;

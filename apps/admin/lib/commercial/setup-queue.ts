@@ -33,9 +33,13 @@ export type SetupQueueItem = {
     status: "pending_setup" | "not_subscribed"
     quantity: number
     monitoringActive: false
+    assignment: "pending_confirmation" | "recorded" | "not_applicable"
     locations: SetupLocation[]
   }
   financialStatus: "verified"
+  paymentScope: "initial_settlement"
+  periodStart: string
+  periodEnd: string
   operationalStatus: "not_started" | "setup_started" | "awaiting_verification"
   customerDisplay: string
   message: string | null
@@ -96,10 +100,23 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
     if (guard.status !== "pending_setup" && guard.status !== "not_subscribed") return null
     if (guard.included !== (guard.status === "pending_setup")) return null
     if (typeof guard.quantity !== "number" || guard.quantity !== row.guardLocationCount) return null
+    if (guard.assignment !== "pending_confirmation" && guard.assignment !== "recorded" && guard.assignment !== "not_applicable") return null
     if (!Array.isArray(guard.locations)) return null
     const guardLocations = guard.locations.map(location)
     if (guardLocations.some(item => item === null)) return null
-    if (row.financialStatus !== "verified") return null
+    if (guard.included) {
+      if (guard.assignment === "pending_confirmation" && guardLocations.length !== 0) return null
+      if (guard.assignment === "recorded" && guardLocations.length < 1) return null
+      if (guard.assignment === "not_applicable") return null
+    } else if (guard.assignment !== "not_applicable" || guardLocations.length !== 0) {
+      return null
+    }
+    if (row.financialStatus !== "verified" || row.paymentScope !== "initial_settlement") return null
+    const periodStart = row.periodStart
+    const periodEnd = row.periodEnd
+    if (typeof periodStart !== "string" || Number.isNaN(new Date(periodStart).getTime())) return null
+    if (typeof periodEnd !== "string" || Number.isNaN(new Date(periodEnd).getTime())) return null
+    if (new Date(periodEnd).getTime() <= new Date(periodStart).getTime()) return null
     if (row.operationalStatus !== "not_started" && row.operationalStatus !== "setup_started" && row.operationalStatus !== "awaiting_verification") return null
     if (typeof row.customerDisplay !== "string" || row.customerDisplay.trim().length === 0) return null
     if (row.message !== null && typeof row.message !== "string") return null
@@ -124,9 +141,13 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
         status: guard.status,
         quantity: guard.quantity,
         monitoringActive: false,
+        assignment: guard.assignment,
         locations: guardLocations as SetupLocation[],
       },
       financialStatus: "verified",
+      paymentScope: "initial_settlement",
+      periodStart,
+      periodEnd,
       operationalStatus: row.operationalStatus,
       customerDisplay: row.customerDisplay,
       message: row.message,

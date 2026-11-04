@@ -51,11 +51,22 @@ export function SetupQueueView({ items }: { items: readonly SetupQueueItem[] }) 
                 </td>
                 <td>
                   {item.locations.length === 0 ? "No location selected" : item.locations.map(location => location.locationName).join(", ")}
-                  {item.guard.included ? <><br /><span className="muted">Guard locations included: {item.guard.quantity}. Monitoring has not started.</span></> : null}
+                  {item.guard.included ? (
+                    <>
+                      <br />
+                      <span className="muted">
+                        Guard locations included: {item.guard.quantity}. Monitoring has not started.
+                        {item.guard.assignment === "pending_confirmation"
+                          ? " Location assignment is pending confirmation."
+                          : ` Assigned: ${item.guard.locations.map(location => location.locationName).join(", ")}.`}
+                      </span>
+                    </>
+                  ) : null}
                 </td>
                 <td>
-                  <Badge tone="success">Payment verified</Badge><br />
-                  <span className="muted">{ukDate(item.paymentConfirmedAt)}</span>
+                  <Badge tone="success">Verified initial settlement</Badge><br />
+                  <span className="muted">{ukDate(item.paymentConfirmedAt)}</span><br />
+                  <span className="muted">{ukDate(item.periodStart)} to {ukDate(item.periodEnd)}. A later period is not shown as paid.</span>
                 </td>
                 <td>
                   {operationalLabel(item.operationalStatus)}<br />

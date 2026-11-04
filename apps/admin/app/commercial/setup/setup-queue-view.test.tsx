@@ -21,8 +21,11 @@ const item: SetupQueueItem = {
     { locationId: "a033a000-0000-4000-8000-000000000022", locationName: "Dock" },
   ],
   guardLocationCount: 0,
-  guard: { included: false, status: "not_subscribed", quantity: 0, monitoringActive: false, locations: [] },
+  guard: { included: false, status: "not_subscribed", quantity: 0, monitoringActive: false, assignment: "not_applicable", locations: [] },
   financialStatus: "verified",
+  paymentScope: "initial_settlement",
+  periodStart: "2026-11-01T00:00:00.000Z",
+  periodEnd: "2026-12-01T00:00:00.000Z",
   operationalStatus: "not_started",
   customerDisplay: "Payment received — setup pending",
   message: "Your subscription payment has been confirmed. We're preparing your service and will guide you through the remaining setup steps.",
@@ -30,7 +33,7 @@ const item: SetupQueueItem = {
   nextAction: "Begin setup",
   checklist: [
     { key: "payment", label: "Payment confirmed", state: "complete" },
-    { key: "preferences", label: "Business and service preferences", state: "complete" },
+    { key: "preferences", label: "Business and service preferences", state: "planned" },
     { key: "agent", label: "AI receptionist configuration", state: "planned" },
     { key: "number", label: "Telephone number and forwarding", state: "planned" },
     { key: "test", label: "Test call and verification", state: "planned" },
@@ -45,7 +48,8 @@ describe("paid setup queue", () => {
     expect(screen.getByText("VC-26-HND2AB")).toBeTruthy()
     expect(screen.getByText("VC-26-HND2AC")).toBeTruthy()
     expect(screen.getAllByText("Growth · £79.00 a month")).toHaveLength(2)
-    expect(screen.getAllByText("Payment verified").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Verified initial settlement").length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/A later period is not shown as paid/).length).toBeGreaterThan(0)
     expect(screen.getAllByText("Next action: Begin setup").length).toBeGreaterThan(0)
     expect(screen.getByText("Approve activation")).toBeTruthy()
     expect(document.body.innerHTML).not.toMatch(/<button|Mark active|Provision now|cus_|evt_/)

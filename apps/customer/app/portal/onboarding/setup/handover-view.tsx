@@ -32,6 +32,9 @@ function SubscriptionSetup({ subscription }: { subscription: HandoverSubscriptio
         <h2>{paid ? "Payment received" : subscription.customerDisplay}</h2>
         {paid ? <p>Setup pending</p> : null}
         <p className="onboarding-banner">{paid ? PAYMENT_RECEIVED : subscription.customerDisplay}</p>
+        {subscription.paymentScope === "initial_settlement" ? (
+          <p>This confirms the initial settlement for the recorded period. A later period is not shown as paid.</p>
+        ) : null}
       </header>
       <section>
         <h3>Business</h3>
@@ -51,11 +54,13 @@ function SubscriptionSetup({ subscription }: { subscription: HandoverSubscriptio
           <>
             <p>Included in your package. Monitoring setup is pending.</p>
             <p>{subscription.guard.quantity} {subscription.guard.quantity === 1 ? "location" : "locations"} included. Monitoring has not started.</p>
-            {subscription.guard.locations.length > 0 ? (
+            {subscription.guard.assignment === "pending_confirmation" ? (
+              <p>Guard location assignment is pending confirmation.</p>
+            ) : (
               <ul>
                 {subscription.guard.locations.map(location => <li key={location.locationId}>{location.locationName}</li>)}
               </ul>
-            ) : null}
+            )}
           </>
         ) : <p>Relaunch Guard is not included in this subscription.</p>}
       </section>

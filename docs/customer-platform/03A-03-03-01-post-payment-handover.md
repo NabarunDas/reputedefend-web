@@ -26,13 +26,13 @@ Each row is derived from records that already exist:
 | Commercial reference, plan, monthly price | `commercial_subscriptions` joined to the immutable `commercial_offer_acceptances` row for the same customer, business, plan version, GBP amount, and monthly cadence |
 | Selected locations | `onboarding_requests` and `admin_private.onboarding_request_locations` for that subscription, customer, and business, named from `locations` |
 | Included Guard quantity | `commercial_offer_acceptances.guard_quantity` |
-| Guard locations | The same selected locations, ordered by immutable location id, limited to that quantity |
-| Payment | Exactly one `commercial_payment_evidence` row whose amount and GBP currency match the acceptance, plus a `commercial_checkout_preparations` row for the same acceptance, customer, business, and amount |
+| Guard locations | Open `bundle_guard_allocations` rows (`RESERVED` or `PREVIEW`) for that subscription, customer, and business. Selected onboarding locations are not assignments |
+| Payment | Exactly one `commercial_payment_evidence` row for the subscription's recorded `current_period_start` and `current_period_end`, with the accepted GBP amount, plus a `commercial_checkout_preparations` row for the same acceptance, customer, business, amount, and monthly cadence |
 | Operational setup | Telloya `product_entitlements` in `PENDING` or `ELIGIBLE` and their `service_provisions` rows |
 
 A missing acceptance, a mismatched acceptance, or a membership that is not exactly `verified` returns nothing. Two businesses with the same display name stay separate because the join uses the business id.
 
-`PAYMENT_PENDING` is always `awaiting_payment`, even when an evidence row exists. `ACTIVE` without exactly one matching evidence row is `unverified` and is shown as payment pending. The Admin queue includes a subscription only when the financial status is `verified` and the operational status is not `active`.
+`PAYMENT_PENDING` is always `awaiting_payment`, even when an evidence row exists. `ACTIVE` is `verified` only when that single evidence row matches the subscription amount, the acceptance, the checkout preparation, and the subscription's recorded period. Any other financial combination is `unverified` and is shown as payment pending. A verified row is scoped to `initial_settlement`: it confirms that recorded period and does not show a later period as paid. The Admin queue includes a subscription only when the financial status is `verified` and the operational status is not `active`.
 
 ## Financial state and operational state
 
@@ -50,20 +50,22 @@ The last row cannot occur in this phase. `service_provisions_live_closed` still 
 
 Checklist steps are complete only from stored evidence:
 
-- Payment confirmed: the verified-payment rule above.
-- Business and service preferences: at least one selected location on the matching onboarding request.
+- Payment confirmed: the verified initial-settlement rule above.
+- Business and service preferences: an explicit stored confirmation of the business and voice-service preferences. No such record exists yet, so selected locations leave this step planned. Payment does not create one.
 - AI receptionist configuration: every Telloya provision has left `NOT_STARTED` and `agent_configured_at` is set.
 - Telephone number and forwarding: `number_allocated_at` and `forwarding_instructed_at` are set on every such provision.
-- Test call and verification: `provider_test_outcome = PASSED` and `agent_test_passed_at` is set on every such provision.
+- Test call and verification: every owned Telloya provision has a non-blank `provider_test_call_ref`, `provider_test_outcome = PASSED`, and `agent_test_passed_at`. The provision state alone does not complete this step. The provision's business and location must match its entitlement.
 - Service activation: state `LIVE` and `live_at` are set on every such provision.
 
 A planned step is not described as done. The page does not claim that a telephone number, agent, or forwarding instruction exists.
 
 ## Complete and Telloya
 
-A paid Complete acceptance keeps `guard_quantity` and lists that many selected locations by id. Guard status is `pending_setup`. `monitoringActive` is always false. No `guard_coverages` row is created.
+A paid Complete acceptance keeps `guard_quantity`. Guard status is `pending_setup`. Locations are listed only when an open allocation records them. With no allocation, assignment is `pending_confirmation` and no selected location is described as the Guard location. `monitoringActive` is always false. No `guard_coverages` row and no allocation are created by this read.
 
 A Telloya acceptance has Guard quantity 0, status `not_subscribed`, and no Guard locations. My Products continues to show Guard as an optional product that is not included.
+
+My Products for a paid subscription with no entitlement still comes from the applied settlement read. This migration does not replace that function, so that older read can still list selected locations up to the accepted Guard quantity. The setup handover does not. It keeps the quantity and leaves assignment pending until an allocation exists.
 
 ## Access
 

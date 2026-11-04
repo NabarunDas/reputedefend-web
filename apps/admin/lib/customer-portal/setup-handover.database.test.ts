@@ -500,7 +500,8 @@ describe("commercial post-payment handover", () => {
       customerDisplay: "Payment received — setup pending",
       message: "Your subscription payment has been confirmed. We're preparing your service and will guide you through the remaining setup steps.",
       nextAction: "Begin setup",
-      guard: { included: false, status: "not_subscribed", quantity: 0, monitoringActive: false, locations: [] },
+      guard: { included: false, status: "not_subscribed", quantity: 0, monitoringActive: false, assignment: "not_applicable", locations: [] },
+      paymentScope: "initial_settlement",
     })
     expect(admin?.items[0].locations).toEqual([
       { locationId: high, locationName: "High Street" },
@@ -508,23 +509,27 @@ describe("commercial post-payment handover", () => {
     ])
     expect(admin?.items[0].checklist).toEqual([
       { key: "payment", label: "Payment confirmed", state: "complete" },
-      { key: "preferences", label: "Business and service preferences", state: "complete" },
+      { key: "preferences", label: "Business and service preferences", state: "planned" },
       { key: "agent", label: "AI receptionist configuration", state: "planned" },
       { key: "number", label: "Telephone number and forwarding", state: "planned" },
       { key: "test", label: "Test call and verification", state: "planned" },
       { key: "activation", label: "Service activation", state: "planned" },
     ])
     expect(typeof admin?.items[0].paymentConfirmedAt).toBe("string")
+    expect(new Date(String(admin?.items[0].periodStart)).toISOString()).toBe(periodStart)
+    expect(new Date(String(admin?.items[0].periodEnd)).toISOString()).toBe(periodEnd)
     const seen = customer?.subscriptions[0]
     expect(seen).toMatchObject({
       reference: armed.prepared.ref,
       businessName: "Harbour Bakery",
       product: "Telloya",
       financialStatus: "verified",
+      paymentScope: "initial_settlement",
       operationalStatus: "not_started",
       customerDisplay: "Payment received — setup pending",
       message: "Your subscription payment has been confirmed. We're preparing your service and will guide you through the remaining setup steps.",
     })
+    expect((seen?.checklist as Row[]).find(step => step.key === "preferences")).toMatchObject({ state: "planned" })
     expect(JSON.stringify(customer)).not.toContain("businessId")
     expect(JSON.stringify(admin)).not.toMatch(/cus_|evt_|cs_|price_|prod_|si_/)
     expect(JSON.stringify(customer)).not.toMatch(/cus_|evt_|cs_|price_|prod_|si_/)
@@ -562,7 +567,8 @@ describe("commercial post-payment handover", () => {
         status: "pending_setup",
         quantity: 1,
         monitoringActive: false,
-        locations: [{ locationId: oven, locationName: "Oven" }],
+        assignment: "pending_confirmation",
+        locations: [],
       },
     })
     expect(item?.locations).toEqual([
@@ -575,7 +581,8 @@ describe("commercial post-payment handover", () => {
       status: "pending_setup",
       quantity: 1,
       monitoringActive: false,
-      locations: [{ locationId: oven, locationName: "Oven" }],
+      assignment: "pending_confirmation",
+      locations: [],
     })
     expect(JSON.stringify(seen)).not.toContain("businessId")
     const products = JSON.stringify(await rpc("customer_portal_products_v1", [session]))
@@ -732,7 +739,7 @@ describe("commercial post-payment handover", () => {
     expect(started).toMatchObject({
       operationalStatus: "setup_started",
       customerDisplay: "Setup in progress",
-      nextAction: "Confirm AI configuration",
+      nextAction: "Confirm business preferences",
     })
     const startedSteps = started?.checklist as Row[]
     expect(startedSteps.find(step => step.key === "agent")).toMatchObject({ state: "planned" })
@@ -749,6 +756,9 @@ describe("commercial post-payment handover", () => {
       customerDisplay: "Awaiting final verification",
       nextAction: "Approve activation",
     })
+    const verificationSteps = (await queue())?.items[0].checklist as Row[]
+    expect(verificationSteps.find(step => step.key === "preferences")).toMatchObject({ state: "planned" })
+    expect(verificationSteps.find(step => step.key === "test")).toMatchObject({ state: "planned" })
     await db.exec("SAVEPOINT live_closed")
     await db.exec("set local session_replication_role = replica")
     await expect(db.query(
@@ -759,5 +769,171 @@ describe("commercial post-payment handover", () => {
     const live = await rows<{ count: number }>(`select count(*)::int as count from public.service_provisions where state = 'LIVE'`)
     expect(live[0].count).toBe(0)
     expect((await queue())?.items.every(entry => entry.operationalStatus !== "active")).toBe(true)
+  })
+
+  it("does not treat selected locations as a Guard assignment", async () => {
+    const pantry = "a033a000-0000-4000-8000-000000000027"
+    await db.query(
+      `insert into public.locations(id, business_id, country, location_name) values ($1, $2, 'GB', 'Pantry')`,
+      [pantry, kitchen],
+    )
+    const armed = await pay({ product: "COMPLETE", business: kitchen, locations: [counter, pantry, oven], amount: 14900 })
+    const item = (await queue())?.items.find(entry => entry.reference === armed.prepared.ref)
+    expect(item?.guardLocationCount).toBe(1)
+    expect(item?.locations).toEqual([
+      { locationId: oven, locationName: "Oven" },
+      { locationId: counter, locationName: "Counter" },
+      { locationId: pantry, locationName: "Pantry" },
+    ])
+    expect(item?.guard).toEqual({
+      included: true,
+      status: "pending_setup",
+      quantity: 1,
+      monitoringActive: false,
+      assignment: "pending_confirmation",
+      locations: [],
+    })
+    const seen = (await handover())?.subscriptions.find(entry => entry.reference === armed.prepared.ref)
+    expect(seen?.guard).toEqual({
+      included: true,
+      status: "pending_setup",
+      quantity: 1,
+      monitoringActive: false,
+      assignment: "pending_confirmation",
+      locations: [],
+    })
+    await db.query(
+      `insert into public.bundle_guard_allocations(
+        subscription_id, customer_id, business_id, location_id, state
+      ) values ($1, $2, $3, $4, 'RESERVED')`,
+      [armed.prepared.subscription, alex, kitchen, counter],
+    )
+    const assigned = (await queue())?.items.find(entry => entry.reference === armed.prepared.ref)
+    expect(assigned?.guard).toMatchObject({
+      assignment: "recorded",
+      quantity: 1,
+      monitoringActive: false,
+      locations: [{ locationId: counter, locationName: "Counter" }],
+    })
+    const assignedLocations = JSON.stringify((assigned?.guard as { locations?: unknown } | undefined)?.locations)
+    expect(assignedLocations).not.toContain(oven)
+    expect(assignedLocations).not.toContain(pantry)
+    const coverages = await rows<{ count: number }>(`select count(*)::int as count from public.guard_coverages`)
+    expect(coverages[0].count).toBe(0)
+  })
+
+  it("completes the test call only when the owned provision recorded a passed call", async () => {
+    const armed = await pay()
+    const entitlement = await plant(armed.prepared.subscription, bakery, high, "TEST_REQUIRED")
+    const testStep = async () => {
+      const item = (await queue())?.items[0]
+      return (item?.checklist as Row[] | undefined)?.find(entry => entry.key === "test")
+    }
+    expect(await testStep()).toMatchObject({ state: "planned" })
+
+    const record = async (outcome: string | null, ref: string | null, passed: boolean) => {
+      await db.exec("set local session_replication_role = replica")
+      await db.query(
+        `update public.service_provisions
+         set provider_test_outcome = $2,
+             provider_test_call_ref = $3,
+             agent_test_passed_at = case when $4 then now() else null end
+         where entitlement_id = $1`,
+        [entitlement, outcome, ref, passed],
+      )
+      await db.exec("set local session_replication_role = origin")
+    }
+
+    await record("FAILED", "call-failed", false)
+    expect(await testStep()).toMatchObject({ state: "planned" })
+    await record("PASSED", null, true)
+    expect(await testStep()).toMatchObject({ state: "planned" })
+    await record("PASSED", "   ", true)
+    expect(await testStep()).toMatchObject({ state: "planned" })
+    await record("PASSED", "call-open", false)
+    expect(await testStep()).toMatchObject({ state: "planned" })
+    await db.exec("set local session_replication_role = replica")
+    await db.query(
+      `update public.service_provisions
+       set state = 'READY_FOR_PROVIDER_VERIFICATION',
+           provider_test_outcome = null,
+           provider_test_call_ref = null,
+           agent_test_passed_at = null
+       where entitlement_id = $1`,
+      [entitlement],
+    )
+    await db.exec("set local session_replication_role = origin")
+    expect(await testStep()).toMatchObject({ state: "planned" })
+    await record("PASSED", "call-pass", true)
+    expect(await testStep()).toMatchObject({ state: "complete" })
+    await db.exec("set local session_replication_role = replica")
+    await db.query(
+      `update public.service_provisions set business_id = $2 where entitlement_id = $1`,
+      [entitlement, twin],
+    )
+    await db.exec("set local session_replication_role = origin")
+    expect(await testStep()).toMatchObject({ state: "planned" })
+  })
+
+  it("fails closed unless the single evidence row matches the recorded period and checkout", async () => {
+    const armed = await pay()
+    const expectUnverified = async () => {
+      const customer = await handover()
+      expect(customer?.subscriptions[0]).toMatchObject({
+        financialStatus: "unverified",
+        paymentScope: null,
+        periodStart: null,
+        periodEnd: null,
+        paymentConfirmedAt: null,
+        customerDisplay: "Payment pending",
+      })
+      expect((await queue())?.items ?? []).toEqual([])
+    }
+
+    await db.exec("SAVEPOINT financial")
+    await db.exec("set local session_replication_role = replica")
+    await db.query(
+      `update public.commercial_payment_evidence
+       set period_start = '2026-10-01T00:00:00.000Z', period_end = '2026-11-01T00:00:00.000Z'
+       where subscription_id = $1`,
+      [armed.prepared.subscription],
+    )
+    await db.exec("set local session_replication_role = origin")
+    await expectUnverified()
+    await db.exec("ROLLBACK TO SAVEPOINT financial")
+
+    await db.exec("set local session_replication_role = replica")
+    await db.query(
+      `update public.commercial_subscriptions
+       set current_period_start = '2026-12-01T00:00:00.000Z', current_period_end = '2027-01-01T00:00:00.000Z'
+       where id = $1`,
+      [armed.prepared.subscription],
+    )
+    await db.exec("set local session_replication_role = origin")
+    await expectUnverified()
+    await db.exec("ROLLBACK TO SAVEPOINT financial")
+
+    await db.exec("set local session_replication_role = replica")
+    await db.query(`update public.commercial_subscriptions set amount_minor = 100 where id = $1`, [armed.prepared.subscription])
+    await db.exec("set local session_replication_role = origin")
+    await expectUnverified()
+    await db.exec("ROLLBACK TO SAVEPOINT financial")
+
+    await db.exec("set local session_replication_role = replica")
+    await db.query(
+      `update public.commercial_checkout_preparations set amount_minor = amount_minor + 1 where subscription_id = $1`,
+      [armed.prepared.subscription],
+    )
+    await db.exec("set local session_replication_role = origin")
+    await expectUnverified()
+    await db.exec("ROLLBACK TO SAVEPOINT financial")
+
+    await db.exec("set local session_replication_role = replica")
+    await db.query(
+      `update public.commercial_subscriptions set current_period_start = null, current_period_end = null where id = $1`,
+      [armed.prepared.subscription],
+    )
+    await db.exec("set local session_replication_role = origin")
+    await expectUnverified()
   })
 })

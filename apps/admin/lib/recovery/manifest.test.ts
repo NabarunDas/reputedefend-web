@@ -18,12 +18,12 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261103213000_customer_commercial_payment_preparation_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261103230000_customer_commercial_payment_verification_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     expect(migrationHead.filename).toBe("20261103230000_customer_commercial_payment_verification_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
@@ -38,9 +38,7 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261103230000_customer_commercial_payment_verification_v1.sql",
-    ])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
@@ -96,14 +94,13 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Commercial payment verification is the repository head and is not the DEV ledger head.
-    // Do not apply 20261103230000 to DEV. Do not apply 20261103230000 to Production.
-    // Commercial payment preparation remains the DEV-applied head.
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
+    // Commercial payment verification is the DEV ledger head and the repository head.
+    // Do not replay 20261103230000. Do not apply 20261103230000 to Production.
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration("20261103230000_customer_commercial_payment_verification_v1.sql")).toMatchObject({
-      appliedToDev: false,
+      appliedToDev: true,
       containsDataChange: false,
       safeToReplay: false,
     })
@@ -168,6 +165,10 @@ describe("the migration chain manifest", () => {
       containsDataChange: false,
       safeToReplay: false,
     })
+    const verificationSql = readFileSync(new URL("20261103230000_customer_commercial_payment_verification_v1.sql", directory), "utf8")
+    expect(verificationSql.length).toBe(12838)
+    expect(createHash("md5").update(verificationSql).digest("hex")).toBe("de03ef27a623a72ae3e4015a33782406")
+    expect(createHash("sha256").update(verificationSql).digest("hex")).toBe("9a761103c01d8bb50c1656fe81a35ccab349f862304c6a8044a6a327dac57d9a")
     expect(offerSql).toContain("REVOKE ALL ON FUNCTION public.customer_portal_commercial_offer_v1(text, text)")
     expect(offerSql).toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_commercial_offer_v1(text, text) TO service_role;")
     expect(offerSql).not.toContain("GRANT EXECUTE ON FUNCTION public.customer_portal_commercial_offer_v1(text, text) TO anon")

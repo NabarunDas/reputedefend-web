@@ -260,7 +260,7 @@ export const environmentContract: readonly EnvVariable[] = [
     secret: false,
     scope: "PRODUCTION_AND_PREVIEW",
     atAdminCutover: "OPTIONAL",
-    controls: "DEV payment-worker classification of Telloya and Complete Stripe invoices. Exactly \"true\" lets the existing worker read a signed receipt and its Checkout preparation. It does not override Stripe test or live separation, Supabase project pinning, the provider lane, or live-payment activation. It does not insert payment evidence, activate a subscription, grant an entitlement, or send mail. Production does not inherit a DEV value. Do not enable it until 20261103230000 is applied.",
+    controls: "DEV payment-worker classification of Telloya and Complete Stripe invoices. Exactly \"true\" lets the existing worker read a signed receipt and its Checkout preparation. It does not override Stripe test or live separation, Supabase project pinning, the provider lane, or live-payment activation. It does not insert payment evidence, activate a subscription, grant an entitlement, or send mail. Production does not inherit a DEV value. 20261103230000 is applied on DEV. The flag stays off. Do not enable it from this reconciliation.",
     whenAbsent: "Invoice events stay out of the commercial verifier. A subscription Checkout that only claims commercial metadata is left queued. Recovery and Guard settlement stay on their existing paths.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,

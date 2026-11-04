@@ -44,7 +44,7 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
     })
     // Payment verification 20261103230000 is DEV-applied.
     // pendingMigrations() is empty. Do not replay 20261103230000. Do not apply it to Production.
-    expect(pendingMigrations().map(m => m.filename)).toEqual([])
+    expect(pendingMigrations().map(m => m.filename)).toEqual(["20261104190000_customer_commercial_payment_settlement_v1.sql"])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])
     expect(sql).not.toContain("interval '5 minutes'")

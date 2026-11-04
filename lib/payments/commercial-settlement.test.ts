@@ -3,6 +3,7 @@ import {
   assessCommercialSettlement,
   classifyStripeEvent,
   COMMERCIAL_CHECKOUT_SESSION_ID,
+  commercialPaymentSettlementEnabled,
   commercialPaymentVerificationEnabled,
   type CheckoutFacts,
   type InvoiceFacts,
@@ -328,6 +329,12 @@ describe("commercial settlement verification", () => {
   it("does not verify when the gate is disabled or the signed receipt is missing", () => {
     expect(commercialPaymentVerificationEnabled({})).toBe(false)
     expect(commercialPaymentVerificationEnabled({ CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED: "true" })).toBe(true)
+    expect(commercialPaymentSettlementEnabled({
+      CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED: "true",
+      CUSTOMER_COMMERCIAL_PAYMENT_SETTLEMENT_ENABLED: "true",
+    })).toBe(true)
+    expect(commercialPaymentSettlementEnabled({ CUSTOMER_COMMERCIAL_PAYMENT_SETTLEMENT_ENABLED: "true" })).toBe(false)
+    expect(commercialPaymentSettlementEnabled({ CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED: "true" })).toBe(false)
     expect(assess({ enabled: false })).toMatchObject({ status: "pending", reason: "verification_disabled" })
     expect(assess({ receipt: receipt({ received: false }) })).toMatchObject({ status: "unmatched", reason: "not_received" })
   })

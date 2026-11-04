@@ -122,6 +122,12 @@ export function commercialPaymentVerificationEnabled(env: Record<string, string 
   return env.CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED === "true"
 }
 
+/** Settlement stays closed unless verification and this flag are both exactly "true". */
+export function commercialPaymentSettlementEnabled(env: Record<string, string | undefined> = process.env) {
+  return env.CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED === "true"
+    && env.CUSTOMER_COMMERCIAL_PAYMENT_SETTLEMENT_ENABLED === "true"
+}
+
 export function claimsCommercial(metadata: Record<string, string> | null | undefined) {
   if (!metadata) return false
   return Boolean(metadata.commercialSubscriptionId || metadata.acceptanceId)

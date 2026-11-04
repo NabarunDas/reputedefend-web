@@ -257,3 +257,84 @@ export async function observeCommercialInvoice(input: {
     classificationReason: classified.reason,
   })
 }
+
+export type CommercialSettlementFacts =
+  | {
+    ok: true
+    priceId: string
+    stripeCustomerId: string
+    facts: Record<string, string | number | boolean | null>
+  }
+  | { ok: false; reason: "provider_timeout" | "provider_incomplete" }
+
+/** Fresh provider evidence for the settlement command. This object never carries a verified flag. */
+export async function retrieveCommercialSettlementFacts(input: {
+  rpc: JobRpc
+  provider: Pick<PaymentProvider, "retrieveRecurringInvoice" | "retrieveCheckout" | "retrieveSubscription">
+  eventId: string
+  invoiceId: string
+}): Promise<CommercialSettlementFacts> {
+  let invoice
+  try {
+    invoice = await input.provider.retrieveRecurringInvoice(input.invoiceId)
+  } catch {
+    return { ok: false, reason: "provider_timeout" }
+  }
+  if (!invoice?.priceId || !invoice.customerId || !invoice.subscriptionId) {
+    return { ok: false, reason: "provider_incomplete" }
+  }
+  const snapshot = await input.rpc.rpc<Snapshot>("commercial_payment_preparation_for_price_v1", {
+    p_price_id: invoice.priceId,
+    p_stripe_customer_id: invoice.customerId,
+  })
+  const preparation = preparationFrom(snapshot)
+  if (!preparation?.checkoutSessionId) return { ok: false, reason: "provider_incomplete" }
+  let checkout
+  let subscription
+  try {
+    checkout = await input.provider.retrieveCheckout(preparation.checkoutSessionId)
+    subscription = await input.provider.retrieveSubscription(invoice.subscriptionId)
+  } catch {
+    return { ok: false, reason: "provider_timeout" }
+  }
+  if (!checkout || !subscription) return { ok: false, reason: "provider_incomplete" }
+  return {
+    ok: true,
+    priceId: invoice.priceId,
+    stripeCustomerId: invoice.customerId,
+    facts: {
+      eventId: input.eventId,
+      invoiceId: invoice.id,
+      checkoutSessionId: checkout.id,
+      stripeCustomerId: invoice.customerId,
+      stripeSubscriptionId: invoice.subscriptionId,
+      checkoutSubscriptionId: checkout.subscriptionId ?? null,
+      stripePriceId: invoice.priceId,
+      currency: invoice.currency,
+      invoiceStatus: invoice.status,
+      amountDueMinor: invoice.amountDueMinor,
+      amountPaidMinor: invoice.amountPaidMinor,
+      quantity: invoice.quantity ?? null,
+      lineCount: invoice.lineCount ?? null,
+      discountMinor: invoice.discountMinor ?? null,
+      taxMinor: invoice.taxMinor ?? null,
+      periodStart: invoice.periodStart ?? null,
+      periodEnd: invoice.periodEnd ?? null,
+      billingReason: invoice.billingReason ?? null,
+      livemode: invoice.livemode,
+      automaticTax: invoice.automaticTax ?? null,
+      trial: subscription.status === "trialing" ? true : invoice.trial ?? null,
+      refunded: invoice.refunded ?? null,
+      disputed: invoice.disputed ?? null,
+      subscriptionStatus: subscription.status,
+      cancelAtPeriodEnd: subscription.cancelAtPeriodEnd === true,
+      schedulePresent: Boolean(subscription.scheduleId),
+      subscriptionLivemode: subscription.livemode,
+      subscriptionCustomerId: subscription.customerId,
+      subscriptionPriceId: subscription.priceId,
+      subscriptionQuantity: subscription.quantity,
+      subscriptionPeriodStart: subscription.currentPeriodStart,
+      subscriptionPeriodEnd: subscription.currentPeriodEnd,
+    },
+  }
+}

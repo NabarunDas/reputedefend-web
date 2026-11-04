@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { isStripeLiveSecret, isStripeTestSecret, isStripeWebhookSecret, type PaymentEnv } from "../../../../lib/payments/config"
 import type { PaymentProvider } from "../../../../lib/payments/provider"
 import { processStripeEventHandler } from "../payments/handlers"
-import { observeCommercialCheckout, observeCommercialInvoice } from "../payments/commercial-verification"
-import { commercialPaymentVerificationEnabled } from "../../../../lib/payments/commercial-settlement"
+import { observeCommercialCheckout, observeCommercialInvoice, retrieveCommercialSettlementFacts } from "../payments/commercial-verification"
+import { commercialPaymentSettlementEnabled, commercialPaymentVerificationEnabled } from "../../../../lib/payments/commercial-settlement"
 import { customerPortalOrigin } from "../auth/config"
 import { backend } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
@@ -79,6 +79,8 @@ const allowedRpc = new Set([
   "commercial_payment_preparation_for_session_v1",
   "commercial_payment_preparation_for_price_v1",
   "commercial_payment_invoice_candidates_v1",
+  "commercial_payment_invoice_claim_v1",
+  "commercial_payment_settle_initial_invoice_v1",
 ])
 
 export function fenceDevPaymentRpc(rpc: JobRpc): JobRpc {
@@ -221,6 +223,85 @@ async function settleClaim(input: {
   return "skipped"
 }
 
+async function failCommercialLease(
+  rpc: JobRpc,
+  jobId: string,
+  leaseToken: string,
+  error: string,
+  retryable: boolean,
+): Promise<"retry" | "dead_letter" | "skipped"> {
+  const failed = await rpc.rpc<{ status?: string; jobStatus?: string }>("job_fail_v1", {
+    p_job: jobId,
+    p_lease: leaseToken,
+    p_error: error,
+    p_retryable: retryable,
+  })
+  if (failed.jobStatus === "RETRY") return "retry"
+  if (failed.jobStatus === "DEAD_LETTER") return "dead_letter"
+  return "skipped"
+}
+
+async function settleVerifiedCommercialInvoice(input: {
+  rpc: JobRpc
+  fenced: JobRpc
+  provider: PaymentProvider
+  eventId: string
+  invoiceId: string
+}): Promise<{ claimed: boolean; result: "succeeded" | "retry" | "dead_letter" | "skipped" }> {
+  const prepared = await retrieveCommercialSettlementFacts({
+    rpc: input.fenced,
+    provider: input.provider,
+    eventId: input.eventId,
+    invoiceId: input.invoiceId,
+  })
+  if (!prepared.ok) return { claimed: false, result: "skipped" }
+  const claim = await input.fenced.rpc<ClaimResult>("commercial_payment_invoice_claim_v1", {
+    p_event_id: input.eventId,
+    p_price_id: prepared.priceId,
+    p_stripe_customer_id: prepared.stripeCustomerId,
+  })
+  if (claim.status !== "success" || !claim.jobId || !claim.leaseToken) return { claimed: false, result: "skipped" }
+  const latest = await retrieveCommercialSettlementFacts({
+    rpc: input.fenced,
+    provider: input.provider,
+    eventId: input.eventId,
+    invoiceId: input.invoiceId,
+  })
+  if (!latest.ok) {
+    return {
+      claimed: true,
+      result: await failCommercialLease(input.rpc, claim.jobId, claim.leaseToken, "Commercial invoice evidence was not available.", true),
+    }
+  }
+  let settled: { status?: string; retryable?: boolean }
+  try {
+    settled = await input.fenced.rpc<{ status?: string; retryable?: boolean }>("commercial_payment_settle_initial_invoice_v1", {
+      p_job: claim.jobId,
+      p_lease: claim.leaseToken,
+      p_facts: latest.facts,
+    })
+  } catch {
+    return {
+      claimed: true,
+      result: await failCommercialLease(input.rpc, claim.jobId, claim.leaseToken, "Commercial invoice settlement failed before commit.", true),
+    }
+  }
+  if (settled.status === "settled") return { claimed: true, result: "succeeded" }
+  if (settled.status === "already_processed") return { claimed: true, result: "skipped" }
+  if (settled.status === "denied") return { claimed: true, result: "skipped" }
+  const retryable = settled.status === "pending" || settled.retryable === true
+  return {
+    claimed: true,
+    result: await failCommercialLease(
+      input.rpc,
+      claim.jobId,
+      claim.leaseToken,
+      "Commercial invoice settlement was not applied.",
+      retryable,
+    ),
+  }
+}
+
 async function deliverQueuedPaymentConfirmation(
   rpc: JobRpc,
   provider?: OutgoingMailProvider,
@@ -318,12 +399,28 @@ export async function runDevPaymentEventWorker(options: {
         const fenced = fenceDevPaymentRpc(options.rpc)
         const invoices = await fenced.rpc<{ events?: Candidate[] }>("commercial_payment_invoice_candidates_v1", { p_limit: 20 })
         for (const event of invoices.events ?? []) {
+          if (counts.claimed >= MAX_CLAIMS_PER_RUN) break
           const eventId = event.eventId || ""
           const eventType = event.eventType || ""
           const objectId = event.objectId || ""
           if (!eventId || !eventType || !objectId) continue
-          await observeCommercialInvoice({ rpc: fenced, provider, eventId, eventType, objectId })
-          counts.skipped += 1
+          const observed = await observeCommercialInvoice({ rpc: fenced, provider, eventId, eventType, objectId })
+          if (!commercialPaymentSettlementEnabled() || observed.status !== "verified" || eventType !== "invoice.paid") {
+            counts.skipped += 1
+            continue
+          }
+          const settled = await settleVerifiedCommercialInvoice({
+            rpc: options.rpc,
+            fenced,
+            provider,
+            eventId,
+            invoiceId: objectId,
+          })
+          if (settled.claimed) counts.claimed += 1
+          if (settled.result === "succeeded") counts.succeeded += 1
+          else if (settled.result === "retry") counts.retried += 1
+          else if (settled.result === "dead_letter") counts.deadLettered += 1
+          else counts.skipped += 1
         }
       } catch {
         // A provider or candidate failure leaves the invoice receipt queued.

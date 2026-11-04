@@ -5,8 +5,101 @@
 -- This file does not insert commercial_payment_evidence, change a subscription,
 -- grant an entitlement, activate a service, or send mail.
 -- The evidence-blocking trigger is unchanged.
+-- It replaces only the Checkout session id check and the session pattern inside
+-- commercial_payment_record_checkout_v1. The applied 20261103213000 file is unchanged.
+-- A stored session remains correlation, not payment evidence.
 
 BEGIN;
+
+ALTER TABLE public.commercial_checkout_preparations
+  DROP CONSTRAINT commercial_checkout_preparations_checkout_session_id_check;
+
+ALTER TABLE public.commercial_checkout_preparations
+  ADD CONSTRAINT commercial_checkout_preparations_checkout_session_id_check
+  CHECK (
+    checkout_session_id IS NULL
+    OR checkout_session_id ~ '^cs_[A-Za-z0-9][A-Za-z0-9_]{7,248}$'
+  );
+
+CREATE OR REPLACE FUNCTION public.commercial_payment_record_checkout_v1(
+  p_operation uuid,
+  p_session_id text
+) RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  op public.provider_operations;
+  prep public.commercial_checkout_preparations;
+  recorded jsonb;
+  sub_state text;
+  stripe_sub text;
+  evidence integer;
+BEGIN
+  IF p_operation IS NULL OR p_session_id IS NULL OR p_session_id !~ '^cs_[A-Za-z0-9][A-Za-z0-9_]{7,248}$' THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  SELECT * INTO prep
+  FROM public.commercial_checkout_preparations
+  WHERE checkout_operation_id = p_operation
+  FOR UPDATE;
+  IF prep.id IS NULL THEN
+    RETURN jsonb_build_object('status', 'conflict');
+  END IF;
+  SELECT * INTO op
+  FROM public.provider_operations
+  WHERE id = p_operation
+    AND kind = 'CREATE_SUBSCRIPTION_CHECKOUT'
+    AND purpose = 'COMMERCIAL_CHECKOUT'
+    AND commercial_subscription_id = prep.subscription_id
+  FOR UPDATE;
+  IF op.id IS NULL THEN
+    RETURN jsonb_build_object('status', 'conflict');
+  END IF;
+  IF op.status = 'SUCCEEDED' OR prep.checkout_session_id IS NOT NULL AND prep.checkout_session_id = p_session_id AND op.status = 'SUBMITTED' THEN
+    SELECT state, stripe_subscription_id INTO sub_state, stripe_sub
+    FROM public.commercial_subscriptions WHERE id = prep.subscription_id;
+    IF sub_state IS DISTINCT FROM 'PAYMENT_PENDING' OR stripe_sub IS NOT NULL THEN
+      RAISE EXCEPTION 'a commercial checkout session is not payment evidence';
+    END IF;
+    RETURN jsonb_build_object('status', 'success', 'activated', false, 'providerOperationStatus', op.status);
+  END IF;
+  IF prep.checkout_session_id IS NOT NULL AND prep.checkout_session_id IS DISTINCT FROM p_session_id THEN
+    RETURN jsonb_build_object('status', 'conflict');
+  END IF;
+  IF op.status NOT IN ('PENDING', 'SUBMITTED') THEN
+    RETURN jsonb_build_object('status', 'conflict');
+  END IF;
+  recorded := public.payment_record_provider_refs_v1(p_operation, p_session_id, 'checkout.session', 'SUBMITTED');
+  IF recorded ->> 'status' IS DISTINCT FROM 'success' THEN
+    RETURN recorded;
+  END IF;
+  UPDATE public.commercial_checkout_preparations
+  SET checkout_session_id = coalesce(checkout_session_id, p_session_id)
+  WHERE id = prep.id
+    AND (checkout_session_id IS NULL OR checkout_session_id = p_session_id);
+  UPDATE public.provider_operations
+  SET status = 'SUBMITTED'
+  WHERE id = op.id
+    AND status IS DISTINCT FROM 'SUCCEEDED'
+    AND purpose = 'COMMERCIAL_CHECKOUT';
+  SELECT state, stripe_subscription_id INTO sub_state, stripe_sub
+  FROM public.commercial_subscriptions
+  WHERE id = prep.subscription_id;
+  SELECT count(*) INTO evidence
+  FROM public.commercial_payment_evidence
+  WHERE subscription_id = prep.subscription_id;
+  IF sub_state IS DISTINCT FROM 'PAYMENT_PENDING' OR stripe_sub IS NOT NULL OR evidence <> 0 THEN
+    RAISE EXCEPTION 'a commercial checkout session is not payment evidence';
+  END IF;
+  RETURN jsonb_build_object('status', 'success', 'activated', false, 'providerOperationStatus', 'SUBMITTED');
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.commercial_payment_record_checkout_v1(uuid, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.commercial_payment_record_checkout_v1(uuid, text) TO service_role;
 
 CREATE FUNCTION public.commercial_payment_receipt_v1(p_event_id text)
 RETURNS jsonb
@@ -81,6 +174,10 @@ BEGIN
     'checkoutSessionId', p_prep.checkout_session_id,
     'stripePriceId', p_prep.stripe_price_id,
     'stripeCustomerId', mapped,
+    'customerId', p_prep.customer_id,
+    'commercialSubscriptionId', p_prep.subscription_id,
+    'acceptanceId', p_prep.acceptance_id,
+    'checkoutOperationId', p_prep.checkout_operation_id,
     'amountMinor', acc.amount_minor,
     'currency', acc.currency,
     'cadence', acc.cadence,
@@ -104,7 +201,7 @@ SET search_path = ''
 AS $$
 DECLARE prep public.commercial_checkout_preparations;
 BEGIN
-  IF p_session_id IS NULL OR p_session_id !~ '^cs_[A-Za-z0-9_]{1,255}$' THEN
+  IF p_session_id IS NULL OR p_session_id !~ '^cs_[A-Za-z0-9][A-Za-z0-9_]{7,248}$' THEN
     RETURN jsonb_build_object('status', 'unmatched', 'reason', 'session');
   END IF;
   SELECT * INTO prep FROM public.commercial_checkout_preparations WHERE checkout_session_id = p_session_id;

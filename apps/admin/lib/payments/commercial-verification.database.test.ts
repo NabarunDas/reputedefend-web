@@ -65,7 +65,9 @@ describe("commercial payment verification read model", () => {
   it("reads a signed receipt and lists only whitelisted unpaid invoices", async () => {
     expect(await value("select public.commercial_payment_receipt_v1('not-an-event') as value")).toMatchObject({ status: "unmatched", reason: "not_received" })
     expect(await value("select public.commercial_payment_receipt_v1('evt_missing01') as value")).toMatchObject({ status: "unmatched", reason: "not_received" })
-    expect(await value("select public.commercial_payment_preparation_for_session_v1('cs_unknown') as value")).toMatchObject({ status: "unmatched", reason: "preparation" })
+    expect(await value("select public.commercial_payment_preparation_for_session_v1('cs_test_unknownSession1234') as value")).toMatchObject({ status: "unmatched", reason: "preparation" })
+    expect(await value("select public.commercial_payment_preparation_for_session_v1('cs_test_') as value")).toMatchObject({ status: "unmatched", reason: "session" })
+    expect(await value("select public.commercial_payment_preparation_for_session_v1('pi_3NffrFeUfNV2Hib1234') as value")).toMatchObject({ status: "unmatched", reason: "session" })
     expect(await value("select public.commercial_payment_preparation_for_price_v1('price_unknown', 'cus_unknown') as value")).toMatchObject({ status: "unmatched", reason: "preparation" })
     const received = await value<{ status: string }>("select public.payment_receive_stripe_event_v1('evt_invoice01', 'invoice.paid', 'in_telloya', false) as value")
     expect(received.status).toBe("success")

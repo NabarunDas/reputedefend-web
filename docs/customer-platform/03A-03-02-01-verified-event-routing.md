@@ -15,7 +15,7 @@ This phase classifies and verifies Stripe events for an accepted Telloya or Comp
 | One-shot tool | `dev-stripe-one-shot` leaves subscription checkouts and subscription invoices queued | Unchanged. It is not a second commercial worker. |
 | Evidence | `guard_commercial_payment_evidence_v1` rejects every insert | Unchanged. This phase does not replace that function. |
 
-A metadata key such as `commercialSubscriptionId` does not prove ownership. The classifier uses a signed receipt reconciled to `commercial_checkout_preparations`, the commercial subscription, the immutable acceptance, and `stripe_customer_maps`. A preparation match wins over a Guard or Recovery label. Commercial metadata with no preparation is suspicious and is not sent to Guard or Recovery settlement. A subscription checkout with no preparation and no commercial claim stays on the existing Guard queue.
+A metadata key such as `commercialSubscriptionId` does not prove ownership. The classifier uses a signed receipt reconciled to `commercial_checkout_preparations`, the commercial subscription, the immutable acceptance, and `stripe_customer_maps`. Checkout metadata must match that customer, commercial subscription, acceptance, and Checkout provider operation. Guard or Recovery metadata on a prepared session is suspicious and is not payment evidence. Commercial metadata with no preparation is suspicious and is not sent to Guard or Recovery settlement. A subscription checkout with no preparation and no commercial claim stays on the existing Guard queue.
 
 `CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED` must be exactly `true`. It defaults off. It does not override the develop-preview, DEV Supabase, payment-lane, or secret checks, and it must not be enabled until `20261103230000` is applied. While it is off, the worker does not call the new functions. A subscription checkout that merely claims commercial metadata is skipped. Recovery payment checkouts and Guard subscriptions keep their current paths.
 
@@ -28,6 +28,8 @@ A metadata key such as `commercialSubscriptionId` does not prove ownership. The 
 - the signed receipt is already stored and matches the event
 - test or live mode matches the preparation and the configured lane
 - the preparation, its Checkout session, mapped Stripe customer, subscription, and acceptance agree
+- the Checkout metadata matches the customer, commercial subscription, acceptance, and Checkout provider operation
+- the retrieved Stripe subscription matches that subscription id, customer, price, quantity 1, test or live mode, active state, and the invoice period
 - the invoice subscription is the subscription created by that Checkout
 - one GBP line for the stored recurring price, quantity 1, no trial, discount, automatic tax, refund, or dispute
 - the paid and due amounts equal the accepted monthly total
@@ -52,4 +54,4 @@ The evidence-blocking trigger can be replaced only by that transaction's checks.
 
 That phase still does not grant entitlements, bill additional usage, cancel a subscription, issue a refund, or manage `PAST_DUE` and `PAUSED`.
 
-The applied preparation constraint accepts a Checkout session id only when it matches `^cs_[A-Za-z0-9]+$`. A Stripe session id containing a further underscore cannot be stored by that constraint, so this verifier cannot return `verified` for it. Widening that check belongs in a reviewed migration before `20261103230000` is applied and before any subscription is activated.
+`20261103230000` replaces `commercial_checkout_preparations_checkout_session_id_check` and the session pattern in `commercial_payment_record_checkout_v1`. The accepted id keeps the `cs_` prefix, allows the underscore in `cs_test_` and `cs_live_`, and is bounded to 252 characters. Malformed ids, whitespace, oversized strings, and other provider ids are rejected. The applied `20261103213000` file is unchanged. Do not apply `20261103230000` until this replacement has been reviewed. A recorded session is still not payment evidence.

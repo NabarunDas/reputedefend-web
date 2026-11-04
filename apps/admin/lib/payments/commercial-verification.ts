@@ -10,6 +10,7 @@ import {
   type PreparationFacts,
   type ReceiptFacts,
   type SettlementResult,
+  type SubscriptionFacts,
 } from "../../../../lib/payments/commercial-settlement"
 import type { JobRpc } from "../jobs/model"
 
@@ -24,6 +25,10 @@ type Snapshot = {
   checkoutSessionId?: string | null
   stripePriceId?: string | null
   stripeCustomerId?: string | null
+  customerId?: string | null
+  commercialSubscriptionId?: string | null
+  acceptanceId?: string | null
+  checkoutOperationId?: string | null
   amountMinor?: number
   currency?: string
   cadence?: string
@@ -44,12 +49,17 @@ const disabled = (route: SettlementResult["route"], reason: string): SettlementR
 
 function preparationFrom(snapshot: Snapshot): PreparationFacts | null {
   if (snapshot.status !== "success" || (snapshot.productCode !== "TELLOYA" && snapshot.productCode !== "COMPLETE")) return null
-  if (!snapshot.checkoutSessionId) return null
+  if (!snapshot.checkoutSessionId || !snapshot.customerId || !snapshot.commercialSubscriptionId) return null
+  if (!snapshot.acceptanceId || !snapshot.checkoutOperationId) return null
   return {
     productCode: snapshot.productCode,
     checkoutSessionId: snapshot.checkoutSessionId,
     stripePriceId: snapshot.stripePriceId ?? null,
     stripeCustomerId: snapshot.stripeCustomerId ?? null,
+    customerId: snapshot.customerId,
+    commercialSubscriptionId: snapshot.commercialSubscriptionId,
+    acceptanceId: snapshot.acceptanceId,
+    checkoutOperationId: snapshot.checkoutOperationId,
     amountMinor: snapshot.amountMinor ?? 0,
     currency: snapshot.currency || "",
     cadence: snapshot.cadence || "",
@@ -164,14 +174,27 @@ export async function observeCommercialInvoice(input: {
       return { ...disabled(preparation.productCode === "COMPLETE" ? "complete" : "telloya", "provider_timeout"), retryable: true }
     }
   }
-  let subscriptionStatus: string | null = null
-  let cancelAtPeriodEnd = false
+  let subscriptionFacts: SubscriptionFacts | null = null
   if (invoice.subscriptionId) {
     try {
       const subscription = await input.provider.retrieveSubscription(invoice.subscriptionId)
-      if (!subscription) return { status: "pending", route: preparation?.productCode === "COMPLETE" ? "complete" : "telloya", reason: "provider_incomplete", retryable: true }
-      subscriptionStatus = subscription.status
-      cancelAtPeriodEnd = subscription.cancelAtPeriodEnd === true
+      if (!subscription) {
+        subscriptionFacts = null
+      } else {
+        subscriptionFacts = {
+          id: subscription.id,
+          customerId: subscription.customerId,
+          priceId: subscription.priceId,
+          quantity: subscription.quantity,
+          livemode: subscription.livemode,
+          status: subscription.status,
+          currentPeriodStart: subscription.currentPeriodStart,
+          currentPeriodEnd: subscription.currentPeriodEnd,
+          cancelAtPeriodEnd: subscription.cancelAtPeriodEnd === true,
+          scheduleId: subscription.scheduleId,
+          metadata: subscription.metadata ?? {},
+        }
+      }
     } catch {
       return { ...disabled(preparation?.productCode === "COMPLETE" ? "complete" : "telloya", "provider_timeout"), retryable: true }
     }
@@ -193,13 +216,13 @@ export async function observeCommercialInvoice(input: {
     discountMinor: invoice.discountMinor ?? null,
     taxMinor: invoice.taxMinor ?? null,
     automaticTax: invoice.automaticTax ?? null,
-    trial: subscriptionStatus === "trialing" ? true : invoice.trial ?? null,
+    trial: subscriptionFacts?.status === "trialing" ? true : invoice.trial ?? null,
     refunded: invoice.refunded ?? null,
     disputed: invoice.disputed ?? null,
     lineCount: invoice.lineCount ?? null,
     billingReason: invoice.billingReason ?? null,
-    subscriptionStatus,
-    cancelAtPeriodEnd,
+    subscriptionStatus: subscriptionFacts?.status ?? null,
+    cancelAtPeriodEnd: subscriptionFacts?.cancelAtPeriodEnd === true,
   }
   const checkoutFacts: CheckoutFacts | null = checkout ? {
     id: checkout.id,
@@ -216,7 +239,7 @@ export async function observeCommercialInvoice(input: {
     checkout: checkoutFacts,
     invoice: invoiceFacts,
     preparation,
-    guardLinked: claimsGuard(invoice.metadata) && !preparation,
+    guardLinked: (claimsGuard(invoice.metadata) || claimsGuard(subscriptionFacts?.metadata)) && !preparation,
     recoveryLinked: false,
   })
   if (classified.route === "guard" || classified.route === "recovery") {
@@ -230,6 +253,7 @@ export async function observeCommercialInvoice(input: {
     preparation,
     checkout: checkoutFacts,
     invoice: invoiceFacts,
+    subscription: subscriptionFacts,
     classificationReason: classified.reason,
   })
 }

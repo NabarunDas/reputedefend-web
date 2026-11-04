@@ -11,7 +11,7 @@ import type { CommercialMetadata, RetrievedCheckout } from "../../../../../lib/p
 import { paymentProviderWithLane } from "../../../../../lib/payments"
 import { PaymentsDisabledError, type PaymentProvider } from "../../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
-import { COMMERCIAL_VERIFICATION_MESSAGE } from "../../../../../lib/payments/commercial-settlement"
+import { COMMERCIAL_CHECKOUT_SESSION_ID, COMMERCIAL_VERIFICATION_MESSAGE } from "../../../../../lib/payments/commercial-settlement"
 import { commercialCheckoutEnabled } from "./flag"
 import { OFFER_REF } from "./offer-types"
 
@@ -59,7 +59,7 @@ const PROVIDER_REF = {
   customer: /^cus_[A-Za-z0-9]+$/,
   price: /^price_[A-Za-z0-9]+$/,
   product: /^prod_[A-Za-z0-9]+$/,
-  session: /^cs_[A-Za-z0-9]+$/,
+  session: COMMERCIAL_CHECKOUT_SESSION_ID,
 }
 
 async function readJson(request: NextRequest, limit: number) {

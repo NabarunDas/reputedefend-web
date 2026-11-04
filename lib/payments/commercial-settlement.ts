@@ -32,6 +32,10 @@ export type PreparationFacts = {
   checkoutSessionId: string
   stripePriceId: string | null
   stripeCustomerId: string | null
+  customerId: string
+  commercialSubscriptionId: string
+  acceptanceId: string
+  checkoutOperationId: string
   amountMinor: number
   currency: string
   cadence: string
@@ -81,6 +85,23 @@ export type InvoiceFacts = {
   cancelAtPeriodEnd?: boolean
 }
 
+export type SubscriptionFacts = {
+  id: string
+  customerId: string | null
+  priceId: string | null
+  quantity: number | null
+  livemode: boolean
+  status: string | null
+  currentPeriodStart: string | null
+  currentPeriodEnd: string | null
+  cancelAtPeriodEnd: boolean
+  scheduleId: string | null
+  metadata: Record<string, string>
+}
+
+/** Bounded Checkout session id. Allows cs_test_ and cs_live_ forms and rejects other provider ids. */
+export const COMMERCIAL_CHECKOUT_SESSION_ID = /^cs_[A-Za-z0-9][A-Za-z0-9_]{7,248}$/
+
 export type ReceiptFacts = {
   received: boolean
   eventId: string
@@ -108,7 +129,18 @@ export function claimsCommercial(metadata: Record<string, string> | null | undef
 
 export function claimsGuard(metadata: Record<string, string> | null | undefined) {
   if (!metadata) return false
-  return Boolean(metadata.guardSubscriptionId || metadata.guardCoverageId)
+  return Boolean(
+    metadata.guardSubscriptionId
+    || metadata.guardCoverageId
+    || metadata.priceVersionId
+    || metadata.continuationId
+    || metadata.guardRefundId,
+  )
+}
+
+export function claimsRecovery(metadata: Record<string, string> | null | undefined) {
+  if (!metadata) return false
+  return Boolean(metadata.serviceOrderId || metadata.obligationId || metadata.attemptId || metadata.orderRef)
 }
 
 function productRoute(code: "TELLOYA" | "COMPLETE"): CommercialRoute {
@@ -130,6 +162,65 @@ function preparationMatchesInvoice(preparation: PreparationFacts, invoice: Invoi
   )
 }
 
+const COMMERCIAL_METADATA_KEYS = ["customerId", "commercialSubscriptionId", "acceptanceId", "providerOperationId"] as const
+
+function hostileMetadata(metadata: Record<string, string> | null | undefined) {
+  return claimsGuard(metadata) || claimsRecovery(metadata)
+}
+
+function sessionLivemode(id: string): boolean | null {
+  if (id.startsWith("cs_live_")) return true
+  if (id.startsWith("cs_test_")) return false
+  return null
+}
+
+function metadataReason(key: typeof COMMERCIAL_METADATA_KEYS[number]) {
+  if (key === "customerId") return "metadata_customer"
+  if (key === "commercialSubscriptionId") return "metadata_subscription"
+  if (key === "acceptanceId") return "metadata_acceptance"
+  return "metadata_operation"
+}
+
+function expectedMetadata(preparation: PreparationFacts, key: typeof COMMERCIAL_METADATA_KEYS[number]) {
+  if (key === "customerId") return preparation.customerId
+  if (key === "commercialSubscriptionId") return preparation.commercialSubscriptionId
+  if (key === "acceptanceId") return preparation.acceptanceId
+  return preparation.checkoutOperationId
+}
+
+function commercialMetadataIssue(
+  metadata: Record<string, string> | null | undefined,
+  preparation: PreparationFacts,
+  mode: "required" | "supplied",
+): string | null {
+  const value = metadata ?? {}
+  if (hostileMetadata(value)) return "conflicting_metadata"
+  if (Object.keys(value).some(key => !COMMERCIAL_METADATA_KEYS.includes(key as typeof COMMERCIAL_METADATA_KEYS[number]))) {
+    return "conflicting_metadata"
+  }
+  const present = COMMERCIAL_METADATA_KEYS.filter(key => value[key])
+  if (present.length === 0) return mode === "required" ? "metadata_customer" : "provider_incomplete"
+  for (const key of COMMERCIAL_METADATA_KEYS) {
+    if (value[key] && value[key] !== expectedMetadata(preparation, key)) return metadataReason(key)
+  }
+  if (present.length < COMMERCIAL_METADATA_KEYS.length) {
+    const missing = COMMERCIAL_METADATA_KEYS.find(key => !value[key]) ?? "customerId"
+    return mode === "required" ? metadataReason(missing) : "provider_incomplete"
+  }
+  return null
+}
+
+function suppliedInvoiceMetadataIssue(metadata: Record<string, string>, preparation: PreparationFacts) {
+  if (hostileMetadata(metadata)) return "conflicting_metadata"
+  const present = COMMERCIAL_METADATA_KEYS.filter(key => metadata[key])
+  if (present.length === 0) return null
+  for (const key of COMMERCIAL_METADATA_KEYS) {
+    if (metadata[key] && metadata[key] !== expectedMetadata(preparation, key)) return metadataReason(key)
+  }
+  if (present.length < COMMERCIAL_METADATA_KEYS.length) return "provider_incomplete"
+  return null
+}
+
 export function classifyStripeEvent(input: {
   eventType: string
   checkout: CheckoutFacts | null
@@ -138,17 +229,23 @@ export function classifyStripeEvent(input: {
   guardLinked: boolean
   recoveryLinked: boolean
 }): { route: CommercialRoute; reason: string } {
-  const metadata = input.checkout?.metadata || input.invoice?.metadata || {}
-  if (claimsCommercial(metadata) && claimsGuard(metadata)) {
+  const checkoutMetadata = input.checkout?.metadata
+  const invoiceMetadata = input.invoice?.metadata
+  if (
+    (claimsCommercial(checkoutMetadata) && claimsGuard(checkoutMetadata))
+    || (claimsCommercial(invoiceMetadata) && claimsGuard(invoiceMetadata))
+  ) {
     return { route: "suspicious", reason: "conflicting_metadata" }
   }
-  if (input.preparation && input.checkout && preparationMatchesCheckout(input.preparation, input.checkout)) {
-    return { route: productRoute(input.preparation.productCode), reason: "preparation" }
+  const preparedCheckout = Boolean(input.preparation && input.checkout && preparationMatchesCheckout(input.preparation, input.checkout))
+  const preparedInvoice = Boolean(input.preparation && input.invoice && preparationMatchesInvoice(input.preparation, input.invoice))
+  if (preparedCheckout || preparedInvoice) {
+    if (hostileMetadata(checkoutMetadata) || hostileMetadata(invoiceMetadata)) {
+      return { route: "suspicious", reason: "conflicting_metadata" }
+    }
+    return { route: productRoute(input.preparation!.productCode), reason: "preparation" }
   }
-  if (input.preparation && input.invoice && preparationMatchesInvoice(input.preparation, input.invoice)) {
-    return { route: productRoute(input.preparation.productCode), reason: "preparation" }
-  }
-  if (claimsCommercial(metadata)) {
+  if (claimsCommercial(checkoutMetadata) || claimsCommercial(invoiceMetadata)) {
     return { route: "suspicious", reason: "metadata_without_preparation" }
   }
   if (input.guardLinked || (input.checkout?.mode === "subscription" && claimsGuard(input.checkout.metadata))) {
@@ -179,6 +276,66 @@ function periodOverlap(leftStart: string, leftEnd: string, evidence: EvidenceFac
   return "clear" as const
 }
 
+function identityResult(
+  issue: string | null,
+  route: CommercialRoute,
+  productCode: "TELLOYA" | "COMPLETE",
+): SettlementResult | null {
+  if (!issue) return null
+  if (issue === "provider_incomplete") return result("pending", route, issue, true, productCode)
+  if (issue === "conflicting_metadata") return result("mismatch", "suspicious", issue, false)
+  return result("mismatch", route, issue, false, productCode)
+}
+
+function sessionShapeIssue(id: string, livemode: boolean): string | null {
+  if (!COMMERCIAL_CHECKOUT_SESSION_ID.test(id)) return "session"
+  const implied = sessionLivemode(id)
+  if (implied != null && implied !== livemode) return "livemode"
+  return null
+}
+
+function subscriptionIssue(
+  subscription: SubscriptionFacts | null | undefined,
+  preparation: PreparationFacts,
+  invoice: InvoiceFacts,
+  route: CommercialRoute,
+  productCode: "TELLOYA" | "COMPLETE",
+): SettlementResult | null {
+  if (!subscription) return result("pending", route, "provider_incomplete", true, productCode)
+  if (subscription.id !== invoice.subscriptionId) return result("mismatch", route, "subscription", false, productCode)
+  if (subscription.livemode !== preparation.livemode) return result("mismatch", route, "livemode", false, productCode)
+  if (subscription.customerId && subscription.customerId !== preparation.stripeCustomerId) {
+    return result("mismatch", route, "subscription_customer", false, productCode)
+  }
+  if (!subscription.customerId) return result("pending", route, "provider_incomplete", true, productCode)
+  if (subscription.priceId && subscription.priceId !== preparation.stripePriceId) {
+    return result("mismatch", route, "subscription_price", false, productCode)
+  }
+  if (!subscription.priceId) return result("pending", route, "provider_incomplete", true, productCode)
+  if (subscription.quantity != null && subscription.quantity !== 1) {
+    return result("unsupported", route, "subscription_quantity", false, productCode)
+  }
+  if (subscription.quantity == null) return result("pending", route, "provider_incomplete", true, productCode)
+  if (subscription.cancelAtPeriodEnd || ["canceled", "incomplete_expired", "unpaid"].includes(subscription.status || "")) {
+    return result("mismatch", route, "cancellation", false, productCode)
+  }
+  if (subscription.scheduleId) return result("mismatch", route, "subscription_change", false, productCode)
+  if (subscription.status === "past_due") return result("mismatch", route, "payment_failed", false, productCode)
+  if (subscription.status === "trialing") return result("unsupported", route, "trial", false, productCode)
+  if (subscription.status && invoice.subscriptionStatus && subscription.status !== invoice.subscriptionStatus) {
+    return result("mismatch", route, "subscription", false, productCode)
+  }
+  if (!subscription.status) return result("pending", route, "provider_incomplete", true, productCode)
+  if (subscription.currentPeriodStart && subscription.currentPeriodEnd) {
+    if (subscription.currentPeriodStart !== invoice.periodStart || subscription.currentPeriodEnd !== invoice.periodEnd) {
+      return result("mismatch", route, "period", false, productCode)
+    }
+  } else {
+    return result("pending", route, "provider_incomplete", true, productCode)
+  }
+  return identityResult(commercialMetadataIssue(subscription.metadata, preparation, "supplied"), route, productCode)
+}
+
 export function assessCommercialSettlement(input: {
   enabled: boolean
   route: CommercialRoute
@@ -187,6 +344,7 @@ export function assessCommercialSettlement(input: {
   preparation: PreparationFacts | null
   checkout: CheckoutFacts | null
   invoice: InvoiceFacts | null
+  subscription?: SubscriptionFacts | null
   classificationReason?: string
 }): SettlementResult {
   const route = input.route
@@ -217,8 +375,12 @@ export function assessCommercialSettlement(input: {
     if (!checkout || checkout.id !== input.receipt.objectId || checkout.id !== preparation.checkoutSessionId) {
       return result("unmatched", route, "session", false, productCode)
     }
-    if (checkout.livemode !== preparation.livemode) return result("mismatch", route, "livemode", false, productCode)
+    const checkoutShape = sessionShapeIssue(checkout.id, preparation.livemode)
+    if (checkoutShape === "session") return result("unmatched", route, "session", false, productCode)
+    if (checkoutShape === "livemode" || checkout.livemode !== preparation.livemode) return result("mismatch", route, "livemode", false, productCode)
     if (checkout.customerId !== preparation.stripeCustomerId) return result("mismatch", route, "customer", false, productCode)
+    const checkoutIdentity = identityResult(commercialMetadataIssue(checkout.metadata, preparation, "required"), route, productCode)
+    if (checkoutIdentity) return checkoutIdentity
     if (checkout.status === "expired") return result("mismatch", route, "session_closed", false, productCode)
     if (input.eventType === "checkout.session.async_payment_failed" || checkout.status === "canceled") {
       return result("mismatch", route, "payment_failed", false, productCode)
@@ -233,12 +395,18 @@ export function assessCommercialSettlement(input: {
   const checkout = input.checkout
   if (!invoice || invoice.id !== input.receipt.objectId) return result("unmatched", route, "invoice", true, productCode)
   if (!checkout || checkout.id !== preparation.checkoutSessionId) return result("unmatched", route, "session", false, productCode)
-  if (invoice.livemode !== preparation.livemode || checkout.livemode !== preparation.livemode) {
+  const checkoutShape = sessionShapeIssue(checkout.id, preparation.livemode)
+  if (checkoutShape === "session") return result("unmatched", route, "session", false, productCode)
+  if (checkoutShape === "livemode" || invoice.livemode !== preparation.livemode || checkout.livemode !== preparation.livemode) {
     return result("mismatch", route, "livemode", false, productCode)
   }
   if (invoice.customerId !== preparation.stripeCustomerId || checkout.customerId !== preparation.stripeCustomerId) {
     return result("mismatch", route, "customer", false, productCode)
   }
+  const checkoutIdentity = identityResult(commercialMetadataIssue(checkout.metadata, preparation, "required"), route, productCode)
+  if (checkoutIdentity) return checkoutIdentity
+  const invoiceIdentity = identityResult(suppliedInvoiceMetadataIssue(invoice.metadata, preparation), route, productCode)
+  if (invoiceIdentity) return invoiceIdentity
   if (!invoice.priceId || invoice.priceId !== preparation.stripePriceId) return result("mismatch", route, "price", false, productCode)
   if (!invoice.subscriptionId || !checkout.subscriptionId || invoice.subscriptionId !== checkout.subscriptionId) {
     return result("mismatch", route, "subscription", false, productCode)
@@ -246,6 +414,8 @@ export function assessCommercialSettlement(input: {
   if (preparation.stripeSubscriptionId && preparation.stripeSubscriptionId !== invoice.subscriptionId) {
     return result("mismatch", route, "subscription", false, productCode)
   }
+  const subscription = subscriptionIssue(input.subscription, preparation, invoice, route, productCode)
+  if (subscription) return subscription
   if (invoice.quantity !== 1) return result("unsupported", route, "quantity", false, productCode)
   if ((invoice.currency || "").toLowerCase() !== "gbp") return result("mismatch", route, "currency", false, productCode)
   if (invoice.cancelAtPeriodEnd || ["canceled", "incomplete_expired", "unpaid"].includes(invoice.subscriptionStatus || "")) {
@@ -286,6 +456,8 @@ export function assessCommercialSettlement(input: {
   if (overlap === "invalid") return result("mismatch", route, "period", false, productCode)
   if (overlap === "same_event") return result("already_processed", route, "duplicate_evidence", false, productCode)
   if (overlap === "overlap") return result("mismatch", route, "prior_settlement", false, productCode)
-  if (invoice.subscriptionStatus !== "active") return result("pending", route, "subscription_pending", true, productCode)
+  if (input.subscription?.status !== "active" || invoice.subscriptionStatus !== "active") {
+    return result("pending", route, "subscription_pending", true, productCode)
+  }
   return result("verified", route, "paid_invoice", false, productCode)
 }

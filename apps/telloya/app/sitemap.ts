@@ -14,13 +14,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
     return []
   }
 
+  // /demo permanently redirects to /enquire, so the public sitemap lists the destination.
   const routes = [
     "",
     "/how-it-works",
     "/features",
     "/industries",
     "/pricing",
-    "/demo",
+    "/enquire",
     "/cookies",
   ]
 

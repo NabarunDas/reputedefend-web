@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowUpRight, Check, ExternalLink } from "lucide-react"
-import { pageTitle } from "@/lib/brand"
+import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { pricingContent } from "@/lib/content"
 import { formatGbpPrice, formatMinutes } from "@/lib/pricing"
 import styles from "./pricing.module.css"
@@ -9,18 +9,10 @@ import styles from "./pricing.module.css"
 const { seo, hero, currency, plans, guard, comparison, overage, setup, international, faq, cta } = pricingContent
 
 export const metadata: Metadata = {
-  title: pageTitle(seo.title),
+  title: absolutePageTitle(seo.title),
   description: seo.description,
   alternates: { canonical: "/pricing" },
-  openGraph: {
-    title: seo.title,
-    description: seo.description,
-    url: "/pricing",
-  },
-  twitter: {
-    title: seo.title,
-    description: seo.description,
-  },
+  ...pageSocialMetadata({ title: seo.title, description: seo.description, path: "/pricing" }),
 }
 
 export default function Pricing() {

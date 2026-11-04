@@ -341,7 +341,16 @@ describe("Pre-launch Behavior", () => {
     expect(Array.isArray(result)).toBe(true)
     expect(result.length).toBe(7)
     expect(result[0].url).toBe("https://telloya.com")
-    expect(result.some((entry) => entry.url === "https://telloya.com/cookies")).toBe(true)
+    expect(result.map((entry) => entry.url)).toEqual([
+      "https://telloya.com",
+      "https://telloya.com/how-it-works",
+      "https://telloya.com/features",
+      "https://telloya.com/industries",
+      "https://telloya.com/pricing",
+      "https://telloya.com/enquire",
+      "https://telloya.com/cookies",
+    ])
+    expect(result.some((entry) => entry.url.includes("/demo"))).toBe(false)
     
     process.env = originalEnv
   })
@@ -416,5 +425,23 @@ describe("Page Structure and Accessibility", () => {
       href === PRODUCTION_CUSTOMER_PORTAL_HREF || 
       href === DEV_CUSTOMER_PORTAL_HREF
     ).toBe(true)
+  })
+
+  it("sends each published plan to the enquiry page without opening submission", async () => {
+    const { pricingContent } = await import("@/lib/content")
+    expect(pricingContent.plans.map((plan) => plan.href)).toEqual([
+      "/enquire?plan=basic",
+      "/enquire?plan=growth",
+      "/enquire?plan=pro",
+      "/enquire?plan=custom",
+    ])
+
+    const EnquirePage = (await import("@/app/enquire/page")).default
+    render(await EnquirePage({ searchParams: Promise.resolve({ plan: "growth" }) }))
+    expect(screen.getByRole("heading", { name: /Enquire about Telloya/i })).toBeInTheDocument()
+    expect(screen.getByText(/not currently available for self-service purchase/i)).toBeInTheDocument()
+    expect(screen.queryByText(/finalising pricing and packaging/i)).not.toBeInTheDocument()
+    expect(screen.getByRole("status")).toHaveTextContent(/enquiry system before public launch/i)
+    expect(screen.queryByRole("button", { name: /submit/i })).not.toBeInTheDocument()
   })
 })

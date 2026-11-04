@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { isStripeLiveSecret, isStripeTestSecret, isStripeWebhookSecret, type PaymentEnv } from "../../../../lib/payments/config"
 import type { PaymentProvider } from "../../../../lib/payments/provider"
 import { processStripeEventHandler } from "../payments/handlers"
+import { observeCommercialCheckout, observeCommercialInvoice } from "../payments/commercial-verification"
+import { commercialPaymentVerificationEnabled } from "../../../../lib/payments/commercial-settlement"
 import { customerPortalOrigin } from "../auth/config"
 import { backend } from "../auth/backend"
 import { privateResponseHeaders } from "../access"
@@ -73,6 +75,10 @@ const allowedRpc = new Set([
   "payment_apply_provider_event_v1",
   "payment_confirmation_context_v1",
   "payment_queue_confirmation_v1",
+  "commercial_payment_receipt_v1",
+  "commercial_payment_preparation_for_session_v1",
+  "commercial_payment_preparation_for_price_v1",
+  "commercial_payment_invoice_candidates_v1",
 ])
 
 export function fenceDevPaymentRpc(rpc: JobRpc): JobRpc {
@@ -117,8 +123,9 @@ export function orderDevPaymentCandidates(events: Candidate[]): Candidate[] {
   const rank = (event: Candidate) => {
     const type = event.eventType || ""
     if (type.startsWith("checkout.session.")) return 0
-    if (type.startsWith("payment_intent.")) return 1
-    return 2
+    if (type.startsWith("invoice.")) return 1
+    if (type.startsWith("payment_intent.")) return 2
+    return 3
   }
   return [...events].sort((left, right) => rank(left) - rank(right))
 }
@@ -256,9 +263,21 @@ export async function runDevPaymentEventWorker(options: {
         continue
       }
       let settlementClear = false
+      const fenced = fenceDevPaymentRpc(options.rpc)
       if (eventType.startsWith("checkout.session.")) {
         try {
           provider ??= await devStripeClassificationProvider(options.rpc)
+          const observed = await observeCommercialCheckout({
+            rpc: fenced,
+            provider,
+            eventId,
+            eventType,
+            objectId,
+          })
+          if (observed.handled) {
+            counts.skipped += 1
+            continue
+          }
           if (await checkoutSessionIsGuard(provider, objectId)) {
             counts.skipped += 1
             continue
@@ -292,6 +311,23 @@ export async function runDevPaymentEventWorker(options: {
       else if (outcome === "dead_letter") counts.deadLettered += 1
       else if (outcome === "released") counts.released += 1
       else counts.skipped += 1
+    }
+    if (commercialPaymentVerificationEnabled()) {
+      try {
+        provider ??= await devStripeClassificationProvider(options.rpc)
+        const fenced = fenceDevPaymentRpc(options.rpc)
+        const invoices = await fenced.rpc<{ events?: Candidate[] }>("commercial_payment_invoice_candidates_v1", { p_limit: 20 })
+        for (const event of invoices.events ?? []) {
+          const eventId = event.eventId || ""
+          const eventType = event.eventType || ""
+          const objectId = event.objectId || ""
+          if (!eventId || !eventType || !objectId) continue
+          await observeCommercialInvoice({ rpc: fenced, provider, eventId, eventType, objectId })
+          counts.skipped += 1
+        }
+      } catch {
+        // A provider or candidate failure leaves the invoice receipt queued.
+      }
     }
     counts.confirmationSent += await deliverQueuedPaymentConfirmation(options.rpc, options.mailProvider)
     await heartbeat(options.rpc, "complete", null)

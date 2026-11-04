@@ -574,4 +574,93 @@ describe("commercial payment preparation", () => {
       payment: { state: "unsupported", totalMinor: 4900 },
     })
   })
+
+  it("records a realistic Checkout session and reads that exact session", async () => {
+    const telloya = await offer({ ref: "VC-26-PAY2AT", amount: 7900, guardQuantity: 0 })
+    await accept(alexSession, telloya)
+    const started = await prepare(alexSession, telloya.ref)
+    expect(started).toMatchObject({ status: "success", acceptanceId: expect.any(String), providerOperationId: expect.any(String) })
+    const sessionId = "cs_test_a1B2c3D4e5F6g7H8i9J0k1L2"
+    const malformed = [
+      "cs_test_a1B2c3D4e5F6g7H8 ",
+      "cs_test_a1B2c3D4e5F6\ng7",
+      `cs_test_${"a".repeat(300)}`,
+      "pi_3NffrFeUfNV2Hib1234",
+      "sub_1P2abcDEF3ghiJKL",
+      "in_1P2abcDEF3ghiJKL",
+      "cus_NffrFeUfNV2Hib",
+      "price_1P2abcDEF3ghiJKL",
+      "cs_test_",
+      "cs_",
+      "cs_test_a1B2/c3D4e5F6g7",
+    ]
+    for (const id of malformed) {
+      expect(await rpc<Row>("commercial_payment_record_checkout_v1", [started?.providerOperationId, id])).toMatchObject({ status: "invalid" })
+    }
+    expect(await rpc<Row>("commercial_payment_record_price_v1", [started?.priceOperationId, "price_1P2abcDEF3ghiJKL", "prod_1P2abcDEF3ghi"])).toMatchObject({
+      status: "success",
+      activated: false,
+    })
+    await db.query(
+      `insert into public.stripe_customer_maps(customer_id, stripe_customer_id) values ($1, 'cus_NffrFeUfNV2Hib')`,
+      [alex],
+    )
+    const recorded = await rpc<Row>("commercial_payment_record_checkout_v1", [started?.providerOperationId, sessionId])
+    expect(recorded).toMatchObject({ status: "success", activated: false, providerOperationStatus: "SUBMITTED" })
+    const read = await rpc<Row>("commercial_payment_preparation_for_session_v1", [sessionId])
+    expect(read).toMatchObject({
+      status: "success",
+      checkoutSessionId: sessionId,
+      customerId: alex,
+      commercialSubscriptionId: telloya.subscription,
+      acceptanceId: started?.acceptanceId,
+      checkoutOperationId: started?.providerOperationId,
+      productCode: "TELLOYA",
+      stripeCustomerId: "cus_NffrFeUfNV2Hib",
+      stripePriceId: "price_1P2abcDEF3ghiJKL",
+      subscriptionState: "PAYMENT_PENDING",
+    })
+    expect(read.checkoutSessionId).toBe(sessionId)
+
+    const liveOffer = await offer({ ref: "VC-26-PAY2AU", business: yard, locations: [yardLoc], amount: 6400, guardQuantity: 0 })
+    await accept(alexSession, liveOffer)
+    const liveStarted = await prepare(alexSession, liveOffer.ref)
+    const liveSessionId = "cs_live_b2C3d4E5f6G7h8I9j0K1l2M3"
+    expect(await rpc<Row>("commercial_payment_record_price_v1", [liveStarted?.priceOperationId, "price_1PliveDEF3ghiJKLM", "prod_1PliveDEF3ghiJK"])).toMatchObject({ status: "success" })
+    expect(await rpc<Row>("commercial_payment_record_checkout_v1", [liveStarted?.providerOperationId, liveSessionId])).toMatchObject({
+      status: "success",
+      activated: false,
+    })
+    const liveRead = await rpc<Row>("commercial_payment_preparation_for_session_v1", [liveSessionId])
+    expect(liveRead.checkoutSessionId).toBe(liveSessionId)
+    expect(liveRead).toMatchObject({
+      status: "success",
+      commercialSubscriptionId: liveOffer.subscription,
+      acceptanceId: liveStarted?.acceptanceId,
+      checkoutOperationId: liveStarted?.providerOperationId,
+    })
+
+    const constraint = await rows<{ definition: string }>(
+      `select pg_get_constraintdef(oid) as definition
+       from pg_constraint
+       where conname = 'commercial_checkout_preparations_checkout_session_id_check'`,
+    )
+    expect(constraint[0].definition).toContain("cs_[A-Za-z0-9][A-Za-z0-9_]{7,248}")
+    const notice = await rpc<Row[]>("customer_portal_commercial_payment_notice_v1", [alexSession])
+    expect(JSON.stringify(notice)).not.toContain(sessionId)
+    expect(JSON.stringify(notice)).not.toContain(String(started?.acceptanceId))
+    expect((await counts()).evidence).toBe(0)
+    expect((await counts()).active).toBe(0)
+    const state = await rows<{ state: string; stripe_subscription_id: string | null }>(
+      `select state, stripe_subscription_id from public.commercial_subscriptions where id = $1`,
+      [telloya.subscription],
+    )
+    expect(state[0]).toEqual({ state: "PAYMENT_PENDING", stripe_subscription_id: null })
+    await db.exec("SAVEPOINT bad_checkout_id")
+    await expect(db.query(
+      `update public.commercial_checkout_preparations set checkout_session_id = 'pi_3NffrFeUfNV2Hib1234' where checkout_session_id = $1`,
+      [sessionId],
+    )).rejects.toThrow(/checkout_session_id/)
+    await db.exec("ROLLBACK TO SAVEPOINT bad_checkout_id")
+  })
 })

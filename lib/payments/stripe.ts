@@ -51,6 +51,45 @@ function metadataOf(value: { metadata?: Stripe.Metadata | null } | null | undefi
   return Object.fromEntries(Object.entries(meta).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
 }
 
+const KNOWN_INVOICE_REASONS = new Set(["manual", "subscription", "subscription_create", "subscription_cycle", "subscription_threshold", "subscription_update"])
+
+/** Definite invoice facts for commercial verification. Unknown values stay null so the caller fails closed. */
+async function commercialInvoiceFacts(stripe: Stripe, invoice: Stripe.Invoice) {
+  const discounts = invoice.total_discount_amounts
+  const credits = invoice.total_pretax_credit_amounts
+  const prepaymentCredit = invoice.pre_payment_credit_notes_amount
+  const discountMinor = discounts == null || credits == null
+    ? null
+    : discounts.reduce((sum, row) => sum + row.amount, 0)
+      + credits.reduce((sum, row) => sum + row.amount, 0)
+      + (prepaymentCredit > 0 ? prepaymentCredit : 0)
+  const taxes = invoice.total_taxes
+  const taxMinor = taxes == null ? null : taxes.reduce((sum, row) => sum + row.amount, 0)
+  const automaticTax = typeof invoice.automatic_tax?.enabled === "boolean" ? invoice.automatic_tax.enabled : null
+  const billingReason = invoice.billing_reason
+  const trial = billingReason && KNOWN_INVOICE_REASONS.has(billingReason) ? false : null
+  const lineCount = !invoice.lines || invoice.lines.has_more ? null : invoice.lines.data.length
+  const intentId = asId(invoice.payments?.data?.find(payment => payment.payment?.payment_intent)?.payment.payment_intent)
+    ?? asId((invoice as { payment_intent?: unknown }).payment_intent)
+  let refunded: boolean | null = null
+  let disputed: boolean | null = null
+  if (intentId) {
+    try {
+      const intent = await stripe.paymentIntents.retrieve(intentId, { expand: ["latest_charge"] })
+      const charge = intent.latest_charge
+      if (charge && typeof charge !== "string") {
+        refunded = charge.refunded === true || charge.amount_refunded > 0 || invoice.post_payment_credit_notes_amount > 0
+        disputed = charge.disputed === true
+      }
+    } catch {
+      refunded = invoice.post_payment_credit_notes_amount > 0 ? true : null
+    }
+  } else if (invoice.post_payment_credit_notes_amount > 0) {
+    refunded = true
+  }
+  return { discountMinor, taxMinor, automaticTax, trial, refunded, disputed, lineCount, billingReason }
+}
+
 export function createStripePaymentProvider(env: PaymentEnv = process.env, databaseLane?: DatabasePaymentLane | null): PaymentProvider {
   const mode = resolvePaymentProviderMode(env)
   if (mode !== "stripe_test" && mode !== "stripe_live") throw new PaymentsDisabledError()
@@ -168,6 +207,7 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
         livemode: expectedLivemode,
         amountMinor: typeof session.amount_total === "number" ? session.amount_total : null,
         currency: session.currency ?? null,
+        subscriptionId: asId(session.subscription),
       }
     },
     async expireCheckout(input) {
@@ -456,9 +496,10 @@ export function createStripePaymentProvider(env: PaymentEnv = process.env, datab
         quantity: typeof line?.quantity === "number" ? line.quantity : null,
         periodStart: line?.period?.start ? new Date(line.period.start * 1000).toISOString() : null,
         periodEnd: line?.period?.end ? new Date(line.period.end * 1000).toISOString() : null,
-        paymentIntentId: asId((invoice as { payment_intent?: unknown }).payment_intent),
+        paymentIntentId: asId((invoice as { payment_intent?: unknown }).payment_intent) ?? asId(invoice.payments?.data?.find(payment => payment.payment?.payment_intent)?.payment.payment_intent),
         chargeId: asId((invoice as { charge?: unknown }).charge),
         subscriptionMetadata: subscriptionMeta,
+        ...await commercialInvoiceFacts(client(env), invoice),
       }
     },
     async setCancelAtPeriodEnd({ id, idempotencyKey, cancel }) {

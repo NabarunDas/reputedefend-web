@@ -48,7 +48,7 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(104)
+    expect(migrationChain).toHaveLength(105)
     // A clean rebuild includes the seven historical DEV statements, Step 10B,
     // Step 12A, DEV-applied E2E-02, E2E-03 and E2E-04, and the DEV mail claim.
     // It does not replay applied statements on a live database
@@ -56,7 +56,9 @@ describe("rebuilding the whole schema from zero", () => {
     // Production and AWS approved backup heads remain at SEC-08.
     // The DEV applied head is 20261103213000 customer_commercial_payment_preparation_v1.
     // It was applied once. Do not replay 20261103213000. Do not apply 20261103213000 to Production.
-    // The repository head is the same file.
+    // The repository head is 20261103230000 customer_commercial_payment_verification_v1.
+    // It is not the DEV ledger head. Do not apply 20261103230000 to DEV.
+    // Do not apply 20261103230000 to Production.
     // The previous DEV head is 20261103200518 telloya_enquiry_phase_05a_02_validation.
     // It was applied once. Do not replay 20261103200518. Do not apply 20261103200518 to Production.
     // The head before that is 20261103140000 customer_commercial_offer_acceptance_v1.
@@ -66,8 +68,8 @@ describe("rebuilding the whole schema from zero", () => {
     // were applied once and must not be replayed.
     // Do not replay 20261101200000. Do not apply 20261101200000 to Production.
     // Production stays at SEC-08.
-    expect(migrationHead.filename).toBe("20261103213000_customer_commercial_payment_preparation_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261103230000_customer_commercial_payment_verification_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.filename).toBe("20261103213000_customer_commercial_payment_preparation_v1.sql")

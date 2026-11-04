@@ -225,7 +225,7 @@ describe("commercial payment preparation command", () => {
     const confirmingBody = await confirming.json()
     expect(confirmingBody).toMatchObject({
       status: "confirming",
-      message: "Your payment is being verified. Your service will become available after payment confirmation and setup.",
+      message: "Your payment is being verified. We'll update your account when confirmation is complete.",
     })
     expect(JSON.stringify(confirmingBody)).not.toMatch(/checkoutUrl|has not been completed|Nothing has been paid/)
     expect(mocks.priceIds).toHaveLength(before)
@@ -285,6 +285,27 @@ describe("commercial payment preparation command", () => {
     expect(JSON.stringify(againBody)).not.toMatch(/activated|ACTIVE/)
   })
 
+  it("reuses a realistic cs_test Checkout session and does not expose internal ids", async () => {
+    const opened = await portalCommercialPaymentCommand(req({ selector }))
+    expect(opened.status).toBe(200)
+    const realistic = "cs_test_a1B2c3D4e5F6g7H8i9J0k1L2"
+    const stored = mocks.provider?.objects.get(mocks.recordedSession || "")
+    expect(stored).toBeTruthy()
+    stored!.id = realistic
+    mocks.provider?.objects.set(realistic, stored!)
+    mocks.recordedSession = realistic
+    const again = await portalCommercialPaymentCommand(req({ selector }, `${origin}/api/portal/onboarding/payment`, {
+      "idempotency-key": "14141414-1414-4141-8141-141414141414",
+    }))
+    expect(again.status).toBe(200)
+    const body = await again.json()
+    expect(body.checkoutUrl).toMatch(/^https:\/\/checkout\.stripe\.test\/sub\//)
+    expect(mocks.checkoutCreates).toBe(1)
+    expect(JSON.stringify(body)).not.toContain(customerId)
+    expect(JSON.stringify(body)).not.toContain(acceptanceId)
+    expect(JSON.stringify(body)).not.toContain(realistic)
+  })
+
   it("fails closed for an expired Checkout and shows confirmation pending when the session is unsettled", async () => {
     const opened = await portalCommercialPaymentCommand(req({ selector }))
     expect(opened.status).toBe(200)
@@ -306,7 +327,7 @@ describe("commercial payment preparation command", () => {
     expect(unsettled.status).toBe(200)
     expect(unsettledBody).toMatchObject({
       status: "confirming",
-      message: "Your payment is being verified. Your service will become available after payment confirmation and setup.",
+      message: "Your payment is being verified. We'll update your account when confirmation is complete.",
     })
     expect(JSON.stringify(unsettledBody)).not.toMatch(/checkoutUrl|has not been completed|Nothing has been paid|ACTIVE/)
     session!.status = "open"

@@ -7,7 +7,7 @@
 
 The drafts are not **VERIFIED** legal advice. They are not **IMPLEMENTED BUT UNTESTED** product behaviour. Publication is **PLANNED** only after counsel and the owner approve them. These drafts sit beside the company-wide privacy notice and terms (`app/privacy/page.tsx`, `app/terms/content.ts`). They do not replace them. The company terms cover the ProfileRelaunch website and say that submitting an enquiry does not create a paid contract and that the website does not process checkout. The company privacy notice describes homepage, contact, Get Help, and Relaunch Guard setup. It does not describe Telloya call audio. Telloya’s own pages already say a specific voice, recording, and retention notice will be published before launch. Publishing any section below would contradict that statement until counsel and the owner approve it.
 
-Square brackets are empty decisions. They must stay empty in any public copy.
+Square brackets and every **OWNER DECISION REQUIRED**, **LEGAL REVIEW REQUIRED**, and **PROVIDER CONFIRMATION REQUIRED** placeholder are unresolved. They must be completed and then removed before any of this text is published. A published page must not contain the placeholder, the bracket, or an unapproved period or legal conclusion. Until that happens, this file stays internal. No processing mode and no retention period in this draft is approved.
 
 ## 1. Telloya Service Terms
 
@@ -154,17 +154,19 @@ The business name is required. A script that says only “AI receptionist” wit
 
 Do not use this script until a provider test shows that audio is actually retained and that “stop” is implemented. An objection with no technical effect is **LEGAL REVIEW REQUIRED** before use. Candidate bases are not chosen.
 
+In every mode, including a mode that keeps no recording and no transcript, the voice provider processes the caller’s audio temporarily in order to hold the conversation. “Not retained” means the audio is not kept after that processing. It does not mean the audio never reaches the provider. Temporary processing, and how long any buffer lasts, is **PROVIDER CONFIRMATION REQUIRED**. It is not an approved retention period.
+
 ### If the conversation is transcribed and audio is not kept
 
-> I will turn this conversation into text for [business name]. The audio of the call is not kept. The text is kept for [OWNER DECISION REQUIRED]. If you do not want a transcript made, please say so now and we will stop, or contact [business name] another way.
+> I will turn this conversation into text for [business name]. The audio is used to hold this conversation and is not kept afterwards. The text is kept for [OWNER DECISION REQUIRED]. If you do not want a transcript made, please say so now and we will stop, or contact [business name] another way.
 
-Do not use this script until the provider confirms that audio, including samples and backups, is not retained. **PROVIDER CONFIRMATION REQUIRED.**
+Do not use this script until the provider confirms that audio, including samples and backups, is not retained after the temporary processing needed for the call. **PROVIDER CONFIRMATION REQUIRED.** The retention period in the script is not approved.
 
 ### If no audio and no transcript are retained
 
-> I will only pass on a short summary of the details you give, such as your name, number, and what you need. I am not keeping a recording or a full transcript. The summary is kept for [OWNER DECISION REQUIRED].
+> I will only pass on a short summary of the details you give, such as your name, number, and what you need. The audio is used during this conversation. I am not keeping a recording or a full transcript afterwards. The summary is kept for [OWNER DECISION REQUIRED].
 
-Do not use this script until the provider confirms that the platform’s default is not “retain audio” or “retain transcript”. **PROVIDER CONFIRMATION REQUIRED.**
+Do not use this script until the provider confirms that the platform does not retain audio or a transcript after the temporary processing needed for the call. **PROVIDER CONFIRMATION REQUIRED.** The retention period in the script is not approved.
 
 ### Emergency and opt-out
 
@@ -186,8 +188,8 @@ Each one needs a behaviour, not only a sentence. **OWNER DECISION REQUIRED. LEGA
 | Mode | Setting to prove | Notice the caller needs | Status |
 | --- | --- | --- | --- |
 | Audio on | Recording enabled, retention matches the owner’s period, training off unless approved | AI identity, that audio is kept, why, period, and a route to the notice | Not enabled |
-| Transcript only | Audio discard confirmed, transcript retention matches the period, training off unless approved | AI identity, that text is kept and audio is not | Not enabled |
-| Summary only | Both audio and transcript discard confirmed, training off unless approved | AI identity and that only a summary is kept | Not enabled |
+| Transcript only | Audio is processed for the call and then discarded, including samples and backups. Transcript retention matches the period. Training off unless approved. | AI identity, that text is kept, and that audio is used during the call and not kept afterwards | Not enabled. Period unapproved. |
+| Summary only | Audio is processed for the call. Both the recording and any transcript are discarded afterwards. Training off unless approved. | AI identity, that audio is used during the call, and that only a summary is kept | Not enabled. Period unapproved. |
 
 Lawful basis for each mode: **LEGAL REVIEW REQUIRED.** No basis is selected in this draft.
 

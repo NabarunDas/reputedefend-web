@@ -112,7 +112,7 @@ Recording and transcription are not enabled. The three operating modes are speci
 | --- | --- | --- |
 | Audio retained | That an AI is speaking, that audio is kept, why, and where to read the notice or refuse | ICO’s call example treats a recorded message plus a route to the full notice as good practice. Objection and an alternative contact route are not built. |
 | Transcript kept, audio not kept | That the conversation is turned into text and the audio is not kept | Confirm the provider actually discards audio, including backups and quality samples. PROVIDER CONFIRMATION REQUIRED. |
-| No retained audio and no transcript | That an AI is taking a message and only the agreed summary is kept | Confirm the provider does not retain media by default. PROVIDER CONFIRMATION REQUIRED. |
+| No retained audio and no transcript | That an AI is taking a message, that audio is processed during the call, and that only the agreed summary is kept afterwards | Confirm the provider does not retain audio or a transcript after the temporary processing the conversation requires. PROVIDER CONFIRMATION REQUIRED. |
 
 ## DPIA screening
 

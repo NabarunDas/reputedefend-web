@@ -57,6 +57,27 @@ These are options, not a redesign. The public heading stays as it is until the o
 | Relaunch Guard £9.99 per location | Pricing | The existing Guard service, sold separately | Price VERIFIED as published. Not a Telloya voice feature. |
 | Call recordings will be covered in terms before launch | FAQ and cookie page | This pack. Terms are still draft. | VERIFIED as a promise not to pretend the terms exist. LEGAL REVIEW REQUIRED before publication. |
 
+## OWNER-REPORTED POC — EVIDENCE PENDING
+
+No voice provider integration is implemented in this repository. The earlier owner-reported Retell POC is unverified by this repository. The owner reports that the POC included SIP connectivity, a provisioned test telephone number, a successful test call, conversation testing for missed-call enquiries, confirmation of the caller’s preferred callback number, and callback preferences tested against business opening hours. Closed-hours requests were handled without promising an unsupported callback time.
+
+That report is not production readiness. It does not show recording, training, retention, security, or privacy compliance. It does not make Retell an active subprocessor. The number, account identifier, credentials, recordings, and personal data are intentionally absent from this pack.
+
+Evidence to collect where it still exists, and not to invent if it does not:
+
+| Evidence | Why it is needed | Status |
+| --- | --- | --- |
+| Configuration export with secrets removed | Shows the tenant that was actually tested | OWNER-REPORTED POC — EVIDENCE PENDING |
+| Agent prompt and version | Separates that test from any later agent | OWNER-REPORTED POC — EVIDENCE PENDING |
+| Date of the test | Stops an undated report being treated as current | OWNER-REPORTED POC — EVIDENCE PENDING |
+| Provider settings for recording, transcription, retention, and training | The report does not establish these | OWNER-REPORTED POC — EVIDENCE PENDING |
+| Number and account binding, described without the number or account id | Shows a test number existed without publishing it | OWNER-REPORTED POC — EVIDENCE PENDING |
+| Scenario and result for SIP and the successful test call | Supports the connectivity report | OWNER-REPORTED POC — EVIDENCE PENDING |
+| Scenario and result for enquiry collection and callback-number confirmation | Supports the conversation report | OWNER-REPORTED POC — EVIDENCE PENDING |
+| Scenario and result for opening hours and closed hours | Supports the hours report | OWNER-REPORTED POC — EVIDENCE PENDING |
+
+New evidence is still required for the selected production tenant, customer call forwarding, caller disclosure, webhook authentication, summary delivery, and failure cases. Those items are in `operational-readiness.md`.
+
 ## Decisions the owner still has to make
 
 | Decision | Why it blocks launch | Status |
@@ -74,7 +95,7 @@ These are options, not a redesign. The public heading stays as it is until the o
 | Cancellation, refunds, renewal, tax, governing law, courts, and settlement currency | Left blank so they are not invented. VAT is not registered. | OWNER DECISION REQUIRED. LEGAL REVIEW REQUIRED |
 | International transfer tool for Supabase, Resend, Vercel, and any voice provider | The public notice refuses to invent one | PROVIDER CONFIRMATION REQUIRED. LEGAL REVIEW REQUIRED |
 | Who handles a caller’s access, correction, and deletion request | Admin deletion is switched off, and caller records do not exist | OWNER DECISION REQUIRED. LEGAL REVIEW REQUIRED |
-| Voice provider selection | Retell is not an integration. No POC is in the repository. | PROVIDER CONFIRMATION REQUIRED |
+| Voice provider selection | No voice integration is in this repository. The owner-reported Retell POC is unverified here and is not a production choice. | PROVIDER CONFIRMATION REQUIRED. OWNER-REPORTED POC — EVIDENCE PENDING. |
 | Delivery method for summaries | Dashboard is planned, not built | OWNER DECISION REQUIRED |
 
 ## What is already true and should not be reopened by this pack
@@ -88,7 +109,7 @@ These are options, not a redesign. The public heading stays as it is until the o
 | Customer portal does not open a Telloya workspace | VERIFIED |
 | Website indexing stays off unless production and `TELLOYA_LAUNCHED=true` | VERIFIED |
 | Payment settlement code does not provision Telloya | VERIFIED from `docs/customer-platform/03A-03-02-02-atomic-payment-settlement.md` |
-| No voice webhook, recording switch, transcript store, or live call | VERIFIED as absence |
+| No voice webhook, recording switch, or transcript store in this repository, and no production call path | VERIFIED as absence in the codebase. The owner-reported Retell test call is a separate historical report. |
 | Company privacy notice and terms remain the public legal pages | VERIFIED. These drafts are not published. |
 
 ## Launch blockers
@@ -117,7 +138,8 @@ Launch of the receptionist, as distinct from keeping the pre-launch website onli
 | Enquiry flag, fields, and non-billing lead event | `apps/telloya/lib/enquiry-contract.ts` |
 | Enquiry persistence and TY reference | `supabase/migrations/20261102200000_telloya_enquiry_infrastructure_v1.sql` |
 | Table access revoked | `supabase/migrations/20260917185905_admin_enquiry_triage_v1.sql` |
-| No Retell or Twilio call in the provisioning phase | `docs/customer-platform/02A-implementation-plan.md` |
+| Current provisioning phase makes no Retell, Twilio, or phone-number provider call | `docs/customer-platform/02A-implementation-plan.md` |
+| Owner-reported Retell POC, not repository evidence | Owner report recorded in this file. No POC artefact is in the repository. |
 | No call recording in the provision model | `docs/customer-platform/02A-data-model.md` |
 | Portal closed | `apps/customer/lib/portal/products/present.ts` |
 | Deletion flag off and retention question deferred | `docs/admin/production-cutover-readiness.md` |

@@ -12,7 +12,29 @@ This note separates four states:
 - **PLANNED** — described in product copy or planning documents, and not implemented as that workflow.
 - A provider, legal, or owner label is used where the repository cannot settle the point.
 
-No Retell, Twilio, SIP, call-recording, transcript, or voice-webhook implementation was found in application code. Choosing a voice provider and turning recording on are **OWNER DECISION REQUIRED**. The planning note `docs/customer-platform/02A-implementation-plan.md` says the provisioning phase makes no Retell, Twilio, or phone-number provider calls. A Retell proof of concept is not stored in this repository, so nothing in that proof of concept is treated as demonstrated here.
+No voice provider integration is implemented in this repository. The earlier owner-reported Retell proof of concept is unverified by this repository. Choosing a voice provider and turning recording on are **OWNER DECISION REQUIRED**. The planning note `docs/customer-platform/02A-implementation-plan.md` says the current provisioning phase makes no Retell, Twilio, or phone-number provider calls.
+
+## OWNER-REPORTED POC — EVIDENCE PENDING
+
+The owner reports that a Retell voice-agent proof of concept was completed successfully before this assessment. That report is historical. It is not a production integration, not an active subprocessor, and not evidence of recording, training, retention, or privacy settings. This repository does not contain the POC configuration, agent version, provider settings, test scenarios, or test results. No telephone number, credential, recording, transcript, or personal data from that test is recorded here.
+
+| Owner-reported observation | What it is not |
+| --- | --- |
+| SIP connectivity succeeded. | Not a SIP trunk in this codebase, and not customer call forwarding. |
+| A test telephone number was provisioned and a test call succeeded. | Not a production number inventory. The number itself is not written here. |
+| The agent was tested at collecting missed-call enquiries. | Not the website enquiry form, and not a persisted caller lead. |
+| The agent confirmed whether the caller’s number was the best callback number. | Not a shipped dialogue or a stored callback field. |
+| Callback preferences were tested against business opening hours, including closed-hours requests, without promising an unsupported callback time. | Not an opening-hours service in the product, and not a promise that every later agent will do this. |
+
+Evidence still needed before the POC can support a launch decision, where the owner still has it:
+
+- A configuration export, with secrets removed.
+- The agent prompt and version, and the date of the test.
+- The provider settings used for recording, transcription, retention, and model training.
+- The test scenarios and results for SIP, the test call, enquiry collection, callback-number confirmation, and opening hours.
+- How the test number and account were bound, described without the number or account identifier.
+
+Until those artefacts are filed, the POC stays **OWNER-REPORTED POC — EVIDENCE PENDING**. The integrated capability in this repository remains the disabled sales enquiry below.
 
 ## Intended flow
 
@@ -30,8 +52,8 @@ The approved product description is a missed-call assistant for a service busine
 | --- | --- | --- |
 | Missed call on the customer’s number | Marketing copy only. No telephony integration. | PLANNED |
 | Conditional forwarding | Marketing copy says compatibility depends on the customer’s telephone provider and is checked during onboarding. No provider test or setup workflow. | PLANNED |
-| Voice provider | Not present. Retell and Twilio appear only as providers the current provisioning phase must not call. | PLANNED. PROVIDER CONFIRMATION REQUIRED before any provider is treated as active. |
-| AI conversation | Marketing copy and enquiry fields for voice, accent, language, and speaking style. No agent runtime. | PLANNED |
+| Voice provider | No integration in this repository. The owner-reported Retell POC is a separate historical test. Twilio appears only as a provider the current provisioning phase must not call. | PLANNED as a product integration. POC is OWNER-REPORTED POC — EVIDENCE PENDING. PROVIDER CONFIRMATION REQUIRED before any provider is treated as active. |
+| AI conversation | Marketing copy and enquiry fields for voice, accent, language, and speaking style. No agent runtime in this repository. The owner reports a Retell conversation test. | PLANNED in the product. POC is OWNER-REPORTED POC — EVIDENCE PENDING. |
 | Voice webhook | No Telloya voice webhook route, signature check, idempotency key, or replay store. | PLANNED |
 | Lead persistence for a live call | No call-lead table or payload. The enquiry form can store the business’s description of its missed-call problem. That is the business’s sales enquiry, not a caller lead. | PLANNED for caller leads |
 | Notification of a caller lead | No call-summary email or dashboard. Customer portal text says “Telloya is not open in your portal yet.” (`apps/customer/lib/portal/products/present.ts`). | PLANNED |
@@ -76,7 +98,7 @@ Only a system with code, configuration, or an explicit product decision is liste
 | The business customer | Intended user of the receptionist and the person who would call the caller back | No customer voice account is provisioned | Its own callers’ names, numbers, and job details | PLANNED |
 | The caller | Person who rang the business | No caller record type exists | Their own contact and enquiry details | PLANNED |
 | The customer’s telephone provider | Would forward unanswered calls | Not integrated | Call signalling and the forwarded call | PLANNED. PROVIDER CONFIRMATION REQUIRED for each customer’s provider. |
-| Voice provider, including any Retell account | Would run the AI conversation and any recording or transcript | No client, credential, webhook, or POC artefact | Audio, transcripts, summaries, caller numbers, prompts | PLANNED. Not active. PROVIDER CONFIRMATION REQUIRED. |
+| Voice provider, including any Retell account | Would run the AI conversation and any recording or transcript | No client, credential, or webhook in this repository. An earlier Retell POC is owner-reported only. | Audio, including audio processed temporarily during a call, plus any transcript or summary the settings keep | PLANNED. Not an active integration. OWNER-REPORTED POC — EVIDENCE PENDING. PROVIDER CONFIRMATION REQUIRED. |
 | Twilio or another SIP carrier | Named only as a call that the provisioning phase must not make | No | Numbers and call media if later selected | Not active |
 | Supabase | Stores enquiry rows and the commercial schema through the existing project | Used by the enquiry RPC | Business enquiry payload and references | VERIFIED as the database path. Region and disk encryption are PROVIDER CONFIRMATION REQUIRED. |
 | Resend | Sends enquiry email when configured. Named in `lib/legal.ts` as the enquiry email processor. | Code path exists. No message was sent for this assessment. | Business contact name, email, enquiry contents, TY reference | VERIFIED as the code path. Production configuration is PROVIDER CONFIRMATION REQUIRED. |

@@ -1448,24 +1448,41 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Customer commercial payment preparation", probe: "public.customer_portal_commercial_payment_prepare_v1" },
   },
   {
-    // Commercial payment verification. Repository only.
-    // The verified DEV ledger still contains 101 entries and ends at 20261103213000.
-    // This file is not the DEV ledger head. Do not apply 20261103230000 to DEV.
-    // Do not apply 20261103230000 to Production.
-    // Do not replay 20261103213000. Do not apply 20261103213000 to Production.
+    // Commercial payment verification. Applied once to profilerelaunch-dev.
+    // The verified DEV ledger contains 102 entries and ends at 20261103230000.
+    // The previous ledger contained 101 entries and ended at 20261103213000.
+    // Canonical version recorded once. Repository file is 12,838 characters.
+    // MD5 de03ef27a623a72ae3e4015a33782406.
+    // SHA-256 9a761103c01d8bb50c1656fe81a35ccab349f862304c6a8044a6a327dac57d9a.
+    // The new public verification functions are restricted to service_role.
+    // Invalid provider references are rejected.
+    // The commercial payment-evidence blocking trigger remains intact.
+    // No commercial subscription or payment evidence was created.
+    // Commercial feature flags remain OFF.
+    // The Checkout session constraint supports legitimate Stripe test and live ids.
     // Read-only correlation functions. It does not insert commercial_payment_evidence,
     // change a subscription, grant an entitlement, or send mail.
-    // The evidence-blocking trigger is unchanged.
     // Schema and function changes only. containsDataChange stays false.
+    // Do not replay 20261103230000. Do not apply 20261103230000 to Production.
     // safeToReplay stays false.
     version: "20261103230000",
     filename: "20261103230000_customer_commercial_payment_verification_v1.sql",
     step: "Customer commercial payment verification",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Customer commercial payment verification", probe: "public.commercial_payment_receipt_v1" },
+  },
+  {
+    version: "20261104190000",
+    filename: "20261104190000_customer_commercial_payment_settlement_v1.sql",
+    step: "Customer commercial payment settlement",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Customer commercial payment settlement", probe: "public.commercial_payment_settle_initial_invoice_v1" },
   },
 ]
 
@@ -1478,9 +1495,19 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261103213000`. The live DEV ledger contains 101 entries. Commercial
- * payment preparation was applied once to DEV. The repository file is
- * 44,920 characters. MD5 8db49c31c5d8b41e93e3768017120137. SHA-256
+ * `20261103230000`. The live DEV ledger contains 102 entries. Commercial
+ * payment verification was applied once to DEV. The repository file is
+ * 12,838 characters. MD5 de03ef27a623a72ae3e4015a33782406. SHA-256
+ * 9a761103c01d8bb50c1656fe81a35ccab349f862304c6a8044a6a327dac57d9a.
+ * The new public verification functions are restricted to service_role.
+ * Invalid provider references are rejected. The commercial payment-evidence
+ * blocking trigger remains intact. No commercial subscription or payment
+ * evidence was created. Commercial feature flags remain OFF. The Checkout
+ * session constraint supports legitimate Stripe test and live ids.
+ * Do not replay `20261103230000` or apply it to Production. The previous
+ * head `20261103213000` had 101 entries. Commercial payment preparation was
+ * applied once to DEV. The repository file is 44,920 characters. MD5
+ * 8db49c31c5d8b41e93e3768017120137. SHA-256
  * 8f4103468abc024f249d671fabea0e8587cb60093de3d7f5665f5c8f5bd90f8d.
  * Schema and function changes only. containsDataChange is false.
  * Payment-preparation functions and permissions were verified.
@@ -1560,9 +1587,12 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` contains only `20261103230000`.
- * `20261103230000` is in the repository and is not the DEV ledger head.
- * Do not apply 20261103230000 to DEV. Do not apply 20261103230000 to Production.
+ * applied and must not be replayed. `pendingMigrations()` contains only
+ * `20261104190000`. That file is in the repository and is not the DEV ledger
+ * head. Do not apply `20261104190000` to DEV. Do not apply `20261104190000`
+ * to Production.
+ * `20261103230000` is already applied on DEV and must not be replayed.
+ * Do not apply 20261103230000 to Production.
  * `20261103213000` is already applied on DEV and must not be replayed.
  * Do not apply 20261103213000 to Production.
  * `20261103200518` is already applied on DEV and must not be replayed.

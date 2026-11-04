@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   invoice: null as Record<string, unknown> | null,
   subscription: null as Record<string, unknown> | null,
   invoiceError: false,
+  invoiceCalls: 0,
+  failAfter: 0,
 }))
 
 vi.mock("../../../../lib/payments", async () => {
@@ -15,7 +17,8 @@ vi.mock("../../../../lib/payments", async () => {
       mode: "stripe_test" as const,
       retrieveCheckout: async () => mocks.checkout,
       retrieveRecurringInvoice: async () => {
-        if (mocks.invoiceError) throw new Error("timeout")
+        mocks.invoiceCalls += 1
+        if (mocks.invoiceError || (mocks.failAfter > 0 && mocks.invoiceCalls > mocks.failAfter)) throw new Error("timeout")
         return mocks.invoice
       },
       retrieveSubscription: async () => mocks.subscription,
@@ -69,6 +72,8 @@ beforeEach(() => {
   mocks.invoice = null
   mocks.subscription = null
   mocks.invoiceError = false
+  mocks.invoiceCalls = 0
+  mocks.failAfter = 0
   vi.unstubAllEnvs()
 })
 afterEach(() => vi.unstubAllEnvs())
@@ -124,6 +129,192 @@ describe("DEV payment worker commercial routing", () => {
     expect(result.counts.skipped).toBe(1)
     expect(names).toContain("commercial_payment_invoice_candidates_v1")
     expect(names).not.toContain("dev_payment_event_claim_v1")
+    expect(names).not.toContain("payment_apply_provider_event_v1")
+    expect(names).not.toContain("guard_apply_subscription_event_v1")
+  })
+
+  const customerId = "6f0c1a20-1c3e-4a7b-9d11-0a1b2c3d4e5f"
+  const commercialSubscriptionId = "7a1d2b30-2d4f-4b8c-8e22-1b2c3d4e5f60"
+  const acceptanceId = "8b2e3c40-3e50-4c9d-9f33-2c3d4e5f6071"
+  const checkoutOperationId = "9c3f4d50-4f61-4d0e-a044-3d4e5f607182"
+  const sessionId = "cs_test_a1B2c3D4e5F6g7H8i9J0k1L2"
+  const stripeCustomerId = "cus_NffrFeUfNV2Hib"
+  const stripeSubscriptionId = "sub_1P2abcDEF3ghiJKL"
+  const stripePriceId = "price_1P2abcDEF3ghiJKL"
+  const invoiceId = "in_1P2abcDEF3ghiJKL"
+  const eventId = "evt_1P2abcDEF3ghiJKL"
+  const periodStart = "2026-11-01T00:00:00.000Z"
+  const periodEnd = "2026-12-01T00:00:00.000Z"
+  const metadata = { customerId, commercialSubscriptionId, acceptanceId, providerOperationId: checkoutOperationId }
+
+  function verifiedProvider() {
+    mocks.checkout = {
+      id: sessionId, mode: "subscription", status: "complete", paymentStatus: "paid",
+      customerId: stripeCustomerId, livemode: false, metadata, subscriptionId: stripeSubscriptionId,
+    }
+    mocks.invoice = {
+      id: invoiceId, status: "paid", customerId: stripeCustomerId, amountDueMinor: 7900, amountPaidMinor: 7900,
+      currency: "gbp", livemode: false, metadata: {}, subscriptionId: stripeSubscriptionId, priceId: stripePriceId,
+      quantity: 1, periodStart, periodEnd, discountMinor: 0, taxMinor: 0, automaticTax: false, trial: false,
+      refunded: false, disputed: false, lineCount: 1, billingReason: "subscription_create",
+    }
+    mocks.subscription = {
+      id: stripeSubscriptionId, customerId: stripeCustomerId, priceId: stripePriceId, quantity: 1, livemode: false,
+      status: "active", currentPeriodStart: periodStart, currentPeriodEnd: periodEnd, cancelAtPeriodEnd: false,
+      scheduleId: null, metadata,
+    }
+  }
+
+  function verifiedRpc(extra: Record<string, (args: Record<string, unknown>) => unknown> = {}) {
+    const names: string[] = []
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = []
+    const rpc = {
+      async rpc(name: string, args: Record<string, unknown> = {}) {
+        names.push(name)
+        calls.push({ name, args })
+        if (extra[name]) return extra[name](args)
+        if (name === "job_heartbeat_v1") return { status: "success" }
+        if (name === "dev_payment_event_candidates_v1") return { status: "success", events: [] }
+        if (name === "payment_provider_lane_status_v1") return { configured: false, mode: "stripe_test", expectedLivemode: false }
+        if (name === "commercial_payment_invoice_candidates_v1") return { status: "success", events: [{ eventId, eventType: "invoice.paid", objectId: invoiceId }] }
+        if (name === "commercial_payment_receipt_v1") {
+          return { status: "success", eventId, eventType: "invoice.paid", objectId: invoiceId, livemode: false }
+        }
+        if (name === "commercial_payment_preparation_for_price_v1") {
+          return {
+            status: "success", productCode: "TELLOYA", checkoutSessionId: sessionId, stripePriceId, stripeCustomerId,
+            customerId, commercialSubscriptionId, acceptanceId, checkoutOperationId, amountMinor: 7900, currency: "GBP",
+            cadence: "MONTH", taxBehaviour: "NOT_APPLICABLE", guardQuantity: 0, livemode: false,
+            subscriptionState: "PAYMENT_PENDING", stripeSubscriptionId: null, cancelAtPeriodEnd: false, evidence: [],
+          }
+        }
+        throw new Error(name)
+      },
+    } as JobRpc
+    return { rpc, names, calls }
+  }
+
+  it("does not claim a verified invoice while settlement is off", async () => {
+    apply({ ...preview, CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED: "true" })
+    verifiedProvider()
+    const { rpc, names } = verifiedRpc()
+    const result = await runDevPaymentEventWorker({ rpc })
+    expect(result.counts).toMatchObject({ claimed: 0, succeeded: 0, skipped: 1 })
+    expect(names).toContain("commercial_payment_invoice_candidates_v1")
+    expect(names).not.toContain("commercial_payment_invoice_claim_v1")
+    expect(names).not.toContain("commercial_payment_settle_initial_invoice_v1")
+    expect(names).not.toContain("payment_apply_provider_event_v1")
+    expect(names).not.toContain("guard_apply_subscription_event_v1")
+  })
+
+  it("settles a verified invoice through the leased command and does not send a verified flag", async () => {
+    apply({
+      ...preview,
+      CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED: "true",
+      CUSTOMER_COMMERCIAL_PAYMENT_SETTLEMENT_ENABLED: "true",
+    })
+    verifiedProvider()
+    const { rpc, names, calls } = verifiedRpc({
+      commercial_payment_invoice_claim_v1: () => ({ status: "success", jobId: "job-1", leaseToken: "lease-1" }),
+      commercial_payment_settle_initial_invoice_v1: () => ({ status: "settled", retryable: false }),
+    })
+    const result = await runDevPaymentEventWorker({ rpc })
+    expect(result.counts).toMatchObject({ claimed: 1, succeeded: 1, deadLettered: 0 })
+    expect(names).toContain("commercial_payment_invoice_claim_v1")
+    expect(names).toContain("commercial_payment_settle_initial_invoice_v1")
+    expect(names).not.toContain("dev_payment_event_claim_v1")
+    expect(names).not.toContain("payment_apply_provider_event_v1")
+    expect(names).not.toContain("guard_apply_subscription_event_v1")
+    expect(names).not.toContain("job_complete_v1")
+    const settled = calls.find(call => call.name === "commercial_payment_settle_initial_invoice_v1")
+    expect(settled?.args.p_facts).toMatchObject({
+      eventId, invoiceId, amountPaidMinor: 7900, currency: "gbp",
+      checkoutMode: "subscription", acceptanceId, checkoutOperationId, conflictingMetadata: false,
+    })
+    expect(settled?.args.p_facts).not.toHaveProperty("verified")
+  })
+
+  it("leaves the event retryable when provider evidence disappears after the claim", async () => {
+    apply({
+      ...preview,
+      CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED: "true",
+      CUSTOMER_COMMERCIAL_PAYMENT_SETTLEMENT_ENABLED: "true",
+    })
+    verifiedProvider()
+    mocks.failAfter = 2
+    const { rpc, names, calls } = verifiedRpc({
+      commercial_payment_invoice_claim_v1: () => ({ status: "success", jobId: "job-1", leaseToken: "lease-1" }),
+      job_fail_v1: () => ({ status: "success", jobStatus: "RETRY" }),
+    })
+    const result = await runDevPaymentEventWorker({ rpc })
+    expect(result.counts).toMatchObject({ claimed: 1, succeeded: 0, retried: 1 })
+    expect(names).toContain("commercial_payment_invoice_claim_v1")
+    expect(names).toContain("job_fail_v1")
+    expect(calls.find(call => call.name === "job_fail_v1")?.args.p_retryable).toBe(true)
+    expect(names).not.toContain("commercial_payment_settle_initial_invoice_v1")
+    expect(names).not.toContain("payment_apply_provider_event_v1")
+  })
+
+  const otherCustomer = "cus_OtherCustomer111"
+  const otherAcceptance = "00000000-0000-4000-8000-000000000099"
+  const otherOperation = "00000000-0000-4000-8000-000000000098"
+  const otherSubscription = "sub_otherSub0000001"
+
+  it.each([
+    ["checkout customer", () => {
+      mocks.checkout = { ...(mocks.checkout ?? {}), customerId: otherCustomer }
+    }],
+    ["acceptance id", () => {
+      const current = (mocks.checkout ?? {}) as { metadata?: Record<string, string> }
+      mocks.checkout = { ...current, metadata: { ...current.metadata, acceptanceId: otherAcceptance } }
+    }],
+    ["provider operation id", () => {
+      const current = (mocks.checkout ?? {}) as { metadata?: Record<string, string> }
+      mocks.checkout = { ...current, metadata: { ...current.metadata, providerOperationId: otherOperation } }
+    }],
+    ["guard metadata", () => {
+      const current = (mocks.checkout ?? {}) as { metadata?: Record<string, string> }
+      mocks.checkout = { ...current, metadata: { ...current.metadata, guardSubscriptionId: "guard-sub" } }
+    }],
+    ["checkout subscription", () => {
+      mocks.checkout = { ...(mocks.checkout ?? {}), subscriptionId: otherSubscription }
+    }],
+    ["subscription metadata", () => {
+      const current = (mocks.subscription ?? {}) as { metadata?: Record<string, string> }
+      mocks.subscription = { ...current, metadata: { ...current.metadata, customerId: otherAcceptance } }
+    }],
+    ["invoice customer", () => {
+      mocks.invoice = { ...(mocks.invoice ?? {}), customerId: otherCustomer }
+    }],
+    ["invoice price", () => {
+      mocks.invoice = { ...(mocks.invoice ?? {}), priceId: "price_otherpricevalue1" }
+    }],
+    ["refund", () => {
+      mocks.invoice = { ...(mocks.invoice ?? {}), refunded: true }
+    }],
+    ["dispute", () => {
+      mocks.invoice = { ...(mocks.invoice ?? {}), disputed: true }
+    }],
+  ])("does not settle when the second read sees a changed %s", async (_label, mutate) => {
+    apply({
+      ...preview,
+      CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED: "true",
+      CUSTOMER_COMMERCIAL_PAYMENT_SETTLEMENT_ENABLED: "true",
+    })
+    verifiedProvider()
+    const { rpc, names, calls } = verifiedRpc({
+      commercial_payment_invoice_claim_v1: () => {
+        mutate()
+        return { status: "success", jobId: "job-1", leaseToken: "lease-1" }
+      },
+      job_fail_v1: (args) => ({ status: "success", jobStatus: args.p_retryable === true ? "RETRY" : "DEAD_LETTER" }),
+    })
+    const result = await runDevPaymentEventWorker({ rpc })
+    expect(result.counts).toMatchObject({ claimed: 1, succeeded: 0, deadLettered: 1, retried: 0 })
+    expect(names).toContain("commercial_payment_invoice_claim_v1")
+    expect(names).toContain("job_fail_v1")
+    expect(calls.find(call => call.name === "job_fail_v1")?.args.p_retryable).toBe(false)
+    expect(names).not.toContain("commercial_payment_settle_initial_invoice_v1")
     expect(names).not.toContain("payment_apply_provider_event_v1")
     expect(names).not.toContain("guard_apply_subscription_event_v1")
   })

@@ -18,11 +18,11 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261103213000_customer_commercial_payment_preparation_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261103230000_customer_commercial_payment_verification_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261103230000_customer_commercial_payment_verification_v1.sql")
+    expect(migrationHead.filename).toBe("20261104190000_customer_commercial_payment_settlement_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
@@ -38,9 +38,7 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261103230000_customer_commercial_payment_verification_v1.sql",
-    ])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261104190000_customer_commercial_payment_settlement_v1.sql"])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
@@ -96,14 +94,15 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Commercial payment verification is the repository head and is not the DEV ledger head.
-    // Do not apply 20261103230000 to DEV. Do not apply 20261103230000 to Production.
-    // Commercial payment preparation remains the DEV-applied head.
+    // Commercial payment verification remains the DEV ledger head.
+    // Do not replay 20261103230000. Do not apply 20261103230000 to Production.
+    // 20261104190000 is the repository head and is not the DEV ledger head.
+    // Do not apply 20261104190000 to DEV. Do not apply 20261104190000 to Production.
     expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration("20261103230000_customer_commercial_payment_verification_v1.sql")).toMatchObject({
-      appliedToDev: false,
+      appliedToDev: true,
       containsDataChange: false,
       safeToReplay: false,
     })
@@ -165,6 +164,19 @@ describe("the migration chain manifest", () => {
     expect(createHash("sha256").update(preparationSql).digest("hex")).toBe("8f4103468abc024f249d671fabea0e8587cb60093de3d7f5665f5c8f5bd90f8d")
     expect(findMigration("20261103213000_customer_commercial_payment_preparation_v1.sql")).toMatchObject({
       appliedToDev: true,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
+    const verificationSql = readFileSync(new URL("20261103230000_customer_commercial_payment_verification_v1.sql", directory), "utf8")
+    expect(verificationSql.length).toBe(12838)
+    expect(createHash("md5").update(verificationSql).digest("hex")).toBe("de03ef27a623a72ae3e4015a33782406")
+    expect(createHash("sha256").update(verificationSql).digest("hex")).toBe("9a761103c01d8bb50c1656fe81a35ccab349f862304c6a8044a6a327dac57d9a")
+    const settlementSql = readFileSync(new URL("20261104190000_customer_commercial_payment_settlement_v1.sql", directory), "utf8")
+    expect(settlementSql.length).toBe(71495)
+    expect(createHash("md5").update(settlementSql).digest("hex")).toBe("f09048135272dbc84b7ff1c794f18361")
+    expect(createHash("sha256").update(settlementSql).digest("hex")).toBe("950af7786e449b1158b531d67f7a858ae9c59aad6a2496e227752bd3779961c1")
+    expect(findMigration("20261104190000_customer_commercial_payment_settlement_v1.sql")).toMatchObject({
+      appliedToDev: false,
       containsDataChange: false,
       safeToReplay: false,
     })

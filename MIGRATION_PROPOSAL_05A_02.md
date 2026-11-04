@@ -6,7 +6,7 @@ The canonical SQL is the single versioned migration:
 
 `supabase/migrations/20261103200518_telloya_enquiry_phase_05a_02_validation.sql`
 
-When it was applied, the verified DEV ledger contained 100 entries and ended at `20261103200518`. The canonical version is recorded once. The applied SQL MD5 is `ce8975868e0727760bb283a99b2f5dc9`. The repository file is 10,317 characters and its SHA-256 is `d2b402acd545a05b251cffb61c0a0a4b8028cb220ead5525ff122cbf97cfb0ab`. The recovery manifest records `appliedToDev: true`. The current DEV ledger contains 101 entries and ends at `20261103213000`. Production remains at `20261014170000`. Telloya feature flags remain false.
+When it was applied, the verified DEV ledger contained 100 entries and ended at `20261103200518`. The canonical version is recorded once. The applied SQL MD5 is `ce8975868e0727760bb283a99b2f5dc9`. The repository file is 10,317 characters and its SHA-256 is `d2b402acd545a05b251cffb61c0a0a4b8028cb220ead5525ff122cbf97cfb0ab`. The recovery manifest records `appliedToDev: true`. The current DEV ledger contains 102 entries and ends at `20261103230000`. The ledger before the payment verification contained 101 entries and ended at `20261103213000`. Production remains at `20261014170000`. Telloya feature flags remain false.
 
 Executable assertions live outside the migration directory:
 

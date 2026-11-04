@@ -1314,6 +1314,19 @@ export const environmentContract: readonly EnvVariable[] = [
     blocksOptionalCapabilityOnly: false,
     readBy: ["components/analytics-consent.tsx", "lib/analytics.ts"],
   },
+  {
+    name: "NEXT_PUBLIC_TELLOYA_GA_MEASUREMENT_ID",
+    apps: ["marketing"],
+    classification: "NON_SECRET_CONFIGURATION",
+    secret: false,
+    scope: "PRODUCTION_ONLY",
+    atAdminCutover: "OPTIONAL",
+    controls: "Separate GA4 property for the Telloya marketing site only after explicit Telloya-specific analytics consent. Does not configure ProfileRelaunch, Admin or Customer analytics.",
+    whenAbsent: "No Telloya Google Analytics script, page view, lead conversion, or analytics-consent banner is loaded.",
+    blocksAdminLaunch: false,
+    blocksOptionalCapabilityOnly: false,
+    readBy: ["apps/telloya/components/analytics-consent.tsx", "apps/telloya/lib/analytics.ts"],
+  },
 
   {
     name: "VITEST",

@@ -1447,6 +1447,26 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Customer commercial payment preparation", probe: "public.customer_portal_commercial_payment_prepare_v1" },
   },
+  {
+    // Commercial payment verification. Repository only.
+    // The verified DEV ledger still contains 101 entries and ends at 20261103213000.
+    // This file is not the DEV ledger head. Do not apply 20261103230000 to DEV.
+    // Do not apply 20261103230000 to Production.
+    // Do not replay 20261103213000. Do not apply 20261103213000 to Production.
+    // Read-only correlation functions. It does not insert commercial_payment_evidence,
+    // change a subscription, grant an entitlement, or send mail.
+    // The evidence-blocking trigger is unchanged.
+    // Schema and function changes only. containsDataChange stays false.
+    // safeToReplay stays false.
+    version: "20261103230000",
+    filename: "20261103230000_customer_commercial_payment_verification_v1.sql",
+    step: "Customer commercial payment verification",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Customer commercial payment verification", probe: "public.commercial_payment_receipt_v1" },
+  },
 ]
 
 /**
@@ -1540,7 +1560,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` contains only `20261103230000`.
+ * `20261103230000` is in the repository and is not the DEV ledger head.
+ * Do not apply 20261103230000 to DEV. Do not apply 20261103230000 to Production.
  * `20261103213000` is already applied on DEV and must not be replayed.
  * Do not apply 20261103213000 to Production.
  * `20261103200518` is already applied on DEV and must not be replayed.

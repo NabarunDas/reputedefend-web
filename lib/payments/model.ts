@@ -88,6 +88,8 @@ export type RetrievedCheckout = {
   /** Present when the provider returned the Checkout total. A refresh refuses a session without it. */
   amountMinor?: number | null
   currency?: string | null
+  /** Set when the provider linked this Checkout to a subscription. Absent on payment-mode sessions. */
+  subscriptionId?: string | null
 }
 
 export type ExpiredCheckout = {
@@ -129,6 +131,15 @@ export type RetrievedInvoice = {
   paymentIntentId?: string | null
   chargeId?: string | null
   subscriptionMetadata?: Record<string, string>
+  /** Absent when the provider did not return a definite fact. Verification then fails closed. */
+  discountMinor?: number | null
+  taxMinor?: number | null
+  automaticTax?: boolean | null
+  trial?: boolean | null
+  refunded?: boolean | null
+  disputed?: boolean | null
+  lineCount?: number | null
+  billingReason?: string | null
 }
 
 export const STRIPE_TRIAL_END_MINIMUM_SECONDS = 48 * 3600

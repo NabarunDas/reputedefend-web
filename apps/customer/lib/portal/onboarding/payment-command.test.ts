@@ -225,7 +225,7 @@ describe("commercial payment preparation command", () => {
     const confirmingBody = await confirming.json()
     expect(confirmingBody).toMatchObject({
       status: "confirming",
-      message: "Your payment is being verified. Your service will become available after payment confirmation and setup.",
+      message: "Your payment is being verified. We'll update your account when confirmation is complete.",
     })
     expect(JSON.stringify(confirmingBody)).not.toMatch(/checkoutUrl|has not been completed|Nothing has been paid/)
     expect(mocks.priceIds).toHaveLength(before)
@@ -306,7 +306,7 @@ describe("commercial payment preparation command", () => {
     expect(unsettled.status).toBe(200)
     expect(unsettledBody).toMatchObject({
       status: "confirming",
-      message: "Your payment is being verified. Your service will become available after payment confirmation and setup.",
+      message: "Your payment is being verified. We'll update your account when confirmation is complete.",
     })
     expect(JSON.stringify(unsettledBody)).not.toMatch(/checkoutUrl|has not been completed|Nothing has been paid|ACTIVE/)
     session!.status = "open"

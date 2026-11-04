@@ -40,7 +40,10 @@ export async function handleStripeWebhook(request: NextRequest, env: Record<stri
   // before answering Stripe, so a paid Checkout does not wait for the delayed
   // schedule. A closed gate, or a worker failure, leaves the outbox for the
   // next run. This does not mark an obligation paid by itself.
+  const commercialInvoices = env.CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED === "true"
+    && event.type.startsWith("invoice.")
   const settlement = event.type.startsWith("checkout.session.") || event.type.startsWith("payment_intent.")
+    || commercialInvoices
   if (settlement && !devPaymentEventWorkerBlock(env)) {
     try {
       await runDevPaymentEventWorker({ rpc: backend() })

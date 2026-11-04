@@ -254,6 +254,22 @@ export const environmentContract: readonly EnvVariable[] = [
     readBy: ["apps/customer/lib/portal/onboarding/flag.ts"],
   },
   {
+    name: "CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED",
+    apps: ["admin"],
+    classification: "FEATURE_GATE",
+    secret: false,
+    scope: "PRODUCTION_AND_PREVIEW",
+    atAdminCutover: "OPTIONAL",
+    controls: "DEV payment-worker classification of Telloya and Complete Stripe invoices. Exactly \"true\" lets the existing worker read a signed receipt and its Checkout preparation. It does not override Stripe test or live separation, Supabase project pinning, the provider lane, or live-payment activation. It does not insert payment evidence, activate a subscription, grant an entitlement, or send mail. Production does not inherit a DEV value. Do not enable it until 20261103230000 is applied.",
+    whenAbsent: "Invoice events stay out of the commercial verifier. A subscription Checkout that only claims commercial metadata is left queued. Recovery and Guard settlement stay on their existing paths.",
+    blocksAdminLaunch: false,
+    blocksOptionalCapabilityOnly: true,
+    readBy: [
+      "apps/admin/lib/payments/webhook.ts",
+      "lib/payments/commercial-settlement.ts",
+    ],
+  },
+  {
     name: "CUSTOMER_INVITATION_DISPATCH_ENABLED",
     apps: ["admin"],
     classification: "FEATURE_GATE",

@@ -576,6 +576,9 @@ export function createFakePaymentProvider(): PaymentProvider & {
         subscriptionId?: string; subscriptionItemId?: string; priceId?: string; quantity?: number
         periodStart?: string; periodEnd?: string; paymentIntentId?: string; chargeId?: string
         subscriptionMetadata?: Record<string, string>
+        discountMinor?: number | null; taxMinor?: number | null; automaticTax?: boolean | null
+        trial?: boolean | null; refunded?: boolean | null; disputed?: boolean | null
+        lineCount?: number | null; billingReason?: string | null
       } | undefined
       if (!found) return null
       return {
@@ -597,6 +600,14 @@ export function createFakePaymentProvider(): PaymentProvider & {
         paymentIntentId: found.paymentIntentId ?? null,
         chargeId: found.chargeId ?? null,
         subscriptionMetadata: found.subscriptionMetadata ?? {},
+        discountMinor: found.discountMinor === undefined ? null : found.discountMinor,
+        taxMinor: found.taxMinor === undefined ? null : found.taxMinor,
+        automaticTax: found.automaticTax === undefined ? null : found.automaticTax,
+        trial: found.trial === undefined ? null : found.trial,
+        refunded: found.refunded === undefined ? null : found.refunded,
+        disputed: found.disputed === undefined ? null : found.disputed,
+        lineCount: found.lineCount === undefined ? null : found.lineCount,
+        billingReason: found.billingReason === undefined ? null : found.billingReason,
       }
     },
     async setCancelAtPeriodEnd({ id, idempotencyKey, cancel }) {

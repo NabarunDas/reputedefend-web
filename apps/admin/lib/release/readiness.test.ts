@@ -152,12 +152,14 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261103230000_customer_commercial_payment_verification_v1.sql",
+    ])
     expect(appliedMigrationHead.version).toBe("20261103213000")
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261103213000_customer_commercial_payment_preparation_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261103230000_customer_commercial_payment_verification_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -225,7 +227,11 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("20261102110000 customer_invitation_dispatch_v1 is already applied on DEV and must not be replayed.")
     expect(supabase?.requirement).toContain("Do not replay 20261102110000.")
     expect(supabase?.requirement).toContain("Do not apply 20261102110000 to Production.")
-    expect(supabase?.requirement).toContain("pendingMigrations() is empty.")
+    expect(supabase?.requirement).toContain("pendingMigrations() contains only 20261103230000.")
+    expect(supabase?.requirement).toContain("20261103230000 customer_commercial_payment_verification_v1 is in the repository and is not the DEV ledger head.")
+    expect(supabase?.requirement).toContain("Do not apply 20261103230000 to DEV.")
+    expect(supabase?.requirement).toContain("Do not apply 20261103230000 to Production.")
+    expect(supabase?.requirement).not.toContain("pendingMigrations() is empty.")
     expect(supabase?.requirement).toContain("20261103213000 customer_commercial_payment_preparation_v1 is already applied on DEV and must not be replayed.")
     expect(supabase?.requirement).toContain("Do not replay 20261103213000.")
     expect(supabase?.requirement).toContain("Do not apply 20261103213000 to Production")

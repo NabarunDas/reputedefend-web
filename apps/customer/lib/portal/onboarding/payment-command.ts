@@ -11,6 +11,7 @@ import type { CommercialMetadata, RetrievedCheckout } from "../../../../../lib/p
 import { paymentProviderWithLane } from "../../../../../lib/payments"
 import { PaymentsDisabledError, type PaymentProvider } from "../../../../../lib/payments/provider"
 import { trustedStripeUrl } from "../../../../../lib/payments/stripe-url"
+import { COMMERCIAL_VERIFICATION_MESSAGE } from "../../../../../lib/payments/commercial-settlement"
 import { commercialCheckoutEnabled } from "./flag"
 import { OFFER_REF } from "./offer-types"
 
@@ -20,7 +21,7 @@ const UNAVAILABLE = "We couldn't start secure payment for this offer just now. N
 const STALE = "This page is out of date. Refresh it and try again. Nothing has been paid."
 const UNSUPPORTED = "This billing arrangement is not ready for secure payment. Nothing has been paid and the service has not started."
 const RETURN_NOTE = "Returning from the payment page does not record a payment."
-const CONFIRMING = "Your payment is being verified. Your service will become available after payment confirmation and setup."
+const CONFIRMING = COMMERCIAL_VERIFICATION_MESSAGE
 const SESSION_CLOSED = "This payment session can no longer be used. Nothing has been paid and the service has not started."
 const SESSION_MISMATCH = "The recorded payment session does not match this offer. Nothing has been paid and the service has not started."
 

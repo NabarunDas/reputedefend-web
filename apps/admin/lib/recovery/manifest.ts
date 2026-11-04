@@ -1498,6 +1498,23 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Customer commercial payment settlement", probe: "public.commercial_payment_settle_initial_invoice_v1" },
   },
+  {
+    // Commercial setup handover. Repository only. Not the DEV ledger head.
+    // The verified DEV ledger still contains 103 entries and ends at 20261104190000.
+    // Read-only queue and customer checklist. containsDataChange stays false.
+    // It does not create a subscription, entitlement, provision, coverage, or payment.
+    // It does not move a provision to LIVE.
+    // Do not apply 20261104220000 to DEV. Do not apply 20261104220000 to Production.
+    // Do not replay 20261104190000. safeToReplay stays false.
+    version: "20261104220000",
+    filename: "20261104220000_customer_commercial_setup_handover_v1.sql",
+    step: "Customer commercial setup handover",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Customer commercial setup handover", probe: "public.customer_portal_setup_handover_v1" },
+  },
 ]
 
 /**
@@ -1611,7 +1628,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` contains only
+ * `20261104220000`. That file is in the repository and is not the DEV ledger
+ * head. Do not apply `20261104220000` to DEV. Do not apply `20261104220000`
+ * to Production.
  * `20261104190000` is already applied on DEV and must not be replayed.
  * Do not replay `20261104190000`. Do not apply `20261104190000` to Production.
  * `20261103230000` is already applied on DEV and must not be replayed.

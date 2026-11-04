@@ -43,8 +43,10 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       safeToReplay: false,
     })
     // Payment settlement 20261104190000 is DEV-applied.
-    // pendingMigrations() is empty. Do not replay 20261104190000. Do not apply it to Production.
-    expect(pendingMigrations().map(m => m.filename)).toEqual([])
+    // pendingMigrations() contains only 20261104220000. It is not the DEV ledger head.
+    // Do not apply 20261104220000 to DEV. Do not apply 20261104220000 to Production.
+    // Do not replay 20261104190000. Do not apply it to Production.
+    expect(pendingMigrations().map(m => m.filename)).toEqual(["20261104220000_customer_commercial_setup_handover_v1.sql"])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])
     expect(sql).not.toContain("interval '5 minutes'")

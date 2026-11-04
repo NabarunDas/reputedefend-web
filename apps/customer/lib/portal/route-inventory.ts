@@ -90,6 +90,7 @@ export const PORTAL_ROUTES: readonly PortalRoute[] = [
     ["/account", "app/portal/account/page.tsx", "loadCustomerAccount"],
     ["/products", "app/portal/products/page.tsx", "loadProductHub"],
     ["/onboarding", "app/portal/onboarding/page.tsx", "loadOnboardingStatus"],
+    ["/onboarding/setup", "app/portal/onboarding/setup/page.tsx", "loadSetupHandover"],
     ["/onboarding/offer/[selector]", "app/portal/onboarding/offer/[selector]/page.tsx", "loadCommercialOffer"],
     ["/recovery", "app/portal/recovery/page.tsx", "loadCustomerDashboard"],
   ].map(([suffix, file, loader]): PortalRoute => ({
@@ -103,7 +104,7 @@ export const PORTAL_ROUTES: readonly PortalRoute[] = [
     origin: "none",
     contentType: "none",
     effect: "read",
-    authority: `${loader} re-reads the portal session and returns only that customer's rows. The layout is not the boundary.${suffix === "/" ? " When CUSTOMER_PRODUCTS_HUB_ENABLED is exactly true, a valid session redirects to /portal/products and this dashboard does not render." : ""}${suffix === "/products" || suffix === "/recovery" || suffix === "/onboarding" ? " CUSTOMER_PRODUCTS_HUB_ENABLED must be exactly true. Otherwise a valid session is redirected to /portal and this page does not render." : ""}${suffix === "/onboarding" ? " CUSTOMER_ONBOARDING_STATUS_READ_ENABLED must be exactly true. Otherwise a valid session is redirected to /portal/products and this page does not query the onboarding read." : ""}${suffix === "/onboarding/offer/[selector]" ? " CUSTOMER_PRODUCTS_HUB_ENABLED and CUSTOMER_COMMERCIAL_OFFER_READ_ENABLED must both be exactly true. Otherwise a valid session is redirected away and this page does not query the offer read. The selector is a commercial public reference, not a customer or business id." : ""}`,
+    authority: `${loader} re-reads the portal session and returns only that customer's rows. The layout is not the boundary.${suffix === "/" ? " When CUSTOMER_PRODUCTS_HUB_ENABLED is exactly true, a valid session redirects to /portal/products and this dashboard does not render." : ""}${suffix === "/products" || suffix === "/recovery" || suffix === "/onboarding" || suffix === "/onboarding/setup" ? " CUSTOMER_PRODUCTS_HUB_ENABLED must be exactly true. Otherwise a valid session is redirected to /portal and this page does not render." : ""}${suffix === "/onboarding" ? " CUSTOMER_ONBOARDING_STATUS_READ_ENABLED must be exactly true. Otherwise a valid session is redirected to /portal/products and this page does not query the onboarding read." : ""}${suffix === "/onboarding/setup" ? " CUSTOMER_COMMERCIAL_SETUP_HANDOVER_READ_ENABLED must be exactly true. Otherwise a valid session is redirected to /portal/products and this page does not query the setup read." : ""}${suffix === "/onboarding/offer/[selector]" ? " CUSTOMER_PRODUCTS_HUB_ENABLED and CUSTOMER_COMMERCIAL_OFFER_READ_ENABLED must both be exactly true. Otherwise a valid session is redirected away and this page does not query the offer read. The selector is a commercial public reference, not a customer or business id." : ""}`,
     unauthenticated: "Gate off redirects to /. Gate on without a portal session redirects to /login. A portal cookie that fails server validation redirects to /login?ended=security. An action session is not accepted.",
     proxyClass: "portal-page",
   })),

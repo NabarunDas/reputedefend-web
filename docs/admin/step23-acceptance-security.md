@@ -62,6 +62,7 @@ exercised. Rendering a component is not acceptance and was not accepted as such.
 | Customer preview | `/records/client/[id]/preview` | PASS |
 | Solicitor agreement confirmation | `/commercial/solicitor-approval` | PASS |
 | Commercial catalogue, quotes and orders | `/commercial`, `/cases/[id]/commercial` | PASS |
+| Paid commercial setup | `/commercial/setup` | PASS |
 | Money, payments and invoices | `/money` | DEFERRED_EXTERNAL |
 | Outgoing communications | `/communications`, `/cases/[id]/communications` | DEFERRED_EXTERNAL |
 | Inbound mail and conversations | `/conversations` | PASS |

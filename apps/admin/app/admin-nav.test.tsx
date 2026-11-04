@@ -55,6 +55,7 @@ const coverage: Array<[string, string, string | null]> = [
   ["/guard/alerts/alert-1", "Alerts", "Guard"],
   ["/commercial", "Commercial", "Finance"],
   ["/commercial/quotes", "Commercial", "Finance"],
+  ["/commercial/setup", "Paid setup", "Finance"],
   ["/money", "Money", "Finance"],
   ["/reports", "Reports", null],
   ["/reports/open_cases", "Reports", null],
@@ -129,6 +130,7 @@ describe("the navigation model", () => {
     ])
     expect(linksIn(group("finance")).map(item => [item.label, item.href])).toEqual([
       ["Commercial", "/commercial"],
+      ["Paid setup", "/commercial/setup"],
       ["Money", "/money"],
     ])
     const operations = group("operations").children as NavSubgroup[]

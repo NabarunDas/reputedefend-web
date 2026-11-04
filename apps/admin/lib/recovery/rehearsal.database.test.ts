@@ -54,11 +54,10 @@ describe("rebuilding the whole schema from zero", () => {
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    // The DEV applied head is 20261103213000 customer_commercial_payment_preparation_v1.
+    // The DEV applied head is 20261103230000 customer_commercial_payment_verification_v1.
+    // It was applied once. Do not replay 20261103230000. Do not apply 20261103230000 to Production.
+    // The previous DEV applied head is 20261103213000 customer_commercial_payment_preparation_v1.
     // It was applied once. Do not replay 20261103213000. Do not apply 20261103213000 to Production.
-    // The repository head is 20261103230000 customer_commercial_payment_verification_v1.
-    // It is not the DEV ledger head. Do not apply 20261103230000 to DEV.
-    // Do not apply 20261103230000 to Production.
     // The previous DEV head is 20261103200518 telloya_enquiry_phase_05a_02_validation.
     // It was applied once. Do not replay 20261103200518. Do not apply 20261103200518 to Production.
     // The head before that is 20261103140000 customer_commercial_offer_acceptance_v1.
@@ -69,11 +68,11 @@ describe("rebuilding the whole schema from zero", () => {
     // Do not replay 20261101200000. Do not apply 20261101200000 to Production.
     // Production stays at SEC-08.
     expect(migrationHead.filename).toBe("20261103230000_customer_commercial_payment_verification_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
-    expect(appliedMigrationHead.filename).toBe("20261103213000_customer_commercial_payment_preparation_v1.sql")
-    expect(appliedMigrationHead.version).toBe("20261103213000")
+    expect(appliedMigrationHead.filename).toBe("20261103230000_customer_commercial_payment_verification_v1.sql")
+    expect(appliedMigrationHead.version).toBe("20261103230000")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)

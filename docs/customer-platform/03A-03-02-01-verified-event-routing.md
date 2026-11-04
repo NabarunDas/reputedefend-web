@@ -2,7 +2,7 @@
 
 This phase classifies and verifies Stripe events for an accepted Telloya or Complete subscription. It does not insert `commercial_payment_evidence`, move a subscription to `ACTIVE`, grant an entitlement, provision Telloya, start Guard coverage, or send billing mail.
 
-`20261103230000_customer_commercial_payment_verification_v1` is in the repository and is not the DEV ledger head. Do not apply `20261103230000` to DEV. Do not apply `20261103230000` to Production. The verified DEV ledger still contains 101 entries and ends at `20261103213000`.
+`20261103230000_customer_commercial_payment_verification_v1` was applied once to DEV. The verified DEV ledger contains 102 entries and ends at `20261103230000`. The previous ledger contained 101 entries and ended at `20261103213000`. The repository file is 12,838 characters. Its MD5 is `de03ef27a623a72ae3e4015a33782406`. Its SHA-256 is `9a761103c01d8bb50c1656fe81a35ccab349f862304c6a8044a6a327dac57d9a`. Do not replay `20261103230000`. Do not apply `20261103230000` to Production. No commercial subscription or payment evidence was created. Commercial feature flags remain OFF.
 
 ## Existing and proposed routing
 
@@ -17,7 +17,7 @@ This phase classifies and verifies Stripe events for an accepted Telloya or Comp
 
 A metadata key such as `commercialSubscriptionId` does not prove ownership. The classifier uses a signed receipt reconciled to `commercial_checkout_preparations`, the commercial subscription, the immutable acceptance, and `stripe_customer_maps`. Checkout metadata must match that customer, commercial subscription, acceptance, and Checkout provider operation. Guard or Recovery metadata on a prepared session is suspicious and is not payment evidence. Commercial metadata with no preparation is suspicious and is not sent to Guard or Recovery settlement. A subscription checkout with no preparation and no commercial claim stays on the existing Guard queue.
 
-`CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED` must be exactly `true`. It defaults off. It does not override the develop-preview, DEV Supabase, payment-lane, or secret checks, and it must not be enabled until `20261103230000` is applied. While it is off, the worker does not call the new functions. A subscription checkout that merely claims commercial metadata is skipped. Recovery payment checkouts and Guard subscriptions keep their current paths.
+`CUSTOMER_COMMERCIAL_PAYMENT_VERIFICATION_ENABLED` must be exactly `true`. It defaults off. It does not override the develop-preview, DEV Supabase, payment-lane, or secret checks. `20261103230000` is applied on DEV. The flag stays off. While it is off, the worker does not call the new functions. A subscription checkout that merely claims commercial metadata is skipped. Recovery payment checkouts and Guard subscriptions keep their current paths.
 
 ## Verification result
 
@@ -54,4 +54,4 @@ The evidence-blocking trigger can be replaced only by that transaction's checks.
 
 That phase still does not grant entitlements, bill additional usage, cancel a subscription, issue a refund, or manage `PAST_DUE` and `PAUSED`.
 
-`20261103230000` replaces `commercial_checkout_preparations_checkout_session_id_check` and the session pattern in `commercial_payment_record_checkout_v1`. The accepted id keeps the `cs_` prefix, allows the underscore in `cs_test_` and `cs_live_`, and is bounded to 252 characters. Malformed ids, whitespace, oversized strings, and other provider ids are rejected. The applied `20261103213000` file is unchanged. Do not apply `20261103230000` until this replacement has been reviewed. A recorded session is still not payment evidence.
+`20261103230000` replaces `commercial_checkout_preparations_checkout_session_id_check` and the session pattern in `commercial_payment_record_checkout_v1`. The accepted id keeps the `cs_` prefix, allows the underscore in `cs_test_` and `cs_live_`, and is bounded to 252 characters. Malformed ids, whitespace, oversized strings, and other provider ids are rejected. The applied `20261103213000` file is unchanged. `20261103230000` is already applied on DEV and must not be replayed. Do not apply `20261103230000` to Production. A recorded session is still not payment evidence.

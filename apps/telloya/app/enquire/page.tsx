@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { pageTitle } from "@/lib/brand"
+import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { TelloyaEnquiryForm } from "@/components/telloya-enquiry-form"
 import { getEnquiryCapabilities } from "@/lib/enquiry-contract"
 import styles from "./enquire.module.css"
@@ -10,18 +10,10 @@ const seo = {
 }
 
 export const metadata: Metadata = {
-  title: pageTitle(seo.title),
+  title: absolutePageTitle(seo.title),
   description: seo.description,
   alternates: { canonical: "/enquire" },
-  openGraph: {
-    title: seo.title,
-    description: seo.description,
-    url: "/enquire",
-  },
-  twitter: {
-    title: seo.title,
-    description: seo.description,
-  },
+  ...pageSocialMetadata({ title: seo.title, description: seo.description, path: "/enquire" }),
 }
 
 export default async function EnquirePage({
@@ -106,7 +98,7 @@ export default async function EnquirePage({
             </section>
             <section className={styles.info} aria-labelledby="info-title">
               <h2 id="info-title">Important to know</h2>
-              <p>Telloya is not currently available for self-service purchase. We&apos;re finalising pricing and packaging before public launch.</p>
+              <p>Telloya is not currently available for self-service purchase. Published plan prices are indicative, and this enquiry does not take payment or start a subscription.</p>
               <p>This enquiry helps us understand your requirements and determine if Telloya is a good fit for your business setup.</p>
             </section>
           </aside>

@@ -1,25 +1,17 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowUpRight } from "lucide-react"
-import { pageTitle } from "@/lib/brand"
+import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { howItWorksContent } from "@/lib/content"
 import styles from "./how-it-works.module.css"
 
 const { seo, hero, journey, experience, setup, limitations, cta } = howItWorksContent
 
 export const metadata: Metadata = {
-  title: pageTitle(seo.title),
+  title: absolutePageTitle(seo.title),
   description: seo.description,
   alternates: { canonical: "/how-it-works" },
-  openGraph: {
-    title: seo.title,
-    description: seo.description,
-    url: "/how-it-works",
-  },
-  twitter: {
-    title: seo.title,
-    description: seo.description,
-  },
+  ...pageSocialMetadata({ title: seo.title, description: seo.description, path: "/how-it-works" }),
 }
 
 export default function HowItWorks() {

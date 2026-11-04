@@ -58,6 +58,44 @@ export function pageTitle(page: string) {
   return `${page} | ${brandName}`
 }
 
+/**
+ * Document title that must not pass through the root `%s | Telloya` template.
+ * `pageTitle()` already includes the brand, so a plain string would render
+ * as "Page | Telloya | Telloya".
+ */
+export function absolutePageTitle(page: string) {
+  return { absolute: pageTitle(page) } as const
+}
+
+export const socialShareImage = {
+  url: "/brand/telloya-social-share.webp",
+  width: 1200,
+  height: 675,
+  alt: "Telloya Connected T logo",
+} as const
+
+/**
+ * Page-level Open Graph and Twitter fields replace the root objects.
+ * Repeat the approved share image and large-card type here so a page
+ * title does not drop the preview image.
+ */
+export function pageSocialMetadata(page: { title: string; description: string; path: string }) {
+  return {
+    openGraph: {
+      title: page.title,
+      description: page.description,
+      url: page.path,
+      images: [socialShareImage],
+    },
+    twitter: {
+      card: "summary_large_image" as const,
+      title: page.title,
+      description: page.description,
+      images: [socialShareImage.url],
+    },
+  }
+}
+
 export const defaultTitle = `${brandName} — ${brandTagline}`
 export const titleTemplate = `%s | ${brandName}`
 export const brandHomeLabel = `${brandName} home`

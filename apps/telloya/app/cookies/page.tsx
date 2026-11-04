@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { pageSocialMetadata } from "@/lib/brand"
 import {
   cookiesAnalytics,
   cookiesChoice,
@@ -15,15 +16,7 @@ export const metadata: Metadata = {
   title: cookiesSeo.title,
   description: cookiesSeo.description,
   alternates: { canonical: "/cookies" },
-  openGraph: {
-    title: cookiesSeo.title,
-    description: cookiesSeo.description,
-    url: "/cookies",
-  },
-  twitter: {
-    title: cookiesSeo.title,
-    description: cookiesSeo.description,
-  },
+  ...pageSocialMetadata({ title: cookiesSeo.title, description: cookiesSeo.description, path: "/cookies" }),
 }
 
 export default function CookiesPage() {

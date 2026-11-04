@@ -8,7 +8,7 @@ import {
   ShieldCheck,
   Sparkles 
 } from "lucide-react"
-import { pageTitle } from "@/lib/brand"
+import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { industriesContent } from "@/lib/content"
 import styles from "./industries.module.css"
 
@@ -17,18 +17,10 @@ const { seo, hero, industries, universal, cta } = industriesContent
 const industryIcons = [Wrench, Zap, Headphones, ShieldCheck, Sparkles] as const
 
 export const metadata: Metadata = {
-  title: pageTitle(seo.title),
+  title: absolutePageTitle(seo.title),
   description: seo.description,
   alternates: { canonical: "/industries" },
-  openGraph: {
-    title: seo.title,
-    description: seo.description,
-    url: "/industries",
-  },
-  twitter: {
-    title: seo.title,
-    description: seo.description,
-  },
+  ...pageSocialMetadata({ title: seo.title, description: seo.description, path: "/industries" }),
 }
 
 export default function Industries() {

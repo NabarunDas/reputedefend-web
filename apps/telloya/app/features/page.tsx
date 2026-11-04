@@ -1,25 +1,17 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowUpRight, PhoneIncoming, MessageSquare, CheckCircle2 } from "lucide-react"
-import { pageTitle } from "@/lib/brand"
+import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { featuresContent } from "@/lib/content"
 import styles from "./features.module.css"
 
 const { seo, hero, features, technical, future, cta } = featuresContent
 
 export const metadata: Metadata = {
-  title: pageTitle(seo.title),
+  title: absolutePageTitle(seo.title),
   description: seo.description,
   alternates: { canonical: "/features" },
-  openGraph: {
-    title: seo.title,
-    description: seo.description,
-    url: "/features",
-  },
-  twitter: {
-    title: seo.title,
-    description: seo.description,
-  },
+  ...pageSocialMetadata({ title: seo.title, description: seo.description, path: "/features" }),
 }
 
 export default function Features() {

@@ -88,8 +88,7 @@ export const coreTelloyaCapabilities = [
   "Conversational enquiry collection",
   "Caller contact and service requirements",
   "Callback-time preferences",
-  "Structured lead summaries",
-  "Usage visibility when available in the customer service",
+  "Structured lead summaries delivered by the agreed method",
 ] as const
 
 /**

@@ -1,9 +1,10 @@
 import Link from "next/link"
 import type { Metadata } from "next"
-import { pageTitle } from "@/lib/brand"
+import { absolutePageTitle } from "@/lib/brand"
 
 export const metadata: Metadata = {
-  title: pageTitle("Page Not Found"),
+  title: absolutePageTitle("Page Not Found"),
+  robots: { index: false, follow: false, noarchive: true },
 }
 
 export default function NotFound() {

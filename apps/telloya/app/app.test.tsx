@@ -341,8 +341,41 @@ describe("Pre-launch Behavior", () => {
     expect(Array.isArray(result)).toBe(true)
     expect(result.length).toBe(7)
     expect(result[0].url).toBe("https://telloya.com")
-    expect(result.some((entry) => entry.url === "https://telloya.com/cookies")).toBe(true)
+    expect(result.map((entry) => entry.url)).toEqual([
+      "https://telloya.com",
+      "https://telloya.com/how-it-works",
+      "https://telloya.com/features",
+      "https://telloya.com/industries",
+      "https://telloya.com/pricing",
+      "https://telloya.com/enquire",
+      "https://telloya.com/cookies",
+    ])
+    expect(result.some((entry) => entry.url.includes("/demo"))).toBe(false)
+    expect(result.every((entry) => !("lastModified" in entry))).toBe(true)
     
+    process.env = originalEnv
+  })
+
+  it("sitemap stays empty in preview even when the launch flag is set", async () => {
+    const sitemap = (await import("@/app/sitemap")).default
+    const originalEnv = process.env
+    process.env = { ...originalEnv, VERCEL_ENV: "preview", TELLOYA_LAUNCHED: "true" }
+    expect(sitemap()).toEqual([])
+    process.env = originalEnv
+  })
+
+  it("robots allows crawling only when production and launched", async () => {
+    const robots = (await import("@/app/robots")).default
+    const originalEnv = process.env
+    process.env = { ...originalEnv, VERCEL_ENV: "preview", TELLOYA_LAUNCHED: "true" }
+    const preview = robots()
+    expect(Array.isArray(preview.rules) ? preview.rules[0]?.disallow : preview.rules?.disallow).toBe("/")
+    expect(preview.sitemap).toBeUndefined()
+
+    process.env = { ...originalEnv, VERCEL_ENV: "production", TELLOYA_LAUNCHED: "true" }
+    const launched = robots()
+    expect(Array.isArray(launched.rules) ? launched.rules[0]?.allow : launched.rules?.allow).toBe("/")
+    expect(launched.sitemap).toBe("https://telloya.com/sitemap.xml")
     process.env = originalEnv
   })
   
@@ -416,5 +449,37 @@ describe("Page Structure and Accessibility", () => {
       href === PRODUCTION_CUSTOMER_PORTAL_HREF || 
       href === DEV_CUSTOMER_PORTAL_HREF
     ).toBe(true)
+  })
+
+  it("labels dashboard usage as planned and does not promise local-currency checkout", async () => {
+    const Pricing = (await import("@/app/pricing/page")).default
+    render(<Pricing />)
+    expect(screen.getAllByText("Usage visibility in a customer dashboard (planned)").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Planned").length).toBeGreaterThanOrEqual(4)
+    expect(screen.getAllByText(/does not offer local-currency checkout or conversion/i).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/unused minutes do not roll over/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/exchange rate will be shown at checkout/i)).not.toBeInTheDocument()
+    expect(screen.getAllByText("£49").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("£79").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("£120").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("£9.99").length).toBeGreaterThan(0)
+  })
+
+  it("sends each published plan to the enquiry page without opening submission", async () => {
+    const { pricingContent } = await import("@/lib/content")
+    expect(pricingContent.plans.map((plan) => plan.href)).toEqual([
+      "/enquire?plan=basic",
+      "/enquire?plan=growth",
+      "/enquire?plan=pro",
+      "/enquire?plan=custom",
+    ])
+
+    const EnquirePage = (await import("@/app/enquire/page")).default
+    render(await EnquirePage({ searchParams: Promise.resolve({ plan: "growth" }) }))
+    expect(screen.getByRole("heading", { name: /Enquire about Telloya/i })).toBeInTheDocument()
+    expect(screen.getByText(/not currently available for self-service purchase/i)).toBeInTheDocument()
+    expect(screen.queryByText(/finalising pricing and packaging/i)).not.toBeInTheDocument()
+    expect(screen.getByRole("status")).toHaveTextContent(/enquiry system before public launch/i)
+    expect(screen.queryByRole("button", { name: /submit/i })).not.toBeInTheDocument()
   })
 })

@@ -15,18 +15,17 @@ import {
   Wrench,
   Zap,
 } from "lucide-react"
-import { pageTitle } from "@/lib/brand"
+import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { homepageContent } from "@/lib/content"
 import styles from "./homepage.module.css"
 
 const { seo, hero, problem, howItWorks, benefits, example, audience, plans, faq, finalCta } = homepageContent
 
 export const metadata: Metadata = {
-  title: { absolute: pageTitle(seo.title) },
+  title: absolutePageTitle(seo.title),
   description: seo.description,
   alternates: { canonical: "/" },
-  openGraph: { title: seo.title, description: seo.description, url: "/" },
-  twitter: { title: seo.title, description: seo.description },
+  ...pageSocialMetadata({ title: seo.title, description: seo.description, path: "/" }),
 }
 
 const benefitIcons = [PhoneCall, ClipboardList, ShieldCheck, Clock3] as const

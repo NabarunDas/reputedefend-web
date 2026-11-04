@@ -42,6 +42,8 @@ The new database functions are `STABLE`, read-only, and service-role-only. `comm
 
 ## 03A-03-02-02 design
 
+The settlement command is now in the repository as `20261104190000_customer_commercial_payment_settlement_v1`. That file is not the DEV ledger head. Do not apply `20261104190000` to DEV. Do not apply `20261104190000` to Production. The behaviour below is the transaction that command performs. See `03A-03-02-02-atomic-payment-settlement.md`.
+
 The next phase may record payment and advance state only in one database transaction, after this verifier has returned `verified` for a specific receipt id:
 
 1. Lock the commercial subscription and its preparation.

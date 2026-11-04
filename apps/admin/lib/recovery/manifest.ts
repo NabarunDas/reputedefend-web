@@ -1474,6 +1474,16 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Customer commercial payment verification", probe: "public.commercial_payment_receipt_v1" },
   },
+  {
+    version: "20261104190000",
+    filename: "20261104190000_customer_commercial_payment_settlement_v1.sql",
+    step: "Customer commercial payment settlement",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Customer commercial payment settlement", probe: "public.commercial_payment_settle_initial_invoice_v1" },
+  },
 ]
 
 /**
@@ -1577,7 +1587,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` contains only
+ * `20261104190000`. That file is in the repository and is not the DEV ledger
+ * head. Do not apply `20261104190000` to DEV. Do not apply `20261104190000`
+ * to Production.
  * `20261103230000` is already applied on DEV and must not be replayed.
  * Do not apply 20261103230000 to Production.
  * `20261103213000` is already applied on DEV and must not be replayed.

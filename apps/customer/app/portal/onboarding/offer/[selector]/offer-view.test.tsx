@@ -15,6 +15,7 @@ const ready: ReadyOffer = {
   product: "Complete",
   businessName: "Harbour Bakery",
   locations: ["High Street", "Dock"],
+  guardLocations: [],
   services: ["Telloya", "Relaunch Guard"],
   priceMinor: 9900,
   currency: "GBP",
@@ -133,5 +134,63 @@ describe("commercial offer presentation", () => {
     }} paymentAction />)
     expect(screen.getByText("This billing arrangement is not ready for secure payment.")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Continue to secure payment" })).toBeNull()
+  })
+
+  it("shows Telloya locations separately from paid Guard locations and the combined monthly amount", () => {
+    const telloya = {
+      ...ready,
+      product: "Telloya" as const,
+      services: ["Telloya"],
+      locations: ["Depot", "Yard"],
+      conditions: { ...ready.conditions, baseAmountMinor: 7900, guardIncluded: true, guardUnitMinor: 999, guardQuantity: 1 },
+      priceMinor: 8899,
+      totalMinor: 8899,
+      guardLocations: [{ locationId: "33333333-3333-4333-8333-333333333333", locationName: "Depot" }],
+    }
+    render(<OfferView offer={telloya} acceptEnabled={false} />)
+    expect(screen.getByRole("heading", { name: "Telloya locations" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Paid Relaunch Guard locations" })).toBeTruthy()
+    expect(screen.getAllByText("Depot")).toHaveLength(2)
+    expect(screen.getAllByText("Yard")).toHaveLength(1)
+    expect(screen.getByText("£88.99 per month")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Accept offer" })).toBeNull()
+
+    cleanup()
+    render(<OfferView offer={{
+      ...telloya,
+      conditions: { ...telloya.conditions, guardQuantity: 2 },
+      priceMinor: 9898,
+      totalMinor: 9898,
+      guardLocations: [
+        { locationId: "33333333-3333-4333-8333-333333333333", locationName: "Depot" },
+        { locationId: "44444444-4444-4444-8444-444444444444", locationName: "Yard" },
+      ],
+    }} acceptEnabled={false} />)
+    expect(screen.getByText("£98.98 per month")).toBeTruthy()
+    expect(screen.getAllByText("Yard")).toHaveLength(2)
+
+    cleanup()
+    render(<OfferView offer={{
+      ...telloya,
+      conditions: { ...ready.conditions, baseAmountMinor: 7900, guardIncluded: false, guardUnitMinor: 999, guardQuantity: 0 },
+      priceMinor: 7900,
+      totalMinor: 7900,
+      guardLocations: [],
+    }} acceptEnabled={false} />)
+    expect(screen.getByText("No location is included in paid Relaunch Guard.")).toBeTruthy()
+    expect(screen.getByText("£79.00 per month")).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Paid Relaunch Guard locations" })).toBeNull()
+
+    cleanup()
+    const { offerVersion: _offerVersion, ...priced } = telloya
+    render(<OfferView offer={{
+      ...priced,
+      status: "accepted",
+      acceptedAt: "2026-11-03T12:00:00.000Z",
+      conditions: { ...telloya.conditions, overageOptIn: false, overageCapMinor: null },
+    }} acceptEnabled />)
+    expect(screen.getByRole("heading", { name: "Paid Relaunch Guard locations" })).toBeTruthy()
+    expect(screen.getByText("£9.99 for 1 location: Depot")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Accept offer" })).toBeNull()
   })
 })

@@ -22,6 +22,11 @@ export type OfferAgreement = {
   confirmations: OfferConfirmation[]
 }
 
+export type OfferGuardLocation = {
+  locationId: string
+  locationName: string
+}
+
 export type OfferConditions = {
   tier: OfferTier
   includedMinutes: number | null
@@ -44,6 +49,7 @@ export type PricedOffer = {
   product: OfferProduct
   businessName: string
   locations: string[]
+  guardLocations: OfferGuardLocation[]
   services: string[]
   priceMinor: number
   currency: "GBP"
@@ -96,6 +102,7 @@ const LIMITED = new Set(["withdrawn", "expired", "changed", "superseded"])
 const PROVIDER_ID = /\b(?:cus|sub|si|pi|cs|pm|sk|whsec|price)_[A-Za-z0-9]+\b/
 const UNSAFE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]|javascript:|<script/i
 const CONFIRMATION_KEY = /^[a-z][a-z0-9_]{0,31}$/
+const LOCATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const CONDITION_KEYS = [
   "tier", "includedMinutes", "minutesRollover", "baseAmountMinor", "guardIncluded",
   "guardUnitMinor", "guardQuantity", "overagePermitted", "overageRateMinor",
@@ -130,6 +137,27 @@ function names(value: unknown, max: number): string[] | null {
   return items
 }
 
+function guardLocations(value: unknown, covered: string[], quantity: number, product: OfferProduct): OfferGuardLocation[] | null {
+  if (!Array.isArray(value) || value.length > covered.length || value.length > 20) return null
+  const items: OfferGuardLocation[] = []
+  const remaining = [...covered]
+  for (const entry of value) {
+    const row = record(entry)
+    if (!row || !exactKeys(row, ["locationId", "locationName"])) return null
+    const locationId = typeof row.locationId === "string" ? row.locationId.toLowerCase() : ""
+    const locationName = text(row.locationName, 200)
+    if (!LOCATION_ID.test(locationId) || !locationName) return null
+    if (items.some(item => item.locationId === locationId)) return null
+    const index = remaining.indexOf(locationName)
+    if (index < 0) return null
+    remaining.splice(index, 1)
+    items.push({ locationId, locationName })
+  }
+  if (product === "Telloya" && items.length !== quantity) return null
+  if (product === "Complete" && items.length !== 0 && items.length !== quantity) return null
+  return items
+}
+
 function money(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 100_000_000) return null
   return value
@@ -159,13 +187,14 @@ function agreement(value: unknown): OfferAgreement | null {
 
 function priced(row: Record<string, unknown>, offerRef: string, product: OfferProduct, businessName: string, nextStep: string, commercial: OfferConditions): PricedOffer | null {
   const locations = names(row.locations, 20)
+  const places = locations && guardLocations(row.guardLocations, locations, commercial.guardQuantity, product)
   const services = names(row.services, 4)
   const priceMinor = money(row.priceMinor)
   const taxBehaviour = typeof row.taxBehaviour === "string" ? row.taxBehaviour : ""
   const cadence = typeof row.cadence === "string" ? row.cadence : ""
   const terms = agreement(row.agreement)
   const guardCharge = commercial.guardIncluded ? (commercial.guardUnitMinor ?? 0) * commercial.guardQuantity : 0
-  if (!locations || !services || priceMinor == null || priceMinor < 1 || !TAX.has(taxBehaviour) || !CADENCE.has(cadence) || !terms) return null
+  if (!locations || !places || !services || priceMinor == null || priceMinor < 1 || !TAX.has(taxBehaviour) || !CADENCE.has(cadence) || !terms) return null
   if (commercial.baseAmountMinor + guardCharge !== priceMinor) return null
   if (row.currency !== "GBP" || typeof row.recurring !== "boolean") return null
   if (row.recurring !== (cadence !== "ONCE")) return null
@@ -181,6 +210,7 @@ function priced(row: Record<string, unknown>, offerRef: string, product: OfferPr
     product,
     businessName,
     locations,
+    guardLocations: places,
     services,
     priceMinor,
     currency: "GBP",
@@ -302,7 +332,7 @@ export function parseCommercialOffer(value: unknown): Exclude<CommercialOfferRea
   }
   if (status === "ready") {
     if (!exactKeys(row, [
-      "status", "offerRef", "offerVersion", "product", "businessName", "locations", "services",
+      "status", "offerRef", "offerVersion", "product", "businessName", "locations", "guardLocations", "services",
       "priceMinor", "currency", "taxBehaviour", "taxMinor", "totalMinor", "cadence", "recurring",
       "agreement", "conditions", "nextStep",
     ])) return null
@@ -314,7 +344,7 @@ export function parseCommercialOffer(value: unknown): Exclude<CommercialOfferRea
   }
   if (status === "accepted") {
     const acceptedKeys = [
-      "status", "offerRef", "product", "businessName", "locations", "services",
+      "status", "offerRef", "product", "businessName", "locations", "guardLocations", "services",
       "priceMinor", "currency", "taxBehaviour", "taxMinor", "totalMinor", "cadence", "recurring",
       "agreement", "conditions", "acceptedAt", "nextStep",
     ]

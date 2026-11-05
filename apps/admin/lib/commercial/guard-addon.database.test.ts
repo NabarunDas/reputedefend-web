@@ -404,6 +404,14 @@ describe("Telloya and optional Relaunch Guard offers", () => {
     const hidden = await rpc<Result>("customer_portal_commercial_offer_v1", [stranger, pinned.public_ref])
     expect(hidden).toEqual({ status: "unavailable" })
     expect(JSON.stringify(hidden)).not.toContain("8899")
+    const readyView = await rpc<Result>("customer_portal_commercial_offer_v1", [session, pinned.public_ref])
+    expect(readyView).toMatchObject({
+      status: "ready",
+      priceMinor: 8899,
+      totalMinor: 8899,
+      locations: ["two.guard@example.com shop 1"],
+      guardLocations: [{ locationId: opened.locationIds[0], locationName: "two.guard@example.com shop 1" }],
+    })
     const rejected = await accept(session, pinned.public_ref, 7900)
     expect(rejected.status).toBe("conflict")
     expect((await rows<{ n: number }>("select count(*)::int as n from public.commercial_offer_acceptances where subscription_id = $1", [pinned.id]))[0].n).toBe(0)
@@ -426,6 +434,13 @@ describe("Telloya and optional Relaunch Guard offers", () => {
     )
     expect(snapshot[0].terms_snapshot.priceMinor).toBe(8899)
     expect(snapshot[0].terms_snapshot.guardLocations).toHaveLength(1)
+    const acceptedView = await rpc<Result>("customer_portal_commercial_offer_v1", [session, pinned.public_ref])
+    expect(acceptedView).toMatchObject({
+      status: "accepted",
+      priceMinor: 8899,
+      totalMinor: 8899,
+      guardLocations: [{ locationId: opened.locationIds[0], locationName: "two.guard@example.com shop 1" }],
+    })
     const checkout = await rpc<Result>("customer_portal_commercial_payment_prepare_v1", [session, randomUUID(), pinned.public_ref])
     expect(checkout.status).toBe("success")
     expect(checkout.amountMinor).toBe(8899)
@@ -466,6 +481,21 @@ describe("Telloya and optional Relaunch Guard offers", () => {
       "select count(*)::int as n from admin_private.commercial_offer_guard_locations where subscription_id = $1",
       [pinned.id],
     ))[0].n).toBe(1)
+    const mixedSession = await portalSession("mixed.guard@example.com", "c0b10000-0000-4000-8000-0000000000d4")
+    const mixedGuard = (await rows<{ location_name: string }>(
+      "select location_name from public.locations where id = $1",
+      [both.locationIds[0]],
+    ))[0].location_name
+    const mixedCovered = (await rows<{ location_name: string }>(
+      "select location_name from public.locations where id = any($1::uuid[]) order by location_name",
+      [both.locationIds],
+    )).map(row => row.location_name)
+    expect(await rpc<Result>("customer_portal_commercial_offer_v1", [mixedSession, pinned.public_ref])).toMatchObject({
+      status: "ready",
+      priceMinor: 8899,
+      locations: mixedCovered,
+      guardLocations: [{ locationId: both.locationIds[0], locationName: mixedGuard }],
+    })
 
     const pair = await ready("pair.guard@example.com", 2, "growth")
     const bothGuards = await command("prepare_offer", {
@@ -491,6 +521,17 @@ describe("Telloya and optional Relaunch Guard offers", () => {
     const pairSession = await portalSession("pair.guard@example.com", "c0b10000-0000-4000-8000-0000000000d7")
     const pairAccepted = await accept(pairSession, pairOffer.public_ref, 9898)
     expect(pairAccepted.status).toBe("success")
+    const pairNames = (await rows<{ id: string; location_name: string }>(
+      "select id, location_name from public.locations where id = any($1::uuid[]) order by location_name",
+      [pair.locationIds],
+    ))
+    expect(await rpc<Result>("customer_portal_commercial_offer_v1", [pairSession, pairOffer.public_ref])).toMatchObject({
+      status: "accepted",
+      priceMinor: 9898,
+      totalMinor: 9898,
+      locations: pairNames.map(row => row.location_name),
+      guardLocations: pairNames.map(row => ({ locationId: row.id, locationName: row.location_name })),
+    })
     const pairCheckout = await rpc<Result>("customer_portal_commercial_payment_prepare_v1", [pairSession, randomUUID(), pairOffer.public_ref])
     expect(pairCheckout).toMatchObject({ status: "success", amountMinor: 9898 })
     expect((await rows<{ stripe_price_id: string | null; amount_minor: number }>(

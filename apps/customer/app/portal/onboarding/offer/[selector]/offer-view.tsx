@@ -107,6 +107,12 @@ function Price({ offer }: { offer: ShownOffer }) {
           <dt>Total payable</dt>
           <dd>{pounds(offer.totalMinor)}</dd>
         </div>
+        {offer.cadence === "MONTH" ? (
+          <div>
+            <dt>Combined monthly amount</dt>
+            <dd>{pounds(offer.priceMinor)} per month</dd>
+          </div>
+        ) : null}
       </dl>
       <p>{taxLine(offer)}</p>
     </section>
@@ -161,11 +167,21 @@ export function OfferView({
         <p>{offer.businessName}</p>
         {offer.locations && offer.locations.length > 0 ? (
           <>
-            <h3>Covered locations</h3>
+            <h3>Telloya locations</h3>
             <ul>
               {offer.locations.map(location => <li key={location}>{location}</li>)}
             </ul>
           </>
+        ) : null}
+        {"guardLocations" in offer && offer.guardLocations.length > 0 ? (
+          <>
+            <h3>Paid Relaunch Guard locations</h3>
+            <ul>
+              {offer.guardLocations.map(location => <li key={location.locationId}>{location.locationName}</li>)}
+            </ul>
+          </>
+        ) : "guardLocations" in offer && offer.product === "Telloya" ? (
+          <p>No location is included in paid Relaunch Guard.</p>
         ) : null}
       </section>
       {ready || accepted ? (
@@ -202,7 +218,7 @@ export function OfferView({
             {offer.conditions.guardIncluded && offer.conditions.guardUnitMinor != null ? (
               <div>
                 <dt>Included Relaunch Guard</dt>
-                <dd>{pounds(offer.conditions.guardUnitMinor * offer.conditions.guardQuantity)} for {offer.conditions.guardQuantity === 1 ? "1 location" : `${offer.conditions.guardQuantity} locations`}</dd>
+                <dd>{pounds(offer.conditions.guardUnitMinor * offer.conditions.guardQuantity)} for {offer.conditions.guardQuantity === 1 ? "1 location" : `${offer.conditions.guardQuantity} locations`}{offer.guardLocations.length > 0 ? `: ${offer.guardLocations.map(location => location.locationName).join(", ")}` : ""}</dd>
               </div>
             ) : null}
           </dl>

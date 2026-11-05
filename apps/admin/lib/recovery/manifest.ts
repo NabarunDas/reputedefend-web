@@ -1527,17 +1527,34 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Customer commercial setup handover", probe: "public.customer_portal_setup_handover_v1" },
   },
   {
+    // Telloya voice persistence. Local repository only.
+    // appliedToDev stays false: this file has not been applied to hosted DEV
+    // or Production. It creates no commercial, enquiry, or customer rows.
+    // Do not apply 20261105120000 to hosted DEV or Production.
+    version: "20261105120000",
+    filename: "20261105120000_telloya_voice_persistence_v1.sql",
+    step: "Telloya voice persistence",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya voice persistence", probe: "public.telloya_voice_leads" },
+  },
+  {
     // Audited Admin begin setup. Not applied to DEV. The verified DEV ledger
     // still contains 104 entries and ends at 20261104220000.
-    // Do not apply 20261105120000 to DEV. Do not apply 20261105120000 to Production.
+    // Do not apply 20261105130000 to DEV. Do not apply 20261105130000 to Production.
     // One service-role command creates PENDING TELLOYA entitlements and
     // PROFILE_REQUIRED provisions for a verified paid subscription.
     // It does not confirm preferences, call a provider, allocate a number,
     // enable Guard, change billing, send mail, or move a service to live.
     // Writes are inside the command. containsDataChange stays false.
     // safeToReplay stays false.
-    version: "20261105120000",
-    filename: "20261105120000_admin_commercial_begin_setup_v1.sql",
+    // supabase migration new admin_commercial_begin_setup_v1 wrote an empty
+    // file at 20261105104905, which sorts before Telloya voice persistence.
+    // This entry is versioned 20261105130000 so it stays strictly later.
+    version: "20261105130000",
+    filename: "20261105130000_admin_commercial_begin_setup_v1.sql",
     step: "Audited Admin begin setup",
     kind: "additive",
     appliedToDev: false,
@@ -1671,9 +1688,11 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
- * `20261104220000` is already applied on DEV and must not be replayed.
- * Do not replay `20261104220000`. Do not apply `20261104220000` to Production.
+ * applied and must not be replayed. `pendingMigrations()` contains the unapplied local voice file `20261105120000`
+ * and the unapplied Admin begin-setup file `20261105130000`. Do not apply
+ * either to hosted DEV or Production. `20261104220000` is already applied on DEV and must not be
+ * replayed. Do not replay `20261104220000`. Do not apply `20261104220000`
+ * to Production.
  * `20261104190000` is already applied on DEV and must not be replayed.
  * Do not replay `20261104190000`. Do not apply `20261104190000` to Production.
  * `20261103230000` is already applied on DEV and must not be replayed.

@@ -26,7 +26,7 @@ const periodEnd = "2026-12-01T00:00:00.000Z"
 const adminToken = "a".repeat(64)
 const challenge = "c".repeat(64)
 const reason = "Begin setup after the verified payment."
-const sqlPath = new URL("../../../../supabase/migrations/20261105120000_admin_commercial_begin_setup_v1.sql", import.meta.url)
+const sqlPath = new URL("../../../../supabase/migrations/20261105130000_admin_commercial_begin_setup_v1.sql", import.meta.url)
 
 type Row = Record<string, unknown>
 let session = ""
@@ -451,8 +451,8 @@ afterAll(async () => {
 describe("audited admin begin setup", () => {
   it("keeps the command service-role only and names the unapplied boundary", async () => {
     const source = readFileSync(sqlPath, "utf8")
-    expect(source).toContain("Do not apply 20261105120000 to DEV")
-    expect(source).toContain("Do not apply 20261105120000 to Production")
+    expect(source).toContain("Do not apply 20261105130000 to DEV")
+    expect(source).toContain("Do not apply 20261105130000 to Production")
     expect(source).toContain("03A-03-03-02-02")
     expect(source).not.toMatch(/\bretell\b|\bResend\b|ADMIN_COMMERCIAL_BEGIN_SETUP_ENABLED/i)
     const privilege = await rows<{ anon: boolean; authenticated: boolean; service: boolean }>(

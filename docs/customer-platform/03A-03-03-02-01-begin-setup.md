@@ -1,6 +1,6 @@
 # 03A-03-03-02-01 — Audited Admin Begin Setup
 
-`20261105120000_admin_commercial_begin_setup_v1.sql` is the repository head and is not applied. The verified DEV ledger still contains 104 entries and ends at `20261104220000`. Do not apply `20261105120000` to DEV. Do not apply it to Production. Production remains at `20261014170000`.
+`20261105130000_admin_commercial_begin_setup_v1.sql` is the repository head and is not applied. `20261105120000_telloya_voice_persistence_v1.sql` is the preceding pending migration and is not applied. The verified DEV ledger still contains 104 entries and ends at `20261104220000`. Exactly two migrations are pending. Do not apply `20261105120000` or `20261105130000` to DEV. Do not apply either to Production. Production remains at `20261014170000`.
 
 ## Command
 

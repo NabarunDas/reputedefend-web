@@ -302,7 +302,7 @@ export const environmentContract: readonly EnvVariable[] = [
     secret: false,
     scope: "PRODUCTION_AND_PREVIEW",
     atAdminCutover: "OPTIONAL",
-    controls: "Audited Admin Begin setup for one verified paid Telloya or Complete subscription. Exactly \"true\" is required together with ADMIN_COMMERCIAL_SETUP_QUEUE_ENABLED before the paid setup page offers the command. It does not call Retell, buy a number, configure an AI agent, enable forwarding, start Guard monitoring, change a price, enable overage, or send mail. 20261105120000 is not applied to DEV. The flag stays off.",
+    controls: "Audited Admin Begin setup for one verified paid Telloya or Complete subscription. Exactly \"true\" is required together with ADMIN_COMMERCIAL_SETUP_QUEUE_ENABLED before the paid setup page offers the command. It does not call Retell, buy a number, configure an AI agent, enable forwarding, start Guard monitoring, change a price, enable overage, or send mail. 20261105130000 is not applied to DEV. The flag stays off.",
     whenAbsent: "Begin setup stays hidden and the command route does not call the database. The paid setup queue can still be read when its own flag is on.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,

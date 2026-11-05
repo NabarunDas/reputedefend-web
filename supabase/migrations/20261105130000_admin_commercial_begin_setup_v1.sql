@@ -1,6 +1,10 @@
 -- 03A-03-03-02-01 Audited Admin Begin Setup.
--- Forward-only. Not applied to DEV. Do not apply 20261105120000 to DEV.
--- Do not apply 20261105120000 to Production.
+-- supabase migration new admin_commercial_begin_setup_v1 created an empty
+-- file at 20261105104905. That timestamp sorts before the merged Telloya
+-- migration 20261105120000_telloya_voice_persistence_v1.sql, so this reviewed
+-- SQL is versioned 20261105130000. Telloya voice persistence stays first.
+-- Forward-only. Not applied to DEV. Do not apply 20261105130000 to DEV.
+-- Do not apply 20261105130000 to Production.
 -- appliedToDev stays false until a human applies this file.
 --
 -- One Admin command moves a verified paid Telloya or Complete subscription

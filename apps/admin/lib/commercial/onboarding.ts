@@ -24,7 +24,7 @@ export const operationLabels: Record<OnboardingOperation, string> = {
   select_locations: "Locations chosen",
   mark_ready: "Ready for a later invitation",
   decline: "Declined",
-  prepare_offer: "Offer prepared from the approved plan",
+  prepare_offer: "Offer prepared from the selected approved plan",
 }
 
 export const stateLabels: Record<string, string> = {
@@ -44,6 +44,29 @@ type Person = { id: string; name: string; emailVerified: boolean }
 type BusinessMatch = { id: string; name: string; membership: "pending" | "verified" | "revoked"; membershipVersion: number }
 type LocationMatch = { id: string; name: string; country: string; selected: boolean }
 type HistoryEvent = { id: string; operation: OnboardingOperation; fromState: string | null; toState: string; reason: string; createdAt: string }
+
+export type ApprovedCommercialPlan = {
+  id: string
+  versionNumber: number
+  tierCode: "BASIC" | "GROWTH" | "PRO" | "CUSTOM" | null
+  tierLabel: string | null
+  amountMinor: number | null
+  currency: string
+  cadence: string
+  termsRef: string
+  includedMinutes: number | null
+  baseAmountMinor: number | null
+  guardUnitMinor: number | null
+  overageRateMinor: number | null
+  conditionsStatus: string | null
+  telloyaQuantity: number | null
+  guardQuantity: number | null
+  selectedLocations: number
+  guardAddonUnitMinor: number | null
+  offerable: boolean
+  unavailableReason: "conditions" | "locations" | "tier" | "price" | "agreement" | "quotation" | null
+  matchesApprovedSchedule: boolean
+}
 
 export type OnboardingRequest = {
   id: string
@@ -76,6 +99,10 @@ export type OnboardingView =
       businesses: BusinessMatch[]
       locations: LocationMatch[]
       history: HistoryEvent[]
+      requestedTier?: "basic" | "growth" | "pro" | "custom" | null
+      requestedGuardInterest?: boolean | null
+      requestedGuardLocationCount?: number | null
+      approvedPlans?: ApprovedCommercialPlan[]
     }
 
 export type OnboardingCommand = {
@@ -141,7 +168,17 @@ export function parseOnboardingCommand(body: unknown): OnboardingCommand | null 
   }
   if (operation === "prepare_offer") {
     if (raw.planVersionId !== undefined && !isUuid(raw.planVersionId)) return null
-    return { operation, version, payload: { ...base, ...(isUuid(raw.planVersionId) ? { planVersionId: raw.planVersionId } : {}) } }
+    if (raw.guardLocationIds !== undefined && idsOf(raw.guardLocationIds) === null) return null
+    const guardLocationIds = idsOf(raw.guardLocationIds)
+    return {
+      operation,
+      version,
+      payload: {
+        ...base,
+        ...(isUuid(raw.planVersionId) ? { planVersionId: raw.planVersionId } : {}),
+        ...(guardLocationIds ? { guardLocationIds } : {}),
+      },
+    }
   }
   return { operation, version, payload: base }
 }

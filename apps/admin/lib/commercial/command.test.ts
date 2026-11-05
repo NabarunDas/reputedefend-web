@@ -42,9 +42,17 @@ describe("onboarding command messages", () => {
     ["denied", "frozen", 403, "This offer is already prepared. The customer, business, locations and terms stay as they were."],
     ["denied", "revoked", 403, "Business authority has been withdrawn. Matching does not restore it."],
     ["denied", "membership", 403, "Verified authority needs existing email or phone proof and a recent Admin sign-in. This step does not change authority."],
-    ["terms_unconfigured", "quantities", 409, "The selected locations do not match the approved Telloya quantity. Guard is not given that same quantity. No price is offered."],
-    ["terms_unconfigured", "components", 409, "This plan does not include the required Telloya or Guard component. No price is offered."],
+    ["terms_unconfigured", "quantities", 409, "Unsupported location count. No price is offered."],
+    ["terms_unconfigured", "locations", 409, "Unsupported location count. No price is offered."],
+    ["terms_unconfigured", "components", 409, "Wrong product or tier. No price is offered."],
+    ["terms_unconfigured", "conditions", 409, "Missing approved commercial conditions. No price is offered."],
+    ["terms_unconfigured", "price", 409, "Invalid or incomplete pricing. No price is offered."],
+    ["terms_unconfigured", "agreement", 409, "Missing agreement. No price is offered."],
+    ["terms_unconfigured", "quotation", 409, "Quotation required. No price is offered."],
+    ["terms_unconfigured", "guard", 409, "The Guard locations are not confirmed for this business. No price is offered."],
     ["terms_unconfigured", undefined, 409, "Commercial terms not yet configured. No price is offered."],
+    ["tier_required", undefined, 409, "Choose the approved Basic, Growth, Pro or Custom version. The enquiry does not select it."],
+    ["tier_mismatch", undefined, 409, "The approved plan tier does not match its conditions. No price is offered."],
   ] as const)("explains %s %s", async (status, reason, code, message) => {
     mocks.rpc.mockResolvedValue({ status, reason })
     const response = await POST(req())

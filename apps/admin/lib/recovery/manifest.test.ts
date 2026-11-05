@@ -23,7 +23,7 @@ describe("the migration chain manifest", () => {
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261105172055_admin_commercial_confirm_ai_configuration_v1.sql")
+    expect(migrationHead.filename).toBe("20261105190000_telloya_guard_addon_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
@@ -43,6 +43,8 @@ describe("the migration chain manifest", () => {
       "20261105130000_admin_commercial_begin_setup_v1.sql",
       "20261105144256_admin_commercial_confirm_preferences_v1.sql",
       "20261105172055_admin_commercial_confirm_ai_configuration_v1.sql",
+      "20261105180000_telloya_tier_catalogue_v1.sql",
+      "20261105190000_telloya_guard_addon_v1.sql",
     ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
@@ -101,8 +103,9 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
     // Telloya voice persistence is the DEV ledger head. It was applied once.
     // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
-    // The repository head is the unapplied Admin begin-setup migration 20261105130000.
-    // Do not apply 20261105130000 to hosted DEV or Production.
+    // The repository head is the unapplied Guard add-on 20261105190000.
+    // 20261105180000, 20261105144256 and 20261105130000 stay unapplied ahead of it.
+    // Do not apply 20261105190000, 20261105180000, 20261105144256, or 20261105130000 to hosted DEV or Production.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
     // Do not replay 20261103230000. Do not apply 20261103230000 to Production.

@@ -28,6 +28,7 @@ const ready = {
   product: "Telloya",
   businessName: "Stripe Bakery",
   locations: ["Dock", "High Street"],
+  guardLocations: [],
   services: ["Telloya"],
   priceMinor: 4900,
   currency: "GBP",
@@ -56,6 +57,10 @@ describe("commercial offer parser", () => {
     const withPayment = parseCommercialOffer({
       ...accepted,
       status: "accepted",
+      guardLocations: [
+        { locationId: "11111111-1111-4111-8111-111111111111", locationName: "Dock" },
+        { locationId: "22222222-2222-4222-8222-222222222222", locationName: "High Street" },
+      ],
       conditions: { ...conditions, guardIncluded: true, guardUnitMinor: 999, guardQuantity: 2, baseAmountMinor: 6902, overageOptIn: true, overageCapMinor: 2500 },
       priceMinor: 8900,
       totalMinor: 8900,
@@ -112,6 +117,68 @@ describe("commercial offer parser", () => {
       locations: ["High Street"],
       nextStep: "The agreement is not available.",
       priceMinor: 4900,
+    })).toBeNull()
+  })
+
+  it("names paid Guard locations only when the count matches the covered Telloya locations", () => {
+    const dock = { locationId: "11111111-1111-4111-8111-111111111111", locationName: "Dock" }
+    const high = { locationId: "22222222-2222-4222-8222-222222222222", locationName: "High Street" }
+    const priced = {
+      ...ready,
+      conditions: { ...conditions, guardIncluded: true, guardUnitMinor: 999, guardQuantity: 1, baseAmountMinor: 7900 },
+      priceMinor: 8899,
+      totalMinor: 8899,
+      guardLocations: [high],
+    }
+    const one = parseCommercialOffer(priced)
+    expect(one?.status === "ready" && one.guardLocations).toEqual([high])
+    expect(one?.status === "ready" && one.priceMinor).toBe(8899)
+    const two = parseCommercialOffer({
+      ...priced,
+      conditions: { ...priced.conditions, guardQuantity: 2 },
+      priceMinor: 9898,
+      totalMinor: 9898,
+      guardLocations: [dock, high],
+    })
+    expect(two?.status === "ready" && two.guardLocations.map(location => location.locationName)).toEqual(["Dock", "High Street"])
+    const none = parseCommercialOffer(ready)
+    expect(none?.status === "ready" && none.guardLocations).toEqual([])
+    const { offerVersion: _version, ...accepted } = priced
+    const recorded = parseCommercialOffer({
+      ...accepted,
+      status: "accepted",
+      acceptedAt: "2026-11-03T12:00:00.000Z",
+      conditions: { ...priced.conditions, overageOptIn: false, overageCapMinor: null },
+    })
+    expect(recorded?.status === "accepted" && recorded.guardLocations).toEqual([high])
+    expect(parseCommercialOffer({ ...priced, guardLocations: [dock, high] })).toBeNull()
+    expect(parseCommercialOffer({ ...priced, guardLocations: [{ ...high, locationName: "Yard" }] })).toBeNull()
+    expect(parseCommercialOffer({
+      ...priced,
+      conditions: { ...priced.conditions, guardQuantity: 2 },
+      priceMinor: 9898,
+      totalMinor: 9898,
+      guardLocations: [high, { locationId: high.locationId, locationName: "Dock" }],
+    })).toBeNull()
+    expect(parseCommercialOffer({ ...ready, guardLocations: [high] })).toBeNull()
+    const complete = parseCommercialOffer({
+      ...ready,
+      product: "Complete",
+      services: ["Telloya", "Relaunch Guard"],
+      conditions: { ...conditions, guardIncluded: true, guardUnitMinor: 999, guardQuantity: 1, baseAmountMinor: 8901 },
+      priceMinor: 9900,
+      totalMinor: 9900,
+      guardLocations: [],
+    })
+    expect(complete?.status).toBe("ready")
+    expect(parseCommercialOffer({
+      ...ready,
+      product: "Complete",
+      services: ["Telloya", "Relaunch Guard"],
+      conditions: { ...conditions, guardIncluded: true, guardUnitMinor: 999, guardQuantity: 2, baseAmountMinor: 7900 },
+      priceMinor: 9898,
+      totalMinor: 9898,
+      guardLocations: [high],
     })).toBeNull()
   })
 })

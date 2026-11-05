@@ -310,7 +310,9 @@ describe("product launcher", () => {
       },
     })), "guard")
     expect(preview.group).toBe("yours")
-    expect(preview.statusLabel).toBe("Pending")
+    expect(preview.statusLabel).toBe("Setup pending")
+    expect(preview.context).toContain("Assigned: Dock.")
+    expect(preview.context).toContain("Monitoring has not started.")
     expect(preview.context).not.toContain("Active")
     expect(preview.attention).toBe("Guard monitoring is not active from this bundle.")
     expect(preview.context).not.toMatch(/can activate/)
@@ -936,13 +938,9 @@ describe("product launcher", () => {
           },
           guard: {
             status: "pending",
-            locations: [{
-              locationName: "Oven",
-              status: "pending",
-              monitoringRecorded: false,
-              allocation: null,
-              nextStep: "Included in your package. Monitoring setup is pending.",
-            }],
+            includedQuantity: 1,
+            assignment: "pending_confirmation",
+            locations: [],
           },
         }],
       },
@@ -954,8 +952,45 @@ describe("product launcher", () => {
     expect(telloya.actions).toEqual([])
     expect(telloya.unavailableReason).toBe("There is no Telloya workspace to open yet.")
     expect(guard.statusLabel).toBe("Setup pending")
-    expect(guard.context).toBe("Included in your package. Monitoring setup is pending. Monitoring has not started.")
+    expect(guard.context).toBe("Included in your package. Monitoring setup is pending. 1 location included. Guard location assignment is pending confirmation. Monitoring has not started.")
+    expect(guard.context).not.toContain("Oven")
     expect(guard.actions).toEqual([])
+    expect(guard.attention).toBe("Guard location assignment is pending confirmation.")
+
+    const recorded = tile(presentProducts(sources({
+      commercial: {
+        reads: { telloya: "ok", guard: "ok" },
+        businesses: [{
+          businessName: "Complete Kitchen",
+          telloya: {
+            status: "pending",
+            locations: [
+              { locationName: "Oven", status: "pending", nextStep: "Payment received. Your AI receptionist setup has not started." },
+              { locationName: "Counter", status: "pending", nextStep: "Payment received. Your AI receptionist setup has not started." },
+              { locationName: "Pantry", status: "pending", nextStep: "Payment received. Your AI receptionist setup has not started." },
+            ],
+          },
+          guard: {
+            status: "pending",
+            includedQuantity: 1,
+            assignment: "recorded",
+            locations: [{
+              locationName: "Counter",
+              status: "pending",
+              monitoringRecorded: false,
+              allocation: "reserved",
+              nextStep: "Included in your package. Monitoring setup is pending.",
+            }],
+          },
+        }],
+      },
+    })), "guard")
+    expect(recorded.statusLabel).toBe("Setup pending")
+    expect(recorded.context).toContain("Assigned: Counter.")
+    expect(recorded.context).toContain("Monitoring has not started.")
+    expect(recorded.context).not.toContain("Oven")
+    expect(recorded.context).not.toContain("Pantry")
+    expect(recorded.context).not.toContain("assignment is pending confirmation")
     expect(tile(paid, "recovery").name).toBe("Recovery & Review Support")
 
     vi.stubEnv("CUSTOMER_COMMERCIAL_SETUP_HANDOVER_READ_ENABLED", "true")

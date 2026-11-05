@@ -182,9 +182,9 @@ describe("the migration chain manifest", () => {
       safeToReplay: false,
     })
     const setupHandoverSql = readFileSync(new URL("20261104220000_customer_commercial_setup_handover_v1.sql", directory), "utf8")
-    expect(setupHandoverSql.length).toBe(15714)
-    expect(createHash("md5").update(setupHandoverSql).digest("hex")).toBe("fef920eeccb06f6ce2556a4f73a3e83d")
-    expect(createHash("sha256").update(setupHandoverSql).digest("hex")).toBe("50c899f3e89b16c244115fa7673ed1e6d256c0b4220be0d254fa14941d389dff")
+    expect(setupHandoverSql.length).toBe(25436)
+    expect(createHash("md5").update(setupHandoverSql).digest("hex")).toBe("690e88917f0166f376d3e8189b60b427")
+    expect(createHash("sha256").update(setupHandoverSql).digest("hex")).toBe("dbbc03ed138c1f2115d44e7c13923570bf1cbf6205e401bec85aef6df00552c3")
     expect(setupHandoverSql).toContain("Do not apply 20261104220000 to DEV")
     expect(setupHandoverSql).toContain("Do not apply 20261104220000 to Production")
     expect(setupHandoverSql).not.toMatch(/\bINSERT INTO\b|\bUPDATE\b|\bDELETE FROM\b/)

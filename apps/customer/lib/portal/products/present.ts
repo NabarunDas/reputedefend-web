@@ -70,7 +70,12 @@ export type CommercialGuardLocation = {
 export type CommercialBusiness = {
   businessName: string
   telloya: { status: CommercialStatus; locations: CommercialTelloyaLocation[] }
-  guard: { status: CommercialStatus; locations: CommercialGuardLocation[] }
+  guard: {
+    status: CommercialStatus
+    locations: CommercialGuardLocation[]
+    includedQuantity?: number
+    assignment?: "pending_confirmation" | "recorded"
+  }
 }
 
 export type CommercialProjection = {
@@ -96,6 +101,7 @@ const PROGRESS_HREF = "/portal/onboarding"
 const SETUP_HREF = "/portal/onboarding/setup"
 const PAYMENT_RECEIVED_STEP = "Payment received. Your AI receptionist setup has not started."
 const GUARD_PACKAGE_STEP = "Included in your package. Monitoring setup is pending."
+const GUARD_ALLOCATION_STEP = "Guard monitoring is not active from this bundle."
 
 const UNAVAILABLE = "We couldn't confirm this service just now. Refresh the page. This does not say whether it has been set up."
 const GUARD_UNCONFIRMED = "We couldn't confirm Relaunch Guard just now. This does not say whether it has been set up."
@@ -246,6 +252,33 @@ function operationalGuardContext(sources: ProductSources): string | null {
   return names ? sentence(names) : null
 }
 
+function isPackageGuard(business: CommercialBusiness): boolean {
+  const guard = business.guard
+  if (guard.status !== "pending") return false
+  if (guard.assignment === "pending_confirmation" || guard.assignment === "recorded") return true
+  return guard.locations.some(location => location.nextStep === GUARD_PACKAGE_STEP || location.nextStep === GUARD_ALLOCATION_STEP)
+}
+
+function packageContext(businesses: readonly CommercialBusiness[]): string {
+  const parts = ["Included in your package. Monitoring setup is pending."]
+  for (const business of businesses) {
+    if (!isPackageGuard(business)) continue
+    const guard = business.guard
+    const quantity = guard.includedQuantity
+    if (typeof quantity === "number" && quantity > 0) {
+      parts.push(`${quantity} ${quantity === 1 ? "location" : "locations"} included.`)
+    }
+    if (guard.locations.length > 0) {
+      parts.push(`Assigned: ${guard.locations.map(location => location.locationName).join(", ")}.`)
+    }
+    if (guard.assignment === "pending_confirmation") {
+      parts.push("Guard location assignment is pending confirmation.")
+    }
+  }
+  parts.push("Monitoring has not started.")
+  return parts.join(" ")
+}
+
 function guardTile(sources: ProductSources): ProductCard {
   const base = {
     key: "guard" as const,
@@ -286,9 +319,11 @@ function guardTile(sources: ProductSources): ProductCard {
   if (readFailed) context.push("Status temporarily unavailable.")
 
   const locations = commercialOk ? commercial.businesses.flatMap(business => business.guard.locations) : []
-  const packagePending = statuses.length > 0
+  const packaged = commercialOk ? commercial.businesses.filter(isPackageGuard) : []
+  const packagePending = packaged.length > 0
+    && statuses.length > 0
     && statuses.every(status => status === "pending")
-    && locations.some(location => location.nextStep === GUARD_PACKAGE_STEP)
+    && !locations.some(location => location.monitoringRecorded)
   const next = locations.find(location => location.nextStep)?.nextStep ?? null
   let unavailableReason: string | null = null
   if (readFailed && recorded > 0) unavailableReason = GUARD_DETAILS_UNAVAILABLE
@@ -303,11 +338,13 @@ function guardTile(sources: ProductSources): ProductCard {
     statusLabel: packagePending
       ? "Setup pending"
       : label === STATUS_UNAVAILABLE || group === "unconfirmed" ? STATUS_UNAVAILABLE : showLabel ? label : undefined,
-    context: packagePending
-      ? "Included in your package. Monitoring setup is pending. Monitoring has not started."
-      : joinParts(context),
+    context: packagePending ? packageContext(packaged) : joinParts(context),
     actions: canOpen ? [openDashboard("/portal/guard")] : group === "explore" ? [requestAccessAction.guard] : [],
-    attention: label === STATUS_UNAVAILABLE ? null : next,
+    attention: label === STATUS_UNAVAILABLE
+      ? null
+      : next ?? (packagePending && packaged.some(business => business.guard.assignment === "pending_confirmation")
+        ? "Guard location assignment is pending confirmation."
+        : null),
     unavailableReason,
   }
 }

@@ -585,10 +585,19 @@ describe("commercial post-payment handover", () => {
       locations: [],
     })
     expect(JSON.stringify(seen)).not.toContain("businessId")
-    const products = JSON.stringify(await rpc("customer_portal_products_v1", [session]))
-    expect(products).toContain("Included in your package. Monitoring setup is pending.")
-    expect(products).toContain("Payment received. Your AI receptionist setup has not started.")
-    expect(products).not.toContain("\"monitoringRecorded\":true")
+    const products = await rpc<{ businesses: Row[] }>("customer_portal_products_v1", [session])
+    const shown = products.businesses.find(entry => entry.businessName === "Complete Kitchen")
+    expect(shown?.telloya).toMatchObject({ status: "pending" })
+    expect(shown?.guard).toEqual({
+      status: "pending",
+      includedQuantity: 1,
+      assignment: "pending_confirmation",
+      locations: [],
+    })
+    expect(JSON.stringify(shown?.guard)).not.toContain("Oven")
+    expect(JSON.stringify(shown?.guard)).not.toContain("Counter")
+    expect(JSON.stringify(products)).toContain("Payment received. Your AI receptionist setup has not started.")
+    expect(JSON.stringify(products)).not.toContain("\"monitoringRecorded\":true")
     expect(await effects()).toMatchObject({ guard_coverages: before.guard_coverages, provisions: 0, live: 0 })
   })
 
@@ -754,8 +763,9 @@ describe("commercial post-payment handover", () => {
     expect((await queue())?.items[0]).toMatchObject({
       operationalStatus: "awaiting_verification",
       customerDisplay: "Awaiting final verification",
-      nextAction: "Approve activation",
+      nextAction: "Confirm business preferences",
     })
+    expect((await queue())?.items[0].nextAction).not.toBe("Approve activation")
     const verificationSteps = (await queue())?.items[0].checklist as Row[]
     expect(verificationSteps.find(step => step.key === "preferences")).toMatchObject({ state: "planned" })
     expect(verificationSteps.find(step => step.key === "test")).toMatchObject({ state: "planned" })
@@ -802,6 +812,19 @@ describe("commercial post-payment handover", () => {
       assignment: "pending_confirmation",
       locations: [],
     })
+    const productBusiness = async () => {
+      const products = await rpc<{ businesses: Row[] }>("customer_portal_products_v1", [session])
+      return products.businesses.find(entry => entry.businessName === "Complete Kitchen")
+    }
+    const pendingBusiness = await productBusiness()
+    expect(pendingBusiness?.guard).toEqual({
+      status: "pending",
+      includedQuantity: 1,
+      assignment: "pending_confirmation",
+      locations: [],
+    })
+    const pendingTelloya = pendingBusiness?.telloya as { locations: Array<{ locationName: string }> }
+    expect(pendingTelloya.locations.map(location => location.locationName).sort()).toEqual(["Counter", "Oven", "Pantry"])
     await db.query(
       `insert into public.bundle_guard_allocations(
         subscription_id, customer_id, business_id, location_id, state
@@ -818,8 +841,68 @@ describe("commercial post-payment handover", () => {
     const assignedLocations = JSON.stringify((assigned?.guard as { locations?: unknown } | undefined)?.locations)
     expect(assignedLocations).not.toContain(oven)
     expect(assignedLocations).not.toContain(pantry)
+    const recordedBusiness = await productBusiness()
+    const productLocations = (recordedBusiness?.guard as { locations: Array<{ locationName: string; monitoringRecorded: boolean }> }).locations
+    expect(productLocations.map(location => location.locationName)).toEqual(["Counter"])
+    expect(productLocations.every(location => location.monitoringRecorded === false)).toBe(true)
+    const handoverLocations = ((await handover())?.subscriptions.find(entry => entry.reference === armed.prepared.ref)?.guard as { locations?: Array<{ locationName: string }> } | undefined)?.locations
+    expect(handoverLocations?.map(location => location.locationName)).toEqual(productLocations.map(location => location.locationName))
     const coverages = await rows<{ count: number }>(`select count(*)::int as count from public.guard_coverages`)
     expect(coverages[0].count).toBe(0)
+  })
+
+  it("does not recommend activation while a READY provision is missing a required check", async () => {
+    const armed = await pay()
+    const highEntitlement = await plant(armed.prepared.subscription, bakery, high, "READY_FOR_PROVIDER_VERIFICATION")
+    await plant(armed.prepared.subscription, bakery, dock, "READY_FOR_PROVIDER_VERIFICATION")
+    const recommendation = async () => (await queue())?.items.find(entry => entry.reference === armed.prepared.ref)
+    const ready = await recommendation()
+    expect(ready).toMatchObject({
+      operationalStatus: "awaiting_verification",
+      nextAction: "Confirm business preferences",
+    })
+    expect(ready?.nextAction).not.toBe("Approve activation")
+    expect((ready?.checklist as Row[]).find(step => step.key === "preferences")).toMatchObject({ state: "planned" })
+    expect((ready?.checklist as Row[]).find(step => step.key === "test")).toMatchObject({ state: "planned" })
+
+    await db.exec("set local session_replication_role = replica")
+    await db.query(
+      `update public.service_provisions
+       set provider_test_outcome = 'FAILED', provider_test_call_ref = 'call-failed', agent_test_passed_at = null
+       where entitlement_id = $1`,
+      [highEntitlement],
+    )
+    await db.exec("set local session_replication_role = origin")
+    const failed = await recommendation()
+    expect(failed?.nextAction).toBe("Confirm business preferences")
+    expect((failed?.checklist as Row[]).find(step => step.key === "test")).toMatchObject({ state: "planned" })
+
+    await db.exec("set local session_replication_role = replica")
+    await db.query(
+      `update public.service_provisions
+       set provider_test_outcome = 'PASSED',
+           provider_test_call_ref = 'call-' || entitlement_id::text,
+           agent_test_passed_at = now(),
+           agent_configured_at = now(),
+           number_allocated_at = now(),
+           forwarding_instructed_at = now(),
+           provider_binding_ref = 'bind-' || entitlement_id::text,
+           customer_confirmed_at = null`,
+    )
+    await db.exec("set local session_replication_role = origin")
+    const unconfirmed = await recommendation()
+    expect(unconfirmed?.nextAction).toBe("Confirm business preferences")
+    expect(unconfirmed?.nextAction).not.toBe("Approve activation")
+    expect((unconfirmed?.checklist as Row[]).find(step => step.key === "test")).toMatchObject({ state: "complete" })
+    expect((unconfirmed?.checklist as Row[]).find(step => step.key === "activation")).toMatchObject({ state: "planned" })
+
+    const definition = await rows<{ definition: string }>(
+      `select pg_get_functiondef('admin_private.commercial_setup_handover_v1(uuid)'::regprocedure) as definition`,
+    )
+    const body = definition[0].definition
+    expect(body.indexOf("customer_confirmed_at")).toBeGreaterThan(0)
+    expect(body.indexOf("Approve activation")).toBeGreaterThan(body.indexOf("confirmation_ready"))
+    expect(body.indexOf("preferences_complete := false")).toBeGreaterThan(0)
   })
 
   it("completes the test call only when the owned provision recorded a passed call", async () => {

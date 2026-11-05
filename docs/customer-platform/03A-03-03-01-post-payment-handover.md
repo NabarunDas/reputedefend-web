@@ -6,7 +6,7 @@ There is no Telloya dashboard route. The customer surfaces are My Products and `
 
 ## Ledger
 
-`20261104220000_customer_commercial_setup_handover_v1.sql` was applied once to DEV project `rmzozuiamjcclvtgutgd`. The verified DEV ledger contains 104 entries and ends at `20261104220000`. The previous ledger contained 103 entries and ended at `20261104190000`. The repository file is 25,436 characters. Its MD5 is `690e88917f0166f376d3e8189b60b427`. Its SHA-256 is `dbbc03ed138c1f2115d44e7c13923570bf1cbf6205e401bec85aef6df00552c3`. Its GitHub blob SHA is `639b5c553348537db401e46c15fa7af7bb6d95a3`. Public Admin and Customer handover RPCs are service-role-only. Existing `customer_portal_products_v1` permissions were preserved. Invalid Admin and customer sessions were rejected. No settlement, entitlement or provisioning data was created. `service_provisions_live_closed` remains enforced. Commercial feature flags remain OFF. Do not replay `20261104220000`. Do not apply `20261104220000` to Production. Do not replay `20261104190000`. Production and AWS ApprovedMigrationHead remain `20261014170000`. The applied SQL is unchanged. The later repository file `20261105120000_telloya_voice_persistence_v1.sql` is not applied to hosted DEV or Production.
+`20261104220000_customer_commercial_setup_handover_v1.sql` was applied once to DEV project `rmzozuiamjcclvtgutgd`. When it was applied, the verified DEV ledger contained 104 entries and ended at `20261104220000`. The previous ledger contained 103 entries and ended at `20261104190000`. The current verified DEV ledger contains 105 entries and ends at `20261105120000`. The repository file is 25,436 characters. Its MD5 is `690e88917f0166f376d3e8189b60b427`. Its SHA-256 is `dbbc03ed138c1f2115d44e7c13923570bf1cbf6205e401bec85aef6df00552c3`. Its GitHub blob SHA is `639b5c553348537db401e46c15fa7af7bb6d95a3`. Public Admin and Customer handover RPCs are service-role-only. Existing `customer_portal_products_v1` permissions were preserved. Invalid Admin and customer sessions were rejected. No settlement, entitlement or provisioning data was created. `service_provisions_live_closed` remains enforced. Commercial feature flags remain OFF. Do not replay `20261104220000`. Do not apply `20261104220000` to Production. Do not replay `20261104190000`. Production and AWS ApprovedMigrationHead remain `20261014170000`. The applied SQL is unchanged. `20261105120000_telloya_voice_persistence_v1.sql` was applied once to DEV and must not be replayed. Do not apply it to Production. `20261105130000_admin_commercial_begin_setup_v1.sql` is not applied to hosted DEV or Production.
 
 The file adds no table. It adds one private classifier and two service-role-only read functions, and replaces `public.customer_portal_products_v1(text)` in place:
 
@@ -78,7 +78,7 @@ The Admin function is `VOLATILE` because `admin_session_v1` records `last_seen_a
 
 ## Later commands
 
-This page lists the next action and does not run it. There is no Mark active or Provision now control. A later phase can add one audited command for each of these, still without treating `ACTIVE` as setup:
+This page lists the next action and does not run it. There is no Mark active or Provision now control. Begin setup is the separate unapplied command in `03A-03-03-02-01-begin-setup.md`. The later commands remain separate, still without treating `ACTIVE` as setup:
 
 1. Begin setup.
 2. Confirm business preferences.

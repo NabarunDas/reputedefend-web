@@ -48,13 +48,15 @@ afterAll(async () => { await db.close() })
 describe("rebuilding the whole schema from zero", () => {
   it("applies every migration in the repository, in order, with nothing cherry-picked", () => {
     expect(manifestFilenames()).toEqual(repositoryMigrationFilenames())
-    expect(migrationChain).toHaveLength(108)
+    expect(migrationChain).toHaveLength(109)
     // A clean rebuild includes the seven historical DEV statements, Step 10B,
     // Step 12A, DEV-applied E2E-02, E2E-03 and E2E-04, and the DEV mail claim.
     // It does not replay applied statements on a live database
     // and it does not apply them to Production.
     // Production and AWS approved backup heads remain at SEC-08.
-    // The DEV applied head is 20261104220000 customer_commercial_setup_handover_v1.
+    // The DEV applied head is 20261105120000 telloya_voice_persistence_v1.
+    // It was applied once. Do not replay 20261105120000. Do not apply 20261105120000 to Production.
+    // The previous DEV applied head is 20261104220000 customer_commercial_setup_handover_v1.
     // It was applied once. Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // The previous DEV applied head is 20261104190000 customer_commercial_payment_settlement_v1.
     // It was applied once. Do not replay 20261104190000. Do not apply 20261104190000 to Production.
@@ -71,12 +73,12 @@ describe("rebuilding the whole schema from zero", () => {
     // were applied once and must not be replayed.
     // Do not replay 20261101200000. Do not apply 20261101200000 to Production.
     // Production stays at SEC-08.
-    expect(migrationHead.filename).toBe("20261105120000_telloya_voice_persistence_v1.sql")
+    expect(migrationHead.filename).toBe("20261105130000_admin_commercial_begin_setup_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
-    expect(appliedMigrationHead.filename).toBe("20261104220000_customer_commercial_setup_handover_v1.sql")
-    expect(appliedMigrationHead.version).toBe("20261104220000")
+    expect(appliedMigrationHead.filename).toBe("20261105120000_telloya_voice_persistence_v1.sql")
+    expect(appliedMigrationHead.version).toBe("20261105120000")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)

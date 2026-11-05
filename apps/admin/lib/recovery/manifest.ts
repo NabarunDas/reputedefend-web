@@ -1500,9 +1500,10 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Commercial setup handover. Applied once to profilerelaunch-dev
-    // (rmzozuiamjcclvtgutgd). The verified DEV ledger contains 104 entries
-    // and ends at 20261104220000. The previous ledger contained 103 entries
-    // and ended at 20261104190000. Canonical version recorded once.
+    // (rmzozuiamjcclvtgutgd). When it was applied, the verified DEV ledger
+    // contained 104 entries and ended at 20261104220000. The previous ledger
+    // contained 103 entries and ended at 20261104190000. Canonical version
+    // recorded once.
     // Repository file is 25,436 characters.
     // MD5 690e88917f0166f376d3e8189b60b427.
     // SHA-256 dbbc03ed138c1f2115d44e7c13923570bf1cbf6205e401bec85aef6df00552c3.
@@ -1527,18 +1528,49 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Customer commercial setup handover", probe: "public.customer_portal_setup_handover_v1" },
   },
   {
-    // Telloya voice persistence. Local repository only.
-    // appliedToDev stays false: this file has not been applied to hosted DEV
-    // or Production. It creates no commercial, enquiry, or customer rows.
-    // Do not apply 20261105120000 to hosted DEV or Production.
+    // Telloya voice persistence. Applied once to profilerelaunch-dev
+    // (rmzozuiamjcclvtgutgd). The verified DEV ledger contains 105 entries
+    // and ends at 20261105120000. The previous ledger contained 104 entries
+    // and ended at 20261104220000. The repository file is unchanged.
+    // It is 29,033 characters.
+    // MD5 e786c89df769c12f71d8815011a5c1b5.
+    // SHA-256 e1b7a9a5053b7002a2f0cc77cff1a76b4552b4da8eb25685258f32e89537b4e3.
+    // GitHub SQL blob SHA 03afff8e2a0edf9e965bb8add3ab50b650d5fa73.
+    // Schema and functions only. containsDataChange stays false.
+    // No commercial subscription or Telloya entitlement was created.
+    // Begin setup is not installed.
+    // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
+    // safeToReplay stays false.
     version: "20261105120000",
     filename: "20261105120000_telloya_voice_persistence_v1.sql",
     step: "Telloya voice persistence",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Telloya voice persistence", probe: "public.telloya_voice_leads" },
+  },
+  {
+    // Audited Admin begin setup. Not applied to DEV. The verified DEV ledger
+    // contains 105 entries and ends at 20261105120000.
+    // Do not apply 20261105130000 to DEV. Do not apply 20261105130000 to Production.
+    // One service-role command creates PENDING TELLOYA entitlements and
+    // PROFILE_REQUIRED provisions for a verified paid subscription.
+    // It does not confirm preferences, call a provider, allocate a number,
+    // enable Guard, change billing, send mail, or move a service to live.
+    // Writes are inside the command. containsDataChange stays false.
+    // safeToReplay stays false.
+    // supabase migration new admin_commercial_begin_setup_v1 wrote an empty
+    // file at 20261105104905, which sorts before Telloya voice persistence.
+    // This entry is versioned 20261105130000 so it stays strictly later.
+    version: "20261105130000",
+    filename: "20261105130000_admin_commercial_begin_setup_v1.sql",
+    step: "Audited Admin begin setup",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Audited Admin begin setup", probe: "public.admin_commercial_begin_setup_v1" },
   },
 ]
 
@@ -1551,8 +1583,17 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261104220000`. The live DEV ledger contains 104 entries. Commercial
- * setup handover was applied once to DEV project rmzozuiamjcclvtgutgd.
+ * `20261105120000`. The live DEV ledger contains 105 entries. Telloya
+ * voice persistence was applied once to DEV project rmzozuiamjcclvtgutgd.
+ * The repository file is unchanged: 29,033 characters, MD5
+ * e786c89df769c12f71d8815011a5c1b5, SHA-256
+ * e1b7a9a5053b7002a2f0cc77cff1a76b4552b4da8eb25685258f32e89537b4e3,
+ * GitHub SQL blob SHA 03afff8e2a0edf9e965bb8add3ab50b650d5fa73.
+ * Schema and functions only. containsDataChange is false.
+ * No commercial subscription or Telloya entitlement was created.
+ * Begin setup is not installed. Do not replay `20261105120000` or apply
+ * it to Production. The previous head `20261104220000` had 104 entries.
+ * Commercial setup handover was applied once to DEV project rmzozuiamjcclvtgutgd.
  * The repository file is 25,436 characters. MD5
  * 690e88917f0166f376d3e8189b60b427. SHA-256
  * dbbc03ed138c1f2115d44e7c13923570bf1cbf6205e401bec85aef6df00552c3.
@@ -1666,9 +1707,11 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` contains only the
- * unapplied local voice file `20261105120000`. Do not apply it to hosted DEV
- * or Production. `20261104220000` is already applied on DEV and must not be
+ * applied and must not be replayed. `pendingMigrations()` contains only the unapplied Admin begin-setup file
+ * `20261105130000`. Do not apply it to hosted DEV or Production.
+ * `20261105120000` is already applied on DEV and must not be replayed.
+ * Do not replay `20261105120000`. Do not apply `20261105120000` to Production.
+ * `20261104220000` is already applied on DEV and must not be
  * replayed. Do not replay `20261104220000`. Do not apply `20261104220000`
  * to Production.
  * `20261104190000` is already applied on DEV and must not be replayed.

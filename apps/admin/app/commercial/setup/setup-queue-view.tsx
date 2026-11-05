@@ -3,7 +3,7 @@
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ukDate } from "@/lib/admin/activity"
-import type { SetupQueueItem } from "@/lib/commercial/setup-queue"
+import type { ConfigurationLocationProgress, SetupQueueItem } from "@/lib/commercial/setup-queue"
 import { Badge, EmptyState, Notice } from "../../ui"
 
 const futureCommands = [
@@ -418,10 +418,224 @@ function ConfirmPreferences({ item }: { item: SetupQueueItem }) {
   </div>
 }
 
-export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean }) {
+function configurationStatus(status: ConfigurationLocationProgress["status"]) {
+  if (status === "recorded") return "Configuration recorded — test pending"
+  if (status === "review") return "Configuration requiring review because preferences changed"
+  return "Configuration not yet recorded"
+}
+
+function ConfirmAiConfiguration({ item, providerLane }: { item: SetupQueueItem; providerLane: "dev" | "production" | null }) {
+  const router = useRouter()
+  const key = useRef("")
+  const preferences = item.preferenceProgress
+  const progress = item.configurationProgress
+  const preferencesReady = preferences !== null && preferences.locationCount > 0 && preferences.confirmedCount === preferences.locationCount
+  const ready = item.operationalStatus === "setup_started"
+    && item.subscriptionId !== null
+    && item.subscriptionVersion !== null
+    && item.customerId !== null
+    && item.onboardingRequestId !== null
+    && item.onboardingVersion !== null
+    && preferencesReady
+    && progress !== null
+    && progress.locationCount > 0
+  const [open, setOpen] = useState(false)
+  const [locationId, setLocationId] = useState(progress?.locations.find(location => location.status !== "recorded")?.locationId ?? progress?.locations[0]?.locationId ?? "")
+  const [agentRef, setAgentRef] = useState("")
+  const [revision, setRevision] = useState("")
+  const [chosenVoice, setChosenVoice] = useState("")
+  const [chosenLanguage, setChosenLanguage] = useState("")
+  const [attestation, setAttestation] = useState("")
+  const [review, setReview] = useState(false)
+  const [reviewed, setReviewed] = useState<string | null>(null)
+  const [confirmed, setConfirmed] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [tone, setTone] = useState<"success" | "warning" | "danger">("warning")
+  const [formError, setFormError] = useState<string | null>(null)
+  const selected = progress?.locations.find(location => location.locationId === locationId) ?? progress?.locations[0]
+  if (!ready || !progress || !selected) return null
+  if (!providerLane) {
+    return <p>The provider lane is not configured for this deployment, so an AI configuration cannot be recorded.</p>
+  }
+  const chosen = selected
+  const lane = providerLane
+  const payloadText = JSON.stringify(configurationPayload(chosen))
+  const reviewFresh = review && reviewed !== null && reviewed === payloadText
+  const reviewNames = progress.locations.filter(location => location.status === "review").map(location => location.locationName)
+
+  function configurationPayload(location: ConfigurationLocationProgress) {
+    return {
+      locationId: location.locationId,
+      preferenceVersion: location.preferenceVersion,
+      provisionVersion: location.provisionVersion,
+      configurationVersion: location.configurationVersion,
+      provider: {
+        provider: "telloya_voice",
+        environment: lane,
+        agentRef: agentRef.trim(),
+        revision: revision.trim(),
+        chosenVoice: chosenVoice.trim(),
+        chosenLanguage: chosenLanguage.trim(),
+        attestation: attestation.trim(),
+        staffConfirmed: true,
+      },
+    }
+  }
+
+  function evidenceError() {
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(agentRef.trim())) return "Enter the provider agent reference recorded for this location."
+    const trimmedRevision = revision.trim()
+    if (trimmedRevision.length < 4 || trimmedRevision.length > 128 || trimmedRevision !== revision.trim()) return "Enter the provider configuration revision or fingerprint."
+    if (chosenVoice.trim().length < 1 || chosenVoice.trim().length > 80) return "Enter the provider voice identifier that was actually selected. A customer preference is not a provider voice."
+    if (chosenLanguage.trim().length < 1 || chosenLanguage.trim().length > 40) return "Enter the provider language identifier that was actually selected."
+    const trimmedAttestation = attestation.trim()
+    if (trimmedAttestation.length < 20 || trimmedAttestation.length > 500) return "Write a staff attestation of 20 to 500 characters describing how this configuration was checked."
+    if (chosen.preferenceVersion < 1) return "Confirm the business preferences for this location before recording the configuration."
+    return null
+  }
+
+  function beginReview() {
+    const problem = evidenceError()
+    setFormError(problem)
+    if (problem) return
+    key.current = crypto.randomUUID()
+    setReviewed(JSON.stringify(configurationPayload(chosen)))
+    setConfirmed(false)
+    setReview(true)
+  }
+
+  function leaveReview() {
+    setReview(false)
+    setConfirmed(false)
+    setReviewed(null)
+    key.current = ""
+  }
+
+  async function submit() {
+    const current = configurationPayload(chosen)
+    if (!confirmed || pending || reviewed === null || reviewed !== JSON.stringify(current) || !isUuidKey(key.current)) return
+    if (item.subscriptionId === null || item.subscriptionVersion === null || item.customerId === null || item.onboardingRequestId === null || item.onboardingVersion === null) return
+    const recorded = JSON.parse(reviewed) as ReturnType<typeof configurationPayload>
+    setPending(true)
+    setMessage(null)
+    try {
+      const response = await fetch("/api/commercial/confirm-ai-configuration", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": key.current },
+        body: JSON.stringify({
+          subscriptionId: item.subscriptionId,
+          version: item.subscriptionVersion,
+          customerId: item.customerId,
+          businessId: item.businessId,
+          onboardingRequestId: item.onboardingRequestId,
+          onboardingVersion: item.onboardingVersion,
+          ...recorded,
+        }),
+      })
+      const body = await response.json().catch(() => null) as { message?: string } | null
+      const text = body?.message ?? "We couldn’t record the AI configuration. Reload the queue before trying again."
+      setMessage(text)
+      setTone(response.ok ? "success" : "warning")
+      if (response.ok) {
+        setOpen(false)
+        setReview(false)
+        setReviewed(null)
+        key.current = ""
+        router.refresh()
+      }
+    } catch {
+      setMessage("We couldn’t record the AI configuration. Reload the queue before trying again.")
+      setTone("danger")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const action = chosen.status === "recorded"
+    ? "Record a corrected configuration"
+    : chosen.status === "review"
+      ? "Review AI configuration"
+      : "Confirm AI configuration"
+
+  return <div>
+    <p>AI configuration: {progress.recordedCount} of {progress.locationCount} {progress.locationCount === 1 ? "location" : "locations"} recorded.{reviewNames.length > 0 ? ` Review needed: ${reviewNames.join(", ")}.` : ""}</p>
+    <p>{chosen.locationName}: {configurationStatus(chosen.status)}. Preferences confirmed.</p>
+    <button type="button" onClick={() => { leaveReview(); setOpen(true) }}>{action}</button>
+    {open ? <section aria-label={`Confirm AI configuration for ${item.reference}`}>
+      <h3>Confirm AI configuration</h3>
+      <p>This records an operator-attested provider configuration for one location. It does not test the receptionist, allocate a number, or make the service live.</p>
+      <p>{configurationStatus(chosen.status)}. {chosen.status === "recorded" ? `This records version ${chosen.configurationVersion + 1} and keeps version ${chosen.configurationVersion}.` : "The receptionist cannot answer calls."}</p>
+      <label>Location
+        <select value={chosen.locationId} onChange={event => { setLocationId(event.target.value); leaveReview() }}>
+          {progress.locations.map(location => <option key={location.locationId} value={location.locationId}>{location.locationName} ({configurationStatus(location.status)})</option>)}
+        </select>
+      </label>
+      <h4>Confirmed customer preferences</h4>
+      <dl>
+        <dt>Business</dt><dd>{item.businessName}</dd>
+        <dt>Location</dt><dd>{chosen.locationName}</dd>
+        <dt>Timezone</dt><dd>{chosen.timezone ?? "Not recorded"}</dd>
+        <dt>Opening hours</dt><dd>{chosen.hoursSummary ?? "Not recorded"}</dd>
+        <dt>Exceptional hours</dt><dd>{chosen.exceptionalHours ?? "Not recorded"}</dd>
+        <dt>Out of hours</dt><dd>{chosen.outOfHours ?? "Not recorded"}</dd>
+        <dt>Greeting</dt><dd>{chosen.greeting ?? "Not recorded"}</dd>
+        <dt>Callback instructions</dt><dd>{chosen.callbackInstructions ?? "Not recorded"}</dd>
+        <dt>Urgent calls</dt><dd>{chosen.urgentRules ?? "Not recorded"}</dd>
+        <dt>Direct contact</dt><dd>{chosen.directContactRules ?? "Not recorded"}</dd>
+        <dt>Special instructions</dt><dd>{chosen.specialInstructions ?? "None"}</dd>
+        <dt>Spoken language</dt><dd>{chosen.spokenLanguage ?? "Not recorded"}{chosen.additionalLanguages && chosen.additionalLanguages.length > 0 ? ` (also ${chosen.additionalLanguages.join(", ")})` : ""}</dd>
+        <dt>Voice preference</dt><dd>{chosen.voicePresentation ?? "Not recorded"}{chosen.accent ? `, ${chosen.accent}` : ""}</dd>
+        <dt>Pronunciation notes</dt><dd>{chosen.pronunciationNotes ?? "None"}</dd>
+      </dl>
+      <h4>Provider evidence</h4>
+      <p>Provider lane: {lane === "dev" ? "DEV" : "Production"}. This deployment chooses the lane. The form cannot switch it.</p>
+      <p>Record the voice and language identifiers that were actually chosen in the provider environment. A customer preference does not prove the provider supports it.</p>
+      <label>Provider agent reference <input value={agentRef} onChange={event => setAgentRef(event.target.value)} /></label>
+      <label>Configuration revision <input value={revision} onChange={event => setRevision(event.target.value)} /></label>
+      <label>Chosen provider voice <input value={chosenVoice} onChange={event => setChosenVoice(event.target.value)} /></label>
+      <label>Chosen provider language <input value={chosenLanguage} onChange={event => setChosenLanguage(event.target.value)} /></label>
+      <label>Staff attestation <textarea value={attestation} onChange={event => setAttestation(event.target.value)} /></label>
+      {formError ? <p role="alert">{formError}</p> : null}
+      {reviewFresh ? <div>
+        <h4>Check before recording</h4>
+        <dl>
+          <dt>Customer</dt><dd>{item.customerName}</dd>
+          <dt>Business</dt><dd>{item.businessName}</dd>
+          <dt>Subscription</dt><dd>{item.reference}</dd>
+          <dt>Location</dt><dd>{chosen.locationName}</dd>
+          <dt>Preference version</dt><dd>{chosen.preferenceVersion}</dd>
+          <dt>Greeting</dt><dd>{chosen.greeting ?? "Not recorded"}</dd>
+          <dt>Opening hours</dt><dd>{chosen.hoursSummary ?? "Not recorded"}</dd>
+          <dt>Environment</dt><dd>{lane === "dev" ? "DEV" : "Production"}</dd>
+          <dt>Provider agent reference</dt><dd>{agentRef.trim()}</dd>
+          <dt>Configuration revision</dt><dd>{revision.trim()}</dd>
+          <dt>Chosen provider voice</dt><dd>{chosenVoice.trim()}</dd>
+          <dt>Chosen provider language</dt><dd>{chosenLanguage.trim()}</dd>
+          <dt>Verification</dt><dd>Operator attested. Not independently checked.</dd>
+          <dt>Staff attestation</dt><dd>{attestation.trim()}</dd>
+          <dt>Service status</dt><dd>Configuration recorded — test pending. The receptionist is not live.</dd>
+        </dl>
+        <label>
+          <input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
+          {" "}I confirm an authorised operator recorded this provider evidence for this location. It has not been independently verified, and the receptionist has not been tested.
+        </label>
+        <p>
+          <button type="button" disabled={!confirmed || pending || reviewed !== payloadText} onClick={() => void submit()}>Confirm AI configuration</button>
+          {" "}
+          <button type="button" onClick={() => { leaveReview(); setOpen(false) }} disabled={pending}>Cancel</button>
+        </p>
+      </div> : <p><button type="button" onClick={beginReview}>Review configuration</button></p>}
+    </section> : null}
+    {message ? <Notice tone={tone} live="status">{message}</Notice> : null}
+  </div>
+}
+
+export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
   const later = futureCommands.filter(command => {
     if (beginSetupEnabled && command === "Begin setup") return false
     if (confirmPreferencesEnabled && command === "Confirm business preferences") return false
+    if (confirmAiConfigurationEnabled && command === "Confirm AI configuration") return false
     return true
   })
   return <>
@@ -476,6 +690,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
                   {item.setupStartedAt ? <><br /><span className="muted">Started {ukDate(item.setupStartedAt)} UK</span></> : null}
                   {beginSetupEnabled ? <BeginSetup item={item} /> : null}
                   {confirmPreferencesEnabled ? <ConfirmPreferences item={item} /> : null}
+                  {confirmAiConfigurationEnabled ? <ConfirmAiConfiguration item={item} providerLane={providerLane} /> : null}
                 </td>
               </tr>
             ))}
@@ -484,7 +699,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
       </div>
     )}
     <h2>Later setup commands</h2>
-    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. It does not configure or activate the receptionist.</p>
+    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Neither command activates the receptionist or records a test call.</p>
     <ul>
       {later.map(command => <li key={command}>{command}</li>)}
     </ul>

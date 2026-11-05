@@ -36,6 +36,7 @@ describe("the migration history validator", () => {
     expect(pending.map(entry => entry.filename)).toEqual([
       "20261105130000_admin_commercial_begin_setup_v1.sql",
       "20261105144256_admin_commercial_confirm_preferences_v1.sql",
+      "20261105172055_admin_commercial_confirm_ai_configuration_v1.sql",
       "20261105180000_telloya_tier_catalogue_v1.sql",
       "20261105190000_telloya_guard_addon_v1.sql",
     ])

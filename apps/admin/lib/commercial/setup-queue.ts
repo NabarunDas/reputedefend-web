@@ -30,6 +30,43 @@ export type PreferenceProgress = {
   locations: PreferenceLocationProgress[]
 }
 
+export type ConfigurationLocationProgress = {
+  locationId: string
+  locationName: string
+  status: "needed" | "review" | "recorded"
+  configurationVersion: number
+  preferenceVersion: number
+  provisionVersion: number
+  timezone: string | null
+  hoursSummary: string | null
+  greeting: string | null
+  exceptionalHours: string | null
+  outOfHours: string | null
+  callbackInstructions: string | null
+  urgentRules: string | null
+  directContactRules: string | null
+  specialInstructions: string | null
+  spokenLanguage: string | null
+  additionalLanguages: string[] | null
+  voicePresentation: string | null
+  accent: string | null
+  pronunciationNotes: string | null
+  environment: "dev" | "production" | null
+  agentRef: string | null
+  providerRevision: string | null
+  chosenVoice: string | null
+  chosenLanguage: string | null
+  verificationBasis: "OPERATOR_ATTESTED" | null
+  attestation: string | null
+}
+
+export type ConfigurationProgress = {
+  recordedCount: number
+  reviewCount: number
+  locationCount: number
+  locations: ConfigurationLocationProgress[]
+}
+
 export type SetupQueueItem = {
   reference: string
   customerName: string
@@ -66,6 +103,7 @@ export type SetupQueueItem = {
   onboardingVersion: number | null
   setupStartedAt: string | null
   preferenceProgress: PreferenceProgress | null
+  configurationProgress: ConfigurationProgress | null
 }
 
 const stepKeys = ["payment", "preferences", "agent", "number", "test", "activation"] as const
@@ -103,6 +141,115 @@ function preferenceProgress(value: unknown): PreferenceProgress | null | undefin
   }
   if (locations.filter(location => location.confirmed).length !== row.confirmedCount) return undefined
   return { confirmedCount: row.confirmedCount, locationCount: row.locationCount, locations }
+}
+
+function optionalText(value: unknown): string | null | undefined {
+  if (value === null || value === undefined) return null
+  if (typeof value !== "string") return undefined
+  return value
+}
+
+function optionalLanguages(value: unknown): string[] | null | undefined {
+  if (value === null || value === undefined) return null
+  if (!Array.isArray(value) || value.some(item => typeof item !== "string")) return undefined
+  return value
+}
+
+function configurationProgress(value: unknown): ConfigurationProgress | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!value || typeof value !== "object") return undefined
+  const row = value as Record<string, unknown>
+  if (typeof row.recordedCount !== "number" || !Number.isInteger(row.recordedCount) || row.recordedCount < 0) return undefined
+  if (typeof row.reviewCount !== "number" || !Number.isInteger(row.reviewCount) || row.reviewCount < 0) return undefined
+  if (typeof row.locationCount !== "number" || !Number.isInteger(row.locationCount) || row.locationCount < 0) return undefined
+  if (row.recordedCount + row.reviewCount > row.locationCount) return undefined
+  if (!Array.isArray(row.locations) || row.locations.length !== row.locationCount) return undefined
+  const locations: ConfigurationLocationProgress[] = []
+  for (const entry of row.locations) {
+    if (!entry || typeof entry !== "object") return undefined
+    const location = entry as Record<string, unknown>
+    if (typeof location.locationId !== "string" || !uuid.test(location.locationId)) return undefined
+    if (typeof location.locationName !== "string" || location.locationName.trim().length === 0) return undefined
+    if (location.status !== "needed" && location.status !== "review" && location.status !== "recorded") return undefined
+    if (typeof location.configurationVersion !== "number" || !Number.isInteger(location.configurationVersion) || location.configurationVersion < 0) return undefined
+    if (typeof location.preferenceVersion !== "number" || !Number.isInteger(location.preferenceVersion) || location.preferenceVersion < 0) return undefined
+    if (typeof location.provisionVersion !== "number" || !Number.isInteger(location.provisionVersion) || location.provisionVersion < 0) return undefined
+    const timezone = optionalText(location.timezone)
+    const hoursSummary = optionalText(location.hoursSummary)
+    const greeting = optionalText(location.greeting)
+    const exceptionalHours = optionalText(location.exceptionalHours)
+    const outOfHours = optionalText(location.outOfHours)
+    const callbackInstructions = optionalText(location.callbackInstructions)
+    const urgentRules = optionalText(location.urgentRules)
+    const directContactRules = optionalText(location.directContactRules)
+    const specialInstructions = optionalText(location.specialInstructions)
+    const spokenLanguage = optionalText(location.spokenLanguage)
+    const additionalLanguages = optionalLanguages(location.additionalLanguages)
+    const accent = optionalText(location.accent)
+    const pronunciationNotes = optionalText(location.pronunciationNotes)
+    const agentRef = optionalText(location.agentRef)
+    const providerRevision = optionalText(location.providerRevision)
+    const chosenVoice = optionalText(location.chosenVoice)
+    const chosenLanguage = optionalText(location.chosenLanguage)
+    const attestation = optionalText(location.attestation)
+    const voicePresentation = location.voicePresentation === null || location.voicePresentation === undefined
+      ? null
+      : location.voicePresentation === "female" || location.voicePresentation === "male" || location.voicePresentation === "no_preference"
+        ? location.voicePresentation
+        : undefined
+    const environment = location.environment === null || location.environment === undefined
+      ? null
+      : location.environment === "dev" || location.environment === "production"
+        ? location.environment
+        : undefined
+    const verificationBasis = location.verificationBasis === null || location.verificationBasis === undefined
+      ? null
+      : location.verificationBasis === "OPERATOR_ATTESTED"
+        ? "OPERATOR_ATTESTED"
+        : undefined
+    if (
+      timezone === undefined || hoursSummary === undefined || greeting === undefined || exceptionalHours === undefined
+      || outOfHours === undefined || callbackInstructions === undefined || urgentRules === undefined
+      || directContactRules === undefined || specialInstructions === undefined || spokenLanguage === undefined
+      || additionalLanguages === undefined || accent === undefined || pronunciationNotes === undefined
+      || agentRef === undefined || providerRevision === undefined || chosenVoice === undefined
+      || chosenLanguage === undefined || attestation === undefined || voicePresentation === undefined
+      || environment === undefined || verificationBasis === undefined
+    ) return undefined
+    if ((location.status === "recorded" || location.status === "review") && (agentRef === null || attestation === null || environment === null || verificationBasis === null)) return undefined
+    locations.push({
+      locationId: location.locationId,
+      locationName: location.locationName,
+      status: location.status,
+      configurationVersion: location.configurationVersion,
+      preferenceVersion: location.preferenceVersion,
+      provisionVersion: location.provisionVersion,
+      timezone,
+      hoursSummary,
+      greeting,
+      exceptionalHours,
+      outOfHours,
+      callbackInstructions,
+      urgentRules,
+      directContactRules,
+      specialInstructions,
+      spokenLanguage,
+      additionalLanguages,
+      voicePresentation,
+      accent,
+      pronunciationNotes,
+      environment,
+      agentRef,
+      providerRevision,
+      chosenVoice,
+      chosenLanguage,
+      verificationBasis,
+      attestation,
+    })
+  }
+  if (locations.filter(location => location.status === "recorded").length !== row.recordedCount) return undefined
+  if (locations.filter(location => location.status === "review").length !== row.reviewCount) return undefined
+  return { recordedCount: row.recordedCount, reviewCount: row.reviewCount, locationCount: row.locationCount, locations }
 }
 
 function checklist(value: unknown): SetupChecklistStep[] | null {
@@ -196,6 +343,8 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
         : undefined
     const preferences = preferenceProgress(row.preferenceProgress)
     if (preferences === undefined) return null
+    const configuration = configurationProgress(row.configurationProgress)
+    if (configuration === undefined) return null
     if (subscriptionId === undefined || customerId === undefined || onboardingRequestId === undefined || subscriptionVersion === undefined || onboardingVersion === undefined || setupStartedAt === undefined) return null
     if (JSON.stringify(row).includes("cus_") || JSON.stringify(row).includes("evt_")) return null
     items.push({
@@ -234,6 +383,7 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
       onboardingVersion,
       setupStartedAt,
       preferenceProgress: preferences,
+      configurationProgress: configuration,
     })
   }
   return items

@@ -155,6 +155,7 @@ describe("readiness model", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261105130000_admin_commercial_begin_setup_v1.sql",
       "20261105144256_admin_commercial_confirm_preferences_v1.sql",
+      "20261105172055_admin_commercial_confirm_ai_configuration_v1.sql",
       "20261105180000_telloya_tier_catalogue_v1.sql",
       "20261105190000_telloya_guard_addon_v1.sql",
     ])
@@ -250,7 +251,7 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("Do not replay 20261105120000.")
     expect(supabase?.requirement).toContain("Do not apply 20261105120000 to Production.")
     expect(supabase?.requirement).not.toContain("Do not apply 20261105120000 to DEV")
-    expect(supabase?.requirement).toContain("pendingMigrations() contains 20261105130000_admin_commercial_begin_setup_v1.sql, 20261105144256_admin_commercial_confirm_preferences_v1.sql, 20261105180000_telloya_tier_catalogue_v1.sql and 20261105190000_telloya_guard_addon_v1.sql. All four stay local and must not be applied to hosted DEV or Production.")
+    expect(supabase?.requirement).toContain("pendingMigrations() contains 20261105130000_admin_commercial_begin_setup_v1.sql, 20261105144256_admin_commercial_confirm_preferences_v1.sql, 20261105172055_admin_commercial_confirm_ai_configuration_v1.sql, 20261105180000_telloya_tier_catalogue_v1.sql and 20261105190000_telloya_guard_addon_v1.sql. All five stay local and must not be applied to hosted DEV or Production.")
     expect(supabase?.requirement).toContain("20261104220000 customer_commercial_setup_handover_v1 is already applied on DEV and must not be replayed.")
     expect(supabase?.requirement).toContain("Do not replay 20261104220000.")
     expect(supabase?.requirement).toContain("Do not apply 20261104220000 to Production.")

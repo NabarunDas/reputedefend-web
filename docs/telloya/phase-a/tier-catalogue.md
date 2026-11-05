@@ -1,6 +1,6 @@
 # Telloya tier-aware commercial catalogue
 
-Repository only. `20261105180000_telloya_tier_catalogue_v1.sql` and `20261105190000_telloya_guard_addon_v1.sql` are not applied to hosted DEV or Production. The verified DEV ledger still contains 105 entries and ends at `20261105120000`. Begin setup `20261105130000` and confirm preferences `20261105144256` stay pending and earlier in the chain. Do not apply `20261105180000` or `20261105190000` to DEV. Do not apply either file to Production.
+Repository only. `20261105180000_telloya_tier_catalogue_v1.sql` and `20261105190000_telloya_guard_addon_v1.sql` are not applied to hosted DEV or Production. The verified DEV ledger still contains 105 entries and ends at `20261105120000`. Begin setup `20261105130000`, confirm preferences `20261105144256`, and confirm AI configuration `20261105172055` stay pending and earlier in the chain. Do not apply `20261105172055`, `20261105180000`, or `20261105190000` to DEV. Do not apply any of those files to Production.
 
 `plan_versions.tier_code` is nullable. Basic, Growth, Pro and Custom may be approved at the same time. A plan with no tier still follows the previous rule: one current approved plan for that product. An omitted plan selection uses that single unscoped plan. When any current approved plan has a tier, or more than one plan is current, preparation returns `tier_required` and does not choose the first row.
 

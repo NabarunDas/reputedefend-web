@@ -67,17 +67,19 @@ function SubscriptionSetup({ subscription }: { subscription: HandoverSubscriptio
       {subscription.servicePreferences ? <section>
         <h3>Business preferences</h3>
         {subscription.servicePreferences.state === "complete" ? (
-          <p>Preferences are recorded for every selected location. This is the record your setup team made from your confirmation. You will still confirm the service before it is activated. The receptionist is not configured or active.</p>
+          <p>Preferences are recorded for every selected location. This is the record your setup team made from your confirmation. You will still confirm the service before it is activated.{subscription.serviceConfiguration && subscription.serviceConfiguration.state !== "needed" ? "" : " The receptionist is not configured or active."}</p>
         ) : subscription.servicePreferences.state === "partial" ? (
           <p>Preferences are recorded for {subscription.servicePreferences.confirmedCount} of {subscription.servicePreferences.locationCount} locations. The others are still needed.</p>
         ) : (
           <p>Your confirmed business preferences are still needed. Your setup team records them after you confirm them. This does not turn the receptionist on.</p>
         )}
-        {subscription.servicePreferences.locations.map(location => (
+        {subscription.servicePreferences.locations.map(location => {
+          const configuration = subscription.serviceConfiguration?.locations.find(entry => entry.locationId === location.locationId)
+          return (
           <article key={location.locationId}>
             <h4>{location.locationName}</h4>
             {location.status === "needed" ? <p>Preferences for this location are still needed.</p> : <>
-              <p>{location.note}</p>
+              {configuration ? null : <p>{location.note}</p>}
               <p>Timezone: {location.timezone}</p>
               <p>Hours: {location.hoursSummary}</p>
               <p>Greeting: {location.greeting}</p>
@@ -85,6 +87,25 @@ function SubscriptionSetup({ subscription }: { subscription: HandoverSubscriptio
               <p>Language: {location.spokenLanguage}{location.additionalLanguages.length > 0 ? ` (also ${location.additionalLanguages.join(", ")})` : ""}</p>
               <p>Voice preference: {location.voicePresentation}{location.accent ? `, ${location.accent} accent` : ""}</p>
             </>}
+          </article>
+          )
+        })}
+      </section> : null}
+      {subscription.serviceConfiguration ? <section>
+        <h3>AI receptionist configuration</h3>
+        {subscription.serviceConfiguration.state === "recorded" ? (
+          <p>Your AI receptionist configuration has been recorded. We&apos;re completing the telephone setup and service checks.</p>
+        ) : subscription.serviceConfiguration.state === "review" ? (
+          <p>A confirmed preference changed after the configuration was recorded. The setup team needs to review it. The receptionist is not answering calls.</p>
+        ) : subscription.serviceConfiguration.state === "partial" ? (
+          <p>The AI configuration is recorded for {subscription.serviceConfiguration.recordedCount} of {subscription.serviceConfiguration.locationCount} locations. The receptionist cannot answer calls.</p>
+        ) : (
+          <p>The AI receptionist configuration has not been recorded. It cannot answer calls.</p>
+        )}
+        {subscription.serviceConfiguration.locations.map(location => (
+          <article key={location.locationId}>
+            <h4>{location.locationName}</h4>
+            <p>{location.note}</p>
           </article>
         ))}
       </section> : null}

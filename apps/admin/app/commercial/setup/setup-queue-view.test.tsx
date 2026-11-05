@@ -40,6 +40,7 @@ const item: SetupQueueItem = {
   onboardingVersion: 2,
   setupStartedAt: null,
   preferenceProgress: null,
+  configurationProgress: null,
   checklist: [
     { key: "payment", label: "Payment confirmed", state: "complete" },
     { key: "preferences", label: "Business and service preferences", state: "planned" },
@@ -215,6 +216,108 @@ describe("paid setup queue", () => {
       attestation: "The customer confirmed these preferences by telephone.",
       customerConfirmedAt: new Date("2026-11-04T15:00").toISOString(),
     })
+    vi.unstubAllGlobals()
+  })
+
+  it("reviews the confirmed preferences and drops a stale provider record", () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message: "The AI configuration is recorded for this location. Testing is still required. The receptionist is not live." }) })
+    vi.stubGlobal("fetch", fetchMock)
+    const high = item.locations[0].locationId
+    const dock = item.locations[1].locationId
+    const yard = "a033a000-0000-4000-8000-000000000026"
+    const location = (id: string, name: string, status: "needed" | "review" | "recorded") => ({
+      locationId: id,
+      locationName: name,
+      status,
+      configurationVersion: status === "needed" ? 0 : 1,
+      preferenceVersion: 2,
+      provisionVersion: status === "recorded" ? 2 : 1,
+      timezone: "Europe/London",
+      hoursSummary: "Monday 09:00–17:30",
+      greeting: `Thank you for calling ${name}.`,
+      exceptionalHours: "Christmas Day is closed.",
+      outOfHours: "Take a message.",
+      callbackInstructions: "Offer a Monday morning callback.",
+      urgentRules: "There is no emergency cover.",
+      directContactRules: "Pass the caller through only when they ask.",
+      specialInstructions: null,
+      spokenLanguage: "en-GB",
+      additionalLanguages: ["cy"],
+      voicePresentation: "no_preference" as const,
+      accent: "British",
+      pronunciationNotes: null,
+      environment: status === "needed" ? null : "dev" as const,
+      agentRef: status === "needed" ? null : "agent-high-01",
+      providerRevision: status === "needed" ? null : "rev-0004",
+      chosenVoice: status === "needed" ? null : "Harbour",
+      chosenLanguage: status === "needed" ? null : "en-GB",
+      verificationBasis: status === "needed" ? null : "OPERATOR_ATTESTED" as const,
+      attestation: status === "needed" ? null : "The operator checked the provider console for this location.",
+    })
+    render(<SetupQueueView confirmAiConfigurationEnabled providerLane="dev" items={[{
+      ...item,
+      operationalStatus: "setup_started",
+      customerDisplay: "Setup in progress",
+      nextAction: "Confirm AI configuration",
+      setupStartedAt: "2026-11-05T09:15:00.000Z",
+      preferenceProgress: {
+        confirmedCount: 3,
+        locationCount: 3,
+        locations: [
+          { locationId: high, locationName: "High Street", confirmed: true, version: 2 },
+          { locationId: dock, locationName: "Dock", confirmed: true, version: 1 },
+          { locationId: yard, locationName: "Yard", confirmed: true, version: 1 },
+        ],
+      },
+      configurationProgress: {
+        recordedCount: 1,
+        reviewCount: 1,
+        locationCount: 3,
+        locations: [
+          location(high, "High Street", "recorded"),
+          location(dock, "Dock", "review"),
+          location(yard, "Yard", "needed"),
+        ],
+      },
+    }]} />)
+    expect(screen.getByText("AI configuration: 1 of 3 locations recorded. Review needed: Dock.")).toBeTruthy()
+    expect(screen.getByText("Dock: Configuration requiring review because preferences changed. Preferences confirmed.")).toBeTruthy()
+    expect(screen.queryByRole("listitem", { name: "Confirm AI configuration" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Review AI configuration" }))
+    const panel = screen.getByRole("region", { name: "Confirm AI configuration for VC-26-HND2AB" })
+    expect(panel).toHaveTextContent("Thank you for calling Dock.")
+    expect(panel).toHaveTextContent("Monday 09:00–17:30")
+    expect(panel).toHaveTextContent("Configuration requiring review because preferences changed")
+    expect(panel).not.toHaveTextContent("The receptionist can answer")
+    fireEvent.change(within(panel).getByLabelText("Provider agent reference"), { target: { value: "agent-dock-01" } })
+    fireEvent.change(within(panel).getByLabelText("Configuration revision"), { target: { value: "rev-0007" } })
+    fireEvent.change(within(panel).getByLabelText("Chosen provider voice"), { target: { value: "Harbour" } })
+    fireEvent.change(within(panel).getByLabelText("Chosen provider language"), { target: { value: "en-GB" } })
+    fireEvent.change(within(panel).getByLabelText("Staff attestation"), { target: { value: "The operator recorded this configuration in the provider console." } })
+    fireEvent.click(within(panel).getByRole("button", { name: "Review configuration" }))
+    expect(panel).toHaveTextContent("Provider lane: DEV")
+    expect(within(panel).queryByLabelText("Environment")).toBeNull()
+    expect(panel).toHaveTextContent("Operator attested. Not independently checked.")
+    expect(panel).toHaveTextContent("Configuration recorded — test pending")
+    fireEvent.change(within(panel).getByLabelText("Provider agent reference"), { target: { value: "agent-dock-02" } })
+    expect(within(panel).queryByRole("checkbox", { name: /authorised operator recorded/ })).toBeNull()
+    fireEvent.click(within(panel).getByRole("button", { name: "Review configuration" }))
+    fireEvent.click(within(panel).getByRole("checkbox", { name: /authorised operator recorded this provider evidence/ }))
+    fireEvent.click(within(panel).getByRole("button", { name: "Confirm AI configuration" }))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const submitted = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(submitted.locationId).toBe(dock)
+    expect(submitted.preferenceVersion).toBe(2)
+    expect(submitted.provider).toMatchObject({
+      provider: "telloya_voice",
+      environment: "dev",
+      agentRef: "agent-dock-02",
+      revision: "rev-0007",
+      chosenVoice: "Harbour",
+      chosenLanguage: "en-GB",
+      staffConfirmed: true,
+    })
+    expect(submitted.provider.attestation).toContain("provider console")
     vi.unstubAllGlobals()
   })
 })

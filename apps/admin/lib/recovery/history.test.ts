@@ -7,8 +7,8 @@ const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // This validator fixture models the complete applied manifest, not a literal
 // copy of live DEV migration history. Live DEV is still missing the three
 // initial foundation entries tracked in issue #190. The synthetic chain ends
-// at the observed DEV ledger head 20261104190000. The verified live ledger
-// has 103 entries. This synthetic chain includes the three foundation files,
+// at the observed DEV ledger head 20261104220000. The verified live ledger
+// has 104 entries. This synthetic chain includes the three foundation files,
 // so it is longer than the live ledger. The invitation file is applied and
 // must not be replayed. Do not apply it to Production. The products
 // projection file remains applied and must not be replayed.

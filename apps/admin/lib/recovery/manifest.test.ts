@@ -94,8 +94,8 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Commercial setup handover is the DEV ledger head. Do not replay it.
-    // Do not apply 20261104220000 to Production.
+    // Commercial setup handover is the DEV ledger head. It was applied once.
+    // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // The repository head is the unapplied voice migration.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
     // Do not apply 20261105120000 to hosted DEV or Production.

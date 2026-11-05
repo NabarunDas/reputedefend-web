@@ -62,6 +62,7 @@ describe("upgrading a database that is already running", () => {
     // The repository head is the unapplied 20261105120000 telloya_voice_persistence_v1.
     // The DEV ledger head is 20261104220000 customer_commercial_setup_handover_v1.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
+    // The previous DEV ledger head is 20261104190000 customer_commercial_payment_settlement_v1.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
     // The previous DEV applied head is 20261103230000 customer_commercial_payment_verification_v1.
     // Do not replay 20261103230000. Do not apply 20261103230000 to Production.

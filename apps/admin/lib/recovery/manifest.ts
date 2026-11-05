@@ -1476,8 +1476,7 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Commercial payment settlement. Applied once to profilerelaunch-dev.
-    // When settlement was applied, the verified DEV ledger contained 103
-    // entries and ended at 20261104190000. The current head is 20261104220000.
+    // When it was applied, the verified DEV ledger contained 103 entries and ended at 20261104190000.
     // The previous ledger contained 102 entries and ended at 20261103230000.
     // Canonical version recorded once. Repository file is 71,495 characters.
     // MD5 f09048135272dbc84b7ff1c794f18361.
@@ -1500,14 +1499,24 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Customer commercial payment settlement", probe: "public.commercial_payment_settle_initial_invoice_v1" },
   },
   {
-    // Commercial setup handover. Applied once to profilerelaunch-dev.
-    // The verified DEV ledger contains 104 entries and ends at 20261104220000.
-    // The previous ledger contained 103 entries and ended at 20261104190000.
-    // Read-only queue and customer checklist. containsDataChange stays false.
-    // It does not create a subscription, entitlement, provision, coverage, or payment.
-    // It does not move a provision to LIVE.
+    // Commercial setup handover. Applied once to profilerelaunch-dev
+    // (rmzozuiamjcclvtgutgd). The verified DEV ledger contains 104 entries
+    // and ends at 20261104220000. The previous ledger contained 103 entries
+    // and ended at 20261104190000. Canonical version recorded once.
+    // Repository file is 25,436 characters.
+    // MD5 690e88917f0166f376d3e8189b60b427.
+    // SHA-256 dbbc03ed138c1f2115d44e7c13923570bf1cbf6205e401bec85aef6df00552c3.
+    // GitHub blob SHA 639b5c553348537db401e46c15fa7af7bb6d95a3.
+    // Public Admin and Customer handover RPCs are service-role-only.
+    // Existing customer_portal_products_v1 permissions were preserved.
+    // Invalid Admin and customer sessions were rejected.
+    // No settlement, entitlement or provisioning data was created.
+    // service_provisions_live_closed remains enforced.
+    // Commercial feature flags remain OFF.
+    // Read-only queue, customer checklist, and products projection.
+    // containsDataChange stays false.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
-    // Do not replay 20261104190000. safeToReplay stays false.
+    // safeToReplay stays false.
     version: "20261104220000",
     filename: "20261104220000_customer_commercial_setup_handover_v1.sql",
     step: "Customer commercial setup handover",
@@ -1542,7 +1551,19 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261104220000`. The live DEV ledger contains 104 entries. The previous
+ * `20261104220000`. The live DEV ledger contains 104 entries. Commercial
+ * setup handover was applied once to DEV project rmzozuiamjcclvtgutgd.
+ * The repository file is 25,436 characters. MD5
+ * 690e88917f0166f376d3e8189b60b427. SHA-256
+ * dbbc03ed138c1f2115d44e7c13923570bf1cbf6205e401bec85aef6df00552c3.
+ * GitHub SQL blob SHA 639b5c553348537db401e46c15fa7af7bb6d95a3.
+ * Public Admin and Customer handover RPCs are service-role-only.
+ * Existing customer_portal_products_v1 permissions were preserved.
+ * Invalid Admin and customer sessions were rejected. No settlement,
+ * entitlement or provisioning data was created. service_provisions_live_closed
+ * remains enforced. Commercial feature flags remain OFF.
+ * Schema and function changes only. containsDataChange is false.
+ * Do not replay `20261104220000` or apply it to Production. The previous
  * head `20261104190000` had 103 entries. Commercial
  * payment settlement was applied once to DEV. The repository file is
  * 71,495 characters. MD5 f09048135272dbc84b7ff1c794f18361. SHA-256

@@ -1673,6 +1673,9 @@ export const migrationChain: readonly MigrationEntry[] = [
     // while routing is inactive, across both provider environments. A separate
     // database is not covered. OPERATOR_ATTESTED is not an independent
     // provider check and does not show that the number is routing calls.
+    // A correction moves provider_binding_ref to the latest allocation id and
+    // keeps number_allocated_at. The voice-binding trigger rejects a row that
+    // disagrees with a commercial number or agent reservation.
     // The command does not write a routing binding, buy a number, enable
     // forwarding, run a test call, enable Guard, change billing, send mail,
     // or move a service to live.

@@ -20,6 +20,19 @@
 -- not see a separate database, so DEV and Production projects do not enforce
 -- uniqueness for each other. The same number keeps its owner when the same
 -- location records a later correction. A replaced number stays owned here.
+-- The provision reference moves to the latest allocation id. The original
+-- number_allocated_at timestamp stays. A correction is refused once
+-- forwarding, testing, customer confirmation, or activation evidence exists.
+-- Future forwarding commands must resolve the current allocation through
+-- admin_private.commercial_authoritative_allocation_id_v1. That function
+-- returns only the allocation named by provider_binding_ref when that row
+-- is the latest allocation for the location.
+-- Voice-binding inserts and updates take the same commercial agent lock and
+-- then the same number lock as this command, after the existing active-agent
+-- lock when the binding is active. A commercial reservation rejects a
+-- binding for a different environment, business, or location. A commercially
+-- owned agent cannot be attached to another tenant. A binding with no
+-- commercial reservation keeps the existing voice rules.
 
 BEGIN;
 
@@ -173,6 +186,56 @@ $$;
 
 REVOKE ALL ON FUNCTION admin_private.commercial_allocation_payload_ok_v1(jsonb) FROM PUBLIC, anon, authenticated, service_role;
 
+-- Future forwarding commands must call this function and use the returned id.
+-- It follows service_provisions.provider_binding_ref. An older allocation row,
+-- or an allocation that belongs to another entitlement, returns null.
+CREATE FUNCTION admin_private.commercial_authoritative_allocation_id_v1(p_entitlement uuid)
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT alloc.id
+  FROM public.service_provisions provision
+  JOIN public.product_entitlements entitlement
+    ON entitlement.id = provision.entitlement_id
+  JOIN public.commercial_subscriptions sub
+    ON sub.id = entitlement.commercial_subscription_id
+  JOIN admin_private.commercial_location_allocations alloc
+    ON alloc.entitlement_id = provision.entitlement_id
+   AND alloc.location_id = provision.location_id
+   AND alloc.business_id = provision.business_id
+   AND alloc.subscription_id = sub.id
+   AND alloc.customer_id = sub.customer_id
+   AND alloc.id = (
+     CASE
+       WHEN provision.provider_binding_ref ~ '^alloc:[0-9a-f-]{36}$'
+       THEN pg_catalog.substr(provision.provider_binding_ref, 7)::uuid
+       ELSE NULL
+     END
+   )
+   AND alloc.version = (
+     SELECT pg_catalog.max(latest.version)
+     FROM admin_private.commercial_location_allocations latest
+     WHERE latest.subscription_id = alloc.subscription_id
+       AND latest.location_id = alloc.location_id
+   )
+  WHERE provision.entitlement_id = p_entitlement
+    AND provision.state = 'FORWARDING_REQUIRED'
+    AND provision.number_allocated_at IS NOT NULL
+    AND provision.forwarding_instructed_at IS NULL
+    AND provision.provider_test_call_ref IS NULL
+    AND provision.agent_test_passed_at IS NULL
+    AND provision.customer_confirmed_at IS NULL
+    AND provision.live_at IS NULL;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.commercial_authoritative_allocation_id_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+COMMENT ON FUNCTION admin_private.commercial_authoritative_allocation_id_v1(uuid) IS
+  'Returns the allocation named by the provision reference when that row is the latest allocation for the location. Future forwarding commands must use this id. An older or unrelated allocation returns null.';
+
 CREATE FUNCTION admin_private.commercial_allocation_projection_v1(p_subscription uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -211,6 +274,8 @@ BEGIN
                OR alloc.environment IS DISTINCT FROM config.environment
                OR provision.number_allocated_at IS NULL
                OR provision.provider_binding_ref IS NULL
+               OR provision.provider_binding_ref IS DISTINCT FROM ('alloc:' || alloc.id::text)
+               OR admin_private.commercial_authoritative_allocation_id_v1(entitlement.id) IS DISTINCT FROM alloc.id
                OR provision.agent_configured_at IS NULL
                OR provision.state = 'PROFILE_REQUIRED'
                THEN 'review'
@@ -1278,6 +1343,27 @@ BEGIN
       IF claimed IS DISTINCT FROM 1 THEN
         RAISE EXCEPTION 'number allocation changed a later service field';
       END IF;
+    ELSE
+      -- A correction keeps the original allocation time and moves the
+      -- authoritative reference to this new allocation row. The previous
+      -- number remains reserved. Forwarding evidence blocks this update.
+      UPDATE public.service_provisions
+      SET provider_binding_ref = 'alloc:' || allocation_id::text
+      WHERE entitlement_id = chosen_entitlement
+        AND state = 'FORWARDING_REQUIRED'
+        AND number_allocated_at IS NOT NULL
+        AND number_allocated_at IS NOT DISTINCT FROM prior_allocated
+        AND provider_binding_ref IS NOT DISTINCT FROM prior_binding
+        AND forwarding_instructed_at IS NULL
+        AND provider_test_call_ref IS NULL
+        AND agent_test_passed_at IS NULL
+        AND customer_confirmed_at IS NULL
+        AND live_at IS NULL
+        AND agent_configured_at IS NOT NULL;
+      GET DIAGNOSTICS claimed = ROW_COUNT;
+      IF claimed IS DISTINCT FROM 1 THEN
+        RAISE EXCEPTION 'number allocation changed a later service field';
+      END IF;
     END IF;
     SELECT * INTO provision FROM public.service_provisions WHERE entitlement_id = chosen_entitlement;
     IF provision.state IS DISTINCT FROM 'FORWARDING_REQUIRED'
@@ -1294,9 +1380,13 @@ BEGIN
       OR (
         current_allocation > 0
         AND (
-          provision.provider_binding_ref IS DISTINCT FROM prior_binding
+          provision.provider_binding_ref IS DISTINCT FROM ('alloc:' || allocation_id::text)
           OR provision.number_allocated_at IS DISTINCT FROM prior_allocated
         )
+      )
+      OR (
+        current_allocation = 0
+        AND provision.provider_binding_ref IS DISTINCT FROM ('alloc:' || allocation_id::text)
       )
     THEN
       RAISE EXCEPTION 'number allocation changed a later service field';
@@ -1379,7 +1469,73 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.admin_commercial_record_number_allocation_v1(text, uuid, uuid, integer, jsonb) IS
-  'Audited Admin record of an existing telephone allocation for one selected location. Requires begin setup, confirmed preferences, and the latest AI configuration for that location. OPERATOR_ATTESTED is not an independent provider check and does not show that the number is routing calls. Does not buy a number, write a routing binding, enable forwarding, run a test call, enable Guard, change billing, send mail, or move a service to live.';
+  'Audited Admin record of an existing telephone allocation for one selected location. Requires begin setup, confirmed preferences, and the latest AI configuration for that location. A correction moves provider_binding_ref to the new allocation id, keeps number_allocated_at, and stays in FORWARDING_REQUIRED. OPERATOR_ATTESTED is not an independent provider check and does not show that the number is routing calls. Does not buy a number, write a routing binding, enable forwarding, run a test call, enable Guard, change billing, send mail, or move a service to live.';
+
+-- Extend the applied voice-binding guard. The applied migration is not edited.
+-- Lock order: the existing active-agent lock first, because
+-- telloya_voice_bind_number_v1 already holds it before INSERT; then the
+-- commercial agent lock; then the commercial number lock. That is the same
+-- commercial order as admin_commercial_record_number_allocation_v1.
+CREATE OR REPLACE FUNCTION admin_private.telloya_voice_binding_guard_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+BEGIN
+  IF NEW.active THEN
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('telloya-agent:' || NEW.environment || ':' || NEW.agent_id)::bigint);
+  END IF;
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('telloya-voice-agent:' || NEW.agent_id, 0));
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('telloya-voice-number:' || NEW.inbound_to_number, 0));
+
+  IF EXISTS (
+    SELECT 1
+    FROM admin_private.commercial_provider_number_owners owner
+    WHERE owner.provider = 'telloya_voice'
+      AND owner.e164 = NEW.inbound_to_number
+      AND (
+        owner.environment IS DISTINCT FROM NEW.environment
+        OR owner.business_id IS DISTINCT FROM NEW.business_id
+        OR owner.location_id IS DISTINCT FROM NEW.location_id
+      )
+  ) THEN
+    PERFORM admin_private.telloya_voice_reject_v1();
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM admin_private.commercial_provider_agent_owners owner
+    WHERE owner.provider = 'telloya_voice'
+      AND owner.agent_ref = NEW.agent_id
+      AND (
+        owner.environment IS DISTINCT FROM NEW.environment
+        OR owner.business_id IS DISTINCT FROM NEW.business_id
+        OR owner.location_id IS DISTINCT FROM NEW.location_id
+      )
+  ) THEN
+    PERFORM admin_private.telloya_voice_reject_v1();
+  END IF;
+
+  IF NEW.active THEN
+    IF EXISTS (
+      SELECT 1 FROM public.telloya_voice_number_bindings
+      WHERE environment = NEW.environment
+        AND active
+        AND agent_id = NEW.agent_id
+        AND location_id IS DISTINCT FROM NEW.location_id
+    ) THEN
+      PERFORM admin_private.telloya_voice_reject_v1();
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION admin_private.telloya_voice_binding_guard_v1() FROM PUBLIC, anon, authenticated, service_role;
+
+COMMENT ON FUNCTION admin_private.telloya_voice_binding_guard_v1() IS
+  'Rejects a voice binding that disagrees with a commercial number or agent reservation, for both active and inactive rows. Preserves the active-agent location rule. A binding with no commercial reservation keeps the existing voice rules. Does not activate routing.';
 
 REVOKE ALL ON FUNCTION public.admin_commercial_record_number_allocation_v1(text, uuid, uuid, integer, jsonb)
   FROM PUBLIC, anon, authenticated;

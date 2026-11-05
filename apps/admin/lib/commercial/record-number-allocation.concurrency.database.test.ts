@@ -572,5 +572,44 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
     expect(await psql(`select count(*)::text from public.telloya_voice_number_bindings`)).toBe("0")
     expect(await psql(`select count(*)::text from public.service_provisions where state = 'LIVE' or forwarding_instructed_at is not null`)).toBe("0")
   }, 180000)
+
+  it("does not let a concurrent binding and reservation give one number two owners", async () => {
+    const number = "+441632961004"
+    const reserved = await configured({ business: bakery, locations: [high], ref: "VC-26-NUMAL7", amount: 6700, version: 77 }, high, "agent-high-01")
+    const bindingSql = `insert into public.telloya_voice_number_bindings(environment, inbound_to_number, agent_id, business_id, location_id, active) values ('dev', '${number}', 'agent-yard-09', '${mill}', '${yard}', false)`
+    const [allocation, binding] = await Promise.all([
+      call<{ status: string; reason?: string }>(allocateSql(reserved.armed, randomUUID(), reserved.current.version, allocationBody(reserved.armed, reserved.current.body, high, reserved.agent, number, "dev", reserved.provision))).then(
+        value => ({ ok: true, value, error: "" }),
+        (error: { message?: string }) => ({ ok: false, value: { status: "error" }, error: error.message ?? "" }),
+      ),
+      execFile(join(pgBin!, "psql"), [
+        "-h", socketDir, "-p", port, "-U", "postgres", "-d", "commercialalloc",
+        "-v", "ON_ERROR_STOP=1", "-c", bindingSql,
+      ], { env: { ...process.env, PGOPTIONS: "-c statement_timeout=60000" }, maxBuffer: 8 * 1024 * 1024 }).then(
+        () => ({ ok: true, error: "" }),
+        (error: { stderr?: string; message?: string }) => ({ ok: false, error: `${error.stderr ?? ""}\n${error.message ?? ""}` }),
+      ),
+    ])
+    expect(`${allocation.error}\n${binding.error}`).not.toMatch(/deadlock detected/i)
+    const owners = await psql(`select count(*)::text from admin_private.commercial_provider_number_owners where e164 = '${number}'`)
+    const bindings = await psql(`select count(*)::text from public.telloya_voice_number_bindings where inbound_to_number = '${number}'`)
+    const ownerLocation = await psql(`select coalesce(string_agg(location_id::text, ','), '') from admin_private.commercial_provider_number_owners where e164 = '${number}'`)
+    const bindingLocation = await psql(`select coalesce(string_agg(location_id::text, ','), '') from public.telloya_voice_number_bindings where inbound_to_number = '${number}'`)
+    if (allocation.ok && allocation.value.status === "success") {
+      expect(binding.ok).toBe(false)
+      expect(binding.error).toMatch(/telloya_voice_rejected/)
+      expect(owners).toBe("1")
+      expect(ownerLocation).toBe(high)
+      expect(bindings).toBe("0")
+    } else {
+      expect(allocation.value).toMatchObject({ status: "denied", reason: "number" })
+      expect(binding.ok).toBe(true)
+      expect(owners).toBe("0")
+      expect(bindings).toBe("1")
+      expect(bindingLocation).toBe(yard)
+    }
+    expect(ownerLocation === yard && bindingLocation === high).toBe(false)
+    expect(await psql(`select count(*)::text from public.service_provisions where state = 'LIVE' or forwarding_instructed_at is not null or agent_test_passed_at is not null or customer_confirmed_at is not null`)).toBe("0")
+  }, 180000)
 })
 

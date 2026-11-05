@@ -109,6 +109,24 @@ function SubscriptionSetup({ subscription }: { subscription: HandoverSubscriptio
           </article>
         ))}
       </section> : null}
+      {subscription.serviceAllocation ? <section>
+        <h3>Telephone number</h3>
+        {subscription.serviceAllocation.state === "recorded" ? (
+          <p>Your receptionist number has been recorded. We&apos;re preparing the forwarding instructions and final service checks.</p>
+        ) : subscription.serviceAllocation.state === "review" ? (
+          <p>The recorded telephone number needs another check. It is not active and forwarding is not ready.</p>
+        ) : subscription.serviceAllocation.state === "partial" ? (
+          <p>A receptionist number is recorded for {subscription.serviceAllocation.recordedCount} of {subscription.serviceAllocation.locationCount} locations. Forwarding is not ready and the receptionist cannot answer calls.</p>
+        ) : (
+          <p>A receptionist number has not been recorded. Forwarding is not ready and the receptionist cannot answer calls.</p>
+        )}
+        {subscription.serviceAllocation.locations.map(location => (
+          <article key={location.locationId}>
+            <h4>{location.locationName}</h4>
+            <p>{location.note}</p>
+          </article>
+        ))}
+      </section> : null}
       <section>
         <h3>Setup checklist</h3>
         <ol className="onboarding-steps" aria-label={`${subscription.product} setup`}>

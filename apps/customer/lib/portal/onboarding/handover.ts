@@ -77,6 +77,7 @@ export type HandoverSubscription = {
   checklist: HandoverChecklistStep[]
   servicePreferences: ServicePreferences | null
   serviceConfiguration: ServiceConfiguration | null
+  serviceAllocation: ServiceConfiguration | null
 }
 
 const stepKeys = ["payment", "preferences", "agent", "number", "test", "activation"] as const
@@ -163,7 +164,7 @@ function serviceConfiguration(value: unknown): ServiceConfiguration | null | und
   if (row.state !== "needed" && row.state !== "partial" && row.state !== "review" && row.state !== "recorded") return undefined
   if (typeof row.recordedCount !== "number" || typeof row.locationCount !== "number") return undefined
   if (!Array.isArray(row.locations)) return undefined
-  const hidden = ["agentRef", "attestation", "fingerprint", "configurationFingerprint", "providerRevision", "voiceIdentifier", "chosenVoice", "chosenLanguage", "requestId", "actorId", "provider", "environment", "verificationBasis"]
+  const hidden = ["agentRef", "attestation", "fingerprint", "configurationFingerprint", "providerRevision", "voiceIdentifier", "chosenVoice", "chosenLanguage", "requestId", "actorId", "provider", "environment", "verificationBasis", "e164", "allocationRef", "bindingRef"]
   const locations: ServiceConfigurationLocation[] = []
   for (const entry of row.locations) {
     if (!entry || typeof entry !== "object") return undefined
@@ -255,7 +256,9 @@ export function parseSetupHandover(value: unknown): HandoverSubscription[] | nul
     if (preferences === undefined) return null
     const configuration = serviceConfiguration(row.serviceConfiguration)
     if (configuration === undefined) return null
-    if ("configurationProgress" in row || "preferenceProgress" in row || "agentRef" in row) return null
+    const allocation = serviceConfiguration(row.serviceAllocation)
+    if (allocation === undefined) return null
+    if ("configurationProgress" in row || "preferenceProgress" in row || "allocationProgress" in row || "agentRef" in row) return null
     subscriptions.push({
       reference: row.reference,
       businessName: row.businessName,
@@ -280,6 +283,7 @@ export function parseSetupHandover(value: unknown): HandoverSubscription[] | nul
       checklist,
       servicePreferences: preferences,
       serviceConfiguration: configuration,
+      serviceAllocation: allocation,
     })
   }
   return subscriptions

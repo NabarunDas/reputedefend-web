@@ -1659,6 +1659,34 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya optional Relaunch Guard offer", probe: "admin_private.commercial_offer_guard_locations" },
   },
+  {
+    // Audited operator-attested telephone allocation. Not applied to DEV.
+    // The verified DEV ledger contains 105 entries and ends at 20261105120000.
+    // Begin setup 20261105130000, confirm preferences 20261105144256, confirm
+    // AI configuration 20261105172055, the tier catalogue 20261105180000, and
+    // the Guard offer 20261105190000 are also unapplied and earlier.
+    // Do not apply 20261105200000 to DEV. Do not apply 20261105200000 to Production.
+    // One service-role command stores an append-only allocation for one
+    // selected location and may move that provision from NUMBER_REQUIRED to
+    // FORWARDING_REQUIRED. The command locks the telephone number before
+    // ownership checks. One number has one owner in this database, including
+    // while routing is inactive, across both provider environments. A separate
+    // database is not covered. OPERATOR_ATTESTED is not an independent
+    // provider check and does not show that the number is routing calls.
+    // The command does not write a routing binding, buy a number, enable
+    // forwarding, run a test call, enable Guard, change billing, send mail,
+    // or move a service to live.
+    // Writes are inside the command. containsDataChange stays false.
+    // safeToReplay stays false.
+    version: "20261105200000",
+    filename: "20261105200000_admin_commercial_record_number_allocation_v1.sql",
+    step: "Audited record provider and number allocation",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Audited record provider and number allocation", probe: "public.admin_commercial_record_number_allocation_v1" },
+  },
 ]
 
 /**
@@ -1795,8 +1823,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
  * applied and must not be replayed. `pendingMigrations()` contains
- * `20261105130000`, `20261105144256`, `20261105172055`, `20261105180000`
- * and `20261105190000`. All five stay local. Do not apply them to hosted DEV
+ * `20261105130000`, `20261105144256`, `20261105172055`, `20261105180000`,
+ * `20261105190000` and `20261105200000`. All six stay local and must not be applied to hosted DEV
  * or Production.
  * `20261105120000` is already applied on DEV and must not be replayed.
  * Do not replay `20261105120000`. Do not apply `20261105120000` to Production.

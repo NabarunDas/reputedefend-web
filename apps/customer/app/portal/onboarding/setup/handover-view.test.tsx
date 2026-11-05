@@ -33,6 +33,7 @@ const paid: HandoverSubscription = {
   paymentConfirmedAt: "2026-11-04T12:00:00.000Z",
   servicePreferences: null,
   serviceConfiguration: null,
+  serviceAllocation: null,
   checklist: [
     { key: "payment", label: "Payment confirmed", state: "complete" },
     { key: "preferences", label: "Business and service preferences", state: "planned" },
@@ -236,6 +237,7 @@ describe("post-payment setup page", () => {
       },
     }]} />)
     expect(screen.getAllByText("Your AI receptionist configuration has been recorded. We're completing the telephone setup and service checks.").length).toBeGreaterThan(0)
+    expect(screen.queryByText(/forwarding is ready/i)).toBeNull()
     const checklist = screen.getByRole("list", { name: "Complete setup" }).textContent ?? ""
     expect(checklist).toContain("AI receptionist configuration")
     expect(checklist).toContain("Complete")
@@ -244,5 +246,37 @@ describe("post-payment setup page", () => {
     expect(checklist).not.toContain("Telephone number and forwardingComplete")
     expect(document.body.textContent).not.toContain("The receptionist is not configured or active")
     expect(document.body.textContent).not.toMatch(/can answer calls|is live|forwarding is complete|test call passed/)
+  })
+
+  it("says a recorded number is waiting for forwarding and does not call it active", () => {
+    render(<HandoverView subscriptions={[{
+      ...paid,
+      operationalStatus: "setup_started",
+      customerDisplay: "Setup in progress",
+      message: "Your receptionist number has been recorded. We're preparing the forwarding instructions and final service checks.",
+      serviceAllocation: {
+        state: "partial",
+        recordedCount: 1,
+        locationCount: 2,
+        locations: [
+          {
+            locationId: paid.locations[0].locationId,
+            locationName: "Oven",
+            status: "recorded",
+            note: "Your receptionist number has been recorded. We're preparing the forwarding instructions and final service checks.",
+          },
+          {
+            locationId: paid.locations[1].locationId,
+            locationName: "Counter",
+            status: "needed",
+            note: "A telephone number has not been recorded for this location. Forwarding is not ready and the receptionist cannot answer calls.",
+          },
+        ],
+      },
+    }]} />)
+    expect(screen.getAllByText("Your receptionist number has been recorded. We're preparing the forwarding instructions and final service checks.").length).toBeGreaterThan(0)
+    expect(screen.getByText("A receptionist number is recorded for 1 of 2 locations. Forwarding is not ready and the receptionist cannot answer calls.")).toBeTruthy()
+    expect(screen.getByText("Telephone number and forwarding").parentElement?.textContent).toContain("Planned")
+    expect(document.body.textContent).not.toMatch(/active number|number is active|forwarding is ready|can answer calls/)
   })
 })

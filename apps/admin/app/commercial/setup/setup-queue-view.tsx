@@ -3,7 +3,7 @@
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ukDate } from "@/lib/admin/activity"
-import type { ConfigurationLocationProgress, SetupQueueItem } from "@/lib/commercial/setup-queue"
+import type { AllocationLocationProgress, ConfigurationLocationProgress, SetupQueueItem } from "@/lib/commercial/setup-queue"
 import { Badge, EmptyState, Notice } from "../../ui"
 
 const futureCommands = [
@@ -631,11 +631,216 @@ function ConfirmAiConfiguration({ item, providerLane }: { item: SetupQueueItem; 
   </div>
 }
 
-export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
+function allocationStatus(status: AllocationLocationProgress["status"]) {
+  if (status === "recorded") return "Number recorded. Not active."
+  if (status === "review") return "Number recorded, and it needs review against the latest configuration. Not active."
+  return "Number not recorded"
+}
+
+function RecordNumberAllocation({ item, providerLane }: { item: SetupQueueItem; providerLane: "dev" | "production" | null }) {
+  const router = useRouter()
+  const key = useRef("")
+  const configuration = item.configurationProgress
+  const allocation = item.allocationProgress
+  const preferences = item.preferenceProgress
+  const preferencesReady = preferences !== null && preferences.locationCount > 0 && preferences.confirmedCount === preferences.locationCount
+  const ready = item.operationalStatus === "setup_started"
+    && item.subscriptionId !== null
+    && item.subscriptionVersion !== null
+    && item.customerId !== null
+    && item.onboardingRequestId !== null
+    && item.onboardingVersion !== null
+    && preferencesReady
+    && configuration !== null
+    && allocation !== null
+    && allocation.locationCount > 0
+    && configuration.locations.some(location => location.status === "recorded")
+  const configurable = configuration?.locations.filter(location => location.status === "recorded") ?? []
+  const [open, setOpen] = useState(false)
+  const [locationId, setLocationId] = useState(configurable.find(location => allocation?.locations.find(entry => entry.locationId === location.locationId)?.status !== "recorded")?.locationId ?? configurable[0]?.locationId ?? "")
+  const [e164, setE164] = useState("")
+  const [allocationRef, setAllocationRef] = useState("")
+  const [attestation, setAttestation] = useState("")
+  const [review, setReview] = useState(false)
+  const [reviewed, setReviewed] = useState<string | null>(null)
+  const [confirmed, setConfirmed] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [tone, setTone] = useState<"success" | "warning" | "danger">("warning")
+  const [formError, setFormError] = useState<string | null>(null)
+  if (!ready || !configuration || !allocation) return null
+  if (!providerLane) {
+    return <p>The provider lane is not configured for this deployment, so a telephone number cannot be recorded.</p>
+  }
+  const chosenConfiguration = configurable.find(location => location.locationId === locationId) ?? configurable[0]
+  const chosenAllocation = allocation.locations.find(location => location.locationId === chosenConfiguration.locationId)
+  if (!chosenConfiguration || !chosenAllocation) return null
+  const selectedAllocation = chosenAllocation
+  const lane = providerLane
+  const laneMatches = chosenConfiguration.environment === lane
+  const payloadText = JSON.stringify(allocationPayload(chosenConfiguration, chosenAllocation))
+  const reviewFresh = review && reviewed !== null && reviewed === payloadText
+
+  function allocationPayload(location: ConfigurationLocationProgress, recorded: AllocationLocationProgress) {
+    return {
+      locationId: location.locationId,
+      preferenceVersion: location.preferenceVersion,
+      provisionVersion: location.provisionVersion,
+      configurationVersion: location.configurationVersion,
+      allocationVersion: recorded.allocationVersion,
+      provider: {
+        provider: "telloya_voice",
+        environment: lane,
+        agentRef: location.agentRef ?? "",
+        revision: location.providerRevision ?? "",
+        e164: e164.trim(),
+        allocationRef: allocationRef.trim(),
+        attestation: attestation.trim(),
+        staffConfirmed: true,
+      },
+    }
+  }
+
+  function evidenceError() {
+    if (!laneMatches) return "This deployment cannot record a number for that provider environment."
+    if (!chosenConfiguration.agentRef || !chosenConfiguration.providerRevision) return "Record a current AI configuration before recording a telephone number."
+    if (!/^\+[1-9][0-9]{7,14}$/.test(e164.trim())) return "Enter the assigned telephone number in international format, beginning with + and the country code."
+    if (!/^[A-Za-z0-9_.:-]{8,128}$/.test(allocationRef.trim())) return "Enter the provider allocation reference or evidence identifier for this number."
+    const trimmedAttestation = attestation.trim()
+    if (trimmedAttestation.length < 20 || trimmedAttestation.length > 500) return "Write a staff attestation of 20 to 500 characters describing the allocation evidence."
+    return null
+  }
+
+  function beginReview() {
+    const problem = evidenceError()
+    setFormError(problem)
+    if (problem) return
+    key.current = crypto.randomUUID()
+    setReviewed(JSON.stringify(allocationPayload(chosenConfiguration, selectedAllocation)))
+    setConfirmed(false)
+    setReview(true)
+  }
+
+  function leaveReview() {
+    setReview(false)
+    setConfirmed(false)
+    setReviewed(null)
+    key.current = ""
+  }
+
+  async function submit() {
+    const current = allocationPayload(chosenConfiguration, selectedAllocation)
+    if (!confirmed || pending || reviewed === null || reviewed !== JSON.stringify(current) || !isUuidKey(key.current)) return
+    if (item.subscriptionId === null || item.subscriptionVersion === null || item.customerId === null || item.onboardingRequestId === null || item.onboardingVersion === null) return
+    const recorded = JSON.parse(reviewed) as ReturnType<typeof allocationPayload>
+    setPending(true)
+    setMessage(null)
+    try {
+      const response = await fetch("/api/commercial/record-number-allocation", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": key.current },
+        body: JSON.stringify({
+          subscriptionId: item.subscriptionId,
+          version: item.subscriptionVersion,
+          customerId: item.customerId,
+          businessId: item.businessId,
+          onboardingRequestId: item.onboardingRequestId,
+          onboardingVersion: item.onboardingVersion,
+          ...recorded,
+        }),
+      })
+      const body = await response.json().catch(() => null) as { message?: string } | null
+      const text = body?.message ?? "We couldn’t record the telephone number. Reload the queue before trying again."
+      setMessage(text)
+      setTone(response.ok ? "success" : "warning")
+      if (response.ok) {
+        setOpen(false)
+        setReview(false)
+        setReviewed(null)
+        key.current = ""
+        router.refresh()
+      }
+    } catch {
+      setMessage("We couldn’t record the telephone number. Reload the queue before trying again.")
+      setTone("danger")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const action = chosenAllocation.status === "recorded" ? "Record a corrected allocation" : "Record telephone number"
+
+  return <div>
+    <p>Telephone numbers: {allocation.recordedCount} of {allocation.locationCount} {allocation.locationCount === 1 ? "location" : "locations"} recorded.</p>
+    <p>{chosenConfiguration.locationName}: {allocationStatus(chosenAllocation.status)}. The number is not active.</p>
+    <button type="button" onClick={() => { leaveReview(); setOpen(true) }}>{action}</button>
+    {open ? <section aria-label={`Record telephone number for ${item.reference}`}>
+      <h3>Record provider and number allocation</h3>
+      <p>This records a telephone number that is already assigned to the configured receptionist. It does not buy a number, turn the number on, start forwarding, or place a test call.</p>
+      <p>{allocationStatus(chosenAllocation.status)}. {chosenAllocation.status === "recorded" ? `This keeps the earlier record and adds version ${chosenAllocation.allocationVersion + 1}.` : "Forwarding is not ready."}</p>
+      <label>Location
+        <select value={chosenConfiguration.locationId} onChange={event => { setLocationId(event.target.value); leaveReview() }}>
+          {configurable.map(location => {
+            const recorded = allocation.locations.find(entry => entry.locationId === location.locationId)
+            return <option key={location.locationId} value={location.locationId}>{location.locationName} ({allocationStatus(recorded?.status ?? "needed")})</option>
+          })}
+        </select>
+      </label>
+      <h4>Current AI configuration</h4>
+      <dl>
+        <dt>Customer</dt><dd>{item.customerName}</dd>
+        <dt>Business</dt><dd>{item.businessName}</dd>
+        <dt>Subscription</dt><dd>{item.reference}</dd>
+        <dt>Location</dt><dd>{chosenConfiguration.locationName}</dd>
+        <dt>Configuration version</dt><dd>{chosenConfiguration.configurationVersion}</dd>
+        <dt>Provider agent</dt><dd>{chosenConfiguration.agentRef}</dd>
+        <dt>Provider environment</dt><dd>{lane === "dev" ? "DEV" : "Production"}. This deployment chooses the lane.</dd>
+        <dt>Existing allocation</dt><dd>{chosenAllocation.e164 ? `${chosenAllocation.e164}. Recorded. Not active.` : "None recorded"}</dd>
+      </dl>
+      <h4>Assigned number and provider evidence</h4>
+      {laneMatches ? null : <p role="alert">This deployment cannot record a number for that provider environment.</p>}
+      <label>Assigned telephone number <input value={e164} onChange={event => setE164(event.target.value)} autoComplete="off" /></label>
+      <label>Provider allocation reference <input value={allocationRef} onChange={event => setAllocationRef(event.target.value)} autoComplete="off" /></label>
+      <label>Staff attestation <textarea value={attestation} onChange={event => setAttestation(event.target.value)} /></label>
+      {formError ? <p role="alert">{formError}</p> : null}
+      {reviewFresh ? <div>
+        <h4>Check before recording</h4>
+        <dl>
+          <dt>Customer</dt><dd>{item.customerName}</dd>
+          <dt>Business</dt><dd>{item.businessName}</dd>
+          <dt>Subscription</dt><dd>{item.reference}</dd>
+          <dt>Location</dt><dd>{chosenConfiguration.locationName}</dd>
+          <dt>AI configuration</dt><dd>Version {chosenConfiguration.configurationVersion}</dd>
+          <dt>Provider agent</dt><dd>{chosenConfiguration.agentRef}</dd>
+          <dt>Provider environment</dt><dd>{lane === "dev" ? "DEV" : "Production"}</dd>
+          <dt>Assigned telephone number</dt><dd>{e164.trim()}</dd>
+          <dt>Provider evidence</dt><dd>{allocationRef.trim()}</dd>
+          <dt>Verification</dt><dd>Operator attested. This is not an independent check, and it does not show that the number is routing calls.</dd>
+          <dt>Staff attestation</dt><dd>{attestation.trim()}</dd>
+          <dt>Existing allocation</dt><dd>{chosenAllocation.status === "recorded" ? `${chosenAllocation.e164}. Recorded. Not active.` : "None recorded"}</dd>
+          <dt>Service status</dt><dd>Number recorded — not active. Forwarding is not ready.</dd>
+        </dl>
+        <label>
+          <input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
+          {" "}I confirm an authorised operator recorded this assigned number and the provider allocation evidence for this location. Operator attestation is not an independent check, and it does not show that the number is routing calls.
+        </label>
+        <p>
+          <button type="button" disabled={!confirmed || pending || reviewed !== payloadText} onClick={() => void submit()}>Record telephone number</button>
+          {" "}
+          <button type="button" onClick={() => { leaveReview(); setOpen(false) }} disabled={pending}>Cancel</button>
+        </p>
+      </div> : <p><button type="button" onClick={beginReview}>Review allocation</button></p>}
+    </section> : null}
+    {message ? <Notice tone={tone} live="status">{message}</Notice> : null}
+  </div>
+}
+
+export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, recordNumberAllocationEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; recordNumberAllocationEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
   const later = futureCommands.filter(command => {
     if (beginSetupEnabled && command === "Begin setup") return false
     if (confirmPreferencesEnabled && command === "Confirm business preferences") return false
     if (confirmAiConfigurationEnabled && command === "Confirm AI configuration") return false
+    if (recordNumberAllocationEnabled && command === "Record provider and number allocation") return false
     return true
   })
   return <>
@@ -691,6 +896,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
                   {beginSetupEnabled ? <BeginSetup item={item} /> : null}
                   {confirmPreferencesEnabled ? <ConfirmPreferences item={item} /> : null}
                   {confirmAiConfigurationEnabled ? <ConfirmAiConfiguration item={item} providerLane={providerLane} /> : null}
+                  {recordNumberAllocationEnabled ? <RecordNumberAllocation item={item} providerLane={providerLane} /> : null}
                 </td>
               </tr>
             ))}
@@ -699,7 +905,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
       </div>
     )}
     <h2>Later setup commands</h2>
-    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Neither command activates the receptionist or records a test call.</p>
+    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Record provider and number allocation records an assigned telephone number for one location. It does not make that number active, start forwarding, or record a test call.</p>
     <ul>
       {later.map(command => <li key={command}>{command}</li>)}
     </ul>

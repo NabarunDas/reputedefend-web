@@ -42,13 +42,13 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       containsDataChange: false,
       safeToReplay: false,
     })
-    // Setup handover 20261104220000 is the DEV ledger head.
-    // Telloya voice persistence and Admin begin setup are both pending.
-    // Do not apply 20261105120000 or 20261105130000 to hosted DEV or Production.
+    // Telloya voice persistence 20261105120000 is the DEV ledger head.
+    // Admin begin setup is the only pending migration.
+    // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
+    // Do not apply 20261105130000 to hosted DEV or Production.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply it to Production.
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261105120000_telloya_voice_persistence_v1.sql",
       "20261105130000_admin_commercial_begin_setup_v1.sql",
     ])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))

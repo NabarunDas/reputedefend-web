@@ -60,8 +60,9 @@ describe("upgrading a database that is already running", () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
     // The repository head is the unapplied 20261105130000 admin_commercial_begin_setup_v1.
-    // The preceding pending file is the unapplied 20261105120000 telloya_voice_persistence_v1.
-    // The DEV ledger head is 20261104220000 customer_commercial_setup_handover_v1.
+    // The DEV ledger head is the applied 20261105120000 telloya_voice_persistence_v1.
+    // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
+    // The previous DEV ledger head is 20261104220000 customer_commercial_setup_handover_v1.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // The previous DEV ledger head is 20261104190000 customer_commercial_payment_settlement_v1.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
@@ -88,7 +89,7 @@ describe("upgrading a database that is already running", () => {
     expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261105120000_telloya_voice_persistence_v1.sql")
-    expect(pending.at(-2)?.appliedToDev).toBe(false)
+    expect(pending.at(-2)?.appliedToDev).toBe(true)
     expect(pending.at(-2)?.containsDataChange).toBe(false)
     expect(pending.at(-2)?.safeToReplay).toBe(false)
     expect(pending.at(-3)?.filename).toBe("20261104220000_customer_commercial_setup_handover_v1.sql")

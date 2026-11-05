@@ -19,7 +19,7 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261104220000_customer_commercial_setup_handover_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261105120000_telloya_voice_persistence_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
@@ -40,7 +40,6 @@ describe("the migration chain manifest", () => {
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261105120000_telloya_voice_persistence_v1.sql",
       "20261105130000_admin_commercial_begin_setup_v1.sql",
     ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
@@ -98,12 +97,12 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Commercial setup handover is the DEV ledger head. It was applied once.
-    // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
+    // Telloya voice persistence is the DEV ledger head. It was applied once.
+    // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
     // The repository head is the unapplied Admin begin-setup migration 20261105130000.
-    // The preceding pending file is the unapplied voice migration 20261105120000.
+    // Do not apply 20261105130000 to hosted DEV or Production.
+    // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
-    // Do not apply 20261105120000 or 20261105130000 to hosted DEV or Production.
     // Do not replay 20261103230000. Do not apply 20261103230000 to Production.
     expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
@@ -213,8 +212,13 @@ describe("the migration chain manifest", () => {
       containsDataChange: false,
       safeToReplay: false,
     })
+    const voiceSql = readFileSync(new URL("20261105120000_telloya_voice_persistence_v1.sql", directory), "utf8")
+    expect(voiceSql.length).toBe(29033)
+    expect(createHash("md5").update(voiceSql).digest("hex")).toBe("e786c89df769c12f71d8815011a5c1b5")
+    expect(createHash("sha256").update(voiceSql).digest("hex")).toBe("e1b7a9a5053b7002a2f0cc77cff1a76b4552b4da8eb25685258f32e89537b4e3")
+    expect(voiceSql).toContain("This file is not applied to hosted DEV or Production.")
     expect(findMigration("20261105120000_telloya_voice_persistence_v1.sql")).toMatchObject({
-      appliedToDev: false,
+      appliedToDev: true,
       containsDataChange: false,
       safeToReplay: false,
     })

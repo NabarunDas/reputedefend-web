@@ -52,6 +52,7 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       "20261105130000_admin_commercial_begin_setup_v1.sql",
       "20261105144256_admin_commercial_confirm_preferences_v1.sql",
       "20261105180000_telloya_tier_catalogue_v1.sql",
+      "20261105190000_telloya_guard_addon_v1.sql",
     ])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])

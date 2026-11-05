@@ -50,7 +50,7 @@ export type ApprovedCommercialPlan = {
   versionNumber: number
   tierCode: "BASIC" | "GROWTH" | "PRO" | "CUSTOM" | null
   tierLabel: string | null
-  amountMinor: number
+  amountMinor: number | null
   currency: string
   cadence: string
   termsRef: string
@@ -62,7 +62,9 @@ export type ApprovedCommercialPlan = {
   telloyaQuantity: number | null
   guardQuantity: number | null
   selectedLocations: number
-  optionalGuardAmountMinor: number | null
+  guardAddonUnitMinor: number | null
+  offerable: boolean
+  unavailableReason: "conditions" | "locations" | "tier" | "price" | "agreement" | "quotation" | null
   matchesApprovedSchedule: boolean
 }
 
@@ -98,6 +100,8 @@ export type OnboardingView =
       locations: LocationMatch[]
       history: HistoryEvent[]
       requestedTier?: "basic" | "growth" | "pro" | "custom" | null
+      requestedGuardInterest?: boolean | null
+      requestedGuardLocationCount?: number | null
       approvedPlans?: ApprovedCommercialPlan[]
     }
 
@@ -164,7 +168,17 @@ export function parseOnboardingCommand(body: unknown): OnboardingCommand | null 
   }
   if (operation === "prepare_offer") {
     if (raw.planVersionId !== undefined && !isUuid(raw.planVersionId)) return null
-    return { operation, version, payload: { ...base, ...(isUuid(raw.planVersionId) ? { planVersionId: raw.planVersionId } : {}) } }
+    if (raw.guardLocationIds !== undefined && idsOf(raw.guardLocationIds) === null) return null
+    const guardLocationIds = idsOf(raw.guardLocationIds)
+    return {
+      operation,
+      version,
+      payload: {
+        ...base,
+        ...(isUuid(raw.planVersionId) ? { planVersionId: raw.planVersionId } : {}),
+        ...(guardLocationIds ? { guardLocationIds } : {}),
+      },
+    }
   }
   return { operation, version, payload: base }
 }

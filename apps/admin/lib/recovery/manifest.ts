@@ -1612,6 +1612,24 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya tier-aware commercial catalogue", probe: "public.admin_commercial_onboarding_v1" },
   },
+  {
+    // Optional Relaunch Guard on a Telloya offer. Not applied to DEV.
+    // The verified DEV ledger contains 105 entries and ends at 20261105120000.
+    // Begin setup 20261105130000, confirm preferences 20261105144256, and the
+    // tier catalogue 20261105180000 stay unapplied and earlier in the chain.
+    // Do not apply 20261105190000 to DEV. Do not apply 20261105190000 to Production.
+    // A confirmed Guard location set is priced at 999 minor units each. Enquiry
+    // interest is not a charge. No plan, agreement, price, or subscription is inserted.
+    // containsDataChange stays false. safeToReplay stays false.
+    version: "20261105190000",
+    filename: "20261105190000_telloya_guard_addon_v1.sql",
+    step: "Telloya optional Relaunch Guard offer",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya optional Relaunch Guard offer", probe: "admin_private.commercial_offer_guard_locations" },
+  },
 ]
 
 /**
@@ -1748,8 +1766,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
  * applied and must not be replayed. `pendingMigrations()` contains
- * `20261105130000`, `20261105144256` and `20261105180000`. All three stay
- * local. Do not apply them to hosted DEV or Production.
+ * `20261105130000`, `20261105144256`, `20261105180000` and `20261105190000`.
+ * All four stay local. Do not apply them to hosted DEV or Production.
  * `20261105120000` is already applied on DEV and must not be replayed.
  * Do not replay `20261105120000`. Do not apply `20261105120000` to Production.
  * `20261104220000` is already applied on DEV and must not be

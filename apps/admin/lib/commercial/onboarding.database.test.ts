@@ -36,6 +36,37 @@ async function rpc(name: string, args: unknown[]): Promise<CommandResult> {
 const command = (operation: string, payload: object, version = 0, key = crypto.randomUUID()) =>
   rpc("admin_commercial_command_v1", [token, key, operation, payload, version])
 
+async function approveCommercialTerms(planId: string, product: "TELLOYA" | "COMPLETE", termsRef: string, amount: number, guardUnit: number | null, guardLimit = 0) {
+  const base = product === "COMPLETE" && guardUnit ? amount - guardUnit * guardLimit : amount
+  await db.query(
+    `insert into public.commercial_plan_conditions(
+      id, plan_version_id, tier_code, tier_label, included_minutes, minutes_rollover,
+      base_amount_minor, guard_unit_amount_minor, overage_rate_minor, content_hash,
+      status, approved_by, approved_at
+    ) values (
+      $1, $2, 'GROWTH', 'Growth', 300, false, $3, $4, 25,
+      admin_private.commercial_plan_conditions_hash_v1('GROWTH', 300, false, $3, $4, 25),
+      'APPROVED', $5, now()
+    )`,
+    [crypto.randomUUID(), planId, base, guardUnit, admin],
+  )
+  const title = `${product === "TELLOYA" ? "Telloya" : "Complete"} service agreement`
+  const body = `This agreement covers the named ${product === "TELLOYA" ? "Telloya" : "Complete"} service for the selected locations only.`
+  const cancellation = "Cancel in writing before the next billing date."
+  const confirmations = JSON.stringify([{ key: "business_authority", label: "I can accept this offer for the business." }])
+  await db.query(
+    `insert into public.commercial_agreement_versions(
+      id, product_code, version_ref, title, body_text, cancellation_text, content_hash,
+      required_confirmations, status, approved_by, approved_at
+    ) values (
+      $1, $2, $3, $4, $5, $6,
+      admin_private.commercial_agreement_hash_v1($2, $3, $4, $5, $6, $7::jsonb),
+      $7::jsonb, 'APPROVED', $8, now()
+    )`,
+    [crypto.randomUUID(), product, termsRef, title, body, cancellation, confirmations, admin],
+  )
+}
+
 async function enquiry(service: string, email: string, subject = "Telloya receptionist", details = "Please set up Telloya for this shop.") {
   const payload = {
     fullName: "North Owner",
@@ -323,6 +354,7 @@ describe("admin commercial onboarding", () => {
       `update public.plan_versions set status = 'APPROVED', approved_by = $2, approved_at = now() where id = $1`,
       [plan, admin],
     )
+    await approveCommercialTerms(plan, "TELLOYA", "terms-telloya-v1", 4900, null)
     const offered = await command("prepare_offer", { enquiryId: id, planVersionId: plan, reason }, Number(located.version))
     expect(offered.status).toBe("success")
     const subscription = await db.query<{ state: string; amount_minor: number; tax_behaviour: string; terms_ref: string; grant_kind: string }>(
@@ -596,7 +628,7 @@ describe("admin commercial onboarding", () => {
       [plan, admin],
     )
     const mismatched = await command("prepare_offer", { enquiryId: id, planVersionId: plan, reason }, one.version)
-    expect(mismatched).toMatchObject({ status: "terms_unconfigured", reason: "quantities" })
+    expect(mismatched).toMatchObject({ status: "terms_unconfigured", reason: "locations" })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.commercial_subscriptions")).rows[0].n).toBe(before)
     const view = await rpc("admin_commercial_onboarding_v1", [token, id])
     expect(view.outstanding.join(" ")).toMatch(/do not match the approved Telloya quantity/)
@@ -612,6 +644,7 @@ describe("admin commercial onboarding", () => {
     const located = await command("select_locations", {
       enquiryId: id, locationIds: [first, second, third], reason,
     }, one.version)
+    await approveCommercialTerms(plan, "COMPLETE", "terms-complete-v1", 9900, 999, 1)
     const offered = await command("prepare_offer", { enquiryId: id, planVersionId: plan, reason }, located.version)
     expect(offered.status).toBe("success")
     const subscriptionId = (await db.query<{ commercial_subscription_id: string }>(

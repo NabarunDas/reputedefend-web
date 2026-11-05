@@ -1,4 +1,5 @@
 "use client"
+import { useState } from "react"
 import { CommandForm, Reason } from "../records/forms"
 import { Badge } from "../ui"
 import { ukDate } from "@/lib/admin/activity"
@@ -14,18 +15,27 @@ function pounds(minor: number | null) {
   return `£${(minor / 100).toFixed(2)}`
 }
 
+const unavailableReasons: Record<string, string> = {
+  conditions: "Missing approved commercial conditions",
+  locations: "Unsupported location count",
+  tier: "Wrong product or tier",
+  price: "Invalid or incomplete pricing",
+  agreement: "Missing agreement",
+  quotation: "Quotation required",
+}
+
 function planReview(plan: ApprovedCommercialPlan) {
   const name = plan.tierLabel || "Unscoped approved version"
   const minutes = plan.includedMinutes === null ? "minutes are quoted with this version" : `${plan.includedMinutes} minutes`
   const guard = plan.guardQuantity
     ? `Guard quantity ${plan.guardQuantity}, recorded separately from the Telloya quantity`
-    : plan.guardUnitMinor === null
-      ? "No Guard unit is recorded on this version"
-      : `Optional Guard ${pounds(plan.guardUnitMinor)} per location × ${plan.selectedLocations} = ${pounds(plan.optionalGuardAmountMinor)}. This is not added to the Telloya price.`
+    : plan.guardAddonUnitMinor === 999
+      ? "Relaunch Guard can be added at £9.99 for each location ticked below."
+      : "Relaunch Guard cannot be added to this version."
   const schedule = plan.matchesApprovedSchedule
     ? "This version matches the approved schedule."
     : "This approved version is not the published schedule. Review the recorded price before preparing the offer."
-  const conditions = plan.conditionsStatus === "APPROVED" ? "Conditions are approved." : "Conditions are not approved yet. The customer cannot accept this offer until they are."
+  const conditions = plan.conditionsStatus === "APPROVED" ? "Conditions are approved." : "Conditions are not approved yet."
   return `${name}, version ${plan.versionNumber}. ${pounds(plan.amountMinor)} per month. ${minutes}. Telloya quantity ${plan.telloyaQuantity ?? "not recorded"}. ${guard} ${conditions} ${schedule}`
 }
 
@@ -44,11 +54,32 @@ export function OnboardingPanel({ view, enquiryId, open, businessName, country, 
   dispatchEnabled?: boolean
   invitationMail?: InvitationMail | null
 }) {
+  const [offerSummary, setOfferSummary] = useState("Choose an approved version to see the offer total.")
   if (!view.supported) return null
   const request = view.request
   const version = request?.version ?? 0
   const stepIndex = { classify: 0, customer: 1, business: 2, locations: 3, next: 4 }[view.step]
   const plans = view.approvedPlans ?? []
+  const offerable = plans.filter(plan => plan.offerable)
+  const guardChoices = view.locations.filter(location => location.selected)
+  function refreshOffer(form: HTMLFormElement) {
+    const data = new FormData(form)
+    const selected = offerable.find(plan => plan.id === String(data.get("planVersionId") ?? ""))
+    if (!selected) {
+      setOfferSummary("Choose an approved version to see the offer total.")
+      return
+    }
+    const base = selected.amountMinor
+    if (base === null) {
+      setOfferSummary("Choose an approved version to see the offer total.")
+      return
+    }
+    const guards = selected.guardQuantity == null && selected.guardAddonUnitMinor === 999 ? data.getAll("guardLocationIds").length : 0
+    const total = base + (selected.guardAddonUnitMinor ?? 0) * guards
+    setOfferSummary(guards === 0
+      ? `Offer total ${pounds(total)} per month for Telloya alone.`
+      : `Offer total ${pounds(total)} per month. Telloya ${pounds(base)} plus Relaunch Guard ${pounds((selected.guardAddonUnitMinor ?? 0) * guards)} for ${guards} location${guards === 1 ? "" : "s"}.`)
+  }
   const verifiedCopy = view.emailVerified
     ? "Customer email verified. That check is separate from Admin approval."
     : "Customer email is not verified. Admin approval does not verify it and does not send an invitation."
@@ -142,14 +173,31 @@ export function OnboardingPanel({ view, enquiryId, open, businessName, country, 
           <Reason label="Why is this invitation being withdrawn?" />
         </CommandForm>}
       </>}
-      {view.termsConfigured && view.membership === "verified" && !request?.subscriptionId && plans.length > 0 && <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare the selected offer" payload={form => ({ operation: "prepare_offer", version, enquiryId, planVersionId: form.get("planVersionId"), reason: form.get("reason") })}>
-        <fieldset>
-          <legend>Which approved version should this offer use?</legend>
-          {plans.map(plan => <label key={plan.id} className="checkbox"><input type="radio" name="planVersionId" value={plan.id} required />{planReview(plan)}</label>)}
-        </fieldset>
-        <p>The selected version is pinned. A different tier can be chosen when the customer has agreed to it. Telloya and Guard keep their own quantities. Optional Guard is shown separately and is not added to the Telloya price. This does not open a checkout or activate Telloya or Guard.</p>
-        <Reason label="Why is this offer being prepared?" />
-      </CommandForm>}
+      {view.termsConfigured && view.membership === "verified" && !request?.subscriptionId && plans.length > 0 && <>
+        {view.requestedGuardInterest === true && <p>The enquiry recorded interest in Relaunch Guard{view.requestedGuardLocationCount ? ` for ${view.requestedGuardLocationCount} locations` : ""}. That interest is not a purchase.</p>}
+        {plans.some(plan => !plan.offerable) && <ul>{plans.filter(plan => !plan.offerable).map(plan => <li key={plan.id}>{plan.tierLabel || `Version ${plan.versionNumber}`}: {unavailableReasons[plan.unavailableReason ?? ""] ?? "This version cannot be offered."}</li>)}</ul>}
+        {offerable.length > 0 && <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare the selected offer" payload={form => {
+          const planVersionId = String(form.get("planVersionId") ?? "")
+          const selected = offerable.find(plan => plan.id === planVersionId)
+          const guardLocationIds = selected && selected.guardQuantity == null && selected.guardAddonUnitMinor === 999
+            ? form.getAll("guardLocationIds").map(String)
+            : []
+          return { operation: "prepare_offer", version, enquiryId, planVersionId, guardLocationIds, reason: form.get("reason") }
+        }}>
+          <fieldset onChange={event => { if (event.currentTarget.form) refreshOffer(event.currentTarget.form) }}>
+            <legend>Which approved version should this offer use?</legend>
+            {offerable.map(plan => <label key={plan.id} className="checkbox"><input type="radio" name="planVersionId" value={plan.id} required />{planReview(plan)}</label>)}
+            {request?.product === "TELLOYA" && offerable.some(plan => plan.guardAddonUnitMinor === 999) && guardChoices.length > 0 && <>
+              <p>Tick a location to include it in Relaunch Guard at £9.99 per month. Leave every box unticked to offer Telloya alone. The enquiry does not choose these locations.</p>
+              {guardChoices.map(location => <label key={location.id} className="checkbox"><input type="checkbox" name="guardLocationIds" value={location.id} />Include {location.name} in Relaunch Guard</label>)}
+            </>}
+          </fieldset>
+          <p>{offerSummary}</p>
+          <p>The selected version is pinned. A different tier can be chosen when the customer has agreed to it. The enquiry tier is not changed. Guard locations are confirmed separately from the Telloya locations. The customer accepts the exact total before payment. Preparing the offer does not open a checkout or activate Telloya or Guard.</p>
+          <Reason label="Why is this offer being prepared?" />
+        </CommandForm>}
+        {offerable.length === 0 && <p>No approved version can be offered for the selected locations. Quotation required.</p>}
+      </>}
       {view.termsConfigured && view.membership === "verified" && !request?.subscriptionId && plans.length === 0 && <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare the approved offer" payload={form => ({ operation: "prepare_offer", version, enquiryId, reason: form.get("reason") })}>
         <p>This pins the approved price and each component’s approved quantity. Telloya and Guard are not given the same quantity. It does not open a checkout or activate Telloya or Guard.</p>
         <Reason label="Why is this offer being prepared?" />

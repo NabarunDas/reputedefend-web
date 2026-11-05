@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { OnboardingPanel } from "./onboarding"
 import type { OnboardingView } from "@/lib/commercial/onboarding"
 
@@ -157,18 +157,33 @@ describe("Telloya onboarding panel", () => {
       nextAction: null,
       request: { id: "33333333-3333-4333-8333-333333333333", product: "TELLOYA", state: "IN_REVIEW", version: 5, customerId: "22222222-2222-4222-8222-222222222222", businessId: "44444444-4444-4444-8444-444444444444", declineReason: null, subscriptionId: null },
       customer: { id: "22222222-2222-4222-8222-222222222222", name: "North Owner", emailVerified: true, version: 1 },
+      requestedGuardInterest: true,
+      requestedGuardLocationCount: 2,
+      locations: [
+        { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Depot", country: "United Kingdom", selected: true },
+        { id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "Yard", country: "United Kingdom", selected: true },
+      ],
       approvedPlans: [
-        { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", versionNumber: 1, tierCode: "BASIC", tierLabel: "Basic", amountMinor: 4900, currency: "GBP", cadence: "MONTH", termsRef: "terms-basic", includedMinutes: 120, baseAmountMinor: 4900, guardUnitMinor: 999, overageRateMinor: 25, conditionsStatus: "APPROVED", telloyaQuantity: 2, guardQuantity: null, selectedLocations: 2, optionalGuardAmountMinor: 1998, matchesApprovedSchedule: true },
-        { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", versionNumber: 1, tierCode: "GROWTH", tierLabel: "Growth", amountMinor: 7900, currency: "GBP", cadence: "MONTH", termsRef: "terms-growth", includedMinutes: 300, baseAmountMinor: 7900, guardUnitMinor: 999, overageRateMinor: 25, conditionsStatus: "APPROVED", telloyaQuantity: 2, guardQuantity: null, selectedLocations: 2, optionalGuardAmountMinor: 1998, matchesApprovedSchedule: true },
+        { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", versionNumber: 1, tierCode: "BASIC", tierLabel: "Basic", amountMinor: 4900, currency: "GBP", cadence: "MONTH", termsRef: "terms-basic", includedMinutes: 120, baseAmountMinor: 4900, guardUnitMinor: 999, overageRateMinor: 25, conditionsStatus: "APPROVED", telloyaQuantity: 1, guardQuantity: null, selectedLocations: 2, guardAddonUnitMinor: 999, offerable: false, unavailableReason: "locations", matchesApprovedSchedule: true },
+        { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", versionNumber: 1, tierCode: "GROWTH", tierLabel: "Growth", amountMinor: 7900, currency: "GBP", cadence: "MONTH", termsRef: "terms-growth", includedMinutes: 300, baseAmountMinor: 7900, guardUnitMinor: 999, overageRateMinor: 25, conditionsStatus: "APPROVED", telloyaQuantity: 2, guardQuantity: null, selectedLocations: 2, guardAddonUnitMinor: 999, offerable: true, unavailableReason: null, matchesApprovedSchedule: true },
+        { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", versionNumber: 1, tierCode: "CUSTOM", tierLabel: "Custom", amountMinor: null, currency: "GBP", cadence: "MONTH", termsRef: "terms-custom", includedMinutes: null, baseAmountMinor: null, guardUnitMinor: null, overageRateMinor: null, conditionsStatus: null, telloyaQuantity: null, guardQuantity: null, selectedLocations: 2, guardAddonUnitMinor: null, offerable: false, unavailableReason: "quotation", matchesApprovedSchedule: false },
       ],
     }} enquiryId={enquiryId} open businessName="North Plumbing" country="United Kingdom" />)
     expect(screen.getByText(/asked for Growth/)).toBeTruthy()
     expect(screen.getByText(/not consent to charge/)).toBeTruthy()
-    expect(screen.getByText(/£49\.00 per month\. 120 minutes/)).toBeTruthy()
-    expect(screen.getByText(/£79\.00 per month\. 300 minutes/)).toBeTruthy()
-    expect(screen.getAllByText(/£19\.98/)).toHaveLength(2)
-    expect(screen.getAllByRole("radio", { name: /version 1/ })).toHaveLength(2)
+    expect(screen.getByText(/interest in Relaunch Guard for 2 locations/)).toBeTruthy()
+    expect(screen.getByText(/That interest is not a purchase/)).toBeTruthy()
+    expect(screen.getByText("Basic: Unsupported location count")).toBeTruthy()
+    expect(screen.getByText("Custom: Quotation required")).toBeTruthy()
+    expect(screen.queryByRole("radio", { name: /Basic/ })).toBeNull()
+    expect(screen.getByRole("radio", { name: /£79\.00 per month\. 300 minutes/ })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Prepare the selected offer" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Prepare the approved offer" })).toBeNull()
+    fireEvent.click(screen.getByRole("radio", { name: /£79\.00 per month\. 300 minutes/ }))
+    expect(screen.getByText("Offer total £79.00 per month for Telloya alone.")).toBeTruthy()
+    fireEvent.click(screen.getByRole("checkbox", { name: "Include Depot in Relaunch Guard" }))
+    expect(screen.getByText("Offer total £88.99 per month. Telloya £79.00 plus Relaunch Guard £9.99 for 1 location.")).toBeTruthy()
+    fireEvent.click(screen.getByRole("checkbox", { name: "Include Yard in Relaunch Guard" }))
+    expect(screen.getByText("Offer total £98.98 per month. Telloya £79.00 plus Relaunch Guard £19.98 for 2 locations.")).toBeTruthy()
   })
 })

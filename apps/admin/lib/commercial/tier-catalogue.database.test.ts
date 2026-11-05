@@ -18,7 +18,9 @@ type PlanRow = {
   tierCode: string | null
   amountMinor: number
   includedMinutes: number | null
-  optionalGuardAmountMinor: number | null
+  guardAddonUnitMinor: number | null
+  offerable: boolean
+  unavailableReason: string | null
   guardQuantity: number | null
   telloyaQuantity: number | null
   matchesApprovedSchedule: boolean
@@ -141,6 +143,9 @@ async function approvePlan(options: {
   }
   if (options.tier) {
     const label = options.tier === "BASIC" ? "Basic" : options.tier === "GROWTH" ? "Growth" : options.tier === "PRO" ? "Pro" : "Custom"
+    const unit = options.guardUnit ?? null
+    const guardQty = options.guard ?? 0
+    const base = options.product === "COMPLETE" && unit && guardQty ? options.amount - unit * guardQty : options.amount
     await db.query(
       `insert into public.commercial_plan_conditions(
         id, plan_version_id, tier_code, tier_label, included_minutes, minutes_rollover,
@@ -151,14 +156,33 @@ async function approvePlan(options: {
         admin_private.commercial_plan_conditions_hash_v1($3, $5, false, $6, $7, $8),
         'APPROVED', $9, now()
       )`,
-      [randomUUID(), id, options.tier, label, options.minutes, options.amount, options.guardUnit ?? null, options.overage ?? 25, admin],
+      [randomUUID(), id, options.tier, label, options.minutes, base, unit, options.overage === undefined ? 25 : options.overage, admin],
     )
   }
   await db.query(
     `update public.plan_versions set status = 'APPROVED', approved_by = $2, approved_at = now() where id = $1`,
     [id, admin],
   )
+  await agreement(options.product, `${options.product}-${options.tier ?? "LEGACY"}-${options.version}`)
   return id
+}
+
+async function agreement(product: "TELLOYA" | "COMPLETE", versionRef: string) {
+  const title = `${product === "TELLOYA" ? "Telloya" : "Complete"} service agreement`
+  const body = `This agreement covers the named ${product === "TELLOYA" ? "Telloya" : "Complete"} service for the selected locations only.`
+  const cancellation = "Cancel in writing before the next billing date."
+  const confirmations = JSON.stringify([{ key: "business_authority", label: "I can accept this offer for the business." }])
+  await db.query(
+    `insert into public.commercial_agreement_versions(
+      id, product_code, version_ref, title, body_text, cancellation_text, content_hash,
+      required_confirmations, status, approved_by, approved_at
+    ) values (
+      $1, $2, $3, $4, $5, $6,
+      admin_private.commercial_agreement_hash_v1($2, $3, $4, $5, $6, $7::jsonb),
+      $7::jsonb, 'APPROVED', $8, now()
+    )`,
+    [randomUUID(), product, versionRef, title, body, cancellation, confirmations, admin],
+  )
 }
 
 beforeAll(async () => {
@@ -210,6 +234,19 @@ describe("tier-aware commercial catalogue", () => {
     )
     await db.query(`insert into public.plan_components(plan_version_id, component_code, quantity_limit, scope) values ($1, 'TELLOYA', 1, 'LOCATION')`, [first])
     await db.query(`update public.plan_versions set status = 'APPROVED', approved_by = $2, approved_at = now() where id = $1`, [first, admin])
+    await db.query(
+      `insert into public.commercial_plan_conditions(
+        id, plan_version_id, tier_code, tier_label, included_minutes, minutes_rollover,
+        base_amount_minor, guard_unit_amount_minor, overage_rate_minor, content_hash,
+        status, approved_by, approved_at
+      ) values (
+        $1, $2, 'GROWTH', 'Growth', 300, false, 4900, null, 25,
+        admin_private.commercial_plan_conditions_hash_v1('GROWTH', 300, false, 4900, null, 25),
+        'APPROVED', $3, now()
+      )`,
+      [randomUUID(), first, admin],
+    )
+    await agreement("TELLOYA", "legacy-terms")
     const offered = await command("prepare_offer", { enquiryId: id, reason }, Number(located.version))
     expect(offered).toMatchObject({ status: "success" })
     const pinned = await rows<{ plan_version_id: string; amount_minor: number }>(
@@ -256,10 +293,12 @@ describe("tier-aware commercial catalogue", () => {
     expect(before).toBe(0)
     const plans = view.approvedPlans as PlanRow[]
     expect(plans.map(plan => plan.tierCode)).toEqual(["BASIC", "GROWTH", "PRO", "CUSTOM"])
-    expect(plans.find(plan => plan.tierCode === "BASIC")).toMatchObject({ amountMinor: 4900, includedMinutes: 120, optionalGuardAmountMinor: 1998, matchesApprovedSchedule: true, selectedLocations: 2 })
-    expect(plans.find(plan => plan.tierCode === "GROWTH")).toMatchObject({ amountMinor: 7900, includedMinutes: 300, matchesApprovedSchedule: true })
+    expect(plans.find(plan => plan.tierCode === "BASIC")).toMatchObject({ amountMinor: 4900, includedMinutes: 120, guardAddonUnitMinor: 999, offerable: true, unavailableReason: null, matchesApprovedSchedule: true, selectedLocations: 2 })
+    expect(plans.find(plan => plan.tierCode === "GROWTH")).toMatchObject({ amountMinor: 7900, includedMinutes: 300, offerable: true, matchesApprovedSchedule: true })
+    expect(view.requestedGuardInterest).toBe(true)
+    expect(view.requestedGuardLocationCount).toBe(2)
     expect(plans.find(plan => plan.tierCode === "PRO")).toMatchObject({ amountMinor: 12000, includedMinutes: 500, matchesApprovedSchedule: true })
-    expect(plans.find(plan => plan.tierCode === "CUSTOM")).toMatchObject({ amountMinor: 15000, includedMinutes: null, matchesApprovedSchedule: true, optionalGuardAmountMinor: null })
+    expect(plans.find(plan => plan.tierCode === "CUSTOM")).toMatchObject({ amountMinor: 15000, includedMinutes: null, matchesApprovedSchedule: true, guardAddonUnitMinor: null, offerable: true })
 
     expect(await command("prepare_offer", { enquiryId: alexEnquiry.id, reason }, alexEnquiry.version)).toMatchObject({ status: "tier_required" })
     expect(await command("prepare_offer", { enquiryId: alexEnquiry.id, planVersionId: complete, reason }, alexEnquiry.version)).toMatchObject({ status: "terms_unconfigured" })
@@ -297,21 +336,6 @@ describe("tier-aware commercial catalogue", () => {
     expect(hidden).toEqual({ status: "unavailable" })
     expect(JSON.stringify(hidden)).not.toContain("4900")
 
-    const title = "Telloya service agreement"
-    const body = "This agreement covers the named Telloya service for the selected locations only."
-    const cancellation = "Cancel in writing before the next billing date."
-    const confirmations = JSON.stringify([{ key: "business_authority", label: "I can accept this offer for the business." }])
-    await db.query(
-      `insert into public.commercial_agreement_versions(
-        id, product_code, version_ref, title, body_text, cancellation_text, content_hash,
-        required_confirmations, status, approved_by, approved_at
-      ) values (
-        $1, 'TELLOYA', $2, $3, $4, $5,
-        admin_private.commercial_agreement_hash_v1('TELLOYA', $2, $3, $4, $5, $6::jsonb),
-        $6::jsonb, 'APPROVED', $7, now()
-      )`,
-      [randomUUID(), `TELLOYA-BASIC-1`, title, body, cancellation, confirmations, admin],
-    )
     await db.query(
       `update public.plan_versions set status = 'RETIRED', retired_by = $2, retired_at = now() where id = $1`,
       [basic, admin],

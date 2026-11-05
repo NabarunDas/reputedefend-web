@@ -24,6 +24,16 @@ describe("onboarding command parsing", () => {
     const offer = parseOnboardingCommand({ operation: "prepare_offer", version: 4, enquiryId, reason, amount: 4900 })
     expect(offer?.payload).toEqual({ enquiryId, reason })
     expect(offer?.payload).not.toHaveProperty("amount")
+    const guarded = parseOnboardingCommand({
+      operation: "prepare_offer",
+      version: 4,
+      enquiryId,
+      reason,
+      planVersionId: customerId,
+      guardLocationIds: [customerId],
+    })
+    expect(guarded?.payload).toEqual({ enquiryId, reason, planVersionId: customerId, guardLocationIds: [customerId] })
+    expect(parseOnboardingCommand({ operation: "prepare_offer", version: 4, enquiryId, reason, guardLocationIds: ["not-a-location"] })).toBeNull()
   })
 
   it("keeps a location from another business out of the payload unless it is a real id", () => {

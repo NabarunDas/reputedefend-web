@@ -1601,7 +1601,10 @@ export const migrationChain: readonly MigrationEntry[] = [
     // Do not apply 20261105172055 to DEV. Do not apply 20261105172055 to Production.
     // One service-role command stores an append-only configuration for one
     // selected location and may move that provision from PROFILE_REQUIRED to
-    // NUMBER_REQUIRED. OPERATOR_ATTESTED is not an independent provider check.
+    // NUMBER_REQUIRED. The command locks the provider agent reference and
+    // keeps one owner across customers, businesses, locations, subscriptions,
+    // and both provider environments. OPERATOR_ATTESTED is not an independent
+    // provider check. The Admin route records only the server VERCEL_ENV lane.
     // It does not call a provider, allocate a number, enable forwarding, run a
     // test call, enable Guard, change billing, send mail, or move a service to live.
     // Writes are inside the command. containsDataChange stays false.

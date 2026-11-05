@@ -424,7 +424,7 @@ function configurationStatus(status: ConfigurationLocationProgress["status"]) {
   return "Configuration not yet recorded"
 }
 
-function ConfirmAiConfiguration({ item }: { item: SetupQueueItem }) {
+function ConfirmAiConfiguration({ item, providerLane }: { item: SetupQueueItem; providerLane: "dev" | "production" | null }) {
   const router = useRouter()
   const key = useRef("")
   const preferences = item.preferenceProgress
@@ -441,7 +441,6 @@ function ConfirmAiConfiguration({ item }: { item: SetupQueueItem }) {
     && progress.locationCount > 0
   const [open, setOpen] = useState(false)
   const [locationId, setLocationId] = useState(progress?.locations.find(location => location.status !== "recorded")?.locationId ?? progress?.locations[0]?.locationId ?? "")
-  const [environment, setEnvironment] = useState<"dev" | "production">("dev")
   const [agentRef, setAgentRef] = useState("")
   const [revision, setRevision] = useState("")
   const [chosenVoice, setChosenVoice] = useState("")
@@ -455,10 +454,14 @@ function ConfirmAiConfiguration({ item }: { item: SetupQueueItem }) {
   const [tone, setTone] = useState<"success" | "warning" | "danger">("warning")
   const [formError, setFormError] = useState<string | null>(null)
   const selected = progress?.locations.find(location => location.locationId === locationId) ?? progress?.locations[0]
-  const payloadText = selected ? JSON.stringify(configurationPayload(selected)) : ""
-  const reviewFresh = review && reviewed !== null && reviewed === payloadText
   if (!ready || !progress || !selected) return null
+  if (!providerLane) {
+    return <p>The provider lane is not configured for this deployment, so an AI configuration cannot be recorded.</p>
+  }
   const chosen = selected
+  const lane = providerLane
+  const payloadText = JSON.stringify(configurationPayload(chosen))
+  const reviewFresh = review && reviewed !== null && reviewed === payloadText
   const reviewNames = progress.locations.filter(location => location.status === "review").map(location => location.locationName)
 
   function configurationPayload(location: ConfigurationLocationProgress) {
@@ -469,7 +472,7 @@ function ConfirmAiConfiguration({ item }: { item: SetupQueueItem }) {
       configurationVersion: location.configurationVersion,
       provider: {
         provider: "telloya_voice",
-        environment,
+        environment: lane,
         agentRef: agentRef.trim(),
         revision: revision.trim(),
         chosenVoice: chosenVoice.trim(),
@@ -586,13 +589,8 @@ function ConfirmAiConfiguration({ item }: { item: SetupQueueItem }) {
         <dt>Pronunciation notes</dt><dd>{chosen.pronunciationNotes ?? "None"}</dd>
       </dl>
       <h4>Provider evidence</h4>
+      <p>Provider lane: {lane === "dev" ? "DEV" : "Production"}. This deployment chooses the lane. The form cannot switch it.</p>
       <p>Record the voice and language identifiers that were actually chosen in the provider environment. A customer preference does not prove the provider supports it.</p>
-      <label>Environment
-        <select value={environment} onChange={event => setEnvironment(event.target.value as "dev" | "production")}>
-          <option value="dev">DEV</option>
-          <option value="production">Production</option>
-        </select>
-      </label>
       <label>Provider agent reference <input value={agentRef} onChange={event => setAgentRef(event.target.value)} /></label>
       <label>Configuration revision <input value={revision} onChange={event => setRevision(event.target.value)} /></label>
       <label>Chosen provider voice <input value={chosenVoice} onChange={event => setChosenVoice(event.target.value)} /></label>
@@ -609,7 +607,7 @@ function ConfirmAiConfiguration({ item }: { item: SetupQueueItem }) {
           <dt>Preference version</dt><dd>{chosen.preferenceVersion}</dd>
           <dt>Greeting</dt><dd>{chosen.greeting ?? "Not recorded"}</dd>
           <dt>Opening hours</dt><dd>{chosen.hoursSummary ?? "Not recorded"}</dd>
-          <dt>Environment</dt><dd>{environment === "dev" ? "DEV" : "Production"}</dd>
+          <dt>Environment</dt><dd>{lane === "dev" ? "DEV" : "Production"}</dd>
           <dt>Provider agent reference</dt><dd>{agentRef.trim()}</dd>
           <dt>Configuration revision</dt><dd>{revision.trim()}</dd>
           <dt>Chosen provider voice</dt><dd>{chosenVoice.trim()}</dd>
@@ -633,7 +631,7 @@ function ConfirmAiConfiguration({ item }: { item: SetupQueueItem }) {
   </div>
 }
 
-export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean }) {
+export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
   const later = futureCommands.filter(command => {
     if (beginSetupEnabled && command === "Begin setup") return false
     if (confirmPreferencesEnabled && command === "Confirm business preferences") return false
@@ -692,7 +690,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
                   {item.setupStartedAt ? <><br /><span className="muted">Started {ukDate(item.setupStartedAt)} UK</span></> : null}
                   {beginSetupEnabled ? <BeginSetup item={item} /> : null}
                   {confirmPreferencesEnabled ? <ConfirmPreferences item={item} /> : null}
-                  {confirmAiConfigurationEnabled ? <ConfirmAiConfiguration item={item} /> : null}
+                  {confirmAiConfigurationEnabled ? <ConfirmAiConfiguration item={item} providerLane={providerLane} /> : null}
                 </td>
               </tr>
             ))}

@@ -6,6 +6,7 @@ import { sessionCookie } from "../auth/config"
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock("@/lib/auth/backend", async original => ({ ...await original<typeof import("@/lib/auth/backend")>(), backend: () => mocks }))
 import { POST } from "@/app/api/commercial/confirm-ai-configuration/route"
+import { commercialProviderLane } from "./provider-lane"
 
 const origin = "https://admin.profilerelaunch.com"
 const key = "33333333-3333-4333-8333-333333333333"
@@ -32,11 +33,11 @@ const body = {
   },
 }
 
-function req(payload: unknown = body) {
-  return new NextRequest(`${origin}/api/commercial/confirm-ai-configuration`, {
+function req(payload: unknown = body, requestOrigin = origin) {
+  return new NextRequest(`${requestOrigin}/api/commercial/confirm-ai-configuration`, {
     method: "POST",
     headers: {
-      origin,
+      origin: requestOrigin,
       "content-type": "application/json",
       "idempotency-key": key,
       cookie: `${sessionCookie}=${"a".repeat(64)}`,
@@ -53,6 +54,7 @@ beforeEach(() => {
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "test")
   vi.stubEnv("ADMIN_COMMERCIAL_SETUP_QUEUE_ENABLED", "true")
   vi.stubEnv("ADMIN_COMMERCIAL_CONFIRM_AI_CONFIGURATION_ENABLED", "true")
+  vi.stubEnv("VERCEL_ENV", "development")
   mocks.rpc.mockReset()
 })
 afterEach(() => vi.unstubAllEnvs())
@@ -99,5 +101,75 @@ describe("confirm AI configuration command messages", () => {
     expect(response.status).toBe(code)
     expect(await response.json()).toEqual({ message })
     expect(response.headers.get("cache-control")).toContain("no-store")
+  })
+
+  it("records production evidence only when the server lane is production", async () => {
+    vi.stubEnv("VERCEL_ENV", "production")
+    mocks.rpc.mockResolvedValue({ status: "success" })
+    const response = await POST(req({ ...body, provider: { ...body.provider, environment: "production" } }))
+    expect(response.status).toBe(200)
+    expect(mocks.rpc.mock.calls[0][1].p_payload.provider.environment).toBe("production")
+  })
+
+  it("keeps recording closed when the server lane is absent", async () => {
+    delete process.env.VERCEL_ENV
+    expect(commercialProviderLane()).toBeNull()
+    const response = await POST(req())
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ message: "The provider lane is not configured for this deployment, so the AI configuration cannot be recorded." })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("records the server lane and ignores a browser choice that matches it", async () => {
+    mocks.rpc.mockResolvedValue({ status: "success" })
+    await POST(req())
+    expect(mocks.rpc.mock.calls[0][1].p_payload.provider.environment).toBe("dev")
+  })
+
+  it("rejects Production evidence on a DEV deployment before the database", async () => {
+    const response = await POST(req({ ...body, provider: { ...body.provider, environment: "production" } }))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ message: "That provider environment does not match this deployment, so the configuration cannot be recorded." })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("rejects Production evidence on a preview deployment before the database", async () => {
+    const previewOrigin = "https://confirm-ai.vercel.app"
+    vi.stubEnv("VERCEL_ENV", "preview")
+    vi.stubEnv("VERCEL_URL", "confirm-ai.vercel.app")
+    const response = await POST(req({ ...body, provider: { ...body.provider, environment: "production" } }, previewOrigin))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ message: "That provider environment does not match this deployment, so the configuration cannot be recorded." })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    mocks.rpc.mockResolvedValue({ status: "success" })
+    const allowed = await POST(req(body, previewOrigin))
+    expect(allowed.status).toBe(200)
+    expect(mocks.rpc.mock.calls[0][1].p_payload.provider.environment).toBe("dev")
+  })
+
+  it("rejects DEV evidence on a Production deployment before the database", async () => {
+    vi.stubEnv("VERCEL_ENV", "production")
+    const response = await POST(req())
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ message: "That provider environment does not match this deployment, so the configuration cannot be recorded." })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it.each(["", "staging"])("keeps recording closed when the server lane is %s", async value => {
+    vi.stubEnv("VERCEL_ENV", value)
+    expect(commercialProviderLane()).toBeNull()
+    const response = await POST(req())
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ message: "The provider lane is not configured for this deployment, so the AI configuration cannot be recorded." })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("treats preview and development as DEV and production as Production", () => {
+    vi.stubEnv("VERCEL_ENV", "development")
+    expect(commercialProviderLane()).toBe("dev")
+    vi.stubEnv("VERCEL_ENV", "preview")
+    expect(commercialProviderLane()).toBe("dev")
+    vi.stubEnv("VERCEL_ENV", "production")
+    expect(commercialProviderLane()).toBe("production")
   })
 })

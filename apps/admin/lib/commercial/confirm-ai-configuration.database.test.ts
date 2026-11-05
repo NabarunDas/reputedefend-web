@@ -608,6 +608,8 @@ describe("audited confirm AI configuration", () => {
     expect(source).toContain("Do not apply 20261105172055 to DEV")
     expect(source).toContain("Do not apply 20261105172055 to Production")
     expect(source).toContain("OPERATOR_ATTESTED")
+    expect(source).toContain("telloya-voice-agent:")
+    expect(source).toContain("commercial_provider_agent_owners")
     expect(source).not.toContain("INDEPENDENTLY_VERIFIED")
     expect(source).toContain("REVOKE ALL ON FUNCTION public.admin_commercial_confirm_ai_configuration_v1(text, uuid, uuid, integer, jsonb)")
     expect(source).toContain("GRANT EXECUTE ON FUNCTION public.admin_commercial_confirm_ai_configuration_v1(text, uuid, uuid, integer, jsonb)")
@@ -698,6 +700,9 @@ describe("audited confirm AI configuration", () => {
     expect(stored[0].live_at).toBeNull()
     expect(stored[0].verification_basis).toBe("OPERATOR_ATTESTED")
     expect(stored[0].greeting).toBe("Thank you for calling Harbour Bakery.")
+    expect(await rows<{ count: number }>(
+      `select count(*)::int as count from admin_private.commercial_provider_agent_owners where agent_ref = 'agent-high-01'`,
+    )).toEqual([{ count: 1 }])
     const own = await rpc<{ subscriptions: Row[] }>("customer_portal_setup_handover_v1", [session])
     const seen = own?.subscriptions.find(entry => entry.reference === armed.prepared.ref)
     const text = JSON.stringify(seen)
@@ -860,6 +865,9 @@ describe("audited confirm AI configuration", () => {
     const refreshed = await configure(armed, high, { preferenceVersion: 2, configurationVersion: 1, agentRef: "agent-high-01" })
     expect(refreshed).toMatchObject({ status: "success", configurationVersion: 2, preferenceVersion: 2, provisionState: "NUMBER_REQUIRED" })
     expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_location_configurations`)).toEqual([{ count: 2 }])
+    expect(await rows<{ count: number }>(
+      `select count(*)::int as count from admin_private.commercial_provider_agent_owners where agent_ref = 'agent-high-01'`,
+    )).toEqual([{ count: 1 }])
     expect(await rows<{ count: number }>(
       `select count(*)::int as count from admin_private.commercial_configuration_events where operation = 'preferences_superseded'`,
     )).toEqual([{ count: 1 }])

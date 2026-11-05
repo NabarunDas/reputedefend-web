@@ -16,6 +16,12 @@
 -- enable forwarding, run a test call, enable Guard, change billing, send
 -- mail, or move a service to live. OPERATOR_ATTESTED is not an independent
 -- provider check. No provider voice catalogue is stored.
+--
+-- One provider agent reference has one owner across customers, businesses,
+-- locations, subscriptions, and both provider environments. The command
+-- takes a transaction lock on that reference before the ownership check.
+-- The owner table is the constraint behind that check. A later version for
+-- the same owner is allowed. A second owner is not.
 
 BEGIN;
 
@@ -71,6 +77,24 @@ CREATE TABLE admin_private.commercial_location_configurations (
 
 CREATE INDEX commercial_location_configurations_agent_idx
   ON admin_private.commercial_location_configurations (environment, agent_ref);
+
+-- Current owner of a provider agent. History stays on the configuration
+-- table, so this row may be claimed again only by the same customer,
+-- business, location, subscription, and environment. The primary key does
+-- not include environment: one agent cannot be owned in both lanes.
+CREATE TABLE admin_private.commercial_provider_agent_owners (
+  provider text NOT NULL CHECK (provider = 'telloya_voice'),
+  agent_ref text NOT NULL CHECK (agent_ref ~ '^[A-Za-z0-9_-]{8,128}$'),
+  environment text NOT NULL CHECK (environment IN ('dev', 'production')),
+  customer_id uuid NOT NULL,
+  business_id uuid NOT NULL,
+  location_id uuid NOT NULL,
+  subscription_id uuid NOT NULL,
+  PRIMARY KEY (provider, agent_ref)
+);
+
+ALTER TABLE admin_private.commercial_provider_agent_owners ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE admin_private.commercial_provider_agent_owners FROM PUBLIC, anon, authenticated, service_role;
 
 ALTER TABLE admin_private.commercial_location_configurations ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE admin_private.commercial_location_configurations FROM PUBLIC, anon, authenticated, service_role;
@@ -963,6 +987,7 @@ DECLARE
   chosen_language text;
   configuration_fingerprint text;
   configuration_id uuid;
+  claimed integer := 0;
   handover jsonb;
   preference_projection jsonb;
   config_projection jsonb;
@@ -1271,12 +1296,23 @@ BEGIN
   revision := p_payload #>> '{provider,revision}';
   chosen_voice := p_payload #>> '{provider,chosenVoice}';
   chosen_language := p_payload #>> '{provider,chosenLanguage}';
+  -- One lock for this agent across every customer, business, location,
+  -- subscription, and both provider environments. It is held until commit.
+  IF outcome IS NULL THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended('telloya-voice-agent:' || agent, 0));
+  END IF;
   IF outcome IS NULL AND (
     EXISTS (
       SELECT 1
       FROM admin_private.commercial_location_configurations config
       WHERE config.agent_ref = agent
         AND config.environment IS DISTINCT FROM env
+    ) OR EXISTS (
+      SELECT 1
+      FROM admin_private.commercial_provider_agent_owners owner
+      WHERE owner.provider = 'telloya_voice'
+        AND owner.agent_ref = agent
+        AND owner.environment IS DISTINCT FROM env
     ) OR EXISTS (
       SELECT 1
       FROM public.telloya_voice_number_bindings binding
@@ -1295,6 +1331,17 @@ BEGIN
           config.location_id IS DISTINCT FROM chosen_location
           OR config.business_id IS DISTINCT FROM sub.business_id
           OR config.customer_id IS DISTINCT FROM sub.customer_id
+        )
+    ) OR EXISTS (
+      SELECT 1
+      FROM admin_private.commercial_provider_agent_owners owner
+      WHERE owner.provider = 'telloya_voice'
+        AND owner.agent_ref = agent
+        AND (
+          owner.location_id IS DISTINCT FROM chosen_location
+          OR owner.business_id IS DISTINCT FROM sub.business_id
+          OR owner.customer_id IS DISTINCT FROM sub.customer_id
+          OR owner.subscription_id IS DISTINCT FROM sub.id
         )
     ) OR EXISTS (
       SELECT 1
@@ -1330,8 +1377,25 @@ BEGIN
       pref.enquiry_details, pref.callback_instructions, pref.callback_windows, pref.urgent_rules, pref.direct_contact_rules, pref.special_instructions,
       pref.voice_presentation, pref.accent, pref.spoken_language, pref.additional_languages, pref.pronunciation_notes,
       'telloya_voice', env, agent, revision, configuration_fingerprint,
-      chosen_voice, chosen_language, 'OPERATOR_ATTESTED', p_payload #>> '{provider,attestation}', actor, p_request
+      chosen_voice, chosen_language,
+      'OPERATOR_ATTESTED', p_payload #>> '{provider,attestation}', actor, p_request
     ) RETURNING id INTO configuration_id;
+    INSERT INTO admin_private.commercial_provider_agent_owners (
+      provider, agent_ref, environment, customer_id, business_id, location_id, subscription_id
+    ) VALUES (
+      'telloya_voice', agent, env, sub.customer_id, sub.business_id, chosen_location, sub.id
+    )
+    ON CONFLICT (provider, agent_ref) DO UPDATE
+    SET environment = admin_private.commercial_provider_agent_owners.environment
+    WHERE admin_private.commercial_provider_agent_owners.customer_id = EXCLUDED.customer_id
+      AND admin_private.commercial_provider_agent_owners.business_id = EXCLUDED.business_id
+      AND admin_private.commercial_provider_agent_owners.location_id = EXCLUDED.location_id
+      AND admin_private.commercial_provider_agent_owners.subscription_id = EXCLUDED.subscription_id
+      AND admin_private.commercial_provider_agent_owners.environment = EXCLUDED.environment;
+    GET DIAGNOSTICS claimed = ROW_COUNT;
+    IF claimed IS DISTINCT FROM 1 THEN
+      RAISE EXCEPTION 'provider agent owner conflict';
+    END IF;
     UPDATE public.service_provisions
     SET state = 'NUMBER_REQUIRED',
         agent_configured_at = pg_catalog.now(),

@@ -7,6 +7,7 @@ import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 import { commercialConfirmAiConfigurationEnabled } from "./confirm-ai-configuration-flag"
+import { commercialProviderLane } from "./provider-lane"
 import { commercialSetupQueueEnabled } from "./setup-queue-flag"
 
 const reply = (message: string, status: number) => NextResponse.json({ message }, { status, headers: privateResponseHeaders })
@@ -139,12 +140,15 @@ export async function confirmAiConfigurationCommand(request: NextRequest) {
     try { body = JSON.parse(raw) } catch { return reply("Check the provider evidence before recording the configuration.", 400) }
     const command = payload(body)
     if (!command) return reply("Check the provider evidence before recording the configuration.", 400)
+    const lane = commercialProviderLane()
+    if (!lane) return reply("The provider lane is not configured for this deployment, so the AI configuration cannot be recorded.", 403)
+    if (command.payload.provider.environment !== lane) return reply("That provider environment does not match this deployment, so the configuration cannot be recorded.", 400)
     const result = await backend().rpc<{ status: string; reason?: string }>("admin_commercial_confirm_ai_configuration_v1", {
       p_token: tokenHash(token),
       p_request: key,
       p_subscription: command.subscriptionId,
       p_version: command.version,
-      p_payload: command.payload,
+      p_payload: { ...command.payload, provider: { ...command.payload.provider, environment: lane } },
     })
     switch (result.status) {
       case "success": return reply("The AI configuration is recorded for this location. Testing is still required. The receptionist is not live.", 200)

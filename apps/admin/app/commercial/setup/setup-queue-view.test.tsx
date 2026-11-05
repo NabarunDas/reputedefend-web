@@ -254,7 +254,7 @@ describe("paid setup queue", () => {
       verificationBasis: status === "needed" ? null : "OPERATOR_ATTESTED" as const,
       attestation: status === "needed" ? null : "The operator checked the provider console for this location.",
     })
-    render(<SetupQueueView confirmAiConfigurationEnabled items={[{
+    render(<SetupQueueView confirmAiConfigurationEnabled providerLane="dev" items={[{
       ...item,
       operationalStatus: "setup_started",
       customerDisplay: "Setup in progress",
@@ -295,6 +295,8 @@ describe("paid setup queue", () => {
     fireEvent.change(within(panel).getByLabelText("Chosen provider language"), { target: { value: "en-GB" } })
     fireEvent.change(within(panel).getByLabelText("Staff attestation"), { target: { value: "The operator recorded this configuration in the provider console." } })
     fireEvent.click(within(panel).getByRole("button", { name: "Review configuration" }))
+    expect(panel).toHaveTextContent("Provider lane: DEV")
+    expect(within(panel).queryByLabelText("Environment")).toBeNull()
     expect(panel).toHaveTextContent("Operator attested. Not independently checked.")
     expect(panel).toHaveTextContent("Configuration recorded — test pending")
     fireEvent.change(within(panel).getByLabelText("Provider agent reference"), { target: { value: "agent-dock-02" } })

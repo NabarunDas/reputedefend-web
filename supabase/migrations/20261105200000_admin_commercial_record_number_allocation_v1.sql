@@ -3,10 +3,10 @@
 -- Do not apply 20261105200000 to Production.
 -- appliedToDev stays false until a human applies this file.
 -- The DEV ledger head remains 20261105120000. Begin setup 20261105130000,
--- confirm preferences 20261105144256, and confirm AI configuration
--- 20261105172055 are also unapplied and earlier.
--- This stamp is later than the open catalogue files 20261105180000 and
--- 20261105190000. Those files are not part of this migration.
+-- confirm preferences 20261105144256, confirm AI configuration
+-- 20261105172055, the tier catalogue 20261105180000, and the Guard offer
+-- 20261105190000 are also unapplied and earlier.
+-- This file does not include those catalogue or Guard changes.
 --
 -- One Admin command records an existing telephone allocation for one selected
 -- location. It does not buy a number, call a provider, create an agent, or

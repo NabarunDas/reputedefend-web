@@ -115,6 +115,29 @@ function blankDays() {
   return week.map(day => ({ day, closed: true, opens: "", closes: "", breaks: "" }))
 }
 
+const dayLabels: Record<(typeof week)[number], string> = {
+  monday: "Monday",
+  tuesday: "Tuesday",
+  wednesday: "Wednesday",
+  thursday: "Thursday",
+  friday: "Friday",
+  saturday: "Saturday",
+  sunday: "Sunday",
+}
+
+function isUuidKey(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function confirmationTimeError(value: string): string | null {
+  if (!value.trim()) return "Enter the date and time the customer confirmed these preferences."
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return "Enter a valid confirmation date and time."
+  if (parsed.getTime() > Date.now()) return "The confirmation time cannot be in the future."
+  if (parsed.getTime() < Date.now() - 400 * 24 * 60 * 60 * 1000) return "The confirmation time is older than the records we can accept."
+  return null
+}
+
 function ConfirmPreferences({ item }: { item: SetupQueueItem }) {
   const router = useRouter()
   const key = useRef("")
@@ -150,12 +173,19 @@ function ConfirmPreferences({ item }: { item: SetupQueueItem }) {
   const [attestation, setAttestation] = useState("")
   const [confirmedAt, setConfirmedAt] = useState("")
   const [review, setReview] = useState(false)
+  const [reviewed, setReviewed] = useState<string | null>(null)
   const [confirmed, setConfirmed] = useState(false)
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [tone, setTone] = useState<"success" | "warning" | "danger">("warning")
-  if (!ready || !progress) return null
-  const selected = progress.locations.find(location => location.locationId === locationId) ?? progress.locations[0]
+  const [dateError, setDateError] = useState<string | null>(null)
+  const [attestationError, setAttestationError] = useState<string | null>(null)
+  const [evidenceError, setEvidenceError] = useState<string | null>(null)
+  const selected = progress?.locations.find(location => location.locationId === locationId) ?? progress?.locations[0]
+  const payloadText = selected ? JSON.stringify(preferencePayload(selected.locationId, selected.version)) : ""
+  const reviewFresh = review && reviewed !== null && reviewed === payloadText
+  if (!ready || !progress || !selected) return null
+  const chosen = selected
   const remaining = progress.locations.filter(location => !location.confirmed).map(location => location.locationName)
 
   function openingHours() {
@@ -176,9 +206,79 @@ function ConfirmPreferences({ item }: { item: SetupQueueItem }) {
     })
   }
 
+  function preferencePayload(location: string, version: number) {
+    const parsed = new Date(confirmedAt)
+    return {
+      locationId: location,
+      preferenceVersion: version,
+      preferences: {
+        timezone: timezone.trim(),
+        openingHours: openingHours(),
+        exceptionalHours: exceptionalHours.trim(),
+        outOfHours: outOfHours.trim(),
+        greeting: greeting.trim(),
+        enquiryDetails: enquiryDetails.split(",").map(detail => detail.trim()).filter(Boolean),
+        callbackInstructions: callbackInstructions.trim(),
+        callbackWindows: windows(),
+        urgentRules: urgentRules.trim(),
+        directContactRules: directContactRules.trim(),
+        specialInstructions: specialInstructions.trim() || null,
+        voicePresentation,
+        accent: accent.trim(),
+        spokenLanguage: spokenLanguage.trim(),
+        additionalLanguages: additionalLanguages.split(",").map(language => language.trim()).filter(Boolean),
+        pronunciationNotes: pronunciationNotes.trim() || null,
+      },
+      confirmation: {
+        source,
+        communicationId: source === "recorded_email" ? evidenceId.trim() : null,
+        messageId: source === "recorded_message" ? evidenceId.trim() : null,
+        attestation: attestation.trim(),
+        customerConfirmedAt: Number.isNaN(parsed.getTime()) ? null : parsed.toISOString(),
+      },
+    }
+  }
+
+  function hoursSummary() {
+    return days.map(day => {
+      const label = dayLabels[day.day]
+      if (day.closed) return `${label} closed`
+      const breaks = day.breaks.trim() ? ` (break ${day.breaks.trim()})` : ""
+      return `${label} ${day.opens || "not set"}–${day.closes || "not set"}${breaks}`
+    }).join("; ")
+  }
+
+  function beginReview() {
+    const dateProblem = confirmationTimeError(confirmedAt)
+    const trimmedAttestation = attestation.trim()
+    const attestationProblem = trimmedAttestation.length < 20 || trimmedAttestation.length > 500
+      ? "Write a staff attestation of 20 to 500 characters confirming these preferences for this location."
+      : null
+    const evidenceProblem = source !== "telephone" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(evidenceId.trim())
+      ? "Enter the recorded email or message reference for this customer and location."
+      : null
+    setDateError(dateProblem)
+    setAttestationError(attestationProblem)
+    setEvidenceError(evidenceProblem)
+    if (dateProblem || attestationProblem || evidenceProblem) return
+    key.current = crypto.randomUUID()
+    setReviewed(JSON.stringify(preferencePayload(chosen.locationId, chosen.version)))
+    setConfirmed(false)
+    setReview(true)
+  }
+
+  function leaveReview() {
+    setReview(false)
+    setConfirmed(false)
+    setReviewed(null)
+    key.current = ""
+  }
+
   async function submit() {
-    if (!confirmed || pending || !selected || item.subscriptionId === null || item.subscriptionVersion === null || item.customerId === null || item.onboardingRequestId === null || item.onboardingVersion === null) return
-    if (!key.current) key.current = crypto.randomUUID()
+    const current = preferencePayload(chosen.locationId, chosen.version)
+    if (!confirmed || pending || reviewed === null || reviewed !== JSON.stringify(current) || !isUuidKey(key.current)) return
+    if (item.subscriptionId === null || item.subscriptionVersion === null || item.customerId === null || item.onboardingRequestId === null || item.onboardingVersion === null) return
+    const recorded = JSON.parse(reviewed) as ReturnType<typeof preferencePayload>
     setPending(true)
     setMessage(null)
     try {
@@ -192,33 +292,7 @@ function ConfirmPreferences({ item }: { item: SetupQueueItem }) {
           businessId: item.businessId,
           onboardingRequestId: item.onboardingRequestId,
           onboardingVersion: item.onboardingVersion,
-          locationId: selected.locationId,
-          preferenceVersion: selected.version,
-          preferences: {
-            timezone: timezone.trim(),
-            openingHours: openingHours(),
-            exceptionalHours: exceptionalHours.trim(),
-            outOfHours: outOfHours.trim(),
-            greeting: greeting.trim(),
-            enquiryDetails: enquiryDetails.split(",").map(item => item.trim()).filter(Boolean),
-            callbackInstructions: callbackInstructions.trim(),
-            callbackWindows: windows(),
-            urgentRules: urgentRules.trim(),
-            directContactRules: directContactRules.trim(),
-            specialInstructions: specialInstructions.trim() || null,
-            voicePresentation,
-            accent: accent.trim(),
-            spokenLanguage: spokenLanguage.trim(),
-            additionalLanguages: additionalLanguages.split(",").map(item => item.trim()).filter(Boolean),
-            pronunciationNotes: pronunciationNotes.trim() || null,
-          },
-          confirmation: {
-            source,
-            communicationId: source === "recorded_email" ? evidenceId.trim() : null,
-            messageId: source === "recorded_message" ? evidenceId.trim() : null,
-            attestation: source === "telephone" ? attestation.trim() : null,
-            customerConfirmedAt: new Date(confirmedAt).toISOString(),
-          },
+          ...recorded,
         }),
       })
       const body = await response.json().catch(() => null) as { message?: string } | null
@@ -228,6 +302,8 @@ function ConfirmPreferences({ item }: { item: SetupQueueItem }) {
       if (response.ok) {
         setOpen(false)
         setReview(false)
+        setReviewed(null)
+        key.current = ""
         router.refresh()
       }
     } catch {
@@ -240,7 +316,7 @@ function ConfirmPreferences({ item }: { item: SetupQueueItem }) {
 
   return <div>
     <p>Business preferences: {progress.confirmedCount} of {progress.locationCount} {progress.locationCount === 1 ? "location" : "locations"} confirmed{remaining.length > 0 ? `. Still needed: ${remaining.join(", ")}.` : "."}</p>
-    <button type="button" onClick={() => { key.current = crypto.randomUUID(); setConfirmed(false); setReview(false); setOpen(true) }}>
+    <button type="button" onClick={() => { leaveReview(); setOpen(true) }}>
       {selected.confirmed ? "Record a corrected confirmation" : "Confirm business preferences"}
     </button>
     {open ? <section aria-label={`Confirm business preferences for ${item.reference}`}>
@@ -248,7 +324,7 @@ function ConfirmPreferences({ item }: { item: SetupQueueItem }) {
       <p>This records what the customer has confirmed for one location. It does not configure or activate the receptionist.</p>
       <p>Location: {selected.locationName}. {selected.confirmed ? `This replaces nothing silently. It records version ${selected.version + 1} and keeps version ${selected.version}.` : "This is the first confirmed record for this location."}</p>
       <label>Location
-        <select value={selected.locationId} onChange={event => { setLocationId(event.target.value); setReview(false) }}>
+        <select value={selected.locationId} onChange={event => { setLocationId(event.target.value); leaveReview() }}>
           {progress.locations.map(location => <option key={location.locationId} value={location.locationId}>{location.locationName}{location.confirmed ? " (confirmed)" : ""}</option>)}
         </select>
       </label>
@@ -293,9 +369,13 @@ function ConfirmPreferences({ item }: { item: SetupQueueItem }) {
           <option value="recorded_message">Recorded customer message</option>
         </select>
       </label>
-      {source === "telephone" ? <label>Attestation <textarea value={attestation} onChange={event => setAttestation(event.target.value)} /></label> : <label>Evidence reference <input value={evidenceId} onChange={event => setEvidenceId(event.target.value)} /></label>}
-      <label>Customer confirmed at <input type="datetime-local" value={confirmedAt} onChange={event => setConfirmedAt(event.target.value)} /></label>
-      {review ? <div>
+      <label>Staff attestation <textarea value={attestation} onChange={event => { setAttestation(event.target.value); setAttestationError(null) }} /></label>
+      {attestationError ? <p role="alert">{attestationError}</p> : null}
+      {source === "telephone" ? null : <label>Evidence reference <input value={evidenceId} onChange={event => { setEvidenceId(event.target.value); setEvidenceError(null) }} /></label>}
+      {evidenceError ? <p role="alert">{evidenceError}</p> : null}
+      <label>Customer confirmed at <input type="datetime-local" aria-invalid={dateError ? true : undefined} aria-describedby={dateError ? "preference-confirmed-at-error" : undefined} value={confirmedAt} onChange={event => { setConfirmedAt(event.target.value); setDateError(null) }} /></label>
+      {dateError ? <p id="preference-confirmed-at-error" role="alert">{dateError}</p> : null}
+      {reviewFresh ? <div>
         <h4>Check before recording</h4>
         <dl>
           <dt>Customer</dt><dd>{item.customerName}</dd>
@@ -303,23 +383,36 @@ function ConfirmPreferences({ item }: { item: SetupQueueItem }) {
           <dt>Subscription</dt><dd>{item.reference}</dd>
           <dt>Location</dt><dd>{selected.locationName}</dd>
           <dt>Timezone</dt><dd>{timezone}</dd>
-          <dt>Greeting</dt><dd>{greeting}</dd>
-          <dt>Callback</dt><dd>{callbackInstructions}</dd>
-          <dt>Language</dt><dd>{spokenLanguage}</dd>
-          <dt>Voice</dt><dd>{voicePresentation}</dd>
-          <dt>Accent</dt><dd>{accent}</dd>
-          <dt>Confirmation</dt><dd>{source === "telephone" ? "Telephone attestation" : source === "recorded_email" ? "Recorded email" : "Recorded message"}</dd>
+          <dt>Opening hours</dt><dd>{hoursSummary()}</dd>
+          <dt>Exceptional hours</dt><dd>{exceptionalHours.trim() || "None"}</dd>
+          <dt>Out of hours</dt><dd>{outOfHours.trim() || "None"}</dd>
+          <dt>Greeting</dt><dd>{greeting.trim() || "None"}</dd>
+          <dt>Information to capture</dt><dd>{enquiryDetails.trim() || "None"}</dd>
+          <dt>Callback instructions</dt><dd>{callbackInstructions.trim() || "None"}</dd>
+          <dt>Callback windows</dt><dd>{callbackWindows.trim() || "None"}</dd>
+          <dt>Urgent calls</dt><dd>{urgentRules.trim() || "None"}</dd>
+          <dt>Direct contact</dt><dd>{directContactRules.trim() || "None"}</dd>
+          <dt>Special instructions</dt><dd>{specialInstructions.trim() || "None"}</dd>
+          <dt>Spoken language</dt><dd>{spokenLanguage.trim() || "None"}</dd>
+          <dt>Additional languages</dt><dd>{additionalLanguages.trim() || "None"}</dd>
+          <dt>Voice presentation</dt><dd>{voicePresentation === "female" ? "Female" : voicePresentation === "male" ? "Male" : "No preference"}</dd>
+          <dt>Accent</dt><dd>{accent.trim() || "None"}</dd>
+          <dt>Pronunciation notes</dt><dd>{pronunciationNotes.trim() || "None"}</dd>
+          <dt>Confirmation source</dt><dd>{source === "telephone" ? "Telephone" : source === "recorded_email" ? "Recorded customer email" : "Recorded customer message"}</dd>
+          <dt>Evidence reference</dt><dd>{source === "telephone" ? "No email or message reference" : evidenceId.trim()}</dd>
+          <dt>Staff attestation</dt><dd>{attestation.trim()}</dd>
+          <dt>Confirmation time</dt><dd>{confirmedAt}</dd>
         </dl>
         <label>
           <input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
-          {" "}I confirm the customer agreed these preferences for this location.
+          {" "}I confirm the customer agreed these displayed preferences for this location.
         </label>
         <p>
-          <button type="button" disabled={!confirmed || pending} onClick={() => void submit()}>Confirm business preferences</button>
+          <button type="button" disabled={!confirmed || pending || reviewed !== payloadText} onClick={() => void submit()}>Confirm business preferences</button>
           {" "}
-          <button type="button" onClick={() => setOpen(false)} disabled={pending}>Cancel</button>
+          <button type="button" onClick={() => { leaveReview(); setOpen(false) }} disabled={pending}>Cancel</button>
         </p>
-      </div> : <p><button type="button" onClick={() => setReview(true)}>Review confirmation</button></p>}
+      </div> : <p><button type="button" onClick={beginReview}>Review confirmation</button></p>}
     </section> : null}
     {message ? <Notice tone={tone} live="status">{message}</Notice> : null}
   </div>

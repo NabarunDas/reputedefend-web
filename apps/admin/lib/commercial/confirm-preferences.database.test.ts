@@ -602,6 +602,11 @@ describe("audited confirm business preferences", () => {
     )
     expect(stored[0].voice_presentation).toBe("female")
     expect(stored[0].accent).toBe("British")
+    const attestation = await rows<{ attestation: string }>(
+      `select attestation from admin_private.commercial_location_preferences where location_id = $1`,
+      [high],
+    )
+    expect(attestation[0].attestation).toBe("The customer confirmed these preferences by telephone.")
     expect(stored[0].opening_hours.find(day => day.day === "monday")).toMatchObject({ opens: "09:00", closes: "17:30" })
     const queue = await rpc<{ items: Row[] }>("admin_commercial_setup_queue_v1", [adminToken])
     const item = queue?.items.find(entry => entry.reference === armed.prepared.ref)
@@ -680,61 +685,211 @@ describe("audited confirm business preferences", () => {
     expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_location_preferences`)).toEqual([{ count: 0 }])
   })
 
-  it("requires a real customer email or message and does not copy the body", async () => {
+  it("accepts only verified customer evidence and keeps the original message private", async () => {
     const armed = await pay({ locations: [high, dock] })
     expect(await begin(armed)).toMatchObject({ status: "success" })
+    const attestation = "Staff reviewed this evidence and it confirms these preferences for this location."
     const missing = randomUUID()
     expect(await confirm(armed, high, {
       patch: { confirmation: { source: "recorded_email", communicationId: missing, messageId: null, attestation: null } },
+    })).toMatchObject({ status: "invalid" })
+    expect(await confirm(armed, high, {
+      patch: { confirmation: { source: "recorded_email", communicationId: missing, messageId: null, attestation } },
     })).toMatchObject({ status: "denied", reason: "provenance" })
-    const caseId = randomUUID()
-    const conversationId = randomUUID()
-    const communicationId = randomUUID()
-    const messageId = randomUUID()
-    await db.query(
-      `insert into public.cases(id, public_ref, case_type, status, customer_id, business_id, location_id, issue_description)
-       values ($1, 'PR-26-PREFAB', 'PROFILE_RECOVERY', 'RECEIVED', $2, $3, $4, 'Preference evidence case')`,
-      [caseId, alex, bakery, high],
-    )
-    await db.query(
-      `insert into public.conversations(id, state, customer_id, business_id, reply_alias, subject)
-       values ($1, 'UNMATCHED', $2, $3, $4, 'SECRET-EMAIL-SUBJECT')`,
-      [conversationId, alex, bakery, "ab".repeat(16)],
-    )
-    await db.query(
-      `insert into public.communications(
-        id, case_id, conversation_id, channel, communication_type, direction, recipient, subject, status, sent_at
-      ) values ($1, $2, $3, 'EMAIL', 'CUSTOMER_REPLY', 'INBOUND', 'alex.begin@example.com', 'SECRET-EMAIL-SUBJECT', 'SENT', now())`,
-      [communicationId, caseId, conversationId],
-    )
-    await db.query(
-      `insert into public.conversation_messages(
-        id, conversation_id, kind, import_status, provider, provider_email_id, body_text, sender_address
-      ) values ($1, $2, 'INBOUND_EMAIL', 'IMPORTED', 'resend', 'emailid12', 'SECRET-MESSAGE-BODY', 'alex.begin@example.com')`,
-      [messageId, conversationId],
-    )
-    const emailed = await confirm(armed, high, {
-      patch: { confirmation: { source: "recorded_email", communicationId, messageId: null, attestation: null } },
+
+    async function evidence(input: {
+      ref: string
+      alias: string
+      providerId: string
+      customer: string
+      business: string
+      caseLocation: string
+      conversationLocation: string | null
+      state: "OPEN" | "UNMATCHED"
+      communicationCustomer: string | null
+      communicationBusiness: string | null
+      senderMatch: string
+      loopClass?: string
+      autoSubmitted?: string | null
+      importStatus?: string
+    }) {
+      const caseId = randomUUID()
+      const conversationId = randomUUID()
+      const communicationId = randomUUID()
+      const messageId = randomUUID()
+      await db.query(
+        `insert into public.cases(id, public_ref, case_type, status, customer_id, business_id, location_id, issue_description)
+         values ($1, $2, 'PROFILE_RECOVERY', 'RECEIVED', $3, $4, $5, 'Preference evidence case')`,
+        [caseId, input.ref, input.customer, input.business, input.caseLocation],
+      )
+      await db.query(
+        `insert into public.conversations(
+          id, state, case_id, customer_id, business_id, location_id, reply_alias, subject
+        ) values ($1, $2, $3, $4, $5, $6, $7, 'SECRET-EMAIL-SUBJECT')`,
+        [
+          conversationId,
+          input.state,
+          input.state === "OPEN" ? caseId : null,
+          input.state === "UNMATCHED" ? null : input.customer,
+          input.state === "UNMATCHED" ? null : input.business,
+          input.conversationLocation,
+          input.alias,
+        ],
+      )
+      await db.query(
+        `insert into public.communications(
+          id, case_id, conversation_id, customer_id, business_id, channel, communication_type, direction,
+          recipient, subject, status, sender_address, sent_at
+        ) values ($1, $2, $3, $4, $5, 'EMAIL', 'CUSTOMER_REPLY', 'INBOUND', $6, 'SECRET-EMAIL-SUBJECT', 'SENT', $6, now())`,
+        [communicationId, caseId, conversationId, input.communicationCustomer, input.communicationBusiness, "alex.begin@example.com"],
+      )
+      await db.query(
+        `insert into public.conversation_messages(
+          id, conversation_id, kind, import_status, provider, provider_email_id, body_text,
+          sender_address, sender_match, loop_class, auto_submitted
+        ) values ($1, $2, 'INBOUND_EMAIL', $3, 'resend', $4, 'SECRET-MESSAGE-BODY', $5, $6, $7, $8)`,
+        [
+          messageId,
+          conversationId,
+          input.importStatus ?? "IMPORTED",
+          input.providerId,
+          "alex.begin@example.com",
+          input.senderMatch,
+          input.loopClass ?? "NONE",
+          input.autoSubmitted ?? null,
+        ],
+      )
+      return { communicationId, messageId }
+    }
+
+    const unmatched = await evidence({
+      ref: "PR-26-EMLAAA",
+      alias: "aa".repeat(16),
+      providerId: "emailunm1",
+      customer: alex,
+      business: bakery,
+      caseLocation: high,
+      conversationLocation: null,
+      state: "UNMATCHED",
+      communicationCustomer: alex,
+      communicationBusiness: bakery,
+      senderMatch: "NONE",
     })
-    expect(emailed).toMatchObject({ status: "success", confirmationSource: "recorded_email" })
-    const stored = await rows<{ communication_id: string; attestation: string | null; greeting: string }>(
-      `select communication_id, attestation, greeting from admin_private.commercial_location_preferences where request_id is not null and location_id = $1`,
-      [high],
-    )
-    expect(stored[0].communication_id).toBe(communicationId)
-    expect(stored[0].attestation).toBeNull()
-    expect(JSON.stringify(stored)).not.toContain("SECRET-EMAIL-SUBJECT")
-    expect(JSON.stringify(stored)).not.toContain("SECRET-MESSAGE-BODY")
+    expect(await confirm(armed, high, {
+      patch: { confirmation: { source: "recorded_message", messageId: unmatched.messageId, communicationId: null, attestation } },
+    })).toMatchObject({ status: "denied", reason: "provenance" })
+    expect(await confirm(armed, high, {
+      patch: { confirmation: { source: "recorded_email", communicationId: unmatched.communicationId, messageId: null, attestation } },
+    })).toMatchObject({ status: "denied", reason: "provenance" })
+
+    const wrongCustomer = await evidence({
+      ref: "PR-26-EMLBBB",
+      alias: "bb".repeat(16),
+      providerId: "emailcus2",
+      customer: alex,
+      business: bakery,
+      caseLocation: high,
+      conversationLocation: high,
+      state: "OPEN",
+      communicationCustomer: blake,
+      communicationBusiness: bakery,
+      senderMatch: "MATCHES_VERIFIED_CONTACT",
+    })
+    expect(await confirm(armed, high, {
+      patch: { confirmation: { source: "recorded_email", communicationId: wrongCustomer.communicationId, messageId: null, attestation } },
+    })).toMatchObject({ status: "denied", reason: "provenance" })
+
+    const wrongBusiness = await evidence({
+      ref: "PR-26-EMLCCC",
+      alias: "cc".repeat(16),
+      providerId: "emailbus3",
+      customer: alex,
+      business: kitchen,
+      caseLocation: oven,
+      conversationLocation: oven,
+      state: "OPEN",
+      communicationCustomer: alex,
+      communicationBusiness: kitchen,
+      senderMatch: "MATCHES_VERIFIED_CONTACT",
+    })
+    expect(await confirm(armed, high, {
+      patch: { confirmation: { source: "recorded_message", messageId: wrongBusiness.messageId, communicationId: null, attestation } },
+    })).toMatchObject({ status: "denied", reason: "provenance" })
+    expect(await confirm(armed, high, {
+      patch: { confirmation: { source: "recorded_email", communicationId: wrongBusiness.communicationId, messageId: null, attestation } },
+    })).toMatchObject({ status: "denied", reason: "provenance" })
+
+    const automated = await evidence({
+      ref: "PR-26-EMLDDD",
+      alias: "dd".repeat(16),
+      providerId: "emailaut4",
+      customer: alex,
+      business: bakery,
+      caseLocation: high,
+      conversationLocation: high,
+      state: "OPEN",
+      communicationCustomer: alex,
+      communicationBusiness: bakery,
+      senderMatch: "AUTOMATED",
+      loopClass: "AUTO_SUBMITTED",
+      autoSubmitted: "auto-replied",
+    })
+    expect(await confirm(armed, high, {
+      patch: { confirmation: { source: "recorded_message", messageId: automated.messageId, communicationId: null, attestation } },
+    })).toMatchObject({ status: "denied", reason: "provenance" })
+
+    const otherLocation = await evidence({
+      ref: "PR-26-EMLEEE",
+      alias: "ee".repeat(16),
+      providerId: "emailloc5",
+      customer: alex,
+      business: bakery,
+      caseLocation: dock,
+      conversationLocation: dock,
+      state: "OPEN",
+      communicationCustomer: alex,
+      communicationBusiness: bakery,
+      senderMatch: "MATCHES_VERIFIED_CONTACT",
+    })
+    expect(await confirm(armed, high, {
+      patch: { confirmation: { source: "recorded_message", messageId: otherLocation.messageId, communicationId: null, attestation } },
+    })).toMatchObject({ status: "denied", reason: "provenance" })
     const recordedMessage = await confirm(armed, dock, {
-      patch: { confirmation: { source: "recorded_message", messageId, communicationId: null, attestation: null } },
+      patch: { confirmation: { source: "recorded_message", messageId: otherLocation.messageId, communicationId: null, attestation } },
     })
     expect(recordedMessage).toMatchObject({ status: "success", confirmationSource: "recorded_message" })
-    const messageRow = await rows<{ message_id: string; attestation: string | null }>(
+    const messageRow = await rows<{ message_id: string; attestation: string }>(
       `select message_id, attestation from admin_private.commercial_location_preferences where location_id = $1`,
       [dock],
     )
-    expect(messageRow[0]).toEqual({ message_id: messageId, attestation: null })
+    expect(messageRow[0]).toEqual({ message_id: otherLocation.messageId, attestation })
     expect(JSON.stringify(messageRow)).not.toContain("SECRET-MESSAGE-BODY")
+
+    const matchedEmail = await evidence({
+      ref: "PR-26-EMLFFF",
+      alias: "ff".repeat(16),
+      providerId: "emailok06",
+      customer: alex,
+      business: bakery,
+      caseLocation: high,
+      conversationLocation: high,
+      state: "OPEN",
+      communicationCustomer: alex,
+      communicationBusiness: bakery,
+      senderMatch: "MATCHES_VERIFIED_CONTACT",
+    })
+    const emailed = await confirm(armed, high, {
+      patch: { confirmation: { source: "recorded_email", communicationId: matchedEmail.communicationId, messageId: null, attestation } },
+    })
+    expect(emailed).toMatchObject({ status: "success", confirmationSource: "recorded_email" })
+    const stored = await rows<{ communication_id: string; attestation: string; greeting: string }>(
+      `select communication_id, attestation, greeting from admin_private.commercial_location_preferences where location_id = $1`,
+      [high],
+    )
+    expect(stored[0].communication_id).toBe(matchedEmail.communicationId)
+    expect(stored[0].attestation).toBe(attestation)
+    expect(JSON.stringify(stored)).not.toContain("SECRET-EMAIL-SUBJECT")
+    expect(JSON.stringify(stored)).not.toContain("SECRET-MESSAGE-BODY")
   })
 
   it("rejects the wrong customer, a foreign location, revoked authority, and a closed subscription", async () => {

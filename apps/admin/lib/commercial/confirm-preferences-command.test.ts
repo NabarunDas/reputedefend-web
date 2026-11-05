@@ -96,7 +96,7 @@ describe("confirm preferences command messages", () => {
     ["denied", "inactive", 403, "This subscription is not active, so preferences cannot be confirmed."],
     ["denied", "expired", 403, "This subscription period has ended, so preferences cannot be confirmed."],
     ["denied", "revoked", 403, "Business authority is not verified, so preferences cannot be confirmed."],
-    ["denied", "provenance", 403, "The confirmation needs a recorded customer message or an explicit telephone attestation."],
+    ["denied", "provenance", 403, "That email or message does not verify this customer, business, and location. Record a staff attestation only for evidence that does."],
     ["denied", "location", 403, "That location is not one of the selected locations for this subscription."],
     ["unauthorized", undefined, 401, "Your session has ended. Please sign in again."],
     ["invalid", undefined, 400, "Check the preferences before confirming them."],

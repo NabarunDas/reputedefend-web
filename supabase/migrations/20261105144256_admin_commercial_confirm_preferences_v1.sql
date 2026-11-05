@@ -17,6 +17,13 @@
 --
 -- Hours are local wall-clock values plus an IANA timezone. They are not
 -- converted to a single UTC offset. No provider voice identifier is stored.
+-- A recorded email or message is evidence only when its own customer and
+-- business match the subscription, the sender is the customer's verified
+-- email, and the conversation is not unmatched. A message must also have
+-- sender_match MATCHES_VERIFIED_CONTACT, import status IMPORTED, and no loop
+-- or automation marker. A location on that evidence must be the selected
+-- location. Staff record an attestation that the evidence confirms these
+-- preferences. The original email or message body is not copied.
 -- The command does not call a telephone provider, buy or allocate a number,
 -- configure an AI agent, enable forwarding, answer calls, enable Guard
 -- monitoring, change a price, enable overage, send mail, or move a
@@ -268,11 +275,18 @@ BEGIN
   ELSIF jsonb_typeof(prefs -> 'specialInstructions') IS DISTINCT FROM 'null' THEN
     RETURN false;
   END IF;
+  text_value := confirmation ->> 'attestation';
+  IF jsonb_typeof(confirmation -> 'attestation') IS DISTINCT FROM 'string'
+    OR text_value IS NULL
+    OR btrim(text_value) IS DISTINCT FROM text_value
+    OR char_length(text_value) NOT BETWEEN 20 AND 500
+  THEN
+    RETURN false;
+  END IF;
   IF confirmation ->> 'source' = 'recorded_email' THEN
     IF jsonb_typeof(confirmation -> 'communicationId') IS DISTINCT FROM 'string'
       OR (confirmation ->> 'communicationId') !~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
       OR jsonb_typeof(confirmation -> 'messageId') IS DISTINCT FROM 'null'
-      OR jsonb_typeof(confirmation -> 'attestation') IS DISTINCT FROM 'null'
     THEN
       RETURN false;
     END IF;
@@ -280,18 +294,12 @@ BEGIN
     IF jsonb_typeof(confirmation -> 'messageId') IS DISTINCT FROM 'string'
       OR (confirmation ->> 'messageId') !~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
       OR jsonb_typeof(confirmation -> 'communicationId') IS DISTINCT FROM 'null'
-      OR jsonb_typeof(confirmation -> 'attestation') IS DISTINCT FROM 'null'
     THEN
       RETURN false;
     END IF;
   ELSIF confirmation ->> 'source' = 'telephone' THEN
-    text_value := confirmation ->> 'attestation';
     IF jsonb_typeof(confirmation -> 'communicationId') IS DISTINCT FROM 'null'
       OR jsonb_typeof(confirmation -> 'messageId') IS DISTINCT FROM 'null'
-      OR jsonb_typeof(confirmation -> 'attestation') IS DISTINCT FROM 'string'
-      OR text_value IS NULL
-      OR btrim(text_value) IS DISTINCT FROM text_value
-      OR char_length(text_value) NOT BETWEEN 20 AND 500
     THEN
       RETURN false;
     END IF;
@@ -414,25 +422,23 @@ CREATE TABLE admin_private.commercial_location_preferences (
     OR (
       status = 'CONFIRMED'
       AND customer_confirmed_at IS NOT NULL
+      AND attestation IS NOT NULL
+      AND char_length(attestation) BETWEEN 20 AND 500
       AND (
         (
           confirmation_source = 'recorded_email'
           AND communication_id IS NOT NULL
           AND message_id IS NULL
-          AND attestation IS NULL
         )
         OR (
           confirmation_source = 'recorded_message'
           AND message_id IS NOT NULL
           AND communication_id IS NULL
-          AND attestation IS NULL
         )
         OR (
           confirmation_source = 'telephone'
           AND communication_id IS NULL
           AND message_id IS NULL
-          AND attestation IS NOT NULL
-          AND char_length(attestation) BETWEEN 20 AND 500
         )
       )
     )
@@ -1330,24 +1336,60 @@ BEGIN
     IF source = 'recorded_email' AND NOT EXISTS (
       SELECT 1
       FROM public.communications communication
+      JOIN public.customers customer ON customer.id = sub.customer_id
       JOIN public.conversations conversation ON conversation.id = communication.conversation_id
       WHERE communication.id = (p_payload #>> '{confirmation,communicationId}')::uuid
-        AND conversation.customer_id = sub.customer_id
-        AND (conversation.business_id IS NULL OR conversation.business_id = sub.business_id)
+        AND communication.customer_id = sub.customer_id
+        AND communication.business_id = sub.business_id
         AND communication.channel = 'EMAIL'
         AND communication.direction = 'INBOUND'
         AND communication.status = 'SENT'
+        AND communication.sender_address IS NOT NULL
+        AND lower(communication.sender_address) = lower(customer.email)
+        AND admin_private.contact_verified_v1(sub.customer_id, 'email')
+        AND communication.case_id IS NOT NULL
+        AND communication.case_id = conversation.case_id
+        AND conversation.customer_id = communication.customer_id
+        AND conversation.business_id = communication.business_id
+        AND conversation.state IS DISTINCT FROM 'UNMATCHED'
+        AND (conversation.location_id IS NULL OR conversation.location_id = chosen_location)
+        AND EXISTS (
+          SELECT 1
+          FROM public.cases evidence_case
+          WHERE evidence_case.id = communication.case_id
+            AND evidence_case.customer_id = communication.customer_id
+            AND evidence_case.business_id = communication.business_id
+            AND (evidence_case.location_id IS NULL OR evidence_case.location_id = chosen_location)
+        )
     ) THEN
       outcome := jsonb_build_object('status', 'denied', 'reason', 'provenance');
     ELSIF source = 'recorded_message' AND NOT EXISTS (
       SELECT 1
       FROM public.conversation_messages message
       JOIN public.conversations conversation ON conversation.id = message.conversation_id
+      JOIN public.customers customer ON customer.id = sub.customer_id
       WHERE message.id = (p_payload #>> '{confirmation,messageId}')::uuid
         AND message.kind = 'INBOUND_EMAIL'
         AND message.import_status = 'IMPORTED'
+        AND message.sender_match = 'MATCHES_VERIFIED_CONTACT'
+        AND message.loop_class = 'NONE'
+        AND message.auto_submitted IS NULL
+        AND message.sender_address IS NOT NULL
+        AND lower(message.sender_address) = lower(customer.email)
+        AND admin_private.contact_verified_v1(sub.customer_id, 'email')
         AND conversation.customer_id = sub.customer_id
-        AND (conversation.business_id IS NULL OR conversation.business_id = sub.business_id)
+        AND conversation.business_id = sub.business_id
+        AND conversation.state IS DISTINCT FROM 'UNMATCHED'
+        AND conversation.case_id IS NOT NULL
+        AND (conversation.location_id IS NULL OR conversation.location_id = chosen_location)
+        AND EXISTS (
+          SELECT 1
+          FROM public.cases evidence_case
+          WHERE evidence_case.id = conversation.case_id
+            AND evidence_case.customer_id = conversation.customer_id
+            AND evidence_case.business_id = conversation.business_id
+            AND (evidence_case.location_id IS NULL OR evidence_case.location_id = chosen_location)
+        )
     ) THEN
       outcome := jsonb_build_object('status', 'denied', 'reason', 'provenance');
     END IF;
@@ -1402,7 +1444,7 @@ BEGIN
       source,
       CASE WHEN source = 'recorded_email' THEN (p_payload #>> '{confirmation,communicationId}')::uuid ELSE NULL END,
       CASE WHEN source = 'recorded_message' THEN (p_payload #>> '{confirmation,messageId}')::uuid ELSE NULL END,
-      CASE WHEN source = 'telephone' THEN p_payload #>> '{confirmation,attestation}' ELSE NULL END,
+      p_payload #>> '{confirmation,attestation}',
       confirmed_at, actor, p_request
     ) RETURNING id INTO preference_id;
     INSERT INTO admin_private.commercial_preference_events(

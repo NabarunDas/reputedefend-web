@@ -154,9 +154,10 @@ function payload(value: unknown): { subscriptionId: string; version: number; pay
   const messageId = confirmation.messageId === null ? null : typeof confirmation.messageId === "string" && isUuid(confirmation.messageId) ? confirmation.messageId : undefined
   const attestation = confirmation.attestation === null ? null : text(confirmation.attestation, 20, 500)
   if (communicationId === undefined || messageId === undefined || attestation === undefined) return null
-  if (confirmation.source === "telephone" && (attestation === null || communicationId !== null || messageId !== null)) return null
-  if (confirmation.source === "recorded_email" && (communicationId === null || messageId !== null || attestation !== null)) return null
-  if (confirmation.source === "recorded_message" && (messageId === null || communicationId !== null || attestation !== null)) return null
+  if (attestation === null) return null
+  if (confirmation.source === "telephone" && (communicationId !== null || messageId !== null)) return null
+  if (confirmation.source === "recorded_email" && (communicationId === null || messageId !== null)) return null
+  if (confirmation.source === "recorded_message" && (messageId === null || communicationId !== null)) return null
   return {
     subscriptionId: body.subscriptionId,
     version: body.version,
@@ -207,7 +208,7 @@ function denied(reason: string | undefined): string {
   if (reason === "quantities") return "The selected locations do not match the accepted plan."
   if (reason === "closed") return "This onboarding request is closed, so preferences cannot be confirmed."
   if (reason === "customer") return "That subscription does not belong to this customer and business."
-  if (reason === "provenance") return "The confirmation needs a recorded customer message or an explicit telephone attestation."
+  if (reason === "provenance") return "That email or message does not verify this customer, business, and location. Record a staff attestation only for evidence that does."
   if (reason === "live") return "This location is already live, so preferences cannot be changed here."
   return "Preferences cannot be confirmed for this subscription."
 }

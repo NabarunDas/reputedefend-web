@@ -1,0 +1,23 @@
+# 03A-03-03-02-03 — Audited confirm AI configuration
+
+Repository only. `20261105172055_admin_commercial_confirm_ai_configuration_v1.sql` is not applied to hosted DEV or Production. The verified DEV ledger still contains 105 entries and ends at `20261105120000_telloya_voice_persistence_v1`. Begin setup `20261105130000` and confirm preferences `20261105144256` are also unapplied and earlier in the chain. Do not apply `20261105172055` to DEV. Do not apply `20261105172055` to Production.
+
+## What this command stores
+
+`public.admin_commercial_confirm_ai_configuration_v1(text, uuid, uuid, integer, jsonb)` records one operator-attested provider configuration for one selected Telloya location. It runs only after Begin Setup and after every selected location has a latest `CONFIRMED` preference. It is service-role only. The Admin route also requires `ADMIN_COMMERCIAL_SETUP_QUEUE_ENABLED` and `ADMIN_COMMERCIAL_CONFIRM_AI_CONFIGURATION_ENABLED`. Both default off. The database does not read either flag.
+
+The row is tied to the customer, business, commercial subscription, onboarding request, exact location, Telloya entitlement, service provision, and the latest confirmed preference id and version. It copies that preference’s greeting, hours, callback rules, and language preferences, and it stores the provider identifier `telloya_voice`, the explicit `dev` or `production` environment, the provider agent reference, the staff-recorded revision, a server-generated configuration fingerprint, the chosen provider voice and language identifiers, the verification basis `OPERATOR_ATTESTED`, the staff attestation, the staff actor, and the server timestamp.
+
+`OPERATOR_ATTESTED` means an authorised operator recorded the evidence. This command does not call the provider, so it does not mark a reference independently verified. No voice, accent, or language catalogue is invented. API keys, credentials, and call recordings are not stored.
+
+A configuration for one location cannot be reused as evidence for another location, customer, or business. The same agent reference cannot be recorded in the other environment, including an existing Telloya voice number binding. A later confirmed preference for that location makes the previous configuration require review, returns a `NUMBER_REQUIRED` provision to `PROFILE_REQUIRED`, and clears `agent_configured_at`. The historical configuration row stays.
+
+## Lifecycle
+
+When the evidence matches the latest confirmed preference, a `PROFILE_REQUIRED` or `AGENT_REQUIRED` provision moves to `NUMBER_REQUIRED`. `agent_configured_at` is set only by that successful record, and `profile_ready_at` is filled if it was empty. The command does not set `number_allocated_at`, `forwarding_instructed_at`, `agent_test_passed_at`, `customer_confirmed_at`, or `live_at`. It does not move a provision to `LIVE`.
+
+The setup checklist treats AI configuration as complete only when every selected location has a latest configuration for the latest confirmed preference and the provision still shows that configuration. The next action is then **Record provider and number allocation**. The operational status stays **Setup in progress**. A partial record stays incomplete. A preference correction makes the affected location require review.
+
+The Customer Portal says: “Your AI receptionist configuration has been recorded. We're completing the telephone setup and service checks.” It does not say the receptionist can answer calls. Provider references, staff attestation, and fingerprints are not shown to the customer.
+
+The same request id and payload returns the stored result. The same request id with a different payload conflicts and does not create another configuration.

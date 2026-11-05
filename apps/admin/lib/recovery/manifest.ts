@@ -1593,6 +1593,30 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Audited confirm business preferences", probe: "public.admin_commercial_confirm_preferences_v1" },
   },
+  {
+    // Audited operator-attested AI configuration. Not applied to DEV.
+    // The verified DEV ledger contains 105 entries and ends at 20261105120000.
+    // Begin setup 20261105130000 and confirm preferences 20261105144256 are
+    // also unapplied and earlier.
+    // Do not apply 20261105172055 to DEV. Do not apply 20261105172055 to Production.
+    // One service-role command stores an append-only configuration for one
+    // selected location and may move that provision from PROFILE_REQUIRED to
+    // NUMBER_REQUIRED. OPERATOR_ATTESTED is not an independent provider check.
+    // It does not call a provider, allocate a number, enable forwarding, run a
+    // test call, enable Guard, change billing, send mail, or move a service to live.
+    // Writes are inside the command. containsDataChange stays false.
+    // safeToReplay stays false.
+    // supabase migration new admin_commercial_confirm_ai_configuration_v1 wrote
+    // this file at 20261105172055, which is later than confirm preferences.
+    version: "20261105172055",
+    filename: "20261105172055_admin_commercial_confirm_ai_configuration_v1.sql",
+    step: "Audited confirm AI configuration",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Audited confirm AI configuration", probe: "public.admin_commercial_confirm_ai_configuration_v1" },
+  },
 ]
 
 /**
@@ -1728,8 +1752,11 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` contains only the unapplied Admin begin-setup file
- * `20261105130000`. Do not apply it to hosted DEV or Production.
+ * applied and must not be replayed. `pendingMigrations()` contains the unapplied
+ * Admin begin-setup file `20261105130000`, the unapplied confirm-preferences
+ * file `20261105144256`, and the unapplied confirm-AI-configuration file
+ * `20261105172055`. All three stay local and must not be applied to hosted DEV
+ * or Production.
  * `20261105120000` is already applied on DEV and must not be replayed.
  * Do not replay `20261105120000`. Do not apply `20261105120000` to Production.
  * `20261104220000` is already applied on DEV and must not be

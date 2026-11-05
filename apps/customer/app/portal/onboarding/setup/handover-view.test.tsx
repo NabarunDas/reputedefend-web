@@ -32,6 +32,7 @@ const paid: HandoverSubscription = {
   message: "Your subscription payment has been confirmed. We're preparing your service and will guide you through the remaining setup steps.",
   paymentConfirmedAt: "2026-11-04T12:00:00.000Z",
   servicePreferences: null,
+  serviceConfiguration: null,
   checklist: [
     { key: "payment", label: "Payment confirmed", state: "complete" },
     { key: "preferences", label: "Business and service preferences", state: "planned" },
@@ -166,5 +167,82 @@ describe("post-payment setup page", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Payment pending" })).toBeTruthy()
     expect(screen.queryByRole("heading", { name: "Payment received" })).toBeNull()
     expect(screen.getByText("Payment confirmed").parentElement?.textContent).toContain("Planned")
+  })
+
+  it("says a recorded configuration is still waiting for telephone setup", () => {
+    render(<HandoverView subscriptions={[{
+      ...paid,
+      operationalStatus: "setup_started",
+      customerDisplay: "Setup in progress",
+      message: "Your AI receptionist configuration has been recorded. We're completing the telephone setup and service checks.",
+      checklist: paid.checklist.map(step => step.key === "agent" ? { ...step, state: "complete" as const } : step),
+      servicePreferences: {
+        state: "complete",
+        confirmedCount: 2,
+        locationCount: 2,
+        locations: [
+          {
+            locationId: paid.locations[0].locationId,
+            locationName: "Oven",
+            status: "recorded",
+            timezone: "Europe/London",
+            hoursSummary: "Monday 09:00–17:30",
+            greeting: "Thank you for calling.",
+            callbackInstructions: "Offer a callback on Monday morning.",
+            spokenLanguage: "en-GB",
+            additionalLanguages: [],
+            voicePresentation: "No preference",
+            accent: "British",
+            customerConfirmedAt: "2026-11-04T15:00:00.000Z",
+            recordedBy: "Your setup team",
+            note: "Recorded by your setup team from your confirmation. You will still confirm the service before it is activated. The receptionist is not configured or active.",
+          },
+          {
+            locationId: paid.locations[1].locationId,
+            locationName: "Counter",
+            status: "recorded",
+            timezone: "Europe/London",
+            hoursSummary: "Monday 09:00–17:30",
+            greeting: "Thank you for calling.",
+            callbackInstructions: "Offer a callback on Monday morning.",
+            spokenLanguage: "en-GB",
+            additionalLanguages: [],
+            voicePresentation: "No preference",
+            accent: null,
+            customerConfirmedAt: "2026-11-04T15:00:00.000Z",
+            recordedBy: "Your setup team",
+            note: "Recorded by your setup team from your confirmation. You will still confirm the service before it is activated. The receptionist is not configured or active.",
+          },
+        ],
+      },
+      serviceConfiguration: {
+        state: "recorded",
+        recordedCount: 2,
+        locationCount: 2,
+        locations: [
+          {
+            locationId: paid.locations[0].locationId,
+            locationName: "Oven",
+            status: "recorded",
+            note: "Your AI receptionist configuration has been recorded. We're completing the telephone setup and service checks.",
+          },
+          {
+            locationId: paid.locations[1].locationId,
+            locationName: "Counter",
+            status: "recorded",
+            note: "Your AI receptionist configuration has been recorded. We're completing the telephone setup and service checks.",
+          },
+        ],
+      },
+    }]} />)
+    expect(screen.getAllByText("Your AI receptionist configuration has been recorded. We're completing the telephone setup and service checks.").length).toBeGreaterThan(0)
+    const checklist = screen.getByRole("list", { name: "Complete setup" }).textContent ?? ""
+    expect(checklist).toContain("AI receptionist configuration")
+    expect(checklist).toContain("Complete")
+    expect(checklist).toContain("Telephone number and forwarding")
+    expect(checklist).toContain("Test call and verification")
+    expect(checklist).not.toContain("Telephone number and forwardingComplete")
+    expect(document.body.textContent).not.toContain("The receptionist is not configured or active")
+    expect(document.body.textContent).not.toMatch(/can answer calls|is live|forwarding is complete|test call passed/)
   })
 })

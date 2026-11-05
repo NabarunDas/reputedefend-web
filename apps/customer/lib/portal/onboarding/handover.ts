@@ -39,6 +39,20 @@ export type ServicePreferences = {
   locations: ServicePreferenceLocation[]
 }
 
+export type ServiceConfigurationLocation = {
+  locationId: string
+  locationName: string
+  status: "needed" | "review" | "recorded"
+  note: string
+}
+
+export type ServiceConfiguration = {
+  state: "needed" | "partial" | "review" | "recorded"
+  recordedCount: number
+  locationCount: number
+  locations: ServiceConfigurationLocation[]
+}
+
 export type HandoverSubscription = {
   reference: string
   businessName: string
@@ -62,6 +76,7 @@ export type HandoverSubscription = {
   paymentConfirmedAt: string | null
   checklist: HandoverChecklistStep[]
   servicePreferences: ServicePreferences | null
+  serviceConfiguration: ServiceConfiguration | null
 }
 
 const stepKeys = ["payment", "preferences", "agent", "number", "test", "activation"] as const
@@ -141,6 +156,38 @@ function servicePreferences(value: unknown): ServicePreferences | null | undefin
   }
 }
 
+function serviceConfiguration(value: unknown): ServiceConfiguration | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!value || typeof value !== "object") return undefined
+  const row = value as Record<string, unknown>
+  if (row.state !== "needed" && row.state !== "partial" && row.state !== "review" && row.state !== "recorded") return undefined
+  if (typeof row.recordedCount !== "number" || typeof row.locationCount !== "number") return undefined
+  if (!Array.isArray(row.locations)) return undefined
+  const hidden = ["agentRef", "attestation", "fingerprint", "configurationFingerprint", "providerRevision", "voiceIdentifier", "chosenVoice", "chosenLanguage", "requestId", "actorId", "provider", "environment", "verificationBasis"]
+  const locations: ServiceConfigurationLocation[] = []
+  for (const entry of row.locations) {
+    if (!entry || typeof entry !== "object") return undefined
+    const location = entry as Record<string, unknown>
+    if (hidden.some(key => key in location)) return undefined
+    if (typeof location.locationId !== "string" || !uuid.test(location.locationId)) return undefined
+    if (typeof location.locationName !== "string" || location.locationName.trim().length === 0) return undefined
+    if (location.status !== "needed" && location.status !== "review" && location.status !== "recorded") return undefined
+    if (typeof location.note !== "string" || location.note.trim().length === 0) return undefined
+    locations.push({
+      locationId: location.locationId,
+      locationName: location.locationName,
+      status: location.status,
+      note: location.note,
+    })
+  }
+  return {
+    state: row.state,
+    recordedCount: row.recordedCount,
+    locationCount: row.locationCount,
+    locations,
+  }
+}
+
 function location(value: unknown): HandoverLocation | null {
   if (!value || typeof value !== "object") return null
   const row = value as Record<string, unknown>
@@ -206,6 +253,9 @@ export function parseSetupHandover(value: unknown): HandoverSubscription[] | nul
     }
     const preferences = servicePreferences(row.servicePreferences)
     if (preferences === undefined) return null
+    const configuration = serviceConfiguration(row.serviceConfiguration)
+    if (configuration === undefined) return null
+    if ("configurationProgress" in row || "preferenceProgress" in row || "agentRef" in row) return null
     subscriptions.push({
       reference: row.reference,
       businessName: row.businessName,
@@ -229,6 +279,7 @@ export function parseSetupHandover(value: unknown): HandoverSubscription[] | nul
       paymentConfirmedAt: row.paymentConfirmedAt,
       checklist,
       servicePreferences: preferences,
+      serviceConfiguration: configuration,
     })
   }
   return subscriptions

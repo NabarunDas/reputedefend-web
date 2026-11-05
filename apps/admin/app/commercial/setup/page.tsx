@@ -1,4 +1,5 @@
 import { commercialBeginSetupEnabled } from "@/lib/commercial/begin-setup-flag"
+import { commercialConfirmAiConfigurationEnabled } from "@/lib/commercial/confirm-ai-configuration-flag"
 import { commercialConfirmPreferencesEnabled } from "@/lib/commercial/confirm-preferences-flag"
 import { commercialSetupQueueEnabled } from "@/lib/commercial/setup-queue-flag"
 import { loadSetupQueue } from "@/lib/commercial/setup-queue"
@@ -22,7 +23,7 @@ export default async function PaidSetupPage() {
   return <section className="page">
     <PageHeader title="Paid setup" description="Telloya and Complete subscriptions whose payment is recorded and whose service is not active. Times are shown in UK time." />
     <section className="panel">
-      {items === null ? <Notice tone="warning">The setup queue could not be read. This does not say whether any payment was recorded.</Notice> : <SetupQueueView items={items} beginSetupEnabled={commercialSetupQueueEnabled() && commercialBeginSetupEnabled()} confirmPreferencesEnabled={commercialSetupQueueEnabled() && commercialConfirmPreferencesEnabled()} />}
+      {items === null ? <Notice tone="warning">The setup queue could not be read. This does not say whether any payment was recorded.</Notice> : <SetupQueueView items={items} beginSetupEnabled={commercialSetupQueueEnabled() && commercialBeginSetupEnabled()} confirmPreferencesEnabled={commercialSetupQueueEnabled() && commercialConfirmPreferencesEnabled()} confirmAiConfigurationEnabled={commercialSetupQueueEnabled() && commercialConfirmAiConfigurationEnabled()} />}
     </section>
   </section>
 }

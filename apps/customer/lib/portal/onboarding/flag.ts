@@ -44,3 +44,15 @@ export function commercialOfferAcceptEnabled() {
 export function commercialCheckoutEnabled() {
   return process.env.CUSTOMER_COMMERCIAL_CHECKOUT_ENABLED === "true"
 }
+
+/**
+ * Session-scoped post-payment setup handover.
+ *
+ * Exactly "true" reads customer_portal_setup_handover_v1 for the signed-in
+ * customer. Every other value leaves the setup page closed and does not query
+ * that function. This flag does not provision Telloya, activate Guard, collect
+ * a payment, or send mail. Preview and Production do not inherit a DEV value.
+ */
+export function commercialSetupHandoverReadEnabled() {
+  return process.env.CUSTOMER_COMMERCIAL_SETUP_HANDOVER_READ_ENABLED === "true"
+}

@@ -164,6 +164,72 @@ describe("My Products", () => {
     expect(screen.getAllByText("Not subscribed")).toHaveLength(2)
   })
 
+  it("shows a paid Guard package without naming an unassigned location", () => {
+    const commercial = {
+      reads: { telloya: "ok" as const, guard: "ok" as const },
+      businesses: [{
+        businessName: "Complete Kitchen",
+        telloya: {
+          status: "pending" as const,
+          locations: [
+            { locationName: "Oven", status: "pending" as const, nextStep: "Payment received. Your AI receptionist setup has not started." },
+            { locationName: "Counter", status: "pending" as const, nextStep: "Payment received. Your AI receptionist setup has not started." },
+            { locationName: "Pantry", status: "pending" as const, nextStep: "Payment received. Your AI receptionist setup has not started." },
+          ],
+        },
+        guard: {
+          status: "pending" as const,
+          includedQuantity: 1,
+          assignment: "pending_confirmation" as const,
+          locations: [],
+        },
+      }],
+    }
+    const { unmount } = render(<ProductsView products={presentProducts({
+      recovery: { status: "unavailable" },
+      guard: { status: "unavailable" },
+      commercial,
+    })} />)
+    const pending = tile("Relaunch Guard")
+    expect(pending.textContent).toContain("Setup pending")
+    expect(pending.textContent).toContain("1 location included.")
+    expect(pending.textContent).toContain("Guard location assignment is pending confirmation.")
+    expect(pending.textContent).toContain("Monitoring has not started.")
+    expect(pending.textContent).not.toContain("Oven")
+    expect(pending.textContent).not.toContain("Counter")
+    expect(pending.textContent).not.toContain("Pantry")
+    unmount()
+
+    render(<ProductsView products={presentProducts({
+      recovery: { status: "unavailable" },
+      guard: { status: "unavailable" },
+      commercial: {
+        ...commercial,
+        businesses: [{
+          ...commercial.businesses[0],
+          guard: {
+            status: "pending" as const,
+            includedQuantity: 1,
+            assignment: "recorded" as const,
+            locations: [{
+              locationName: "Counter",
+              status: "pending" as const,
+              monitoringRecorded: false,
+              allocation: "reserved" as const,
+              nextStep: "Included in your package. Monitoring setup is pending.",
+            }],
+          },
+        }],
+      },
+    })} />)
+    const assigned = tile("Relaunch Guard")
+    expect(assigned.textContent).toContain("Assigned: Counter.")
+    expect(assigned.textContent).toContain("Monitoring has not started.")
+    expect(assigned.textContent).not.toContain("Oven")
+    expect(assigned.textContent).not.toContain("Pantry")
+    expect(assigned.textContent).not.toMatch(/monitoring is active|Monitoring is recorded/i)
+  })
+
   it("has a loading state and comfortable touch, focus, and responsive rules", () => {
     render(<ProductsLoading />)
     expect(screen.getByRole("status")).toHaveTextContent("Loading your products")

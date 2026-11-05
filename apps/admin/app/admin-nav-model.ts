@@ -51,6 +51,11 @@ function guardOverview(pathname: string): boolean {
   return section(pathname, "/guard") && !section(pathname, "/guard/checks") && !section(pathname, "/guard/alerts")
 }
 
+/** Commercial quotes stay on Commercial. The paid setup queue has its own link. */
+function commercialOverview(pathname: string): boolean {
+  return section(pathname, "/commercial") && !section(pathname, "/commercial/setup")
+}
+
 const link = (href: string, label: string, weight: NavLink["weight"], match: NavMatch = pathname => section(pathname, href)): NavLink =>
   ({ kind: "link", href, label, weight, match })
 
@@ -75,7 +80,8 @@ export const adminNavigation: readonly NavEntry[] = [
     label: "Finance",
     weight: "area",
     children: [
-      link("/commercial", "Commercial", "utility"),
+      link("/commercial", "Commercial", "utility", commercialOverview),
+      link("/commercial/setup", "Paid setup", "utility"),
       link("/money", "Money", "utility"),
     ],
   },

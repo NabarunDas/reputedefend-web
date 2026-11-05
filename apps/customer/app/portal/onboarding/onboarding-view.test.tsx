@@ -43,6 +43,19 @@ describe("setup progress page", () => {
     expect(document.body.innerHTML).not.toMatch(/Accept offer|Pay now|Subscribe|stripe|Open dashboard/)
   })
 
+  it("calls an unpaid setup stage pending when no setup has been recorded", () => {
+    render(<OnboardingView requests={[request({
+      stage: "service_setup",
+      statusLabel: "Service setup",
+      nextStep: "Payment is recorded. Service setup has not started.",
+      completed: ["Request received", "Offer recorded", "Payment recorded"],
+    })]} />)
+    expect(screen.getByRole("heading", { level: 2, name: "Setup pending" })).toBeTruthy()
+    expect(screen.getByText("Waiting for us. Payment is recorded. Service setup has not started.")).toBeTruthy()
+    expect(document.querySelector("[aria-current='step']")?.textContent).toContain("Setup pending")
+    expect(document.body.textContent).not.toContain("Setup in progress")
+  })
+
   it("hides business details while authority is pending and distinguishes action needed", () => {
     render(<OnboardingView requests={[
       request({

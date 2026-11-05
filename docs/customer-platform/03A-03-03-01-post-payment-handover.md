@@ -6,7 +6,7 @@ There is no Telloya dashboard route. The customer surfaces are My Products and `
 
 ## Ledger
 
-`20261104220000_customer_commercial_setup_handover_v1.sql` is repository-only. It is not the DEV ledger head. The verified DEV ledger contains 103 entries and ends at `20261104190000`. Do not apply `20261104220000` to DEV. Do not apply `20261104220000` to Production. Do not replay `20261104190000`. Production and AWS ApprovedMigrationHead remain `20261014170000`.
+`20261104220000_customer_commercial_setup_handover_v1.sql` was applied once to DEV project `rmzozuiamjcclvtgutgd`. The verified DEV ledger contains 104 entries and ends at `20261104220000`. The previous ledger contained 103 entries and ended at `20261104190000`. The repository file is 25,436 characters. Its MD5 is `690e88917f0166f376d3e8189b60b427`. Its SHA-256 is `dbbc03ed138c1f2115d44e7c13923570bf1cbf6205e401bec85aef6df00552c3`. Its GitHub blob SHA is `639b5c553348537db401e46c15fa7af7bb6d95a3`. Public Admin and Customer handover RPCs are service-role-only. Existing `customer_portal_products_v1` permissions were preserved. Invalid Admin and customer sessions were rejected. No settlement, entitlement or provisioning data was created. `service_provisions_live_closed` remains enforced. Commercial feature flags remain OFF. Do not replay `20261104220000`. Do not apply `20261104220000` to Production. Do not replay `20261104190000`. Production and AWS ApprovedMigrationHead remain `20261014170000`. The applied SQL is unchanged.
 
 The file adds no table. It adds one private classifier and two service-role-only read functions, and replaces `public.customer_portal_products_v1(text)` in place:
 
@@ -68,7 +68,7 @@ A paid Complete acceptance keeps `guard_quantity`. Guard status is `pending_setu
 
 A Telloya acceptance has Guard quantity 0, status `not_subscribed`, and no Guard locations. My Products continues to show Guard as an optional product that is not included.
 
-`public.customer_portal_products_v1(text)` is replaced in this same unapplied file. The applied settlement body is not edited. The replacement keeps the function signature, the portal-session check, and the service-role grant. For a paid Complete package it keeps the accepted Guard quantity and status `pending`. It names a Guard location only from an open `bundle_guard_allocations` row for that customer, business, and subscription. With no allocation, `assignment` is `pending_confirmation` and `locations` is empty. A business that already has Guard locations from coverage or an allocation is left unchanged. Monitoring is not marked recorded.
+`public.customer_portal_products_v1(text)` is replaced in this same applied file. The applied settlement body is not edited. The replacement keeps the function signature, the portal-session check, and the service-role grant. For a paid Complete package it keeps the accepted Guard quantity and status `pending`. It names a Guard location only from an open `bundle_guard_allocations` row for that customer, business, and subscription. With no allocation, `assignment` is `pending_confirmation` and `locations` is empty. A business that already has Guard locations from coverage or an allocation is left unchanged. Monitoring is not marked recorded.
 
 ## Access
 

@@ -18,12 +18,12 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261104190000_customer_commercial_payment_settlement_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261104220000_customer_commercial_setup_handover_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     expect(migrationHead.filename).toBe("20261104220000_customer_commercial_setup_handover_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
@@ -38,7 +38,7 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261104220000_customer_commercial_setup_handover_v1.sql"])
+    expect(pendingMigrations()).toEqual([])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
@@ -94,12 +94,11 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Commercial setup handover is the repository head and is not the DEV ledger head.
-    // Do not apply 20261104220000 to DEV. Do not apply 20261104220000 to Production.
-    // Commercial payment settlement remains the DEV ledger head.
+    // Commercial setup handover is the DEV ledger head. It was applied once.
+    // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
     // Do not replay 20261103230000. Do not apply 20261103230000 to Production.
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration("20261103230000_customer_commercial_payment_verification_v1.sql")).toMatchObject({
@@ -189,7 +188,7 @@ describe("the migration chain manifest", () => {
     expect(setupHandoverSql).toContain("Do not apply 20261104220000 to Production")
     expect(setupHandoverSql).not.toMatch(/\bINSERT INTO\b|\bUPDATE\b|\bDELETE FROM\b/)
     expect(findMigration("20261104220000_customer_commercial_setup_handover_v1.sql")).toMatchObject({
-      appliedToDev: false,
+      appliedToDev: true,
       containsDataChange: false,
       safeToReplay: false,
     })

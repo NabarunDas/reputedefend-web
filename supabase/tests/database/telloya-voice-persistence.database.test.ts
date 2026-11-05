@@ -14,7 +14,6 @@ import { PGlite } from "@electric-sql/pglite"
 
 import { persistVoiceEvent } from "../../../apps/telloya/lib/voice/persist"
 import { signRetellSignature } from "../../../apps/telloya/lib/voice/signature"
-import { MINIMAL_LEAD_FIELDS } from "../../../apps/telloya/lib/voice/types"
 import { applyChain, migrationSql, preparePlatform } from "../../../apps/admin/lib/recovery/harness"
 import { migrationChain } from "../../../apps/admin/lib/recovery/manifest"
 
@@ -32,6 +31,9 @@ const ACTOR = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1"
 const NUMBER_A = "+440000000010"
 const NUMBER_B = "+440000000020"
 const NUMBER_PROD = "+440000000030"
+const NUMBER_PROD_ONLY = "+440000000031"
+const BUSINESS_P = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1"
+const LOCATION_P = "ffffffff-ffff-4fff-8fff-ffffffffffff"
 const CALLBACK = "+440000000099"
 const TRANSCRIPT = "TRANSCRIPT_SENTINEL_not_a_real_call"
 const RECORDING = "https://recordings.example.invalid/call_test_001"
@@ -158,10 +160,12 @@ beforeAll(async () => {
       ('${CUSTOMER_B}', 'Bea Test', 'bea.voice@example.com');
     insert into public.businesses(id, display_name) values
       ('${BUSINESS_A}', 'Voice Business A'),
-      ('${BUSINESS_B}', 'Voice Business B');
+      ('${BUSINESS_B}', 'Voice Business B'),
+      ('${BUSINESS_P}', 'Voice Business Production Only');
     insert into public.locations(id, business_id, country, location_name) values
       ('${LOCATION_A}', '${BUSINESS_A}', 'GB', 'Lane A'),
-      ('${LOCATION_B}', '${BUSINESS_B}', 'GB', 'Lane B');
+      ('${LOCATION_B}', '${BUSINESS_B}', 'GB', 'Lane B'),
+      ('${LOCATION_P}', '${BUSINESS_P}', 'GB', 'Lane Production');
     insert into public.business_memberships(customer_id, business_id, status, verified_at, verified_by, evidence) values
       ('${CUSTOMER_A}', '${BUSINESS_A}', 'verified', now(), '${ACTOR}', 'Synthetic membership for the voice isolation test.'),
       ('${CUSTOMER_B}', '${BUSINESS_B}', 'verified', now(), '${ACTOR}', 'Synthetic membership for the other voice business.');
@@ -169,6 +173,7 @@ beforeAll(async () => {
   await db.query("select public.telloya_voice_bind_number_v1($1, $2, $3, $4, $5)", ["dev", NUMBER_A, "agent_test_a", BUSINESS_A, LOCATION_A])
   await db.query("select public.telloya_voice_bind_number_v1($1, $2, $3, $4, $5)", ["dev", NUMBER_B, "agent_test_b", BUSINESS_B, LOCATION_B])
   await db.query("select public.telloya_voice_bind_number_v1($1, $2, $3, $4, $5)", ["production", NUMBER_PROD, "agent_test_a", BUSINESS_A, LOCATION_A])
+  await db.query("select public.telloya_voice_bind_number_v1($1, $2, $3, $4, $5)", ["production", NUMBER_PROD_ONLY, "agent_test_prod", BUSINESS_P, LOCATION_P])
 }, 180000)
 
 afterAll(async () => { await db.close() })
@@ -278,33 +283,54 @@ describe("local Telloya voice persistence", () => {
     expect(await count("select count(*)::int as n from public.telloya_voice_leads where provider_call_ref = 'call_test_104'")).toBe(1)
   })
 
-  it("stops one business reading another and stops DEV reading Production", async () => {
-    expect(await commit(event({ callId: "call_test_105", bodySha256: digest("call_test_105") }))).toBe("accepted")
+  it("keeps the same call reference for one location in DEV and Production", async () => {
+    expect(await commit(event({ callId: "call_test_shared", bodySha256: digest("call_test_shared-dev") }))).toBe("accepted")
     expect(await commit(event({
       environment: "production",
-      callId: "call_test_106",
-      bodySha256: digest("call_test_106"),
+      callId: "call_test_shared",
+      bodySha256: digest("call_test_shared-production"),
       toNumber: NUMBER_PROD,
     }))).toBe("accepted")
-    const devA = parsed<Array<{ providerCallRef: string }>>((await rows<{ leads: unknown }>(
-      "select public.telloya_voice_list_leads_v1('dev', $1, $2) as leads",
-      [BUSINESS_A, CUSTOMER_A],
-    ))[0]?.leads)
-    const devAsB = parsed<unknown[]>((await rows<{ leads: unknown }>(
-      "select public.telloya_voice_list_leads_v1('dev', $1, $2) as leads",
+    const stored = await rows<{ environment: string; location_id: string }>(
+      "select environment, location_id::text from public.telloya_voice_leads where provider_call_ref = 'call_test_shared' order by environment",
+    )
+    expect(stored).toEqual([
+      { environment: "dev", location_id: LOCATION_A },
+      { environment: "production", location_id: LOCATION_A },
+    ])
+  })
+
+  it("returns no other environment from a DEV lane snapshot", async () => {
+    const snapshot = parsed<{ bindings: Array<{ environment: string; inboundToNumber: string; agentId: string; businessId: string; locationId: string }> }>((await rows<{ snapshot: unknown }>(
+      "select public.telloya_voice_lane_snapshot_v1('dev', 'call_test_shared') as snapshot",
+    ))[0]?.snapshot)
+    expect(snapshot.bindings.length).toBeGreaterThan(0)
+    expect(snapshot.bindings.every((binding) => binding.environment === "dev")).toBe(true)
+    const encoded = JSON.stringify(snapshot)
+    expect(encoded).not.toContain(NUMBER_PROD)
+    expect(encoded).not.toContain(NUMBER_PROD_ONLY)
+    expect(encoded).not.toContain("agent_test_prod")
+    expect(encoded).not.toContain(BUSINESS_P)
+    expect(encoded).not.toContain(LOCATION_P)
+  })
+
+  it("does not accept a supplied customer id as a lead read", async () => {
+    expect(await count("select count(*)::int as n from pg_proc where proname = 'telloya_voice_list_leads_v1'")).toBe(0)
+    const spoofed = await rejected(
+      "select public.telloya_voice_list_leads_v1('dev', $1::uuid, $2::uuid)",
       [BUSINESS_A, CUSTOMER_B],
-    ))[0]?.leads)
-    const prodA = parsed<Array<{ providerCallRef: string }>>((await rows<{ leads: unknown }>(
-      "select public.telloya_voice_list_leads_v1('production', $1, $2) as leads",
-      [BUSINESS_A, CUSTOMER_A],
-    ))[0]?.leads)
-    expect(devA.map((lead) => lead.providerCallRef)).toContain("call_test_105")
-    expect(devA.map((lead) => lead.providerCallRef)).not.toContain("call_test_106")
-    expect(prodA.map((lead) => lead.providerCallRef)).toEqual(["call_test_106"])
-    expect(devAsB).toEqual([])
-    expect(Object.keys(devA[0] ?? {}).sort()).toEqual([...MINIMAL_LEAD_FIELDS].sort())
-    expect(JSON.stringify(devA)).not.toContain(NUMBER_A)
-    expect(JSON.stringify(devA)).not.toContain("durationSeconds")
+    )
+    expect(spoofed).toMatch(/does not exist/i)
+    expect(spoofed).not.toContain("call_test_shared")
+    expect(spoofed).not.toContain(CALLBACK)
+    const devLead = (await rows<{ business_id: string }>(
+      "select business_id::text from public.telloya_voice_leads where environment = 'dev' and provider_call_ref = 'call_test_shared'",
+    ))[0]
+    const productionLead = (await rows<{ business_id: string }>(
+      "select business_id::text from public.telloya_voice_leads where environment = 'production' and provider_call_ref = 'call_test_shared'",
+    ))[0]
+    expect(devLead?.business_id).toBe(BUSINESS_A)
+    expect(productionLead?.business_id).toBe(BUSINESS_A)
   })
 
   it("rejects a number that is not bound to the supplied agent", async () => {
@@ -359,7 +385,7 @@ describe("local Telloya voice persistence", () => {
     await db.exec("set local role anon")
     let anonCall = "allowed"
     try {
-      await db.query("select public.telloya_voice_list_leads_v1('dev', $1, $2)", [BUSINESS_A, CUSTOMER_A])
+      await db.query("select public.telloya_voice_lane_snapshot_v1('dev', 'call_test_101')")
     } catch (error) {
       anonCall = error instanceof Error ? error.message : String(error)
     }
@@ -368,10 +394,28 @@ describe("local Telloya voice persistence", () => {
 
     await db.exec("begin")
     await db.exec("set local role service_role")
-    const listed = await rows<{ leads: unknown }>("select public.telloya_voice_list_leads_v1('dev', $1, $2) as leads", [BUSINESS_A, CUSTOMER_A])
+    const snapshot = await rows<{ snapshot: unknown }>("select public.telloya_voice_lane_snapshot_v1('dev', 'call_test_101') as snapshot")
     await db.exec("commit")
-    expect(parsed<unknown[]>(listed[0]?.leads).length).toBeGreaterThan(0)
+    const bindings = parsed<{ bindings: Array<{ environment: string }> }>(snapshot[0]?.snapshot).bindings
+    expect(bindings.length).toBeGreaterThan(0)
+    expect(bindings.every((binding) => binding.environment === "dev")).toBe(true)
     expect(await count("select count(*)::int as n from pg_policies where tablename like 'telloya_voice_%'")).toBe(0)
+  })
+
+  it("rejects a second location for an agent that is already active", async () => {
+    const clash = await rejected(
+      "select public.telloya_voice_bind_number_v1('dev', '+440000000050', 'agent_test_a', $1, $2)",
+      [BUSINESS_B, LOCATION_B],
+    )
+    expect(clash).toContain("telloya_voice_rejected")
+    expect(clash).not.toContain("+440000000050")
+    await db.query(
+      "select public.telloya_voice_bind_number_v1('dev', '+440000000051', 'agent_test_a', $1, $2)",
+      [BUSINESS_A, LOCATION_A],
+    )
+    expect(await count(
+      "select count(*)::int as n from public.telloya_voice_number_bindings where environment = 'dev' and agent_id = 'agent_test_a' and active",
+    )).toBe(2)
   })
 
   it("never stores a transcript, recording, raw body, network caller id, or secret", async () => {
@@ -493,6 +537,33 @@ describe.skipIf(!pgBin)("concurrent voice commits on two PostgreSQL sessions", (
     expect(outcomes).toContain("accepted")
     expect(outcomes).toContain("duplicate")
     const counted = await execFile(join(pgBin!, "psql"), [...psqlArgs(), "-c", "select count(*) from public.telloya_voice_leads where provider_call_ref = 'call_test_concurrent'"])
+    expect(counted.stdout.trim()).toBe("1")
+  })
+
+  it("accepts exactly one assignment when two sessions bind one agent to different locations", async () => {
+    const business = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1"
+    const location = "cccccccc-cccc-4ccc-8ccc-ccccccccccc2"
+    const other = "cccccccc-cccc-4ccc-8ccc-ccccccccccc4"
+    await execFile(join(pgBin!, "psql"), [...psqlArgs(), "-c", `
+      insert into public.locations(id, business_id, country, location_name)
+      values ('${other}', '${business}', 'GB', 'Lock Lane Two');
+    `])
+    const left = "select public.telloya_voice_bind_number_v1('dev', '+440000000041', 'agent_test_race', '" + business + "', '" + location + "');"
+    const right = "select public.telloya_voice_bind_number_v1('dev', '+440000000042', 'agent_test_race', '" + business + "', '" + other + "');"
+    const [first, second] = await Promise.allSettled([
+      execFile(join(pgBin!, "psql"), [...psqlArgs(), "-c", left]),
+      execFile(join(pgBin!, "psql"), [...psqlArgs(), "-c", right]),
+    ])
+    const settled = [first, second]
+    expect(settled.filter((result) => result.status === "fulfilled")).toHaveLength(1)
+    const failure = settled.find((result) => result.status === "rejected")
+    expect(failure?.status).toBe("rejected")
+    const reason = failure?.status === "rejected" ? failure.reason as { stderr?: string } : { stderr: "" }
+    const text = reason.stderr ?? ""
+    expect(text).toContain("telloya_voice_rejected")
+    expect(text).not.toContain("+440000000041")
+    expect(text).not.toContain("+440000000042")
+    const counted = await execFile(join(pgBin!, "psql"), [...psqlArgs(), "-c", "select count(*) from public.telloya_voice_number_bindings where agent_id = 'agent_test_race' and active"])
     expect(counted.stdout.trim()).toBe("1")
   })
 })

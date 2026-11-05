@@ -1476,7 +1476,8 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Commercial payment settlement. Applied once to profilerelaunch-dev.
-    // The verified DEV ledger contains 103 entries and ends at 20261104190000.
+    // When settlement was applied, the verified DEV ledger contained 103
+    // entries and ended at 20261104190000. The current head is 20261104220000.
     // The previous ledger contained 102 entries and ended at 20261103230000.
     // Canonical version recorded once. Repository file is 71,495 characters.
     // MD5 f09048135272dbc84b7ff1c794f18361.
@@ -1497,6 +1498,24 @@ export const migrationChain: readonly MigrationEntry[] = [
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Customer commercial payment settlement", probe: "public.commercial_payment_settle_initial_invoice_v1" },
+  },
+  {
+    // Commercial setup handover. Applied once to profilerelaunch-dev.
+    // The verified DEV ledger contains 104 entries and ends at 20261104220000.
+    // The previous ledger contained 103 entries and ended at 20261104190000.
+    // Read-only queue and customer checklist. containsDataChange stays false.
+    // It does not create a subscription, entitlement, provision, coverage, or payment.
+    // It does not move a provision to LIVE.
+    // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
+    // Do not replay 20261104190000. safeToReplay stays false.
+    version: "20261104220000",
+    filename: "20261104220000_customer_commercial_setup_handover_v1.sql",
+    step: "Customer commercial setup handover",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Customer commercial setup handover", probe: "public.customer_portal_setup_handover_v1" },
   },
   {
     // Telloya voice persistence. Local repository only.
@@ -1523,7 +1542,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261104190000`. The live DEV ledger contains 103 entries. Commercial
+ * `20261104220000`. The live DEV ledger contains 104 entries. The previous
+ * head `20261104190000` had 103 entries. Commercial
  * payment settlement was applied once to DEV. The repository file is
  * 71,495 characters. MD5 f09048135272dbc84b7ff1c794f18361. SHA-256
  * 950af7786e449b1158b531d67f7a858ae9c59aad6a2496e227752bd3779961c1.
@@ -1627,7 +1647,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * volatility `20261028223000` and draft document role `20261028200000` remain
  * applied and must not be replayed. `pendingMigrations()` contains only the
  * unapplied local voice file `20261105120000`. Do not apply it to hosted DEV
- * or Production.
+ * or Production. `20261104220000` is already applied on DEV and must not be
+ * replayed. Do not replay `20261104220000`. Do not apply `20261104220000`
+ * to Production.
  * `20261104190000` is already applied on DEV and must not be replayed.
  * Do not replay `20261104190000`. Do not apply `20261104190000` to Production.
  * `20261103230000` is already applied on DEV and must not be replayed.

@@ -71,7 +71,12 @@ export function parseCommercialProducts(value: unknown): CommercialProjection | 
 }
 
 function section(value: unknown, guard: false): { status: CommercialStatus; locations: Array<{ locationName: string; status: CommercialStatus; nextStep: string | null }> } | null
-function section(value: unknown, guard: true): { status: CommercialStatus; locations: Array<{ locationName: string; status: CommercialStatus; monitoringRecorded: boolean; allocation: "preview" | "reserved" | null; nextStep: string | null }> } | null
+function section(value: unknown, guard: true): {
+  status: CommercialStatus
+  locations: Array<{ locationName: string; status: CommercialStatus; monitoringRecorded: boolean; allocation: "preview" | "reserved" | null; nextStep: string | null }>
+  includedQuantity?: number
+  assignment?: "pending_confirmation" | "recorded"
+} | null
 function section(value: unknown, guard: boolean) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   const record = value as Record<string, unknown>
@@ -104,7 +109,17 @@ function section(value: unknown, guard: boolean) {
       nextStep,
     })
   }
-  return { status: sectionStatus, locations }
+  if (!guard) return { status: sectionStatus, locations }
+  const includedQuantity = record.includedQuantity
+  const assignment = record.assignment
+  if (includedQuantity != null && (typeof includedQuantity !== "number" || !Number.isInteger(includedQuantity) || includedQuantity < 0)) return null
+  if (assignment != null && assignment !== "pending_confirmation" && assignment !== "recorded") return null
+  return {
+    status: sectionStatus,
+    locations,
+    ...(typeof includedQuantity === "number" ? { includedQuantity } : {}),
+    ...(assignment === "pending_confirmation" || assignment === "recorded" ? { assignment } : {}),
+  }
 }
 
 /**

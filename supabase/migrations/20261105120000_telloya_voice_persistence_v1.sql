@@ -66,7 +66,7 @@ CREATE TABLE public.telloya_voice_leads (
   CONSTRAINT telloya_voice_leads_location_business_fk
     FOREIGN KEY (location_id, business_id) REFERENCES public.locations (id, business_id) ON DELETE RESTRICT,
   CONSTRAINT telloya_voice_leads_call UNIQUE (environment, provider_call_ref),
-  CONSTRAINT telloya_voice_leads_location_call UNIQUE (location_id, provider_call_ref),
+  CONSTRAINT telloya_voice_leads_location_call UNIQUE (environment, location_id, provider_call_ref),
   CONSTRAINT telloya_voice_leads_finalised_shape CHECK (
     (finalised = false AND finalised_by IS NULL)
     OR (finalised = true AND finalised_by IS NOT NULL)
@@ -281,6 +281,7 @@ BEGIN
   ) THEN
     PERFORM admin_private.telloya_voice_reject_v1();
   END IF;
+  PERFORM pg_advisory_xact_lock(hashtext('telloya-agent:' || p_environment || ':' || p_agent_id)::bigint);
   IF EXISTS (
     SELECT 1 FROM public.telloya_voice_number_bindings
     WHERE environment = p_environment
@@ -336,6 +337,7 @@ BEGIN
         'active', active
       ) ORDER BY created_at)
       FROM public.telloya_voice_number_bindings
+      WHERE environment = p_environment
     ), '[]'::jsonb),
     'receipts', COALESCE((
       SELECT jsonb_agg(jsonb_build_object(
@@ -558,36 +560,32 @@ EXCEPTION
 END;
 $fn$;
 
-CREATE FUNCTION admin_private.telloya_voice_list_leads_v1(
-  p_environment text,
-  p_business_id uuid,
-  p_customer_id uuid
-)
-RETURNS jsonb
+CREATE FUNCTION admin_private.telloya_voice_binding_guard_v1()
+RETURNS trigger
 LANGUAGE plpgsql
-STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $fn$
 BEGIN
-  IF p_environment NOT IN ('dev', 'production') OR p_business_id IS NULL OR p_customer_id IS NULL THEN
-    PERFORM admin_private.telloya_voice_reject_v1();
+  IF NEW.active THEN
+    PERFORM pg_advisory_xact_lock(hashtext('telloya-agent:' || NEW.environment || ':' || NEW.agent_id)::bigint);
+    IF EXISTS (
+      SELECT 1 FROM public.telloya_voice_number_bindings
+      WHERE environment = NEW.environment
+        AND active
+        AND agent_id = NEW.agent_id
+        AND location_id IS DISTINCT FROM NEW.location_id
+    ) THEN
+      PERFORM admin_private.telloya_voice_reject_v1();
+    END IF;
   END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM public.business_memberships
-    WHERE customer_id = p_customer_id
-      AND business_id = p_business_id
-      AND status = 'verified'
-  ) THEN
-    RETURN '[]'::jsonb;
-  END IF;
-  RETURN COALESCE((
-    SELECT jsonb_agg(admin_private.telloya_voice_lead_json_v1(lead) ORDER BY lead.created_at, lead.provider_call_ref)
-    FROM public.telloya_voice_leads lead
-    WHERE lead.environment = p_environment AND lead.business_id = p_business_id
-  ), '[]'::jsonb);
+  RETURN NEW;
 END;
 $fn$;
+
+CREATE TRIGGER telloya_voice_binding_guard
+  BEFORE INSERT OR UPDATE ON public.telloya_voice_number_bindings
+  FOR EACH ROW EXECUTE FUNCTION admin_private.telloya_voice_binding_guard_v1();
 
 CREATE FUNCTION admin_private.telloya_voice_finalise_fallback_v1(p_environment text, p_call_id text)
 RETURNS jsonb
@@ -704,15 +702,6 @@ AS $fn$
   SELECT admin_private.telloya_voice_commit_event_v1($1);
 $fn$;
 
-CREATE FUNCTION public.telloya_voice_list_leads_v1(text, uuid, uuid)
-RETURNS jsonb
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = ''
-AS $fn$
-  SELECT admin_private.telloya_voice_list_leads_v1($1, $2, $3);
-$fn$;
-
 CREATE FUNCTION public.telloya_voice_finalise_fallback_v1(text, text)
 RETURNS jsonb
 LANGUAGE sql
@@ -742,13 +731,12 @@ REVOKE ALL ON FUNCTION
   admin_private.telloya_voice_bind_number_v1(text, text, text, uuid, uuid),
   admin_private.telloya_voice_lane_snapshot_v1(text, text),
   admin_private.telloya_voice_commit_event_v1(jsonb),
-  admin_private.telloya_voice_list_leads_v1(text, uuid, uuid),
+  admin_private.telloya_voice_binding_guard_v1(),
   admin_private.telloya_voice_finalise_fallback_v1(text, text),
   admin_private.telloya_voice_mark_notification_failed_v1(text, text, text),
   public.telloya_voice_bind_number_v1(text, text, text, uuid, uuid),
   public.telloya_voice_lane_snapshot_v1(text, text),
   public.telloya_voice_commit_event_v1(jsonb),
-  public.telloya_voice_list_leads_v1(text, uuid, uuid),
   public.telloya_voice_finalise_fallback_v1(text, text),
   public.telloya_voice_mark_notification_failed_v1(text, text, text)
 FROM PUBLIC, anon, authenticated, service_role;
@@ -757,7 +745,6 @@ GRANT EXECUTE ON FUNCTION
   public.telloya_voice_bind_number_v1(text, text, text, uuid, uuid),
   public.telloya_voice_lane_snapshot_v1(text, text),
   public.telloya_voice_commit_event_v1(jsonb),
-  public.telloya_voice_list_leads_v1(text, uuid, uuid),
   public.telloya_voice_finalise_fallback_v1(text, text),
   public.telloya_voice_mark_notification_failed_v1(text, text, text)
 TO service_role;

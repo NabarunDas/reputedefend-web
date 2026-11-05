@@ -499,15 +499,14 @@ describe("atomic commercial payment settlement", () => {
     const products = await rpc<{ businesses?: Array<Row> }>("customer_portal_products_v1", [session])
     const kitchenView = (products.businesses ?? []).find(business => business.businessName === "Complete Kitchen") as Row | undefined
     const guard = kitchenView?.guard as Row | undefined
-    const guardLocations = (guard?.locations ?? []) as Array<Row>
-    expect(guard?.status).toBe("pending")
-    expect(guardLocations).toEqual([expect.objectContaining({
-      locationName: "Oven",
+    expect(guard).toEqual({
       status: "pending",
-      monitoringRecorded: false,
-      allocation: null,
-      nextStep: "Included in your package. Monitoring setup is pending.",
-    })])
+      includedQuantity: 1,
+      assignment: "pending_confirmation",
+      locations: [],
+    })
+    expect(JSON.stringify(kitchenView?.telloya)).toContain("Oven")
+    expect(JSON.stringify(guard)).not.toContain("Oven")
     expect(JSON.stringify(products)).not.toContain("businessId")
     expect(JSON.stringify(products)).not.toContain("not_subscribed")
     expect(JSON.stringify(guard)).not.toContain("Ready for use")
@@ -560,19 +559,17 @@ describe("atomic commercial payment settlement", () => {
     const shared = (products.businesses ?? []).filter(business => business.businessName === "Shared Counter")
     expect(shared).toHaveLength(2)
     const till = shared.find(business => JSON.stringify(business.telloya).includes("Counter Till"))
-    const oven = shared.find(business => JSON.stringify(business.guard).includes("Counter Oven"))
+    const oven = shared.find(business => JSON.stringify(business.telloya).includes("Counter Oven"))
     expect(till?.guard).toMatchObject({ status: "not_subscribed", locations: [] })
     expect(JSON.stringify(till?.telloya)).toContain("Payment received. Your AI receptionist setup has not started.")
-    expect(oven?.guard).toMatchObject({
+    expect(JSON.stringify(till?.guard)).not.toContain("Counter Oven")
+    expect(oven?.guard).toEqual({
       status: "pending",
-      locations: [expect.objectContaining({
-        locationName: "Counter Oven",
-        status: "pending",
-        monitoringRecorded: false,
-        allocation: null,
-        nextStep: "Included in your package. Monitoring setup is pending.",
-      })],
+      includedQuantity: 1,
+      assignment: "pending_confirmation",
+      locations: [],
     })
+    expect(JSON.stringify(oven?.guard)).not.toContain("Counter Oven")
     expect(JSON.stringify(oven?.telloya)).toContain("Payment received. Your AI receptionist setup has not started.")
     expect(JSON.stringify(products)).not.toContain("businessId")
     expect(await effects()).toEqual({ ...before, evidence: before.evidence + 2 })

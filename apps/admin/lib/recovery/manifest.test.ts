@@ -18,7 +18,7 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261104190000_customer_commercial_payment_settlement_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261104220000_customer_commercial_setup_handover_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
@@ -94,7 +94,8 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Commercial payment settlement remains the DEV ledger head.
+    // Commercial setup handover is the DEV ledger head. Do not replay it.
+    // Do not apply 20261104220000 to Production.
     // The repository head is the unapplied voice migration.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
     // Do not apply 20261105120000 to hosted DEV or Production.
@@ -177,6 +178,18 @@ describe("the migration chain manifest", () => {
     expect(createHash("md5").update(settlementSql).digest("hex")).toBe("f09048135272dbc84b7ff1c794f18361")
     expect(createHash("sha256").update(settlementSql).digest("hex")).toBe("950af7786e449b1158b531d67f7a858ae9c59aad6a2496e227752bd3779961c1")
     expect(findMigration("20261104190000_customer_commercial_payment_settlement_v1.sql")).toMatchObject({
+      appliedToDev: true,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
+    const setupHandoverSql = readFileSync(new URL("20261104220000_customer_commercial_setup_handover_v1.sql", directory), "utf8")
+    expect(setupHandoverSql.length).toBe(25436)
+    expect(createHash("md5").update(setupHandoverSql).digest("hex")).toBe("690e88917f0166f376d3e8189b60b427")
+    expect(createHash("sha256").update(setupHandoverSql).digest("hex")).toBe("dbbc03ed138c1f2115d44e7c13923570bf1cbf6205e401bec85aef6df00552c3")
+    expect(setupHandoverSql).toContain("Do not apply 20261104220000 to DEV")
+    expect(setupHandoverSql).toContain("Do not apply 20261104220000 to Production")
+    expect(setupHandoverSql).not.toMatch(/\bINSERT INTO\b|\bUPDATE\b|\bDELETE FROM\b/)
+    expect(findMigration("20261104220000_customer_commercial_setup_handover_v1.sql")).toMatchObject({
       appliedToDev: true,
       containsDataChange: false,
       safeToReplay: false,

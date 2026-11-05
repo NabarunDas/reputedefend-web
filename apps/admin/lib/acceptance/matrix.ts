@@ -331,6 +331,21 @@ export const acceptanceMatrix: AcceptanceRow[] = [
     status: "PASS",
   },
   {
+    area: "Paid commercial setup",
+    routes: ["/commercial/setup"],
+    surfaces: [],
+    action: "See which paid Telloya and Complete subscriptions are waiting for service setup.",
+    expected: "The queue shows the customer, business, reference, plan, price, locations, verified payment time, operational status and the next action. It does not start setup.",
+    authorization: staffAndSession,
+    persistence: "Read-only. No entitlement, provision, coverage or payment row is written.",
+    negative: "A payment-pending subscription is omitted. There is no control that marks a service active or provisions a provider.",
+    evidence: [
+      "app/commercial/setup/setup-queue-view.test.tsx",
+      "lib/customer-portal/setup-handover.database.test.ts",
+    ],
+    status: "PASS",
+  },
+  {
     area: "Money, payments and invoices",
     routes: ["/money"],
     surfaces: ["/api/operations/payments", "/api/webhooks/stripe"],

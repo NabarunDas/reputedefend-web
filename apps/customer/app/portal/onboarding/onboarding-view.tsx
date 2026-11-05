@@ -47,13 +47,19 @@ function stepState(request: OnboardingRequestView, stage: OnboardingStage): "com
 
 function RequestProgress({ request }: { request: OnboardingRequestView }) {
   const closed = request.stage === "declined" || request.stage === "closed"
+  const setupPending = request.stage === "service_setup"
+    && request.nextStep === "Payment is recorded. Service setup has not started."
+    && !request.completed.includes("Service setup recorded")
+  const steps = STEPS.map(step => step.stage === "service_setup" && setupPending
+    ? { ...step, label: "Setup pending" }
+    : step)
   const received = when(request.receivedAt)
   const updated = when(request.updatedAt)
   return (
     <article className="onboarding-request">
       <header>
         <p className="onboarding-kicker">{request.product}</p>
-        <h2>{request.statusLabel}</h2>
+        <h2>{setupPending ? "Setup pending" : request.statusLabel}</h2>
         <p className={request.customerActionRequired ? "onboarding-banner is-action" : "onboarding-banner"}>
           {request.customerActionRequired ? "Action needed from you." : "Waiting for us."} {request.nextStep}
         </p>
@@ -80,7 +86,7 @@ function RequestProgress({ request }: { request: OnboardingRequestView }) {
       </section>
       {closed ? <p>This request is closed. Later setup stages are not shown.</p> : (
         <ol className="onboarding-steps" aria-label={`${request.product} progress`}>
-          {STEPS.map((step, index) => {
+          {steps.map((step, index) => {
             const state = stepState(request, step.stage)
             return (
               <li key={step.stage} className={`onboarding-step is-${state}`} {...(state === "current" ? { "aria-current": "step" as const } : {})}>

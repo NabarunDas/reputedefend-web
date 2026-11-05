@@ -1498,6 +1498,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Customer commercial payment settlement", probe: "public.commercial_payment_settle_initial_invoice_v1" },
   },
+  {
+    // Telloya voice persistence. Local repository only.
+    // appliedToDev stays false: this file has not been applied to hosted DEV
+    // or Production. It creates no commercial, enquiry, or customer rows.
+    // Do not apply 20261105120000 to hosted DEV or Production.
+    version: "20261105120000",
+    filename: "20261105120000_telloya_voice_persistence_v1.sql",
+    step: "Telloya voice persistence",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya voice persistence", probe: "public.telloya_voice_leads" },
+  },
 ]
 
 /**
@@ -1611,7 +1625,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` contains only the
+ * unapplied local voice file `20261105120000`. Do not apply it to hosted DEV
+ * or Production.
  * `20261104190000` is already applied on DEV and must not be replayed.
  * Do not replay `20261104190000`. Do not apply `20261104190000` to Production.
  * `20261103230000` is already applied on DEV and must not be replayed.

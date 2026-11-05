@@ -143,4 +143,32 @@ describe("Telloya onboarding panel", () => {
     expect(screen.getByRole("button", { name: "Send a new invitation" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Process queued invitation now" })).toBeNull()
   })
+
+  it("asks the administrator to choose an approved tier and keeps the enquiry as interest", () => {
+    render(<OnboardingPanel view={{
+      ...base,
+      step: "next",
+      emailVerified: true,
+      contactVerified: true,
+      membership: "verified",
+      termsConfigured: true,
+      requestedTier: "growth",
+      outstanding: [],
+      nextAction: null,
+      request: { id: "33333333-3333-4333-8333-333333333333", product: "TELLOYA", state: "IN_REVIEW", version: 5, customerId: "22222222-2222-4222-8222-222222222222", businessId: "44444444-4444-4444-8444-444444444444", declineReason: null, subscriptionId: null },
+      customer: { id: "22222222-2222-4222-8222-222222222222", name: "North Owner", emailVerified: true, version: 1 },
+      approvedPlans: [
+        { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", versionNumber: 1, tierCode: "BASIC", tierLabel: "Basic", amountMinor: 4900, currency: "GBP", cadence: "MONTH", termsRef: "terms-basic", includedMinutes: 120, baseAmountMinor: 4900, guardUnitMinor: 999, overageRateMinor: 25, conditionsStatus: "APPROVED", telloyaQuantity: 2, guardQuantity: null, selectedLocations: 2, optionalGuardAmountMinor: 1998, matchesApprovedSchedule: true },
+        { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", versionNumber: 1, tierCode: "GROWTH", tierLabel: "Growth", amountMinor: 7900, currency: "GBP", cadence: "MONTH", termsRef: "terms-growth", includedMinutes: 300, baseAmountMinor: 7900, guardUnitMinor: 999, overageRateMinor: 25, conditionsStatus: "APPROVED", telloyaQuantity: 2, guardQuantity: null, selectedLocations: 2, optionalGuardAmountMinor: 1998, matchesApprovedSchedule: true },
+      ],
+    }} enquiryId={enquiryId} open businessName="North Plumbing" country="United Kingdom" />)
+    expect(screen.getByText(/asked for Growth/)).toBeTruthy()
+    expect(screen.getByText(/not consent to charge/)).toBeTruthy()
+    expect(screen.getByText(/£49\.00 per month\. 120 minutes/)).toBeTruthy()
+    expect(screen.getByText(/£79\.00 per month\. 300 minutes/)).toBeTruthy()
+    expect(screen.getAllByText(/£19\.98/)).toHaveLength(2)
+    expect(screen.getAllByRole("radio", { name: /version 1/ })).toHaveLength(2)
+    expect(screen.getByRole("button", { name: "Prepare the selected offer" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Prepare the approved offer" })).toBeNull()
+  })
 })

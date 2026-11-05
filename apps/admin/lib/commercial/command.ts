@@ -52,6 +52,8 @@ export async function onboardingCommand(request: NextRequest) {
         if (result.reason === "quantities") return reply("The selected locations do not match the approved Telloya quantity. Guard is not given that same quantity. No price is offered.", 409)
         if (result.reason === "components") return reply("This plan does not include the required Telloya or Guard component. No price is offered.", 409)
         return reply("Commercial terms not yet configured. No price is offered.", 409)
+      case "tier_required": return reply("Choose the approved Basic, Growth, Pro or Custom version. The enquiry does not select it.", 409)
+      case "tier_mismatch": return reply("The approved plan tier does not match its conditions. No price is offered.", 409)
       case "conflict":
         if (result.reason === "business") return reply("That business already has an open voice onboarding request. Reload it before trying again.", 409)
         if (result.reason === "offer") return reply("That business already has an open commercial offer. Reload it before trying again.", 409)

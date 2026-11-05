@@ -45,6 +45,8 @@ describe("onboarding command messages", () => {
     ["terms_unconfigured", "quantities", 409, "The selected locations do not match the approved Telloya quantity. Guard is not given that same quantity. No price is offered."],
     ["terms_unconfigured", "components", 409, "This plan does not include the required Telloya or Guard component. No price is offered."],
     ["terms_unconfigured", undefined, 409, "Commercial terms not yet configured. No price is offered."],
+    ["tier_required", undefined, 409, "Choose the approved Basic, Growth, Pro or Custom version. The enquiry does not select it."],
+    ["tier_mismatch", undefined, 409, "The approved plan tier does not match its conditions. No price is offered."],
   ] as const)("explains %s %s", async (status, reason, code, message) => {
     mocks.rpc.mockResolvedValue({ status, reason })
     const response = await POST(req())

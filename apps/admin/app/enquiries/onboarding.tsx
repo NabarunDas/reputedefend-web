@@ -2,10 +2,32 @@
 import { CommandForm, Reason } from "../records/forms"
 import { Badge } from "../ui"
 import { ukDate } from "@/lib/admin/activity"
-import { operationLabels, productLabels, stateLabels, type OnboardingView } from "@/lib/commercial/onboarding"
+import { operationLabels, productLabels, stateLabels, type ApprovedCommercialPlan, type OnboardingView } from "@/lib/commercial/onboarding"
 import type { InvitationMail } from "@/lib/commercial/invitation-mail"
 
 const steps = ["Product", "Customer", "Business", "Locations", "Next action"] as const
+
+const tierLabels: Record<string, string> = { basic: "Basic", growth: "Growth", pro: "Pro", custom: "Custom" }
+
+function pounds(minor: number | null) {
+  if (minor === null) return "Not recorded"
+  return `£${(minor / 100).toFixed(2)}`
+}
+
+function planReview(plan: ApprovedCommercialPlan) {
+  const name = plan.tierLabel || "Unscoped approved version"
+  const minutes = plan.includedMinutes === null ? "minutes are quoted with this version" : `${plan.includedMinutes} minutes`
+  const guard = plan.guardQuantity
+    ? `Guard quantity ${plan.guardQuantity}, recorded separately from the Telloya quantity`
+    : plan.guardUnitMinor === null
+      ? "No Guard unit is recorded on this version"
+      : `Optional Guard ${pounds(plan.guardUnitMinor)} per location × ${plan.selectedLocations} = ${pounds(plan.optionalGuardAmountMinor)}. This is not added to the Telloya price.`
+  const schedule = plan.matchesApprovedSchedule
+    ? "This version matches the approved schedule."
+    : "This approved version is not the published schedule. Review the recorded price before preparing the offer."
+  const conditions = plan.conditionsStatus === "APPROVED" ? "Conditions are approved." : "Conditions are not approved yet. The customer cannot accept this offer until they are."
+  return `${name}, version ${plan.versionNumber}. ${pounds(plan.amountMinor)} per month. ${minutes}. Telloya quantity ${plan.telloyaQuantity ?? "not recorded"}. ${guard} ${conditions} ${schedule}`
+}
 
 const invitationLabels: Record<string, string> = {
   issue_invitation: "Customer invitation queued",
@@ -26,6 +48,7 @@ export function OnboardingPanel({ view, enquiryId, open, businessName, country, 
   const request = view.request
   const version = request?.version ?? 0
   const stepIndex = { classify: 0, customer: 1, business: 2, locations: 3, next: 4 }[view.step]
+  const plans = view.approvedPlans ?? []
   const verifiedCopy = view.emailVerified
     ? "Customer email verified. That check is separate from Admin approval."
     : "Customer email is not verified. Admin approval does not verify it and does not send an invitation."
@@ -43,7 +66,8 @@ export function OnboardingPanel({ view, enquiryId, open, businessName, country, 
     {request && <p><Badge tone="neutral">{productLabels[request.product]}</Badge> · {stateLabels[request.state] || request.state}</p>}
     <p>{verifiedCopy}</p>
     {membershipCopy && <p>{membershipCopy}</p>}
-    {view.termsConfigured ? <p>An approved price is available. Preparing an offer pins that price. It does not take payment or activate a product.</p> : <p>Commercial terms not yet configured. No price is offered.</p>}
+    {view.requestedTier && <p>The enquiry asked for {tierLabels[view.requestedTier]}. That records interest. It is not consent to charge and it is not a subscription.</p>}
+    {view.termsConfigured ? <p>An approved price is available. Preparing an offer pins the selected version. It does not take payment or activate a product.</p> : <p>Commercial terms not yet configured. No price is offered.</p>}
     {!dispatchEnabled && <p>No invitation email is sent from this screen.</p>}
     {dispatchEnabled && !view.invitationReady && <p>No invitation email is sent until this request is ready.</p>}
     {view.outstanding.length > 0 && <ul>{view.outstanding.map(item => <li key={item}>{item}</li>)}</ul>}
@@ -118,7 +142,15 @@ export function OnboardingPanel({ view, enquiryId, open, businessName, country, 
           <Reason label="Why is this invitation being withdrawn?" />
         </CommandForm>}
       </>}
-      {view.termsConfigured && view.membership === "verified" && !request?.subscriptionId && <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare the approved offer" payload={form => ({ operation: "prepare_offer", version, enquiryId, reason: form.get("reason") })}>
+      {view.termsConfigured && view.membership === "verified" && !request?.subscriptionId && plans.length > 0 && <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare the selected offer" payload={form => ({ operation: "prepare_offer", version, enquiryId, planVersionId: form.get("planVersionId"), reason: form.get("reason") })}>
+        <fieldset>
+          <legend>Which approved version should this offer use?</legend>
+          {plans.map(plan => <label key={plan.id} className="checkbox"><input type="radio" name="planVersionId" value={plan.id} required />{planReview(plan)}</label>)}
+        </fieldset>
+        <p>The selected version is pinned. A different tier can be chosen when the customer has agreed to it. Telloya and Guard keep their own quantities. Optional Guard is shown separately and is not added to the Telloya price. This does not open a checkout or activate Telloya or Guard.</p>
+        <Reason label="Why is this offer being prepared?" />
+      </CommandForm>}
+      {view.termsConfigured && view.membership === "verified" && !request?.subscriptionId && plans.length === 0 && <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare the approved offer" payload={form => ({ operation: "prepare_offer", version, enquiryId, reason: form.get("reason") })}>
         <p>This pins the approved price and each component’s approved quantity. Telloya and Guard are not given the same quantity. It does not open a checkout or activate Telloya or Guard.</p>
         <Reason label="Why is this offer being prepared?" />
       </CommandForm>}

@@ -1593,6 +1593,25 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Audited confirm business preferences", probe: "public.admin_commercial_confirm_preferences_v1" },
   },
+  {
+    // Telloya tier identity on the existing commercial catalogue. Not applied
+    // to DEV. The verified DEV ledger contains 105 entries and ends at
+    // 20261105120000. Begin setup 20261105130000 and confirm preferences
+    // 20261105144256 stay unapplied and earlier in the chain.
+    // Do not apply 20261105180000 to DEV. Do not apply 20261105180000 to Production.
+    // Nullable plan_versions.tier_code lets Basic, Growth, Pro and Custom be
+    // approved together. A null tier still allows only one current approved
+    // plan for that product. No plan, agreement, price, or subscription is inserted.
+    // containsDataChange stays false. safeToReplay stays false.
+    version: "20261105180000",
+    filename: "20261105180000_telloya_tier_catalogue_v1.sql",
+    step: "Telloya tier-aware commercial catalogue",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya tier-aware commercial catalogue", probe: "public.admin_commercial_onboarding_v1" },
+  },
 ]
 
 /**
@@ -1728,8 +1747,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` contains only the unapplied Admin begin-setup file
- * `20261105130000`. Do not apply it to hosted DEV or Production.
+ * applied and must not be replayed. `pendingMigrations()` contains
+ * `20261105130000`, `20261105144256` and `20261105180000`. All three stay
+ * local. Do not apply them to hosted DEV or Production.
  * `20261105120000` is already applied on DEV and must not be replayed.
  * Do not replay `20261105120000`. Do not apply `20261105120000` to Production.
  * `20261104220000` is already applied on DEV and must not be

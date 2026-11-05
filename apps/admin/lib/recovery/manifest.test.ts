@@ -22,8 +22,8 @@ describe("the migration chain manifest", () => {
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261104220000_customer_commercial_setup_handover_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261105120000_admin_commercial_begin_setup_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
@@ -38,7 +38,7 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations()).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261105120000_admin_commercial_begin_setup_v1.sql"])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
@@ -98,7 +98,7 @@ describe("the migration chain manifest", () => {
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
     // Do not replay 20261103230000. Do not apply 20261103230000 to Production.
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration("20261103230000_customer_commercial_payment_verification_v1.sql")).toMatchObject({
@@ -189,6 +189,20 @@ describe("the migration chain manifest", () => {
     expect(setupHandoverSql).not.toMatch(/\bINSERT INTO\b|\bUPDATE\b|\bDELETE FROM\b/)
     expect(findMigration("20261104220000_customer_commercial_setup_handover_v1.sql")).toMatchObject({
       appliedToDev: true,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
+    const beginSetupSql = readFileSync(new URL("20261105120000_admin_commercial_begin_setup_v1.sql", directory), "utf8")
+    expect(beginSetupSql).toContain("Do not apply 20261105120000 to DEV")
+    expect(beginSetupSql).toContain("Do not apply 20261105120000 to Production")
+    expect(beginSetupSql).toContain("03A-03-03-02-02")
+    expect(beginSetupSql).not.toMatch(/retell|Resend|stripe\.com/i)
+    expect(beginSetupSql).toContain("REVOKE ALL ON FUNCTION public.admin_commercial_begin_setup_v1(text, uuid, uuid, integer, jsonb)")
+    expect(beginSetupSql).toContain("GRANT EXECUTE ON FUNCTION public.admin_commercial_begin_setup_v1(text, uuid, uuid, integer, jsonb)")
+    expect(beginSetupSql).not.toContain("TO anon")
+    expect(beginSetupSql).not.toContain("TO authenticated")
+    expect(findMigration("20261105120000_admin_commercial_begin_setup_v1.sql")).toMatchObject({
+      appliedToDev: false,
       containsDataChange: false,
       safeToReplay: false,
     })

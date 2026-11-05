@@ -78,7 +78,7 @@ The Admin function is `VOLATILE` because `admin_session_v1` records `last_seen_a
 
 ## Later commands
 
-This page lists the next action and does not run it. There is no Mark active or Provision now control. A later phase can add one audited command for each of these, still without treating `ACTIVE` as setup:
+This page lists the next action and does not run it. There is no Mark active or Provision now control. Begin setup is the separate unapplied command in `03A-03-03-02-01-begin-setup.md`. The later commands remain separate, still without treating `ACTIVE` as setup:
 
 1. Begin setup.
 2. Confirm business preferences.

@@ -1,0 +1,383 @@
+/**
+ * Two real PostgreSQL sessions starting setup for one paid subscription.
+ * PGlite has one connection, so it cannot show the second transaction waiting.
+ */
+import { execFile as execFileCb } from "node:child_process"
+import { createHash, randomBytes, randomUUID } from "node:crypto"
+import { existsSync } from "node:fs"
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { promisify } from "node:util"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { migrationSql } from "../recovery/harness"
+import { migrationChain } from "../recovery/manifest"
+
+const execFile = promisify(execFileCb)
+const pgBin = ["/usr/lib/postgresql/16/bin", "/usr/lib/postgresql/17/bin"].find(dir => existsSync(join(dir, "initdb")))
+const port = "55482"
+const alex = "a033c000-0000-4000-8000-0000000000a1"
+const alexAuth = "a033c000-0000-4000-8000-0000000000d4"
+const actor = "a033c000-0000-4000-8000-0000000000aa"
+const adminUser = "11111111-1111-4111-8111-111111111111"
+const bakery = "a033c000-0000-4000-8000-000000000011"
+const mill = "a033c000-0000-4000-8000-000000000012"
+const high = "a033c000-0000-4000-8000-000000000021"
+const dock = "a033c000-0000-4000-8000-000000000022"
+const yard = "a033c000-0000-4000-8000-000000000026"
+const email = "alex.begin-concurrent@example.com"
+const stripeCustomer = "cus_NffrFeUfNV2Hib"
+const adminToken = "a".repeat(64)
+const challenge = "c".repeat(64)
+const periodStart = "2026-11-01T00:00:00.000Z"
+const periodEnd = "2026-12-01T00:00:00.000Z"
+const reason = "Begin setup after the verified payment."
+
+let root = ""
+let dataDir = ""
+let socketDir = ""
+let session = ""
+let serial = 0
+
+type Armed = {
+  subscription: string
+  business: string
+  request: string
+  locations: string[]
+}
+
+const pgcryptoStatement = "CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;"
+const pgcryptoStub = [
+  "CREATE FUNCTION extensions.gen_random_uuid() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()';",
+  "CREATE FUNCTION extensions.gen_random_bytes(n integer) RETURNS bytea LANGUAGE sql AS 'SELECT substring(decode(replace(gen_random_uuid()::text,''-'',''''),''hex'') from 1 for n)';",
+  "CREATE FUNCTION extensions.digest(data bytea, algo text) RETURNS bytea LANGUAGE sql IMMUTABLE AS 'SELECT decode(md5(encode(data,''hex'')) || md5(coalesce(algo,''sha256'') || encode(data,''hex'')),''hex'')';",
+  "CREATE FUNCTION extensions.digest(data text, algo text) RETURNS bytea LANGUAGE sql IMMUTABLE AS 'SELECT extensions.digest(convert_to(data,''UTF8''), algo)';",
+].join(" ")
+
+function hash(value: string) {
+  return createHash("sha256").update(value).digest("hex")
+}
+
+async function psql(sql: string): Promise<string> {
+  const result = await execFile(join(pgBin!, "psql"), [
+    "-h", socketDir, "-p", port, "-U", "postgres", "-d", "commercialbegin",
+    "-v", "ON_ERROR_STOP=1", "-t", "-A", "-c", sql,
+  ], { env: { ...process.env, PGOPTIONS: "-c statement_timeout=60000" }, maxBuffer: 8 * 1024 * 1024 })
+  return result.stdout.trim()
+}
+
+async function call<T>(sql: string): Promise<T> {
+  const text = await psql(sql)
+  if (!text) throw new Error(`empty result for ${sql.slice(0, 120)}`)
+  return JSON.parse(text) as T
+}
+
+function stripeIds() {
+  serial += 1
+  const suffix = serial.toString(36).toUpperCase().padStart(4, "A").replace(/0/g, "A").replace(/1/g, "B")
+  return {
+    priceId: `price_BeginRace${suffix}`,
+    sessionId: `cs_test_beginrace${suffix}`,
+    eventId: `evt_beginrace${suffix}`,
+    invoiceId: `in_beginrace${suffix}`,
+    stripeSubscriptionId: `sub_beginrace${suffix}`,
+  }
+}
+
+async function offer(spec: { business: string; locations: string[]; ref: string; amount: number; version: number }) {
+  const plan = randomUUID()
+  const subscription = randomUUID()
+  const request = randomUUID()
+  const terms = `TELLOYA-RACE-${spec.version}`
+  const confirmations = JSON.stringify([{ key: "business_authority", label: "I can accept this offer for the business." }])
+  const title = "Telloya service agreement"
+  const body = "This agreement covers the named Telloya service for the selected locations only."
+  const cancellation = "Cancel in writing before the next billing date."
+  await psql(`
+    insert into public.plan_versions(
+      id, product_code, version_number, status, effective_from, billing_cadence, currency,
+      amount_minor, tax_behaviour, terms_ref
+    ) values (
+      '${plan}', 'TELLOYA', ${spec.version}, 'DRAFT',
+      now() - interval '30 days' + make_interval(mins => ${spec.version}),
+      'MONTH', 'GBP', ${spec.amount}, 'NOT_APPLICABLE', '${terms}'
+    );
+    insert into public.plan_components(plan_version_id, component_code, quantity_limit, scope)
+      values ('${plan}', 'TELLOYA', ${spec.locations.length}, 'LOCATION');
+    update public.plan_versions
+      set effective_to = now() - interval '30 days' + make_interval(mins => ${spec.version})
+      where product_code = 'TELLOYA' and status = 'APPROVED' and effective_to is null;
+    update public.plan_versions set status = 'APPROVED', approved_by = '${actor}', approved_at = now() where id = '${plan}';
+    insert into public.commercial_agreement_versions(
+      id, product_code, version_ref, title, body_text, cancellation_text, content_hash,
+      required_confirmations, status, approved_by, approved_at
+    ) values (
+      '${randomUUID()}', 'TELLOYA', '${terms}', '${title}', '${body}', '${cancellation}',
+      admin_private.commercial_agreement_hash_v1('TELLOYA', '${terms}', '${title}', '${body}', '${cancellation}', '${confirmations.replace(/'/g, "''")}'::jsonb),
+      '${confirmations.replace(/'/g, "''")}'::jsonb, 'APPROVED', '${actor}', now()
+    );
+    insert into public.commercial_subscriptions(
+      id, public_ref, customer_id, business_id, plan_family, plan_version_id, grant_kind, state,
+      amount_minor, currency, tax_behaviour, cadence_snapshot, terms_ref
+    ) values (
+      '${subscription}', '${spec.ref}', '${alex}', '${spec.business}', 'VOICE', '${plan}', 'BILLABLE', 'DRAFT',
+      ${spec.amount}, 'GBP', 'NOT_APPLICABLE', 'MONTH', '${terms}'
+    );
+    insert into public.commercial_subscription_items(subscription_id, component_code, quantity, quantity_limit_snapshot)
+      values ('${subscription}', 'TELLOYA', ${spec.locations.length}, ${spec.locations.length});
+    update public.commercial_subscriptions set state = 'OFFERED' where id = '${subscription}';
+    insert into public.onboarding_requests(
+      id, customer_id, business_id, email_snapshot, product_code, plan_family, state, commercial_subscription_id
+    ) values ('${request}', '${alex}', '${spec.business}', '${email}', 'TELLOYA', 'VOICE', 'OFFERED', '${subscription}');
+    insert into admin_private.onboarding_request_locations(onboarding_request_id, location_id) values
+      ${spec.locations.map(location => `('${request}', '${location}')`).join(", ")};
+    insert into public.commercial_plan_conditions(
+      id, plan_version_id, tier_code, tier_label, included_minutes, minutes_rollover,
+      base_amount_minor, guard_unit_amount_minor, overage_rate_minor, content_hash,
+      status, approved_by, approved_at
+    ) values (
+      '${randomUUID()}', '${plan}', 'GROWTH', 'Growth', 300, false, ${spec.amount}, null, 25,
+      admin_private.commercial_plan_conditions_hash_v1('GROWTH', 300, false, ${spec.amount}, null, 25),
+      'APPROVED', '${actor}', now()
+    );
+  `)
+  const version = Number(await psql(`select record_version::text from public.commercial_subscriptions where id = '${subscription}'`))
+  const consent = {
+    offerVersion: version,
+    priceMinor: spec.amount,
+    taxBehaviour: "NOT_APPLICABLE",
+    taxMinor: null,
+    cadence: "MONTH",
+    agreementRef: terms,
+    agreementAccepted: true,
+    recurringConsent: true,
+    confirmations: { business_authority: true },
+    conditions: {
+      tier: "Growth",
+      includedMinutes: 300,
+      minutesRollover: false,
+      baseAmountMinor: spec.amount,
+      guardIncluded: false,
+      guardUnitMinor: null,
+      guardQuantity: 0,
+      overagePermitted: true,
+      overageRateMinor: 25,
+      overageOptIn: false,
+      overageCapMinor: null,
+    },
+  }
+  const accepted = await call<{ status: string }>(
+    `select public.customer_portal_commercial_offer_command_v1('${session}', '${randomUUID()}', '${spec.ref}', $json$${JSON.stringify(consent)}$json$::jsonb)`,
+  )
+  if (accepted.status !== "success") throw new Error(`accept ${JSON.stringify(accepted)}`)
+  const started = await call<{ status: string; priceOperationId: string; providerOperationId: string; acceptanceId: string }>(
+    `select public.customer_portal_commercial_payment_prepare_v1('${session}', '${randomUUID()}', '${spec.ref}')`,
+  )
+  if (started.status !== "success") throw new Error(`prepare ${JSON.stringify(started)}`)
+  const ids = stripeIds()
+  const priced = await call<{ status: string }>(
+    `select public.commercial_payment_record_price_v1('${started.priceOperationId}', '${ids.priceId}', 'prod_${ids.priceId.slice(6, 18)}')`,
+  )
+  if (priced.status !== "success") throw new Error(`price ${JSON.stringify(priced)}`)
+  const recorded = await call<{ status: string }>(
+    `select public.commercial_payment_record_checkout_v1('${started.providerOperationId}', '${ids.sessionId}')`,
+  )
+  if (recorded.status !== "success") throw new Error(`checkout ${JSON.stringify(recorded)}`)
+  await psql(`select public.payment_receive_stripe_event_v1('${ids.eventId}', 'invoice.paid', '${ids.invoiceId}', false)`)
+  const leased = await call<{ jobId: string; leaseToken: string }>(
+    `select public.commercial_payment_invoice_claim_v1('${ids.eventId}', '${ids.priceId}', '${stripeCustomer}')`,
+  )
+  const facts = {
+    eventId: ids.eventId,
+    invoiceId: ids.invoiceId,
+    checkoutSessionId: ids.sessionId,
+    stripeCustomerId: stripeCustomer,
+    stripeSubscriptionId: ids.stripeSubscriptionId,
+    checkoutSubscriptionId: ids.stripeSubscriptionId,
+    stripePriceId: ids.priceId,
+    currency: "gbp",
+    invoiceStatus: "paid",
+    amountDueMinor: spec.amount,
+    amountPaidMinor: spec.amount,
+    quantity: 1,
+    lineCount: 1,
+    discountMinor: 0,
+    taxMinor: 0,
+    periodStart,
+    periodEnd,
+    billingReason: "subscription_create",
+    livemode: false,
+    automaticTax: false,
+    trial: false,
+    refunded: false,
+    disputed: false,
+    subscriptionStatus: "active",
+    cancelAtPeriodEnd: false,
+    schedulePresent: false,
+    subscriptionLivemode: false,
+    subscriptionCustomerId: stripeCustomer,
+    subscriptionPriceId: ids.priceId,
+    subscriptionQuantity: 1,
+    subscriptionPeriodStart: periodStart,
+    subscriptionPeriodEnd: periodEnd,
+    commercialCustomerId: alex,
+    commercialSubscriptionId: subscription,
+    acceptanceId: started.acceptanceId,
+    checkoutOperationId: started.providerOperationId,
+    checkoutMode: "subscription",
+    checkoutStatus: "complete",
+    checkoutPaymentStatus: "paid",
+    checkoutLivemode: false,
+    checkoutCustomerId: stripeCustomer,
+    conflictingMetadata: false,
+    checkoutMetadataCustomerId: alex,
+    checkoutMetadataSubscriptionId: subscription,
+    checkoutMetadataAcceptanceId: started.acceptanceId,
+    checkoutMetadataOperationId: started.providerOperationId,
+    subscriptionMetadataCustomerId: alex,
+    subscriptionMetadataSubscriptionId: subscription,
+    subscriptionMetadataAcceptanceId: started.acceptanceId,
+    subscriptionMetadataOperationId: started.providerOperationId,
+  }
+  const settled = await call<{ status: string }>(
+    `select public.commercial_payment_settle_initial_invoice_v1('${leased.jobId}', '${leased.leaseToken}', $json$${JSON.stringify(facts)}$json$::jsonb)`,
+  )
+  if (settled.status !== "settled") throw new Error(`settle ${JSON.stringify(settled)}`)
+  return { subscription, business: spec.business, request, locations: spec.locations } satisfies Armed
+}
+
+async function payload(armed: Armed, note = reason) {
+  const current = JSON.parse(await psql(`
+    select json_build_object(
+      'subscriptionVersion', subscription.record_version,
+      'requestId', request.id,
+      'requestVersion', request.record_version
+    )::text
+    from public.commercial_subscriptions subscription
+    join public.onboarding_requests request on request.commercial_subscription_id = subscription.id
+    where subscription.id = '${armed.subscription}' and request.state not in ('CLOSED', 'DECLINED')
+  `)) as { subscriptionVersion: number; requestId: string; requestVersion: number }
+  return {
+    version: current.subscriptionVersion,
+    body: {
+      customerId: alex,
+      businessId: armed.business,
+      onboardingRequestId: current.requestId,
+      onboardingVersion: current.requestVersion,
+      reason: note,
+    },
+  }
+}
+
+function beginSql(armed: Armed, request: string, version: number, body: Record<string, unknown>) {
+  return `select public.admin_commercial_begin_setup_v1('${adminToken}', '${request}', '${armed.subscription}', ${version}, $json$${JSON.stringify(body)}$json$::jsonb)`
+}
+
+describe.skipIf(!pgBin)("simultaneous admin begin setup", () => {
+  let paired: Armed
+  let single: Armed
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "commercialbegin-pg-"))
+    dataDir = join(root, "data")
+    socketDir = join(root, "socket")
+    await mkdir(socketDir)
+    await execFile(join(pgBin!, "initdb"), ["-D", dataDir, "--username=postgres", "--auth=trust", "--no-sync", "--locale=C"])
+    await execFile(join(pgBin!, "pg_ctl"), [
+      "-D", dataDir, "-l", join(root, "server.log"), "-w", "start",
+      "-o", `-p ${port} -k ${socketDir} -c listen_addresses=`,
+    ])
+    await execFile(join(pgBin!, "createdb"), ["-h", socketDir, "-p", port, "-U", "postgres", "commercialbegin"])
+    await psql(`create role anon; create role authenticated; create role service_role bypassrls;
+      create schema auth;
+      create table auth.users(id uuid primary key, email text, email_confirmed_at timestamptz, deleted_at timestamptz, banned_until timestamptz);`)
+    let index = 0
+    for (const entry of migrationChain) {
+      const file = join(root, `${index}.sql`)
+      index += 1
+      await writeFile(file, migrationSql(entry.filename).replace(pgcryptoStatement, pgcryptoStub))
+      await execFile(join(pgBin!, "psql"), [
+        "-h", socketDir, "-p", port, "-U", "postgres", "-d", "commercialbegin",
+        "-v", "ON_ERROR_STOP=1", "-f", file,
+      ], { maxBuffer: 8 * 1024 * 1024 })
+    }
+    await psql(`
+      insert into auth.users(id, email, email_confirmed_at) values
+        ('${alexAuth}', '${email}', now()),
+        ('${actor}', 'actor.begin-concurrent@example.com', now()),
+        ('${adminUser}', 'admin@profilerelaunch.com', now());
+      insert into public.admin_identity(singleton, auth_user_id, enabled) values (true, '${adminUser}', true)
+        on conflict (singleton) do update set auth_user_id = excluded.auth_user_id, enabled = true;
+      insert into public.customers(id, full_name, email) values ('${alex}', 'Alex Baker', '${email}');
+      insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence) values
+        ('${alex}', 'email', '${email}', '${actor}', 'Verified from a live call with the customer.');
+      insert into public.businesses(id, display_name) values
+        ('${bakery}', 'Harbour Bakery'),
+        ('${mill}', 'Mill Bakery');
+      insert into public.locations(id, business_id, country, location_name) values
+        ('${high}', '${bakery}', 'GB', 'High Street'),
+        ('${dock}', '${bakery}', 'GB', 'Dock'),
+        ('${yard}', '${mill}', 'GB', 'Yard');
+      insert into public.business_memberships(customer_id, business_id, status, verified_at, verified_by, evidence) values
+        ('${alex}', '${bakery}', 'verified', now(), '${actor}', 'Mailbox already proved for Bakery'),
+        ('${alex}', '${mill}', 'verified', now(), '${actor}', 'Mailbox already proved for Mill');
+      insert into public.product_catalogue(code, name, kind, status) values ('TELLOYA', 'Telloya', 'STANDALONE', 'DRAFT')
+        on conflict (code) do nothing;
+      insert into public.stripe_customer_maps(customer_id, stripe_customer_id) values ('${alex}', '${stripeCustomer}');
+    `)
+    const pending = hash(randomBytes(32).toString("hex"))
+    const started = await call<{ status: string }>(`select public.customer_portal_begin_login_v1('${email}', '${pending}')`)
+    if (started.status !== "ok") throw new Error(started.status)
+    const confirmed = await call<{ status: string }>(`select public.customer_portal_confirm_otp_sent_v1('${pending}')`)
+    if (confirmed.status !== "ok") throw new Error(confirmed.status)
+    session = hash(randomBytes(32).toString("hex"))
+    const finished = await call<{ status: string }>(
+      `select public.customer_portal_finish_otp_v1('${pending}', '${session}', '${alexAuth}', '${email}')`,
+    )
+    if (finished.status !== "ok") throw new Error(JSON.stringify(finished))
+    if (await psql(`select public.admin_begin_otp_v1('${challenge}')`) !== adminUser) throw new Error("admin otp did not start")
+    if (await psql(`select public.admin_attempt_otp_v1('${challenge}')`) !== adminUser) throw new Error("admin otp was not attempted")
+    if (await psql(`select public.admin_finish_otp_v1('${challenge}', '${adminToken}', '${adminUser}')`) !== "t") throw new Error("admin otp did not finish")
+    paired = await offer({ business: bakery, locations: [high, dock], ref: "VC-26-BEGNA2", amount: 7900, version: 41 })
+    single = await offer({ business: mill, locations: [yard], ref: "VC-26-BEGNB2", amount: 4900, version: 42 })
+  }, 300000)
+
+  afterAll(async () => {
+    if (dataDir) {
+      await execFile(join(pgBin!, "pg_ctl"), ["-D", dataDir, "-m", "immediate", "-w", "stop"]).catch(() => undefined)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("creates one set of entitlements when two admins start the same subscription", async () => {
+    const command = await payload(paired)
+    const [left, right] = await Promise.all([
+      call<{ status: string; reason?: string; entitlementCount?: number }>(beginSql(paired, randomUUID(), command.version, command.body)),
+      call<{ status: string; reason?: string; entitlementCount?: number }>(beginSql(paired, randomUUID(), command.version, command.body)),
+    ])
+    const outcomes = [left, right]
+    expect(outcomes.filter(item => item.status === "success")).toHaveLength(1)
+    expect(outcomes.filter(item => item.status === "conflict" && (item.reason === "provision" || item.reason === "version"))).toHaveLength(1)
+    expect(outcomes.find(item => item.status === "success")?.entitlementCount).toBe(2)
+    expect(await psql(`select count(*)::text from public.product_entitlements where commercial_subscription_id = '${paired.subscription}' and component_code = 'TELLOYA'`)).toBe("2")
+    expect(await psql(`select count(*)::text from public.service_provisions where location_id in ('${high}', '${dock}') and state = 'PROFILE_REQUIRED'`)).toBe("2")
+    expect(await psql(`select count(*)::text from public.service_provisions where state = 'LIVE'`)).toBe("0")
+    expect(await psql(`select count(*)::text from public.product_entitlements where component_code = 'GUARD'`)).toBe("0")
+  })
+
+  it("returns the stored outcome when the same request arrives twice together", async () => {
+    const command = await payload(single)
+    const request = randomUUID()
+    const [left, right] = await Promise.all([
+      call<Record<string, unknown>>(beginSql(single, request, command.version, command.body)),
+      call<Record<string, unknown>>(beginSql(single, request, command.version, command.body)),
+    ])
+    expect(left).toMatchObject({ status: "success", entitlementCount: 1, operationalStatus: "setup_started" })
+    expect(right).toEqual(left)
+    expect(await psql(`select count(*)::text from public.product_entitlements where commercial_subscription_id = '${single.subscription}'`)).toBe("1")
+    expect(await psql(`select count(*)::text from admin_private.commercial_command_receipts where request_id = '${request}'`)).toBe("1")
+    const changed = await call<{ status: string }>(beginSql(single, request, command.version, { ...command.body, reason: "Begin setup with a different note." }))
+    expect(changed).toEqual({ status: "conflict" })
+    expect(await psql(`select count(*)::text from public.product_entitlements where commercial_subscription_id = '${single.subscription}'`)).toBe("1")
+  })
+})

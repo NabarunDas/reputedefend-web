@@ -1526,6 +1526,25 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Customer commercial setup handover", probe: "public.customer_portal_setup_handover_v1" },
   },
+  {
+    // Audited Admin begin setup. Not applied to DEV. The verified DEV ledger
+    // still contains 104 entries and ends at 20261104220000.
+    // Do not apply 20261105120000 to DEV. Do not apply 20261105120000 to Production.
+    // One service-role command creates PENDING TELLOYA entitlements and
+    // PROFILE_REQUIRED provisions for a verified paid subscription.
+    // It does not confirm preferences, call a provider, allocate a number,
+    // enable Guard, change billing, send mail, or move a service to live.
+    // Writes are inside the command. containsDataChange stays false.
+    // safeToReplay stays false.
+    version: "20261105120000",
+    filename: "20261105120000_admin_commercial_begin_setup_v1.sql",
+    step: "Audited Admin begin setup",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Audited Admin begin setup", probe: "public.admin_commercial_begin_setup_v1" },
+  },
 ]
 
 /**

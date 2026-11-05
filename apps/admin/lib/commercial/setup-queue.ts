@@ -46,6 +46,12 @@ export type SetupQueueItem = {
   paymentConfirmedAt: string
   nextAction: string
   checklist: SetupChecklistStep[]
+  subscriptionId: string | null
+  subscriptionVersion: number | null
+  customerId: string | null
+  onboardingRequestId: string | null
+  onboardingVersion: number | null
+  setupStartedAt: string | null
 }
 
 const stepKeys = ["payment", "preferences", "agent", "number", "test", "activation"] as const
@@ -124,6 +130,31 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
     if (typeof row.nextAction !== "string" || row.nextAction.trim().length === 0) return null
     const steps = checklist(row.checklist)
     if (!steps) return null
+    const subscriptionId = row.subscriptionId === undefined || row.subscriptionId === null
+      ? null
+      : typeof row.subscriptionId === "string" && uuid.test(row.subscriptionId) ? row.subscriptionId : undefined
+    const customerId = row.customerId === undefined || row.customerId === null
+      ? null
+      : typeof row.customerId === "string" && uuid.test(row.customerId) ? row.customerId : undefined
+    const onboardingRequestId = row.onboardingRequestId === undefined || row.onboardingRequestId === null
+      ? null
+      : typeof row.onboardingRequestId === "string" && uuid.test(row.onboardingRequestId) ? row.onboardingRequestId : undefined
+    const subscriptionVersion = row.subscriptionVersion === undefined || row.subscriptionVersion === null
+      ? null
+      : typeof row.subscriptionVersion === "number" && Number.isInteger(row.subscriptionVersion) && row.subscriptionVersion >= 1
+        ? row.subscriptionVersion
+        : undefined
+    const onboardingVersion = row.onboardingVersion === undefined || row.onboardingVersion === null
+      ? null
+      : typeof row.onboardingVersion === "number" && Number.isInteger(row.onboardingVersion) && row.onboardingVersion >= 1
+        ? row.onboardingVersion
+        : undefined
+    const setupStartedAt = row.setupStartedAt === undefined || row.setupStartedAt === null
+      ? null
+      : typeof row.setupStartedAt === "string" && !Number.isNaN(new Date(row.setupStartedAt).getTime())
+        ? row.setupStartedAt
+        : undefined
+    if (subscriptionId === undefined || customerId === undefined || onboardingRequestId === undefined || subscriptionVersion === undefined || onboardingVersion === undefined || setupStartedAt === undefined) return null
     if (JSON.stringify(row).includes("cus_") || JSON.stringify(row).includes("evt_")) return null
     items.push({
       reference: row.reference,
@@ -154,6 +185,12 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
       paymentConfirmedAt: row.paymentConfirmedAt,
       nextAction: row.nextAction,
       checklist: steps,
+      subscriptionId,
+      subscriptionVersion,
+      customerId,
+      onboardingRequestId,
+      onboardingVersion,
+      setupStartedAt,
     })
   }
   return items

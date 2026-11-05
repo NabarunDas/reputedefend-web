@@ -60,6 +60,26 @@ describe("post-payment setup page", () => {
     expect(document.body.textContent).not.toMatch(/Setup in progress|Mark active|Provision now|cus_|evt_/)
   })
 
+  it("shows setup in progress without completing the remaining steps", () => {
+    render(<HandoverView subscriptions={[{
+      ...paid,
+      operationalStatus: "setup_started",
+      customerDisplay: "Setup in progress",
+      message: null,
+    }]} />)
+    expect(screen.getByRole("heading", { level: 2, name: "Setup in progress" })).toBeTruthy()
+    expect(screen.getByText("This confirms the initial settlement for the recorded period. A later period is not shown as paid.")).toBeTruthy()
+    expect(screen.getByText(/Payment confirmed 4 Nov 2026/)).toBeTruthy()
+    expect(screen.getByText("Payment confirmed").parentElement?.textContent).toContain("Complete")
+    expect(screen.getByText("Business and service preferences").parentElement?.textContent).toContain("Planned")
+    expect(screen.getByText("AI receptionist configuration").parentElement?.textContent).toContain("Planned")
+    expect(screen.getByText("Telephone number and forwarding").parentElement?.textContent).toContain("Planned")
+    expect(screen.getByText("Test call and verification").parentElement?.textContent).toContain("Planned")
+    expect(screen.getByText("Service activation").parentElement?.textContent).toContain("Planned")
+    expect(screen.getByText("1 location included. Monitoring has not started.")).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/Service active|Open dashboard|Mark active/)
+  })
+
   it("shows only a recorded Guard assignment", () => {
     render(<HandoverView subscriptions={[{
       ...paid,

@@ -43,10 +43,10 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       safeToReplay: false,
     })
     // Setup handover 20261104220000 is the DEV ledger head.
-    // pendingMigrations() is empty. Do not replay 20261104220000.
+    // pendingMigrations() contains only 20261105120000. Do not replay 20261104220000.
     // Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply it to Production.
-    expect(pendingMigrations()).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261105120000_admin_commercial_begin_setup_v1.sql"])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])
     expect(sql).not.toContain("interval '5 minutes'")

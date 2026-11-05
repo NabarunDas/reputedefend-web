@@ -55,7 +55,9 @@ ALTER TABLE admin_private.onboarding_request_events
 ALTER TABLE admin_private.onboarding_request_events
   ADD CONSTRAINT onboarding_request_events_operation_check CHECK (operation IN (
     'classify', 'review', 'match_customer', 'match_business', 'select_locations',
-    'mark_ready', 'decline', 'prepare_offer', 'begin_setup'
+    'mark_ready', 'decline', 'prepare_offer',
+    'issue_invitation', 'resend_invitation', 'revoke_invitation',
+    'begin_setup'
   ));
 
 CREATE FUNCTION public.admin_commercial_begin_setup_v1(

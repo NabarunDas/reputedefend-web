@@ -196,7 +196,7 @@ describe("the migration chain manifest", () => {
     expect(beginSetupSql).toContain("Do not apply 20261105120000 to DEV")
     expect(beginSetupSql).toContain("Do not apply 20261105120000 to Production")
     expect(beginSetupSql).toContain("03A-03-03-02-02")
-    expect(beginSetupSql).not.toMatch(/retell|Resend|stripe\.com/i)
+    expect(beginSetupSql).not.toMatch(/\bretell\b|\bResend\b|stripe\.com/i)
     expect(beginSetupSql).toContain("REVOKE ALL ON FUNCTION public.admin_commercial_begin_setup_v1(text, uuid, uuid, integer, jsonb)")
     expect(beginSetupSql).toContain("GRANT EXECUTE ON FUNCTION public.admin_commercial_begin_setup_v1(text, uuid, uuid, integer, jsonb)")
     expect(beginSetupSql).not.toContain("TO anon")

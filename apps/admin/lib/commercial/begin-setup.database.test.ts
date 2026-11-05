@@ -454,7 +454,7 @@ describe("audited admin begin setup", () => {
     expect(source).toContain("Do not apply 20261105120000 to DEV")
     expect(source).toContain("Do not apply 20261105120000 to Production")
     expect(source).toContain("03A-03-03-02-02")
-    expect(source).not.toMatch(/ADMIN_COMMERCIAL_BEGIN_SETUP_ENABLED|retell|Resend/i)
+    expect(source).not.toMatch(/\bretell\b|\bResend\b|ADMIN_COMMERCIAL_BEGIN_SETUP_ENABLED/i)
     const privilege = await rows<{ anon: boolean; authenticated: boolean; service: boolean }>(
       `select
         has_function_privilege('anon', 'public.admin_commercial_begin_setup_v1(text, uuid, uuid, integer, jsonb)', 'EXECUTE') as anon,

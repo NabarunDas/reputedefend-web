@@ -31,6 +31,7 @@ const paid: HandoverSubscription = {
   customerDisplay: "Payment received — setup pending",
   message: "Your subscription payment has been confirmed. We're preparing your service and will guide you through the remaining setup steps.",
   paymentConfirmedAt: "2026-11-04T12:00:00.000Z",
+  servicePreferences: null,
   checklist: [
     { key: "payment", label: "Payment confirmed", state: "complete" },
     { key: "preferences", label: "Business and service preferences", state: "planned" },
@@ -66,6 +67,45 @@ describe("post-payment setup page", () => {
       operationalStatus: "setup_started",
       customerDisplay: "Setup in progress",
       message: null,
+      servicePreferences: {
+        state: "partial",
+        confirmedCount: 1,
+        locationCount: 2,
+        locations: [
+          {
+            locationId: paid.locations[0].locationId,
+            locationName: "Oven",
+            status: "recorded",
+            timezone: "Europe/London",
+            hoursSummary: "Monday 09:00–17:30",
+            greeting: "Thank you for calling.",
+            callbackInstructions: "Offer a callback on Monday morning.",
+            spokenLanguage: "en-GB",
+            additionalLanguages: [],
+            voicePresentation: "No preference",
+            accent: "British",
+            customerConfirmedAt: "2026-11-04T15:00:00.000Z",
+            recordedBy: "Your setup team",
+            note: "Recorded by your setup team from your confirmation. You will still confirm the service before it is activated. The receptionist is not configured or active.",
+          },
+          {
+            locationId: paid.locations[1].locationId,
+            locationName: "Counter",
+            status: "needed",
+            timezone: null,
+            hoursSummary: null,
+            greeting: null,
+            callbackInstructions: null,
+            spokenLanguage: null,
+            additionalLanguages: [],
+            voicePresentation: null,
+            accent: null,
+            customerConfirmedAt: null,
+            recordedBy: null,
+            note: null,
+          },
+        ],
+      },
     }]} />)
     expect(screen.getByRole("heading", { level: 2, name: "Setup in progress" })).toBeTruthy()
     expect(screen.getByText("This confirms the initial settlement for the recorded period. A later period is not shown as paid.")).toBeTruthy()
@@ -78,6 +118,9 @@ describe("post-payment setup page", () => {
     expect(screen.getByText("Service activation").parentElement?.textContent).toContain("Planned")
     expect(screen.getByText("1 location included. Monitoring has not started.")).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/Service active|Open dashboard|Mark active/)
+    expect(screen.getByText("Preferences are recorded for 1 of 2 locations. The others are still needed.")).toBeTruthy()
+    expect(screen.getByText("Preferences for this location are still needed.")).toBeTruthy()
+    expect(screen.getByText(/The receptionist is not configured or active/)).toBeTruthy()
   })
 
   it("shows only a recorded Guard assignment", () => {

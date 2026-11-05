@@ -17,6 +17,19 @@ export type SetupLocation = {
   locationName: string
 }
 
+export type PreferenceLocationProgress = {
+  locationId: string
+  locationName: string
+  confirmed: boolean
+  version: number
+}
+
+export type PreferenceProgress = {
+  confirmedCount: number
+  locationCount: number
+  locations: PreferenceLocationProgress[]
+}
+
 export type SetupQueueItem = {
   reference: string
   customerName: string
@@ -52,6 +65,7 @@ export type SetupQueueItem = {
   onboardingRequestId: string | null
   onboardingVersion: number | null
   setupStartedAt: string | null
+  preferenceProgress: PreferenceProgress | null
 }
 
 const stepKeys = ["payment", "preferences", "agent", "number", "test", "activation"] as const
@@ -63,6 +77,32 @@ function location(value: unknown): SetupLocation | null {
   if (typeof row.locationId !== "string" || !uuid.test(row.locationId)) return null
   if (typeof row.locationName !== "string" || row.locationName.trim().length === 0) return null
   return { locationId: row.locationId, locationName: row.locationName }
+}
+
+function preferenceProgress(value: unknown): PreferenceProgress | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!value || typeof value !== "object") return undefined
+  const row = value as Record<string, unknown>
+  if (typeof row.confirmedCount !== "number" || !Number.isInteger(row.confirmedCount) || row.confirmedCount < 0) return undefined
+  if (typeof row.locationCount !== "number" || !Number.isInteger(row.locationCount) || row.locationCount < row.confirmedCount) return undefined
+  if (!Array.isArray(row.locations) || row.locations.length !== row.locationCount) return undefined
+  const locations: PreferenceLocationProgress[] = []
+  for (const entry of row.locations) {
+    if (!entry || typeof entry !== "object") return undefined
+    const location = entry as Record<string, unknown>
+    if (typeof location.locationId !== "string" || !uuid.test(location.locationId)) return undefined
+    if (typeof location.locationName !== "string" || location.locationName.trim().length === 0) return undefined
+    if (typeof location.confirmed !== "boolean") return undefined
+    if (typeof location.version !== "number" || !Number.isInteger(location.version) || location.version < 0) return undefined
+    locations.push({
+      locationId: location.locationId,
+      locationName: location.locationName,
+      confirmed: location.confirmed,
+      version: location.version,
+    })
+  }
+  if (locations.filter(location => location.confirmed).length !== row.confirmedCount) return undefined
+  return { confirmedCount: row.confirmedCount, locationCount: row.locationCount, locations }
 }
 
 function checklist(value: unknown): SetupChecklistStep[] | null {
@@ -154,6 +194,8 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
       : typeof row.setupStartedAt === "string" && !Number.isNaN(new Date(row.setupStartedAt).getTime())
         ? row.setupStartedAt
         : undefined
+    const preferences = preferenceProgress(row.preferenceProgress)
+    if (preferences === undefined) return null
     if (subscriptionId === undefined || customerId === undefined || onboardingRequestId === undefined || subscriptionVersion === undefined || onboardingVersion === undefined || setupStartedAt === undefined) return null
     if (JSON.stringify(row).includes("cus_") || JSON.stringify(row).includes("evt_")) return null
     items.push({
@@ -191,6 +233,7 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
       onboardingRequestId,
       onboardingVersion,
       setupStartedAt,
+      preferenceProgress: preferences,
     })
   }
   return items

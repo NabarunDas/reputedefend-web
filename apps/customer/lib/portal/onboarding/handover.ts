@@ -15,6 +15,30 @@ export type HandoverLocation = {
   locationName: string
 }
 
+export type ServicePreferenceLocation = {
+  locationId: string
+  locationName: string
+  status: "needed" | "recorded"
+  timezone: string | null
+  hoursSummary: string | null
+  greeting: string | null
+  callbackInstructions: string | null
+  spokenLanguage: string | null
+  additionalLanguages: string[]
+  voicePresentation: string | null
+  accent: string | null
+  customerConfirmedAt: string | null
+  recordedBy: string | null
+  note: string | null
+}
+
+export type ServicePreferences = {
+  state: "needed" | "partial" | "complete"
+  confirmedCount: number
+  locationCount: number
+  locations: ServicePreferenceLocation[]
+}
+
 export type HandoverSubscription = {
   reference: string
   businessName: string
@@ -37,6 +61,7 @@ export type HandoverSubscription = {
   message: string | null
   paymentConfirmedAt: string | null
   checklist: HandoverChecklistStep[]
+  servicePreferences: ServicePreferences | null
 }
 
 const stepKeys = ["payment", "preferences", "agent", "number", "test", "activation"] as const
@@ -47,6 +72,73 @@ function instant(value: unknown): string | null | undefined {
   if (value === null) return null
   if (typeof value !== "string" || Number.isNaN(new Date(value).getTime())) return undefined
   return value
+}
+
+function preferenceLocation(value: unknown): ServicePreferenceLocation | null {
+  if (!value || typeof value !== "object") return null
+  const row = value as Record<string, unknown>
+  const hidden = ["communicationId", "messageId", "attestation", "requestId", "actorId", "voiceId", "providerVoiceId", "staffNote"]
+  if (hidden.some(key => key in row)) return null
+  if (typeof row.locationId !== "string" || !uuid.test(row.locationId)) return null
+  if (typeof row.locationName !== "string" || row.locationName.trim().length === 0) return null
+  if (row.status !== "needed" && row.status !== "recorded") return null
+  if (row.status === "needed") {
+    return {
+      locationId: row.locationId,
+      locationName: row.locationName,
+      status: "needed",
+      timezone: null,
+      hoursSummary: null,
+      greeting: null,
+      callbackInstructions: null,
+      spokenLanguage: null,
+      additionalLanguages: [],
+      voicePresentation: null,
+      accent: null,
+      customerConfirmedAt: null,
+      recordedBy: null,
+      note: null,
+    }
+  }
+  if (typeof row.timezone !== "string" || typeof row.hoursSummary !== "string" || typeof row.greeting !== "string") return null
+  if (typeof row.callbackInstructions !== "string" || typeof row.spokenLanguage !== "string") return null
+  if (typeof row.voicePresentation !== "string" || typeof row.accent !== "string" || typeof row.note !== "string") return null
+  if (row.recordedBy !== "Your setup team") return null
+  if (typeof row.customerConfirmedAt !== "string" || Number.isNaN(new Date(row.customerConfirmedAt).getTime())) return null
+  if (!Array.isArray(row.additionalLanguages) || row.additionalLanguages.some(language => typeof language !== "string")) return null
+  return {
+    locationId: row.locationId,
+    locationName: row.locationName,
+    status: "recorded",
+    timezone: row.timezone,
+    hoursSummary: row.hoursSummary,
+    greeting: row.greeting,
+    callbackInstructions: row.callbackInstructions,
+    spokenLanguage: row.spokenLanguage,
+    additionalLanguages: row.additionalLanguages,
+    voicePresentation: row.voicePresentation,
+    accent: row.accent,
+    customerConfirmedAt: row.customerConfirmedAt,
+    recordedBy: row.recordedBy,
+    note: row.note,
+  }
+}
+
+function servicePreferences(value: unknown): ServicePreferences | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!value || typeof value !== "object") return undefined
+  const row = value as Record<string, unknown>
+  if (row.state !== "needed" && row.state !== "partial" && row.state !== "complete") return undefined
+  if (typeof row.confirmedCount !== "number" || typeof row.locationCount !== "number") return undefined
+  if (!Array.isArray(row.locations)) return undefined
+  const locations = row.locations.map(preferenceLocation)
+  if (locations.some(location => location === null)) return undefined
+  return {
+    state: row.state,
+    confirmedCount: row.confirmedCount,
+    locationCount: row.locationCount,
+    locations: locations as ServicePreferenceLocation[],
+  }
 }
 
 function location(value: unknown): HandoverLocation | null {
@@ -112,6 +204,8 @@ export function parseSetupHandover(value: unknown): HandoverSubscription[] | nul
       if (step.state !== "complete" && step.state !== "planned") return null
       checklist.push({ key: stepKeys[index], label: step.label, state: step.state })
     }
+    const preferences = servicePreferences(row.servicePreferences)
+    if (preferences === undefined) return null
     subscriptions.push({
       reference: row.reference,
       businessName: row.businessName,
@@ -134,6 +228,7 @@ export function parseSetupHandover(value: unknown): HandoverSubscription[] | nul
       message: row.message,
       paymentConfirmedAt: row.paymentConfirmedAt,
       checklist,
+      servicePreferences: preferences,
     })
   }
   return subscriptions

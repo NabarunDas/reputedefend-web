@@ -81,7 +81,7 @@ The Admin function is `VOLATILE` because `admin_session_v1` records `last_seen_a
 This page lists the next action and does not run it. There is no Mark active or Provision now control. Begin setup is the separate unapplied command in `03A-03-03-02-01-begin-setup.md`. The later commands remain separate, still without treating `ACTIVE` as setup:
 
 1. Begin setup.
-2. Confirm business preferences.
+2. Confirm business preferences. The unapplied command is described in `03A-03-03-02-02-confirm-preferences.md`. `ADMIN_COMMERCIAL_CONFIRM_PREFERENCES_ENABLED` stays off.
 3. Confirm AI configuration.
 4. Record provider and number allocation.
 5. Record successful test call.

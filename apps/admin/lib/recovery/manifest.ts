@@ -1572,6 +1572,27 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Audited Admin begin setup", probe: "public.admin_commercial_begin_setup_v1" },
   },
+  {
+    // Audited confirmation of customer business preferences. Not applied to
+    // DEV. The verified DEV ledger contains 105 entries and ends at
+    // 20261105120000. Begin setup 20261105130000 is also unapplied.
+    // Do not apply 20261105144256 to DEV. Do not apply 20261105144256 to Production.
+    // One service-role command stores an append-only confirmed preference for
+    // one selected location. It does not call a provider, allocate a number,
+    // enable Guard, change billing, send mail, or move a service to live.
+    // Writes are inside the command. containsDataChange stays false.
+    // safeToReplay stays false.
+    // supabase migration new admin_commercial_confirm_preferences_v1 wrote
+    // this file at 20261105144256, which is later than Begin Setup.
+    version: "20261105144256",
+    filename: "20261105144256_admin_commercial_confirm_preferences_v1.sql",
+    step: "Audited confirm business preferences",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Audited confirm business preferences", probe: "public.admin_commercial_confirm_preferences_v1" },
+  },
 ]
 
 /**

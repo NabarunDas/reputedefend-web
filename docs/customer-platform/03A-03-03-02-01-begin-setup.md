@@ -16,6 +16,6 @@ The existing handover classifier treats `PROFILE_REQUIRED` as setup started. The
 
 ## Next command
 
-`03A-03-03-02-02 — Confirm Business Preferences` is not part of this command. That later phase stores the customer’s confirmed business hours, callback instructions, service behaviour, and language or voice preferences, with an auditable source and a confirmation timestamp. Begin setup does not invent those details from the selected locations, the accepted payment, or the customer’s contact records.
+`03A-03-03-02-02 — Confirm Business Preferences` is a separate unapplied command, described in `03A-03-03-02-02-confirm-preferences.md`. Begin setup does not invent hours, callback instructions, service behaviour, or language and voice preferences from the selected locations, the accepted payment, or the customer’s contact records.
 
 This command does not call a telephone provider, buy or allocate a number, configure an AI agent, enable forwarding, answer calls, enable Guard monitoring, change a price, enable overage, send mail, or move a provision to live.

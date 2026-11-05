@@ -64,6 +64,30 @@ function SubscriptionSetup({ subscription }: { subscription: HandoverSubscriptio
           </>
         ) : <p>Relaunch Guard is not included in this subscription.</p>}
       </section>
+      {subscription.servicePreferences ? <section>
+        <h3>Business preferences</h3>
+        {subscription.servicePreferences.state === "complete" ? (
+          <p>Preferences are recorded for every selected location. This is the record your setup team made from your confirmation. You will still confirm the service before it is activated. The receptionist is not configured or active.</p>
+        ) : subscription.servicePreferences.state === "partial" ? (
+          <p>Preferences are recorded for {subscription.servicePreferences.confirmedCount} of {subscription.servicePreferences.locationCount} locations. The others are still needed.</p>
+        ) : (
+          <p>Your confirmed business preferences are still needed. Your setup team records them after you confirm them. This does not turn the receptionist on.</p>
+        )}
+        {subscription.servicePreferences.locations.map(location => (
+          <article key={location.locationId}>
+            <h4>{location.locationName}</h4>
+            {location.status === "needed" ? <p>Preferences for this location are still needed.</p> : <>
+              <p>{location.note}</p>
+              <p>Timezone: {location.timezone}</p>
+              <p>Hours: {location.hoursSummary}</p>
+              <p>Greeting: {location.greeting}</p>
+              <p>Callback: {location.callbackInstructions}</p>
+              <p>Language: {location.spokenLanguage}{location.additionalLanguages.length > 0 ? ` (also ${location.additionalLanguages.join(", ")})` : ""}</p>
+              <p>Voice preference: {location.voicePresentation}{location.accent ? `, ${location.accent} accent` : ""}</p>
+            </>}
+          </article>
+        ))}
+      </section> : null}
       <section>
         <h3>Setup checklist</h3>
         <ol className="onboarding-steps" aria-label={`${subscription.product} setup`}>

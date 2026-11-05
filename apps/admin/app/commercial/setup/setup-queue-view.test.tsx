@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import type { SetupQueueItem } from "@/lib/commercial/setup-queue"
@@ -39,6 +39,7 @@ const item: SetupQueueItem = {
   onboardingRequestId: "a033a000-0000-4000-8000-000000000041",
   onboardingVersion: 2,
   setupStartedAt: null,
+  preferenceProgress: null,
   checklist: [
     { key: "payment", label: "Payment confirmed", state: "complete" },
     { key: "preferences", label: "Business and service preferences", state: "planned" },
@@ -95,5 +96,39 @@ describe("paid setup queue", () => {
     expect(document.body).toHaveTextContent("Setup in progress")
     expect(document.body).toHaveTextContent("Next action: Confirm business preferences")
     expect(document.body).toHaveTextContent(/Started /)
+  })
+
+  it("reviews one location before recording confirmed preferences", () => {
+    render(<SetupQueueView confirmPreferencesEnabled items={[{
+      ...item,
+      operationalStatus: "setup_started",
+      customerDisplay: "Setup in progress",
+      nextAction: "Confirm business preferences",
+      setupStartedAt: "2026-11-05T09:15:00.000Z",
+      preferenceProgress: {
+        confirmedCount: 1,
+        locationCount: 3,
+        locations: [
+          { locationId: item.locations[0].locationId, locationName: "High Street", confirmed: true, version: 1 },
+          { locationId: item.locations[1].locationId, locationName: "Dock", confirmed: false, version: 0 },
+          { locationId: "a033a000-0000-4000-8000-000000000026", locationName: "Yard", confirmed: false, version: 0 },
+        ],
+      },
+    }]} />)
+    expect(screen.getByText("Business preferences: 1 of 3 locations confirmed. Still needed: Dock, Yard.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Begin setup" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Confirm business preferences" }))
+    const panel = screen.getByRole("region", { name: "Confirm business preferences for VC-26-HND2AB" })
+    expect(panel).toHaveTextContent("Dock")
+    expect(panel).toHaveTextContent("It does not configure or activate the receptionist.")
+    fireEvent.click(within(panel).getByRole("button", { name: "Review confirmation" }))
+    expect(panel).toHaveTextContent("Alex Baker")
+    expect(panel).toHaveTextContent("Harbour Bakery")
+    expect(panel).toHaveTextContent("VC-26-HND2AB")
+    expect(panel).toHaveTextContent("Telephone attestation")
+    const record = within(panel).getByRole("button", { name: "Confirm business preferences" })
+    expect(record).toBeDisabled()
+    fireEvent.click(within(panel).getByRole("checkbox", { name: /I confirm the customer agreed/ }))
+    expect(record).toBeEnabled()
   })
 })

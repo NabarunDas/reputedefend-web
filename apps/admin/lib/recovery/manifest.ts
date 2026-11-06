@@ -1712,6 +1712,23 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Audited record forwarding instructions", probe: "public.admin_commercial_record_forwarding_instructions_v1" },
   },
+  {
+    // Audited direct agent conversation test. Not applied to DEV.
+    // The verified DEV ledger contains 105 entries and ends at 20261105120000.
+    // Do not apply 20261106120000 to DEV. Do not apply 20261106120000 to Production.
+    // A passed conversation may move TEST_REQUIRED to AWAITING_CONFIRMATION.
+    // It does not verify telephone forwarding, write a routing binding, or move a service to live.
+    // Writes are inside the command. containsDataChange stays false.
+    // safeToReplay stays false.
+    version: "20261106120000",
+    filename: "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
+    step: "Audited AI receptionist test call",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Audited AI receptionist test call", probe: "public.admin_commercial_verify_agent_test_call_v1" },
+  },
 ]
 
 /**
@@ -1849,7 +1866,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * volatility `20261028223000` and draft document role `20261028200000` remain
  * applied and must not be replayed. `pendingMigrations()` contains
  * `20261105130000`, `20261105144256`, `20261105172055`, `20261105180000`,
- * `20261105190000`, `20261105200000` and `20261106003939`. All seven stay local and must not be applied to hosted DEV
+ * `20261105190000`, `20261105200000`, `20261106003939` and `20261106120000`. All eight stay local and must not be applied to hosted DEV
  * or Production. Do not apply `20261106003939` to hosted DEV or Production.
  * `20261105120000` is already applied on DEV and must not be replayed.
  * Do not replay `20261105120000`. Do not apply `20261105120000` to Production.

@@ -41,6 +41,7 @@ describe("the migration history validator", () => {
       "20261105190000_telloya_guard_addon_v1.sql",
       "20261105200000_admin_commercial_record_number_allocation_v1.sql",
       "20261106003939_admin_commercial_record_forwarding_instructions_v1.sql",
+      "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
     ])
     expect(pending.every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     const priorApplied = healthyRemote.slice(0, -1)

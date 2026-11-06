@@ -3,7 +3,7 @@
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ukDate } from "@/lib/admin/activity"
-import type { AllocationLocationProgress, ConfigurationLocationProgress, ForwardingLocationProgress, SetupQueueItem } from "@/lib/commercial/setup-queue"
+import type { AgentTestLocationProgress, AllocationLocationProgress, ConfigurationLocationProgress, ForwardingLocationProgress, SetupQueueItem } from "@/lib/commercial/setup-queue"
 import { Badge, EmptyState, Notice } from "../../ui"
 
 const futureCommands = [
@@ -12,8 +12,8 @@ const futureCommands = [
   "Confirm AI configuration",
   "Record provider and number allocation",
   "Record forwarding instructions",
-  "Record successful test call",
-  "Request customer forwarding confirmation",
+  "Verify AI receptionist test call",
+  "Confirm readiness for the final telephone connection",
   "Approve activation",
 ] as const
 
@@ -1200,13 +1200,298 @@ function RecordForwardingInstructions({ item, lane }: { item: SetupQueueItem; la
   )
 }
 
-export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, recordNumberAllocationEnabled = false, recordForwardingInstructionsEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; recordNumberAllocationEnabled?: boolean; recordForwardingInstructionsEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
+const testQa = [
+  ["greeting", "Correct business greeting"],
+  ["languageVoice", "Appropriate spoken language and voice"],
+  ["callerIdentity", "Captures the caller name and callback number"],
+  ["enquiryDetails", "Collects the relevant enquiry details"],
+  ["callbackWindows", "Handles preferred callback windows"],
+  ["businessHours", "Follows business hours and out-of-hours rules"],
+  ["escalation", "Follows urgent enquiry and escalation instructions"],
+  ["avoidsUnsupportedPromises", "Avoids unsupported promises"],
+  ["conclusion", "Produces a suitable conclusion"],
+] as const
+
+type TestQaKey = (typeof testQa)[number][0]
+
+const testAcknowledgement = "I have reviewed this test against the current configuration, allocation, and shared forwarding instructions. I confirm the QA assessment is my own. I understand a passed conversation test does not verify telephone forwarding or activate the receptionist."
+
+const emptyQa = (): Record<TestQaKey, boolean> => ({
+  greeting: false,
+  languageVoice: false,
+  callerIdentity: false,
+  enquiryDetails: false,
+  callbackWindows: false,
+  businessHours: false,
+  escalation: false,
+  avoidsUnsupportedPromises: false,
+  conclusion: false,
+})
+
+function uncertainTestStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500
+}
+
+function VerifyAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "dev" | "production" }) {
+  const router = useRouter()
+  const keyRef = useRef("")
+  const fingerRef = useRef("")
+  const epochRef = useRef(-1)
+  const initial = item.testProgress?.locations.find(location => location.status !== "passed")?.locationId ?? item.testProgress?.locations[0]?.locationId ?? ""
+  const [selected, setSelected] = useState(initial)
+  const serverLocation = item.testProgress?.locations.find(entry => entry.locationId === selected) ?? null
+  const [held, setHeld] = useState<{ locationId: string; provisionVersion: number } | null>(null)
+  const [callId, setCallId] = useState("")
+  const [checks, setChecks] = useState(emptyQa)
+  const [attestation, setAttestation] = useState("")
+  const [review, setReview] = useState(false)
+  const [reviewed, setReviewed] = useState<string | null>(null)
+  const [confirmed, setConfirmed] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [tone, setTone] = useState<"success" | "warning" | "danger">("warning")
+  const [pending, setPending] = useState(false)
+  const [reconcile, setReconcile] = useState<{ locationId: string; instructionVersion: number; provisionVersion: number; allocationId: string | null; allocationVersion: number; preferenceVersion: number; configurationVersion: number; subscriptionVersion: number; onboardingVersion: number } | null>(null)
+  const place: AgentTestLocationProgress | null = serverLocation && held?.locationId === serverLocation.locationId
+    ? { ...serverLocation, provisionVersion: Math.max(serverLocation.provisionVersion, held.provisionVersion) }
+    : serverLocation
+  const identity = `${place?.locationId ?? ""}:${place?.configurationVersion ?? 0}:${place?.allocationId ?? ""}:${place?.allocationVersion ?? 0}:${place?.instructionId ?? ""}:${place?.instructionVersion ?? 0}:${place?.e164 ?? ""}`
+  const [seenIdentity, setSeenIdentity] = useState(identity)
+  const [epoch, setEpoch] = useState(0)
+  if (seenIdentity !== identity) {
+    setSeenIdentity(identity)
+    setEpoch(value => value + 1)
+    setCallId("")
+    setChecks(emptyQa())
+    setAttestation("")
+    setReview(false)
+    setReviewed(null)
+    setConfirmed(false)
+    setReconcile(null)
+  }
+  if (held && serverLocation && held.locationId === serverLocation.locationId && serverLocation.provisionVersion >= held.provisionVersion) setHeld(null)
+  if (reconcile && serverLocation && (
+    reconcile.locationId !== serverLocation.locationId
+    || serverLocation.instructionVersion !== reconcile.instructionVersion
+    || serverLocation.provisionVersion !== reconcile.provisionVersion
+    || serverLocation.allocationId !== reconcile.allocationId
+    || serverLocation.allocationVersion !== reconcile.allocationVersion
+    || serverLocation.preferenceVersion !== reconcile.preferenceVersion
+    || serverLocation.configurationVersion !== reconcile.configurationVersion
+    || item.subscriptionVersion !== reconcile.subscriptionVersion
+    || item.onboardingVersion !== reconcile.onboardingVersion
+  )) setReconcile(null)
+
+  function requestBody() {
+    if (!place?.allocationId || !place.instructionId || !place.agentRef || !place.e164 || item.subscriptionId === null || item.subscriptionVersion === null || item.customerId === null || item.onboardingRequestId === null || item.onboardingVersion === null) return null
+    if (place.environment !== lane) return null
+    return {
+      subscriptionId: item.subscriptionId,
+      version: item.subscriptionVersion,
+      customerId: item.customerId,
+      businessId: item.businessId,
+      onboardingRequestId: item.onboardingRequestId,
+      onboardingVersion: item.onboardingVersion,
+      locationId: place.locationId,
+      preferenceVersion: place.preferenceVersion,
+      provisionVersion: place.provisionVersion,
+      configurationVersion: place.configurationVersion,
+      allocationId: place.allocationId,
+      allocationVersion: place.allocationVersion,
+      instructionId: place.instructionId,
+      instructionVersion: place.instructionVersion,
+      callId: callId.trim(),
+      qa: { ...checks, attestation: attestation.trim(), staffConfirmed: true },
+    }
+  }
+
+  const live = requestBody()
+  const liveText = live ? JSON.stringify(live) : ""
+  if (reviewed !== null && reviewed !== liveText) {
+    setReviewed(null)
+    setConfirmed(false)
+    setReview(false)
+  }
+  const reviewFresh = review && reviewed !== null && reviewed === liveText
+  const queueConflict = Boolean(reconcile && serverLocation
+    && reconcile.locationId === serverLocation.locationId
+    && serverLocation.instructionVersion === reconcile.instructionVersion
+    && serverLocation.provisionVersion === reconcile.provisionVersion
+    && serverLocation.allocationId === reconcile.allocationId
+    && serverLocation.allocationVersion === reconcile.allocationVersion
+    && serverLocation.preferenceVersion === reconcile.preferenceVersion
+    && serverLocation.configurationVersion === reconcile.configurationVersion
+    && item.subscriptionVersion === reconcile.subscriptionVersion
+    && item.onboardingVersion === reconcile.onboardingVersion)
+  const passed = place?.status === "passed"
+  const readyToReview = Boolean(live && /^[A-Za-z0-9_-]{8,128}$/.test(callId.trim()) && attestation.trim().length >= 20 && !passed)
+
+  function currentKey(fingerprint: string) {
+    if (fingerRef.current !== fingerprint || epochRef.current !== epoch || !isUuidKey(keyRef.current)) {
+      keyRef.current = crypto.randomUUID()
+      fingerRef.current = fingerprint
+      epochRef.current = epoch
+    }
+    return keyRef.current
+  }
+
+  function choose(id: string) {
+    setSelected(id)
+    setCallId("")
+    setChecks(emptyQa())
+    setAttestation("")
+    setMessage(null)
+    setReview(false)
+    setReviewed(null)
+    setConfirmed(false)
+    setReconcile(null)
+    keyRef.current = ""
+    fingerRef.current = ""
+    epochRef.current = -1
+  }
+
+  function beginReview() {
+    if (!readyToReview || !live) return
+    const fingerprint = JSON.stringify(live)
+    currentKey(fingerprint)
+    setReviewed(fingerprint)
+    setConfirmed(false)
+    setReview(true)
+  }
+
+  async function send() {
+    if (queueConflict || passed || !confirmed || reviewed === null || reviewed !== liveText) return
+    const payload = JSON.parse(reviewed) as NonNullable<ReturnType<typeof requestBody>>
+    if (payload.qa.staffConfirmed !== true) return
+    const requestKey = currentKey(reviewed)
+    setPending(true)
+    setMessage(null)
+    try {
+      const response = await fetch("/api/commercial/verify-agent-test-call", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": requestKey },
+        body: reviewed,
+      })
+      const body = await response.json().catch(() => null) as { message?: string; evidenceOutcome?: string; provisionState?: string } | null
+      if (!response.ok) {
+        if (uncertainTestStatus(response.status)) {
+          setMessage(body?.message ?? "We couldn’t confirm whether the provider call could be read. Try the same action again without changing the assessment.")
+          setTone("danger")
+          return
+        }
+        keyRef.current = ""
+        fingerRef.current = ""
+        const versionConflict = response.status === 409 && (body?.message ?? "").includes("have changed")
+        if (versionConflict && place) {
+          setHeld(null)
+          setReview(false)
+          setReviewed(null)
+          setConfirmed(false)
+          epochRef.current = -1
+          setReconcile({
+            locationId: place.locationId,
+            instructionVersion: place.instructionVersion,
+            provisionVersion: place.provisionVersion,
+            allocationId: place.allocationId,
+            allocationVersion: place.allocationVersion,
+            preferenceVersion: place.preferenceVersion,
+            configurationVersion: place.configurationVersion,
+            subscriptionVersion: item.subscriptionVersion ?? 0,
+            onboardingVersion: item.onboardingVersion ?? 0,
+          })
+          router.refresh()
+        }
+        setMessage(body?.message ?? "We couldn’t record the conversation test. Reload the queue before trying again.")
+        setTone("warning")
+        return
+      }
+      keyRef.current = ""
+      fingerRef.current = ""
+      setReview(false)
+      setReviewed(null)
+      setConfirmed(false)
+      if (body?.evidenceOutcome === "VERIFIED_PASSED" && place) {
+        setHeld({ locationId: place.locationId, provisionVersion: place.provisionVersion + 1 })
+        setTone("success")
+      } else {
+        setTone("warning")
+      }
+      setMessage(body?.message ?? "The conversation test was recorded.")
+      router.refresh()
+    } catch {
+      setMessage("We couldn’t record the conversation test. Check the connection and try again.")
+      setTone("danger")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  if (!item.testProgress || item.testProgress.locations.length === 0 || !place) return null
+  const reviewedPayload = reviewFresh && reviewed ? JSON.parse(reviewed) as NonNullable<ReturnType<typeof requestBody>> : null
+  return (
+    <form className="commercial-command" onSubmit={event => event.preventDefault()}>
+      <h3>Verify AI receptionist test call</h3>
+      <p>{item.customerName} · {item.businessName}. This checks a controlled conversation with the configured receptionist. It does not verify telephone forwarding or show that the receptionist is answering calls.</p>
+      <label>Location<select value={selected} onChange={event => choose(event.target.value)}>{item.testProgress.locations.map(entry => <option key={entry.locationId} value={entry.locationId}>{entry.locationName} · {entry.status}</option>)}</select></label>
+      <dl className="commercial-review">
+        <div><dt>Subscription</dt><dd>{item.reference}</dd></div>
+        <div><dt>Business</dt><dd>{item.businessName}</dd></div>
+        <div><dt>Location</dt><dd>{place.locationName}</dd></div>
+        <div><dt>Receptionist</dt><dd>{place.agentRef ?? "Not recorded"}</dd></div>
+        <div><dt>Configuration version</dt><dd>{place.configurationVersion}</dd></div>
+        <div><dt>Assigned number</dt><dd>{place.e164 ?? "Not recorded"}</dd></div>
+        <div><dt>Allocation version</dt><dd>{place.allocationVersion}</dd></div>
+        <div><dt>Forwarding instructions</dt><dd>{place.instructionId ? `Shared, version ${place.instructionVersion}` : "Not shared"}</dd></div>
+        <div><dt>Latest test</dt><dd>{place.latestOutcome ?? "None recorded"}{place.providerCallId ? ` · ${place.providerCallId}` : ""}</dd></div>
+      </dl>
+      {passed ? <Notice tone="success"><span role="status">Your AI receptionist has passed its conversation test. We still need to confirm the final telephone connection before your service can go live.</span></Notice> : null}
+      {place.status === "failed" ? <Notice tone="warning">The last conversation test did not pass. Record a new controlled test when you are ready. Telephone forwarding is not verified.</Notice> : null}
+      {!place.instructionId ? <Notice tone="warning">Share the forwarding instructions for this location before recording a conversation test.</Notice> : null}
+      {passed ? null : <>
+        <label>Provider call reference<input value={callId} onChange={event => setCallId(event.target.value)} /></label>
+        <p>The reference is only the lookup key. The server reads the call from the provider. Typing a reference is not proof that the call succeeded.</p>
+        <fieldset>
+          <legend>Human QA</legend>
+          {testQa.map(([key, label]) => (
+            <label key={key}><input type="checkbox" checked={checks[key]} onChange={event => setChecks(current => ({ ...current, [key]: event.target.checked }))} /> {label}</label>
+          ))}
+        </fieldset>
+        <label>Staff attestation<textarea value={attestation} onChange={event => setAttestation(event.target.value)} rows={3} /></label>
+        {reviewedPayload ? <section aria-label={`Review AI receptionist test call for ${item.reference}`}>
+          <h4>Review test call</h4>
+          <dl>
+            <div><dt>Customer</dt><dd>{item.customerName}</dd></div>
+            <div><dt>Business</dt><dd>{item.businessName}</dd></div>
+            <div><dt>Subscription</dt><dd>{item.reference}</dd></div>
+            <div><dt>Location</dt><dd>{place.locationName}</dd></div>
+            <div><dt>Receptionist</dt><dd>{place.agentRef}, configuration version {reviewedPayload.configurationVersion}</dd></div>
+            <div><dt>Assigned number</dt><dd>{place.e164}</dd></div>
+            <div><dt>Forwarding instructions</dt><dd>Shared, version {reviewedPayload.instructionVersion}</dd></div>
+            <div><dt>Provider call reference</dt><dd>{reviewedPayload.callId}</dd></div>
+            <div><dt>QA</dt><dd>{testQa.map(([key, label]) => `${label}: ${reviewedPayload.qa[key] ? "passed" : "not passed"}`).join(". ")}</dd></div>
+            <div><dt>Staff attestation</dt><dd>{reviewedPayload.qa.attestation}</dd></div>
+          </dl>
+          <p>A provider call that ends successfully still needs this assessment. Recording it does not verify telephone forwarding or activate the receptionist.</p>
+          <label>
+            <input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
+            {" "}{testAcknowledgement}
+          </label>
+          <button type="button" disabled={!confirmed || pending || queueConflict} onClick={() => void send()}>Record verification</button>
+          {testQa.some(([key]) => !reviewedPayload.qa[key]) ? <p>A criterion that is not passed is recorded as a failed conversation. It does not advance the service.</p> : null}
+        </section> : <button type="button" disabled={pending || !readyToReview || queueConflict} onClick={beginReview}>Review test call</button>}
+      </>}
+      {message ? <Notice tone={tone}><span role="status">{message}</span></Notice> : null}
+    </form>
+  )
+}
+
+export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, recordNumberAllocationEnabled = false, recordForwardingInstructionsEnabled = false, verifyAgentTestCallEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; recordNumberAllocationEnabled?: boolean; recordForwardingInstructionsEnabled?: boolean; verifyAgentTestCallEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
   const later = futureCommands.filter(command => {
     if (beginSetupEnabled && command === "Begin setup") return false
     if (confirmPreferencesEnabled && command === "Confirm business preferences") return false
     if (confirmAiConfigurationEnabled && command === "Confirm AI configuration") return false
     if (recordNumberAllocationEnabled && command === "Record provider and number allocation") return false
     if (recordForwardingInstructionsEnabled && command === "Record forwarding instructions") return false
+    if (verifyAgentTestCallEnabled && command === "Verify AI receptionist test call") return false
     return true
   })
   return <>
@@ -1264,6 +1549,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
                   {confirmAiConfigurationEnabled ? <ConfirmAiConfiguration item={item} providerLane={providerLane} /> : null}
                   {recordNumberAllocationEnabled ? <RecordNumberAllocation item={item} providerLane={providerLane} /> : null}
                   {recordForwardingInstructionsEnabled && providerLane ? <RecordForwardingInstructions item={item} lane={providerLane} /> : null}
+                  {verifyAgentTestCallEnabled && providerLane ? <VerifyAgentTestCall item={item} lane={providerLane} /> : null}
                 </td>
               </tr>
             ))}
@@ -1272,7 +1558,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
       </div>
     )}
     <h2>Later setup commands</h2>
-    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Record provider and number allocation records an assigned telephone number for one location. It does not make that number active, start forwarding, or record a test call. Record forwarding instructions prepares location-specific notes for a later connection. Sharing those notes does not enable forwarding.</p>
+    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Record provider and number allocation records an assigned telephone number for one location. It does not make that number active, start forwarding, or record a test call. Record forwarding instructions prepares location-specific notes for a later connection. Sharing those notes does not enable forwarding. Verify AI receptionist test call checks a controlled conversation. It does not verify telephone forwarding or show that the receptionist is answering calls.</p>
     <ul>
       {later.map(command => <li key={command}>{command}</li>)}
     </ul>

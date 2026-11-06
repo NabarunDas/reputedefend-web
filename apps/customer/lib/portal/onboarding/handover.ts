@@ -74,6 +74,20 @@ export type ServiceForwarding = {
   locations: ServiceForwardingLocation[]
 }
 
+export type ServiceTestLocation = {
+  locationId: string
+  locationName: string
+  status: "needed" | "pending" | "review" | "failed" | "passed"
+  note: string
+}
+
+export type ServiceTest = {
+  state: "needed" | "pending" | "review" | "failed" | "passed"
+  passedCount: number
+  locationCount: number
+  locations: ServiceTestLocation[]
+}
+
 export type HandoverSubscription = {
   reference: string
   businessName: string
@@ -100,6 +114,7 @@ export type HandoverSubscription = {
   serviceConfiguration: ServiceConfiguration | null
   serviceAllocation: ServiceConfiguration | null
   serviceForwarding?: ServiceForwarding | null
+  serviceTest?: ServiceTest | null
 }
 
 const stepKeys = ["payment", "preferences", "agent", "number", "test", "activation"] as const
@@ -267,6 +282,44 @@ function serviceForwarding(value: unknown): ServiceForwarding | null | undefined
   return { state: row.state, sharedCount: row.sharedCount, locationCount: row.locationCount, locations }
 }
 
+const passedConversation = "Your AI receptionist has passed its conversation test. We still need to confirm the final telephone connection before your service can go live."
+
+function serviceTest(value: unknown): ServiceTest | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!value || typeof value !== "object") return undefined
+  const row = value as Record<string, unknown>
+  const allowed = ["state", "passedCount", "locationCount", "locations"]
+  if (Object.keys(row).some(key => !allowed.includes(key))) return undefined
+  if (row.state !== "needed" && row.state !== "pending" && row.state !== "review" && row.state !== "failed" && row.state !== "passed") return undefined
+  if (typeof row.passedCount !== "number" || !Number.isInteger(row.passedCount) || row.passedCount < 0) return undefined
+  if (typeof row.locationCount !== "number" || !Number.isInteger(row.locationCount) || row.locationCount < 0) return undefined
+  if (row.passedCount > row.locationCount) return undefined
+  if (!Array.isArray(row.locations) || row.locations.length !== row.locationCount) return undefined
+  const hidden = ["agentRef", "callId", "providerCallId", "attestation", "transcript", "recordingUrl", "recording", "qa", "environment", "e164"]
+  const locations: ServiceTestLocation[] = []
+  for (const entry of row.locations) {
+    if (!entry || typeof entry !== "object") return undefined
+    const location = entry as Record<string, unknown>
+    if (Object.keys(location).some(key => !["locationId", "locationName", "status", "note"].includes(key))) return undefined
+    if (hidden.some(key => key in location)) return undefined
+    if (typeof location.locationId !== "string" || !uuid.test(location.locationId)) return undefined
+    if (typeof location.locationName !== "string" || location.locationName.trim().length === 0) return undefined
+    if (location.status !== "needed" && location.status !== "pending" && location.status !== "review" && location.status !== "failed" && location.status !== "passed") return undefined
+    if (typeof location.note !== "string" || location.note.trim().length === 0) return undefined
+    if (/call forwarding verified|telephone line is connected|receptionist is answering calls|service activated/i.test(location.note)) return undefined
+    if (location.status === "passed" && location.note !== passedConversation) return undefined
+    locations.push({
+      locationId: location.locationId,
+      locationName: location.locationName,
+      status: location.status,
+      note: location.note,
+    })
+  }
+  if (locations.filter(location => location.status === "passed").length !== row.passedCount) return undefined
+  if (row.state === "passed" && (row.locationCount < 1 || row.passedCount !== row.locationCount)) return undefined
+  return { state: row.state, passedCount: row.passedCount, locationCount: row.locationCount, locations }
+}
+
 function location(value: unknown): HandoverLocation | null {
   if (!value || typeof value !== "object") return null
   const row = value as Record<string, unknown>
@@ -338,7 +391,9 @@ export function parseSetupHandover(value: unknown): HandoverSubscription[] | nul
     if (allocation === undefined) return null
     const forwarding = serviceForwarding(row.serviceForwarding)
     if (forwarding === undefined) return null
-    if ("configurationProgress" in row || "preferenceProgress" in row || "allocationProgress" in row || "forwardingProgress" in row || "agentRef" in row) return null
+    const test = serviceTest(row.serviceTest)
+    if (test === undefined) return null
+    if ("configurationProgress" in row || "preferenceProgress" in row || "allocationProgress" in row || "forwardingProgress" in row || "testProgress" in row || "agentRef" in row) return null
     subscriptions.push({
       reference: row.reference,
       businessName: row.businessName,
@@ -365,6 +420,7 @@ export function parseSetupHandover(value: unknown): HandoverSubscription[] | nul
       serviceConfiguration: configuration,
       serviceAllocation: allocation,
       serviceForwarding: forwarding,
+      serviceTest: test,
     })
   }
   return subscriptions

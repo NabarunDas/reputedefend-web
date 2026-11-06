@@ -1268,7 +1268,7 @@ describe("audited record forwarding instructions", () => {
       provisionState: "TEST_REQUIRED",
       routingActive: false,
       e164: "+441632960441",
-      nextAction: "Record successful test call",
+      nextAction: "Verify AI receptionist test call",
     })
     const provision = await rows<{ state: string; allocated: string; binding: string; forwarding: string | null; test_ref: string | null; tested: string | null; confirmed: string | null; live: string | null }>(
       `select state, number_allocated_at as allocated, provider_binding_ref as binding, forwarding_instructed_at as forwarding,
@@ -1363,7 +1363,7 @@ describe("audited record forwarding instructions", () => {
       status: "success",
       sharedCount: 2,
       locationCount: 2,
-      nextAction: "Record successful test call",
+      nextAction: "Verify AI receptionist test call",
     })
     const customer = JSON.stringify(await rpc<Row>("customer_portal_setup_handover_v1", [session]))
     expect(customer).toContain("+441632960461")
@@ -1470,5 +1470,333 @@ describe("audited record forwarding instructions", () => {
     const customer = JSON.stringify(await rpc<Row>("customer_portal_setup_handover_v1", [session]))
     expect(customer).not.toContain("+441632960494")
     expect(customer).not.toContain("agent-0021")
+  })
+})
+
+const testSqlPath = new URL("../../../../supabase/migrations/20261106120000_admin_commercial_verify_agent_test_call_v1.sql", import.meta.url)
+const passedConversation = "Your AI receptionist has passed its conversation test. We still need to confirm the final telephone connection before your service can go live."
+
+function stamp(value: unknown, offsetMs: number) {
+  const parsed = value instanceof Date ? value.getTime() : Date.parse(String(value))
+  return new Date(parsed + offsetMs).toISOString()
+}
+
+function assessment(patch: Record<string, unknown> = {}) {
+  return {
+    attestation: "I reviewed this controlled agent conversation against the confirmed preferences.",
+    avoidsUnsupportedPromises: true,
+    businessHours: true,
+    callbackWindows: true,
+    callerIdentity: true,
+    conclusion: true,
+    enquiryDetails: true,
+    escalation: true,
+    greeting: true,
+    languageVoice: true,
+    staffConfirmed: true,
+    ...patch,
+  }
+}
+
+async function evidenceBody(location: string, patch: Record<string, unknown> = {}) {
+  const found = await rows<{ at: string | Date }>(
+    `select agent_configured_at as at from public.service_provisions where location_id = $1`,
+    [location],
+  )
+  return {
+    agentId: `agent-${location.slice(-4)}`,
+    agentVersion: "rev-0004",
+    availability: "retrieved",
+    callId: `call${location.slice(-4)}ok`,
+    callStatus: "ended",
+    callType: "web_call",
+    disconnectionReason: "user_hangup",
+    endedAt: stamp(found[0].at, 2000),
+    environment: "dev",
+    providerError: false,
+    startedAt: stamp(found[0].at, 1000),
+    testScope: "AGENT_DIRECT",
+    ...patch,
+  }
+}
+
+async function serviceRow(location: string) {
+  return (await rows<{
+    state: string
+    allocated: string
+    binding: string
+    forwarding: string
+    test_ref: string | null
+    outcome: string | null
+    tested: string | null
+    confirmed: string | null
+    live: string | null
+  }>(
+    `select state, number_allocated_at as allocated, provider_binding_ref as binding, forwarding_instructed_at as forwarding,
+            provider_test_call_ref as test_ref, provider_test_outcome as outcome, agent_test_passed_at as tested,
+            customer_confirmed_at as confirmed, live_at as live
+     from public.service_provisions where location_id = $1`,
+    [location],
+  ))[0]
+}
+
+async function verify(
+  armed: Awaited<ReturnType<typeof pay>>,
+  location: string,
+  options: {
+    request?: string
+    evidence?: Record<string, unknown>
+    qa?: Record<string, unknown>
+    dropEvidence?: string
+    dropQa?: string
+    configurationVersion?: number
+    allocationVersion?: number
+    instructionVersion?: number
+    instructionId?: string
+    provisionVersion?: number
+    preferenceVersion?: number
+    subscriptionVersion?: number
+    customerId?: string
+    body?: Record<string, unknown>
+  } = {},
+) {
+  const current = await versions(armed.prepared.subscription)
+  const allocation = (await rows<{ id: string; version: number }>(
+    `select id::text as id, version from admin_private.commercial_location_allocations
+     where subscription_id = $1 and location_id = $2 order by version desc limit 1`,
+    [armed.prepared.subscription, location],
+  ))[0]
+  const instruction = (await rows<{ id: string; version: number }>(
+    `select id::text as id, version from admin_private.commercial_forwarding_instructions
+     where subscription_id = $1 and location_id = $2 order by version desc limit 1`,
+    [armed.prepared.subscription, location],
+  ))[0]
+  const evidence: Record<string, unknown> = { ...(await evidenceBody(location, options.evidence)) }
+  const qa: Record<string, unknown> = { ...assessment(options.qa) }
+  if (options.dropEvidence) delete evidence[options.dropEvidence]
+  if (options.dropQa) delete qa[options.dropQa]
+  const body = options.body ?? {
+    customerId: options.customerId ?? alex,
+    businessId: armed.prepared.business,
+    onboardingRequestId: current.request_id,
+    onboardingVersion: current.request_version,
+    locationId: location,
+    preferenceVersion: options.preferenceVersion ?? 1,
+    provisionVersion: options.provisionVersion ?? await provisionVersion(armed.prepared.subscription, location),
+    configurationVersion: options.configurationVersion ?? 1,
+    allocationId: allocation.id,
+    allocationVersion: options.allocationVersion ?? allocation.version,
+    instructionId: options.instructionId ?? instruction.id,
+    instructionVersion: options.instructionVersion ?? instruction.version,
+    evidence,
+    qa,
+  }
+  const result = await rpc<Row>("admin_commercial_verify_agent_test_call_v1", [
+    adminToken,
+    options.request ?? randomUUID(),
+    armed.prepared.subscription,
+    options.subscriptionVersion ?? current.subscription_version,
+    JSON.stringify(body),
+  ])
+  return Object.assign(result, { body, subscriptionVersion: options.subscriptionVersion ?? current.subscription_version })
+}
+
+async function shared(location: string, e164: string, options: { ready?: Parameters<typeof ready>[1]; agentRef?: string } = {}) {
+  const armed = await ready([location], options.ready)
+  expect(await allocate(armed, location, { agentRef: options.agentRef ?? `agent-${location.slice(-4)}`, e164 })).toMatchObject({ status: "success" })
+  expect(await instruct(armed, location, { status: "SHARED" })).toMatchObject({ status: "success", provisionState: "TEST_REQUIRED" })
+  return armed
+}
+
+describe("audited AI receptionist test call", () => {
+  it("keeps the command service-role only and does not place a call", () => {
+    const source = readFileSync(testSqlPath, "utf8")
+    expect(source).toContain("Do not apply 20261106120000 to DEV")
+    expect(source).toContain("Do not apply 20261106120000 to Production")
+    expect(source).toContain("must not be applied to hosted DEV")
+    expect(source).toContain("AGENT_DIRECT")
+    expect(source).toContain("PENDING_VERIFICATION")
+    expect(source).toContain("VERIFIED_PASSED")
+    expect(source).toContain("VERIFIED_FAILED")
+    expect(source).toContain("REQUIRES_REVIEW")
+    expect(source).toContain("AWAITING_CONFIRMATION")
+    expect(source).toContain("TEST_REQUIRED")
+    expect(source).toContain(passedConversation)
+    expect(source).toContain("preferences_complete := false")
+    expect(source).not.toContain("INDEPENDENTLY_VERIFIED")
+    expect(source).not.toContain("INSERT INTO public.telloya_voice_number_bindings")
+    expect(source).not.toContain("state = 'LIVE'")
+    expect(source).not.toMatch(/\bretell\b|\bResend\b|ADMIN_COMMERCIAL_VERIFY_AGENT_TEST_CALL_ENABLED|voice_id/i)
+    expect(source).toContain("REVOKE ALL ON FUNCTION public.admin_commercial_verify_agent_test_call_v1(text, uuid, uuid, integer, jsonb)")
+    expect(source).toContain("GRANT EXECUTE ON FUNCTION public.admin_commercial_verify_agent_test_call_v1(text, uuid, uuid, integer, jsonb)")
+  })
+
+  it("records a verified direct agent test and replays the same request", async () => {
+    const armed = await shared(high, "+441632960601")
+    const before = await serviceRow(high)
+    const request = randomUUID()
+    const passed = await verify(armed, high, { request, evidence: { agentVersion: null } })
+    expect(passed).toMatchObject({
+      status: "success",
+      evidenceOutcome: "VERIFIED_PASSED",
+      evidenceVersion: 1,
+      provisionState: "AWAITING_CONFIRMATION",
+      testPassed: true,
+      routingActive: false,
+      forwardingVerified: false,
+      nextAction: "Confirm readiness for the final telephone connection",
+    })
+    const replay = await verify(armed, high, { request, subscriptionVersion: passed.subscriptionVersion, body: passed.body })
+    expect(replay).toMatchObject({
+      status: "success",
+      evidenceOutcome: "VERIFIED_PASSED",
+      evidenceVersion: 1,
+      provisionState: "AWAITING_CONFIRMATION",
+    })
+    const after = await serviceRow(high)
+    expect(after.state).toBe("AWAITING_CONFIRMATION")
+    expect(after.outcome).toBe("PASSED")
+    expect(after.test_ref).toBe("call0021ok")
+    expect(after.tested).toBeTruthy()
+    expect(after.allocated).toEqual(before.allocated)
+    expect(after.binding).toBe(before.binding)
+    expect(after.forwarding).toEqual(before.forwarding)
+    expect(after.confirmed).toBeNull()
+    expect(after.live).toBeNull()
+    expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_agent_test_evidence`)).toEqual([{ count: 1 }])
+    expect(await rows<{ count: number }>(`select count(*)::int as count from public.telloya_voice_number_bindings`)).toEqual([{ count: 0 }])
+    expect(await rows<{ count: number }>(`select count(*)::int as count from public.service_provisions where state = 'LIVE' or customer_confirmed_at is not null or live_at is not null`)).toEqual([{ count: 0 }])
+    const customer = JSON.stringify(await rpc<Row>("customer_portal_setup_handover_v1", [session]))
+    expect(customer).toContain(passedConversation)
+    expect(customer).not.toContain("call0021ok")
+    expect(customer).not.toContain("agent-0021")
+    expect(customer).not.toContain("testProgress")
+    expect(customer).not.toContain("Call forwarding verified")
+    expect(customer).not.toContain("Your telephone line is connected")
+    expect(customer).not.toContain("Your receptionist is answering calls")
+    expect(customer).not.toContain("Service activated")
+    const again = await verify(armed, high, { evidence: { callId: "call0021new", agentVersion: null } })
+    expect(again).toMatchObject({ status: "denied", reason: "setup" })
+    expect((await serviceRow(high)).test_ref).toBe("call0021ok")
+    await db.exec("SAVEPOINT test_binding")
+    await expect(db.query(
+      `insert into public.telloya_voice_number_bindings(environment, inbound_to_number, agent_id, business_id, location_id, active)
+       values ('dev', '+441632960601', 'agent-0021', $1, $2, true)`,
+      [bakery, high],
+    )).rejects.toThrow(/telloya_voice_rejected/)
+    await db.exec("ROLLBACK TO SAVEPOINT test_binding")
+    const changed = await verify(armed, high, {
+      request,
+      subscriptionVersion: passed.subscriptionVersion,
+      body: { ...passed.body, evidence: { ...(passed.body.evidence as Record<string, unknown>), callId: "call0021new" } },
+    })
+    expect(changed).toMatchObject({ status: "conflict" })
+    expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_agent_test_evidence`)).toEqual([{ count: 1 }])
+  })
+
+  it("keeps failed, unfinished, unknown, and mismatched calls without advancing the service", async () => {
+    const armed = await shared(high, "+441632960611")
+    const failed = await verify(armed, high, { evidence: { providerError: true, callId: "call0021err" } })
+    expect(failed).toMatchObject({ status: "success", evidenceOutcome: "VERIFIED_FAILED", testPassed: false, provisionState: "TEST_REQUIRED", forwardingVerified: false })
+    expect((await serviceRow(high)).state).toBe("TEST_REQUIRED")
+    expect(await verify(armed, high, { evidence: { availability: "not_found", callId: "call0021miss", agentId: null, callStatus: null, callType: null, startedAt: null, endedAt: null } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
+    expect(await verify(armed, high, { evidence: { agentId: "agent-other", callId: "call0021bad" } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
+    expect(await verify(armed, high, { evidence: { environment: "production", callId: "call0021env" } })).toMatchObject({ status: "denied", reason: "environment" })
+    expect(await verify(armed, high, { evidence: { callStatus: "ongoing", callId: "call0021run" } })).toMatchObject({ evidenceOutcome: "PENDING_VERIFICATION" })
+    expect(await verify(armed, high, { evidence: { callStatus: "error", callId: "call0021bad2" } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
+    expect(await verify(armed, high, { evidence: { availability: "unavailable", callId: "call0021gap", agentId: null, callStatus: null, callType: null, startedAt: null, endedAt: null } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW", providerStatus: "unavailable" })
+    expect(await verify(armed, high, { evidence: { callType: "phone_call", callId: "call0021phn" } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
+    expect(await verify(armed, high, { evidence: { agentVersion: "rev-9999", callId: "call0021old" } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
+    const configured = await rows<{ at: string | Date }>(`select agent_configured_at as at from public.service_provisions where location_id = $1`, [high])
+    expect(await verify(armed, high, { evidence: { callId: "call0021early", startedAt: stamp(configured[0].at, -3600000), endedAt: stamp(configured[0].at, -3500000) } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
+    expect(await verify(armed, high, { evidence: { callId: "call0021qa" }, qa: { greeting: false } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
+    const missing = randomUUID()
+    expect(await verify(armed, high, { request: missing, qa: { staffConfirmed: false } })).toMatchObject({ status: "invalid" })
+    expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_command_receipts where request_id = $1`, [missing])).toEqual([{ count: 0 }])
+    expect(await verify(armed, high, { configurationVersion: 2, evidence: { callId: "call0021cfg" } })).toMatchObject({ status: "conflict", reason: "version" })
+    expect(await verify(armed, high, { allocationVersion: 9, evidence: { callId: "call0021alc" } })).toMatchObject({ status: "conflict", reason: "version" })
+    expect(await verify(armed, high, { instructionVersion: 9, evidence: { callId: "call0021ins" } })).toMatchObject({ status: "conflict", reason: "version" })
+    expect((await serviceRow(high)).state).toBe("TEST_REQUIRED")
+    expect((await serviceRow(high)).test_ref).toBeNull()
+    const history = await rows<{ outcome: string }>(`select outcome from admin_private.commercial_agent_test_evidence order by version`)
+    expect(history.map(row => row.outcome)).toContain("VERIFIED_FAILED")
+    expect(history.some(row => row.outcome === "VERIFIED_PASSED")).toBe(false)
+    const passed = await verify(armed, high, { evidence: { callId: "call0021yes", agentVersion: "rev-0004" } })
+    expect(passed).toMatchObject({ evidenceOutcome: "VERIFIED_PASSED", provisionState: "AWAITING_CONFIRMATION" })
+    expect(await rows<{ outcome: string }>(`select outcome from admin_private.commercial_agent_test_evidence where outcome = 'VERIFIED_FAILED'`)).not.toEqual([])
+    await db.exec("SAVEPOINT test_append")
+    await expect(db.query(`delete from admin_private.commercial_agent_test_evidence`)).rejects.toThrow()
+    await db.exec("ROLLBACK TO SAVEPOINT test_append")
+  })
+
+  it("does not reuse one passed call for another location", async () => {
+    const first = await ready([high, dock])
+    expect(await allocate(first, high, { agentRef: "agent-0021", e164: "+441632960621" })).toMatchObject({ status: "success" })
+    expect(await allocate(first, dock, { agentRef: "agent-0022", e164: "+441632960623" })).toMatchObject({ status: "success" })
+    expect(await instruct(first, high, { status: "SHARED" })).toMatchObject({ status: "success" })
+    expect(await instruct(first, dock, { status: "SHARED" })).toMatchObject({ status: "success" })
+    expect(await verify(first, high, { evidence: { callId: "callshared01", agentVersion: null } })).toMatchObject({ evidenceOutcome: "VERIFIED_PASSED" })
+    expect(await verify(first, dock, { evidence: { callId: "callshared01", agentId: "agent-0022", agentVersion: null } })).toMatchObject({ status: "denied", reason: "call" })
+    expect((await serviceRow(dock)).state).toBe("TEST_REQUIRED")
+    expect((await serviceRow(high)).test_ref).toBe("callshared01")
+    const second = await shared(yard, "+441632960622", { ready: { business: twin }, agentRef: "agent-0026" })
+    expect(await verify(second, yard, { evidence: { callId: "callshared01", agentId: "agent-0026", agentVersion: null } })).toMatchObject({ status: "denied", reason: "call" })
+    expect((await serviceRow(yard)).state).toBe("TEST_REQUIRED")
+  })
+
+  it("rejects a revoked, unpaid, or expired subscription", async () => {
+    const revoked = await shared(high, "+441632960631")
+    await db.exec("set local session_replication_role = replica")
+    await db.query(`update public.business_memberships set status = 'revoked', verified_at = null, verified_by = null where customer_id = $1 and business_id = $2`, [alex, bakery])
+    await db.exec("set local session_replication_role = origin")
+    expect(await verify(revoked, high)).toMatchObject({ status: "denied", reason: "revoked" })
+    await db.exec("set local session_replication_role = replica")
+    await db.query(`update public.business_memberships set status = 'verified', verified_at = now(), verified_by = $3 where customer_id = $1 and business_id = $2`, [alex, bakery, actor])
+    await db.exec("set local session_replication_role = origin")
+
+    const expired = await shared(yard, "+441632960632", { ready: { business: twin }, agentRef: "agent-0026" })
+    await db.exec("set local session_replication_role = replica")
+    await db.query(`update public.commercial_subscriptions set current_period_end = now() - interval '1 day' where id = $1`, [expired.prepared.subscription])
+    await db.exec("set local session_replication_role = origin")
+    expect(await verify(expired, yard, { evidence: { agentId: "agent-0026" } })).toMatchObject({ status: "denied", reason: "expired" })
+
+    const unpaid = await shared(oven, "+441632960633", { ready: { product: "COMPLETE", business: kitchen }, agentRef: "agent-0024" })
+    await db.exec("set local session_replication_role = replica")
+    await db.query(`delete from public.commercial_payment_evidence where subscription_id = $1`, [unpaid.prepared.subscription])
+    await db.exec("set local session_replication_role = origin")
+    expect(await verify(unpaid, oven, { evidence: { agentId: "agent-0024", callId: "call0024ok" } })).toMatchObject({ status: "denied", reason: "payment" })
+    expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_agent_test_evidence`)).toEqual([{ count: 0 }])
+  })
+
+  it("advances one location without treating another location as tested", async () => {
+    const armed = await ready([high, dock])
+    expect(await allocate(armed, high, { agentRef: "agent-0021", e164: "+441632960641" })).toMatchObject({ status: "success" })
+    expect(await allocate(armed, dock, { agentRef: "agent-0022", e164: "+441632960642" })).toMatchObject({ status: "success" })
+    expect(await instruct(armed, high, { status: "SHARED" })).toMatchObject({ status: "success" })
+    expect(await instruct(armed, dock, { status: "SHARED" })).toMatchObject({ status: "success" })
+    expect(await verify(armed, high, { evidence: { callId: "callhigh001", agentVersion: null } })).toMatchObject({
+      evidenceOutcome: "VERIFIED_PASSED",
+      nextAction: "Verify AI receptionist test call",
+    })
+    expect((await serviceRow(high)).state).toBe("AWAITING_CONFIRMATION")
+    expect((await serviceRow(dock)).state).toBe("TEST_REQUIRED")
+    expect((await serviceRow(dock)).test_ref).toBeNull()
+    const handover = (await rows<{ value: Row }>(`select admin_private.commercial_setup_handover_v1($1) as value`, [armed.prepared.subscription]))[0].value
+    expect((handover.checklist as { key: string; state: string }[]).find(step => step.key === "test")?.state).toBe("planned")
+    const customer = JSON.stringify(await rpc<Row>("customer_portal_setup_handover_v1", [session]))
+    expect(customer).toContain(passedConversation)
+    expect(customer).toContain("The conversation test has not been recorded.")
+    expect(customer).not.toContain("callhigh001")
+    expect(customer).not.toContain("agent-0021")
+    expect(customer).not.toContain("testProgress")
+    expect(await verify(armed, dock, { evidence: { callId: "calldock001", agentId: "agent-0022", agentVersion: null } })).toMatchObject({
+      evidenceOutcome: "VERIFIED_PASSED",
+      nextAction: "Confirm readiness for the final telephone connection",
+    })
+    const finished = (await rows<{ value: Row }>(`select admin_private.commercial_setup_handover_v1($1) as value`, [armed.prepared.subscription]))[0].value
+    expect(finished.message).toBe(passedConversation)
+    expect((finished.checklist as { key: string; state: string }[]).find(step => step.key === "test")?.state).toBe("complete")
+    expect((finished.checklist as { key: string; state: string }[]).find(step => step.key === "activation")?.state).toBe("planned")
+    expect(await rows<{ count: number }>(`select count(*)::int as count from public.service_provisions where state = 'LIVE' or live_at is not null`)).toEqual([{ count: 0 }])
   })
 })

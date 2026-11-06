@@ -59,6 +59,8 @@ const south = "a033c000-0000-4000-8000-000000000019"
 const southLoc = "a033c000-0000-4000-8000-00000000002c"
 const lane = "a033c000-0000-4000-8000-00000000001e"
 const laneLoc = "a033c000-0000-4000-8000-00000000002e"
+const gate = "a033c000-0000-4000-8000-00000000001f"
+const gateLoc = "a033c000-0000-4000-8000-00000000002f"
 
 type Payer = {
   customer: string
@@ -103,7 +105,7 @@ async function call<T>(sql: string): Promise<T> {
 
 function stripeIds() {
   serial += 1
-  const suffix = serial.toString(36).toUpperCase().padStart(4, "A").replace(/0/g, "A").replace(/1/g, "B")
+  const suffix = `T${serial.toString(36).toUpperCase().padStart(4, "A")}`
   return {
     priceId: `price_BeginRace${suffix}`,
     sessionId: `cs_test_beginrace${suffix}`,
@@ -397,7 +399,8 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
         ('${hearth}', 'Hearth Bakery'),
         ('${north}', 'North Bakery'),
         ('${south}', 'South Bakery'),
-        ('${lane}', 'Lane Bakery');
+        ('${lane}', 'Lane Bakery'),
+        ('${gate}', 'Gate Bakery');
       insert into public.locations(id, business_id, country, location_name) values
         ('${high}', '${bakery}', 'GB', 'High Street'),
         ('${dock}', '${bakery}', 'GB', 'Dock'),
@@ -409,7 +412,8 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
         ('${hearthLoc}', '${hearth}', 'GB', 'Hearth'),
         ('${northLoc}', '${north}', 'GB', 'North'),
         ('${southLoc}', '${south}', 'GB', 'South'),
-        ('${laneLoc}', '${lane}', 'GB', 'Lane');
+        ('${laneLoc}', '${lane}', 'GB', 'Lane'),
+        ('${gateLoc}', '${gate}', 'GB', 'Gate');
       insert into public.business_memberships(customer_id, business_id, status, verified_at, verified_by, evidence) values
         ('${alex}', '${bakery}', 'verified', now(), '${actor}', 'Mailbox already proved for Bakery'),
         ('${alex}', '${mill}', 'verified', now(), '${actor}', 'Mailbox already proved for Mill'),
@@ -420,6 +424,7 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
         ('${alex}', '${north}', 'verified', now(), '${actor}', 'Mailbox already proved for North'),
         ('${alex}', '${south}', 'verified', now(), '${actor}', 'Mailbox already proved for South'),
         ('${alex}', '${lane}', 'verified', now(), '${actor}', 'Mailbox already proved for Lane'),
+        ('${alex}', '${gate}', 'verified', now(), '${actor}', 'Mailbox already proved for Gate'),
         ('${blake}', '${kiln}', 'verified', now(), '${actor}', 'Mailbox already proved for Kiln');
       insert into public.product_catalogue(code, name, kind, status) values ('TELLOYA', 'Telloya', 'STANDALONE', 'DRAFT')
         on conflict (code) do nothing;
@@ -751,6 +756,116 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
     expect(await psql(`select number_allocated_at::text from public.service_provisions where location_id = '${laneLoc}'`)).toBe(allocatedAt)
     expect(await psql(`select count(*)::text from public.telloya_voice_number_bindings where inbound_to_number = '${number}'`)).toBe("0")
     expect(await psql(`select count(*)::text from public.service_provisions where location_id = '${laneLoc}' and (state = 'LIVE' or agent_test_passed_at is not null or customer_confirmed_at is not null or live_at is not null or provider_test_call_ref is not null)`)).toBe("0")
+  }, 180000)
+
+  it("lets exactly one of two test-call records claim the same provider call", async () => {
+    const number = "+441632961011"
+    const notice = "Do not enable call forwarding yet. Your receptionist is still being prepared and tested. We will tell you when it is ready for the final connection."
+    const prepared = await configured({ business: gate, locations: [gateLoc], ref: "VC-26-NUMALC", amount: 7100, version: 81 }, gateLoc, "agent-gate-01")
+    const allocated = await call<{ status: string }>(allocateSql(
+      prepared.armed,
+      randomUUID(),
+      prepared.current.version,
+      allocationBody(prepared.armed, prepared.current.body, gateLoc, prepared.agent, number, "dev", prepared.provision),
+    ))
+    expect(allocated.status).toBe("success")
+    const current = await payload(prepared.armed)
+    const allocationId = await psql(`select id::text from admin_private.commercial_location_allocations where location_id = '${gateLoc}'`)
+    const provision = await psql(`select record_version::text from public.service_provisions where location_id = '${gateLoc}'`)
+    const allocatedAt = await psql(`select number_allocated_at::text from public.service_provisions where location_id = '${gateLoc}'`)
+    const forwarding = await psql(`select forwarding_instructed_at::text from public.service_provisions where location_id = '${gateLoc}'`)
+    const instruction = {
+      environment: "dev",
+      forwardingMode: "UNANSWERED_BUSY_UNREACHABLE",
+      carrierKnown: false,
+      carrierName: null,
+      customerTelephone: null,
+      instructionRevision: "guide-0001",
+      instructionText: `1. Keep ${number} for the telephone provider. This is the number calls can be sent to once the receptionist is approved. 2. The exact menu names vary by telephone provider. These notes prepare the later connection and do not change the telephone line. 3. ${notice}`,
+      attestation: "The operator prepared these forwarding notes from the recorded allocation.",
+      staffConfirmed: true,
+      status: "SHARED",
+    }
+    const sharedBody = {
+      customerId: prepared.armed.customer,
+      businessId: prepared.armed.business,
+      onboardingRequestId: current.body.onboardingRequestId,
+      onboardingVersion: current.body.onboardingVersion,
+      locationId: gateLoc,
+      preferenceVersion: 1,
+      provisionVersion: Number(provision),
+      configurationVersion: 1,
+      allocationId,
+      allocationVersion: 1,
+      instructionVersion: 0,
+      instruction,
+    }
+    const shared = await call<{ status: string }>(`select public.admin_commercial_record_forwarding_instructions_v1('${adminToken}', '${randomUUID()}', '${prepared.armed.subscription}', ${current.version}, $json$${JSON.stringify(sharedBody)}$json$::jsonb)`)
+    expect(shared.status).toBe("success")
+    const fresh = await payload(prepared.armed)
+    const instructionId = await psql(`select id::text from admin_private.commercial_forwarding_instructions where location_id = '${gateLoc}'`)
+    const provisionAfter = await psql(`select record_version::text from public.service_provisions where location_id = '${gateLoc}'`)
+    const startedAt = await psql(`select to_json(agent_configured_at + interval '1 second') #>> '{}' from public.service_provisions where location_id = '${gateLoc}'`)
+    const endedAt = await psql(`select to_json(agent_configured_at + interval '2 second') #>> '{}' from public.service_provisions where location_id = '${gateLoc}'`)
+    const evidence = {
+      agentId: "agent-gate-01",
+      agentVersion: "rev-0004",
+      availability: "retrieved",
+      callId: "callgate0001",
+      callStatus: "ended",
+      callType: "web_call",
+      disconnectionReason: "user_hangup",
+      endedAt,
+      environment: "dev",
+      providerError: false,
+      startedAt,
+      testScope: "AGENT_DIRECT",
+    }
+    const qa = {
+      attestation: "I reviewed this controlled agent conversation against the confirmed preferences.",
+      avoidsUnsupportedPromises: true,
+      businessHours: true,
+      callbackWindows: true,
+      callerIdentity: true,
+      conclusion: true,
+      enquiryDetails: true,
+      escalation: true,
+      greeting: true,
+      languageVoice: true,
+      staffConfirmed: true,
+    }
+    const verifyBody = {
+      customerId: prepared.armed.customer,
+      businessId: prepared.armed.business,
+      onboardingRequestId: fresh.body.onboardingRequestId,
+      onboardingVersion: fresh.body.onboardingVersion,
+      locationId: gateLoc,
+      preferenceVersion: 1,
+      provisionVersion: Number(provisionAfter),
+      configurationVersion: 1,
+      allocationId,
+      allocationVersion: 1,
+      instructionId,
+      instructionVersion: 1,
+      evidence,
+      qa,
+    }
+    const sql = (request: string) => `select public.admin_commercial_verify_agent_test_call_v1('${adminToken}', '${request}', '${prepared.armed.subscription}', ${fresh.version}, $json$${JSON.stringify(verifyBody)}$json$::jsonb)`
+    const [first, second] = await Promise.all([
+      call<{ status: string; evidenceOutcome?: string; reason?: string }>(sql(randomUUID())),
+      call<{ status: string; evidenceOutcome?: string; reason?: string }>(sql(randomUUID())),
+    ])
+    const outcomes = [first, second]
+    expect(outcomes.filter(item => item.status === "success" && item.evidenceOutcome === "VERIFIED_PASSED")).toHaveLength(1)
+    expect(outcomes.filter(item => item.status === "conflict" && item.reason === "version")).toHaveLength(1)
+    expect(await psql(`select count(*)::text from admin_private.commercial_agent_test_evidence where provider_call_id = 'callgate0001' and outcome = 'VERIFIED_PASSED'`)).toBe("1")
+    expect(await psql(`select state from public.service_provisions where location_id = '${gateLoc}'`)).toBe("AWAITING_CONFIRMATION")
+    expect(await psql(`select provider_test_outcome from public.service_provisions where location_id = '${gateLoc}'`)).toBe("PASSED")
+    expect(await psql(`select number_allocated_at::text from public.service_provisions where location_id = '${gateLoc}'`)).toBe(allocatedAt)
+    expect(await psql(`select forwarding_instructed_at is not null from public.service_provisions where location_id = '${gateLoc}'`)).toBe("t")
+    expect(forwarding).toBe("")
+    expect(await psql(`select count(*)::text from public.telloya_voice_number_bindings where inbound_to_number = '${number}'`)).toBe("0")
+    expect(await psql(`select count(*)::text from public.service_provisions where location_id = '${gateLoc}' and (state = 'LIVE' or customer_confirmed_at is not null or live_at is not null)`)).toBe("0")
   }, 180000)
 })
 

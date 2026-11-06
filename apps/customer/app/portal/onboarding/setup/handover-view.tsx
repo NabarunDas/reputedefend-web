@@ -1,4 +1,5 @@
 import type { HandoverSubscription } from "@/lib/portal/onboarding/handover"
+import { CopyForwardingNumber } from "./copy-number"
 
 const PAYMENT_RECEIVED = "Your subscription payment has been confirmed. We're preparing your service and will guide you through the remaining setup steps."
 
@@ -124,6 +125,25 @@ function SubscriptionSetup({ subscription }: { subscription: HandoverSubscriptio
           <article key={location.locationId}>
             <h4>{location.locationName}</h4>
             <p>{location.note}</p>
+          </article>
+        ))}
+      </section> : null}
+      {subscription.serviceForwarding && subscription.serviceForwarding.sharedCount > 0 ? <section>
+        <h3>Telephone setup</h3>
+        <p>Instructions ready — service testing pending. These notes prepare a later connection. They are not proof that forwarding is switched on.</p>
+        {subscription.serviceForwarding.locations.map(location => (
+          <article key={location.locationId}>
+            <h4>{location.locationName}</h4>
+            {location.status === "shared" && location.e164 && location.instruction ? (
+              <>
+                <p>Assigned forwarding number</p>
+                <p>{location.e164} <CopyForwardingNumber number={location.e164} /></p>
+                <p>Forwarding method: {location.forwardingLabel}.</p>
+                {location.carrierKnown && location.carrierName ? <p>Telephone provider: {location.carrierName}.</p> : <p>Exact settings vary by telephone provider.</p>}
+                <p>{location.instruction}</p>
+                <p>{location.notice}</p>
+              </>
+            ) : <p>{location.notice}</p>}
           </article>
         ))}
       </section> : null}

@@ -57,6 +57,8 @@ const north = "a033c000-0000-4000-8000-000000000018"
 const northLoc = "a033c000-0000-4000-8000-00000000002b"
 const south = "a033c000-0000-4000-8000-000000000019"
 const southLoc = "a033c000-0000-4000-8000-00000000002c"
+const lane = "a033c000-0000-4000-8000-00000000001e"
+const laneLoc = "a033c000-0000-4000-8000-00000000002e"
 
 type Payer = {
   customer: string
@@ -394,7 +396,8 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
         ('${kiln}', 'Kiln Bakery'),
         ('${hearth}', 'Hearth Bakery'),
         ('${north}', 'North Bakery'),
-        ('${south}', 'South Bakery');
+        ('${south}', 'South Bakery'),
+        ('${lane}', 'Lane Bakery');
       insert into public.locations(id, business_id, country, location_name) values
         ('${high}', '${bakery}', 'GB', 'High Street'),
         ('${dock}', '${bakery}', 'GB', 'Dock'),
@@ -405,7 +408,8 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
         ('${kilnLoc}', '${kiln}', 'GB', 'Kiln'),
         ('${hearthLoc}', '${hearth}', 'GB', 'Hearth'),
         ('${northLoc}', '${north}', 'GB', 'North'),
-        ('${southLoc}', '${south}', 'GB', 'South');
+        ('${southLoc}', '${south}', 'GB', 'South'),
+        ('${laneLoc}', '${lane}', 'GB', 'Lane');
       insert into public.business_memberships(customer_id, business_id, status, verified_at, verified_by, evidence) values
         ('${alex}', '${bakery}', 'verified', now(), '${actor}', 'Mailbox already proved for Bakery'),
         ('${alex}', '${mill}', 'verified', now(), '${actor}', 'Mailbox already proved for Mill'),
@@ -415,6 +419,7 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
         ('${alex}', '${hearth}', 'verified', now(), '${actor}', 'Mailbox already proved for Hearth'),
         ('${alex}', '${north}', 'verified', now(), '${actor}', 'Mailbox already proved for North'),
         ('${alex}', '${south}', 'verified', now(), '${actor}', 'Mailbox already proved for South'),
+        ('${alex}', '${lane}', 'verified', now(), '${actor}', 'Mailbox already proved for Lane'),
         ('${blake}', '${kiln}', 'verified', now(), '${actor}', 'Mailbox already proved for Kiln');
       insert into public.product_catalogue(code, name, kind, status) values ('TELLOYA', 'Telloya', 'STANDALONE', 'DRAFT')
         on conflict (code) do nothing;
@@ -690,6 +695,62 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
     }
     expect(owners === "1" && activeBindings === "1").toBe(false)
     expect(await psql(`select count(*)::text from public.service_provisions where location_id = '${hearthLoc}' and (state = 'LIVE' or forwarding_instructed_at is not null)`)).toBe("0")
+  }, 180000)
+
+  it("lets exactly one of two instruction records share the same location", async () => {
+    const number = "+441632961010"
+    const notice = "Do not enable call forwarding yet. Your receptionist is still being prepared and tested. We will tell you when it is ready for the final connection."
+    const prepared = await configured({ business: lane, locations: [laneLoc], ref: "VC-26-NUMALB", amount: 7000, version: 80 }, laneLoc, "agent-lane-01")
+    const allocated = await call<{ status: string }>(allocateSql(
+      prepared.armed,
+      randomUUID(),
+      prepared.current.version,
+      allocationBody(prepared.armed, prepared.current.body, laneLoc, prepared.agent, number, "dev", prepared.provision),
+    ))
+    expect(allocated.status).toBe("success")
+    const current = await payload(prepared.armed)
+    const allocationId = await psql(`select id::text from admin_private.commercial_location_allocations where location_id = '${laneLoc}'`)
+    const provision = await psql(`select record_version::text from public.service_provisions where location_id = '${laneLoc}'`)
+    const allocatedAt = await psql(`select number_allocated_at::text from public.service_provisions where location_id = '${laneLoc}'`)
+    const instruction = {
+      environment: "dev",
+      forwardingMode: "UNANSWERED_BUSY_UNREACHABLE",
+      carrierKnown: false,
+      carrierName: null,
+      customerTelephone: null,
+      instructionRevision: "guide-0001",
+      instructionText: `1. Keep ${number} for the telephone provider. This is the number calls can be sent to once the receptionist is approved. 2. The exact menu names vary by telephone provider. These notes prepare the later connection and do not change the telephone line. 3. ${notice}`,
+      attestation: "The operator prepared these forwarding notes from the recorded allocation.",
+      staffConfirmed: true,
+      status: "SHARED",
+    }
+    const body = {
+      customerId: prepared.armed.customer,
+      businessId: prepared.armed.business,
+      onboardingRequestId: current.body.onboardingRequestId,
+      onboardingVersion: current.body.onboardingVersion,
+      locationId: laneLoc,
+      preferenceVersion: 1,
+      provisionVersion: Number(provision),
+      configurationVersion: 1,
+      allocationId,
+      allocationVersion: 1,
+      instructionVersion: 0,
+      instruction,
+    }
+    const sql = (request: string) => `select public.admin_commercial_record_forwarding_instructions_v1('${adminToken}', '${request}', '${prepared.armed.subscription}', ${current.version}, $json$${JSON.stringify(body)}$json$::jsonb)`
+    const [first, second] = await Promise.all([
+      call<{ status: string; reason?: string }>(sql(randomUUID())),
+      call<{ status: string; reason?: string }>(sql(randomUUID())),
+    ])
+    const outcomes = [first, second]
+    expect(outcomes.filter(item => item.status === "success")).toHaveLength(1)
+    expect(outcomes.filter(item => item.status === "conflict")).toHaveLength(1)
+    expect(await psql(`select count(*)::text from admin_private.commercial_forwarding_instructions where location_id = '${laneLoc}' and status = 'SHARED'`)).toBe("1")
+    expect(await psql(`select state from public.service_provisions where location_id = '${laneLoc}'`)).toBe("TEST_REQUIRED")
+    expect(await psql(`select number_allocated_at::text from public.service_provisions where location_id = '${laneLoc}'`)).toBe(allocatedAt)
+    expect(await psql(`select count(*)::text from public.telloya_voice_number_bindings where inbound_to_number = '${number}'`)).toBe("0")
+    expect(await psql(`select count(*)::text from public.service_provisions where location_id = '${laneLoc}' and (state = 'LIVE' or agent_test_passed_at is not null or customer_confirmed_at is not null or live_at is not null or provider_test_call_ref is not null)`)).toBe("0")
   }, 180000)
 })
 

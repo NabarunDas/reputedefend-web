@@ -3,7 +3,7 @@
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ukDate } from "@/lib/admin/activity"
-import type { AllocationLocationProgress, ConfigurationLocationProgress, SetupQueueItem } from "@/lib/commercial/setup-queue"
+import type { AllocationLocationProgress, ConfigurationLocationProgress, ForwardingLocationProgress, SetupQueueItem } from "@/lib/commercial/setup-queue"
 import { Badge, EmptyState, Notice } from "../../ui"
 
 const futureCommands = [
@@ -11,6 +11,7 @@ const futureCommands = [
   "Confirm business preferences",
   "Confirm AI configuration",
   "Record provider and number allocation",
+  "Record forwarding instructions",
   "Record successful test call",
   "Request customer forwarding confirmation",
   "Approve activation",
@@ -835,12 +836,139 @@ function RecordNumberAllocation({ item, providerLane }: { item: SetupQueueItem; 
   </div>
 }
 
-export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, recordNumberAllocationEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; recordNumberAllocationEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
+const forwardingNotice = "Do not enable call forwarding yet. Your receptionist is still being prepared and tested. We will tell you when it is ready for the final connection."
+
+const forwardingModes = [
+  ["UNANSWERED", "Unanswered calls"],
+  ["BUSY", "Busy calls"],
+  ["UNREACHABLE", "Unreachable calls"],
+  ["UNANSWERED_BUSY_UNREACHABLE", "Unanswered, busy, and unreachable calls"],
+] as const
+
+function forwardingText(number: string) {
+  return [
+    `1. Keep ${number} for the customer’s telephone provider. This is the number calls can be sent to once the receptionist is approved.`,
+    "2. The exact menu names vary by telephone provider. These notes prepare the later connection and do not change the telephone line.",
+    `3. ${forwardingNotice}`,
+  ].join(" ")
+}
+
+function startingText(location: ForwardingLocationProgress | null) {
+  if (!location?.e164) return ""
+  if (location.status === "review" || !location.instructionText?.includes(location.e164)) return forwardingText(location.e164)
+  return location.instructionText
+}
+
+function RecordForwardingInstructions({ item, lane }: { item: SetupQueueItem; lane: "dev" | "production" }) {
+  const router = useRouter()
+  const key = useRef(crypto.randomUUID())
+  const initial = item.forwardingProgress?.locations.find(location => location.status !== "shared")?.locationId ?? item.forwardingProgress?.locations[0]?.locationId ?? ""
+  const [selected, setSelected] = useState(initial)
+  const location: ForwardingLocationProgress | null = item.forwardingProgress?.locations.find(entry => entry.locationId === selected) ?? null
+  const [mode, setMode] = useState<(typeof forwardingModes)[number][0]>(location?.forwardingMode ?? "UNANSWERED_BUSY_UNREACHABLE")
+  const [carrierKnown, setCarrierKnown] = useState(location?.carrierKnown === true)
+  const [carrierName, setCarrierName] = useState(location?.carrierName ?? "")
+  const [telephone, setTelephone] = useState(location?.customerTelephone ?? "")
+  const [revision, setRevision] = useState(location?.instructionRevision ?? "guide-0001")
+  const [text, setText] = useState(startingText(location))
+  const [attestation, setAttestation] = useState("")
+  const [message, setMessage] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+  const stale = location?.status === "review" || !location?.allocationId || !location.e164 || !text.includes(location.e164)
+  function choose(id: string) {
+    const next = item.forwardingProgress?.locations.find(entry => entry.locationId === id) ?? null
+    setSelected(id)
+    setMode(next?.forwardingMode ?? "UNANSWERED_BUSY_UNREACHABLE")
+    setCarrierKnown(next?.carrierKnown === true)
+    setCarrierName(next?.carrierName ?? "")
+    setTelephone(next?.customerTelephone ?? "")
+    setRevision(next?.instructionRevision ?? "guide-0001")
+    setText(startingText(next))
+    setAttestation("")
+    setMessage(null)
+    key.current = crypto.randomUUID()
+  }
+  async function submit(status: "DRAFT" | "SHARED") {
+    if (!location?.allocationId || !item.onboardingRequestId || !item.onboardingVersion) return
+    setPending(true)
+    setMessage(null)
+    const response = await fetch("/api/commercial/record-forwarding-instructions", {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": key.current },
+      body: JSON.stringify({
+        subscriptionId: item.subscriptionId,
+        version: item.subscriptionVersion,
+        customerId: item.customerId,
+        businessId: item.businessId,
+        onboardingRequestId: item.onboardingRequestId,
+        onboardingVersion: item.onboardingVersion,
+        locationId: location.locationId,
+        preferenceVersion: location.preferenceVersion,
+        provisionVersion: location.provisionVersion,
+        configurationVersion: location.configurationVersion,
+        allocationId: location.allocationId,
+        allocationVersion: location.allocationVersion,
+        instructionVersion: location.instructionVersion,
+        instruction: {
+          environment: lane,
+          forwardingMode: mode,
+          carrierKnown,
+          carrierName: carrierKnown ? carrierName.trim() : null,
+          customerTelephone: telephone.trim() === "" ? null : telephone.trim(),
+          instructionRevision: revision.trim(),
+          instructionText: text.trim(),
+          attestation: attestation.trim(),
+          staffConfirmed: true,
+          status,
+        },
+      }),
+    })
+    const result = await response.json().catch(() => ({ message: "We couldn’t record the forwarding instructions. Reload the queue before trying again." })) as { message?: string }
+    setPending(false)
+    if (response.ok) {
+      router.refresh()
+      return
+    }
+    setMessage(result.message ?? "We couldn’t record the forwarding instructions. Reload the queue before trying again.")
+    if (response.status === 409) key.current = crypto.randomUUID()
+  }
+  if (!item.forwardingProgress || item.forwardingProgress.locations.length === 0) return null
+  return (
+    <form className="commercial-command" onSubmit={event => { event.preventDefault(); void submit("SHARED") }}>
+      <h3>Record forwarding instructions</h3>
+      <p>{item.customerName} · {item.businessName}. These notes explain a later connection. Sharing them does not enable forwarding.</p>
+      <label>Location<select value={selected} onChange={event => choose(event.target.value)}>{item.forwardingProgress.locations.map(entry => <option key={entry.locationId} value={entry.locationId}>{entry.locationName} · {entry.status}</option>)}</select></label>
+      {location ? <dl className="commercial-review">
+        <div><dt>Receptionist</dt><dd>{location.agentRef ?? "Not recorded"}</dd></div>
+        <div><dt>Assigned number</dt><dd>{location.e164 ?? "Not recorded"}</dd></div>
+        <div><dt>Instruction version</dt><dd>{location.instructionVersion}</dd></div>
+        <div><dt>Sharing status</dt><dd>{location.status}</dd></div>
+      </dl> : null}
+      <label>Forwarding method<select value={mode} onChange={event => setMode(event.target.value as (typeof forwardingModes)[number][0])}>{forwardingModes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label><input type="checkbox" checked={carrierKnown} onChange={event => setCarrierKnown(event.target.checked)} /> The telephone provider is known</label>
+      {carrierKnown ? <label>Telephone provider<input value={carrierName} onChange={event => setCarrierName(event.target.value)} /></label> : <p>Exact settings vary by telephone provider.</p>}
+      <label>Customer telephone, if known<input value={telephone} onChange={event => setTelephone(event.target.value)} placeholder="+44…" /></label>
+      <label>Instruction revision<input value={revision} onChange={event => setRevision(event.target.value)} /></label>
+      <label>Instructions<textarea value={text} onChange={event => setText(event.target.value)} rows={6} /></label>
+      <p>{forwardingNotice}</p>
+      <label>Staff attestation<textarea value={attestation} onChange={event => setAttestation(event.target.value)} rows={3} /></label>
+      {stale ? <Notice tone="warning">These instructions need to be checked again against the current allocation and preferences before they can be shared.</Notice> : null}
+      {message ? <Notice tone="warning"><span role="status">{message}</span></Notice> : null}
+      <div className="commercial-actions">
+        <button type="button" disabled={pending || !location?.allocationId} onClick={() => void submit("DRAFT")}>Save draft</button>
+        <button type="submit" disabled={pending || stale || attestation.trim().length < 20}>Share instructions</button>
+      </div>
+    </form>
+  )
+}
+
+export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, recordNumberAllocationEnabled = false, recordForwardingInstructionsEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; recordNumberAllocationEnabled?: boolean; recordForwardingInstructionsEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
   const later = futureCommands.filter(command => {
     if (beginSetupEnabled && command === "Begin setup") return false
     if (confirmPreferencesEnabled && command === "Confirm business preferences") return false
     if (confirmAiConfigurationEnabled && command === "Confirm AI configuration") return false
     if (recordNumberAllocationEnabled && command === "Record provider and number allocation") return false
+    if (recordForwardingInstructionsEnabled && command === "Record forwarding instructions") return false
     return true
   })
   return <>
@@ -897,6 +1025,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
                   {confirmPreferencesEnabled ? <ConfirmPreferences item={item} /> : null}
                   {confirmAiConfigurationEnabled ? <ConfirmAiConfiguration item={item} providerLane={providerLane} /> : null}
                   {recordNumberAllocationEnabled ? <RecordNumberAllocation item={item} providerLane={providerLane} /> : null}
+                  {recordForwardingInstructionsEnabled && providerLane ? <RecordForwardingInstructions item={item} lane={providerLane} /> : null}
                 </td>
               </tr>
             ))}
@@ -905,7 +1034,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
       </div>
     )}
     <h2>Later setup commands</h2>
-    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Record provider and number allocation records an assigned telephone number for one location. It does not make that number active, start forwarding, or record a test call.</p>
+    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Record provider and number allocation records an assigned telephone number for one location. It does not make that number active, start forwarding, or record a test call. Record forwarding instructions prepares location-specific notes for a later connection. Sharing those notes does not enable forwarding.</p>
     <ul>
       {later.map(command => <li key={command}>{command}</li>)}
     </ul>

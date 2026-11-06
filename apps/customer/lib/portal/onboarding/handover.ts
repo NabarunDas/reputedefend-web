@@ -53,6 +53,27 @@ export type ServiceConfiguration = {
   locations: ServiceConfigurationLocation[]
 }
 
+export type ServiceForwardingLocation = {
+  locationId: string
+  locationName: string
+  status: "needed" | "draft" | "review" | "shared"
+  e164: string | null
+  forwardingMode: "UNANSWERED" | "BUSY" | "UNREACHABLE" | "UNANSWERED_BUSY_UNREACHABLE" | null
+  forwardingLabel: string | null
+  carrierKnown: boolean | null
+  carrierName: string | null
+  instruction: string | null
+  instructionVersion: number | null
+  notice: string
+}
+
+export type ServiceForwarding = {
+  state: "needed" | "review" | "partial" | "shared"
+  sharedCount: number
+  locationCount: number
+  locations: ServiceForwardingLocation[]
+}
+
 export type HandoverSubscription = {
   reference: string
   businessName: string
@@ -78,6 +99,7 @@ export type HandoverSubscription = {
   servicePreferences: ServicePreferences | null
   serviceConfiguration: ServiceConfiguration | null
   serviceAllocation: ServiceConfiguration | null
+  serviceForwarding?: ServiceForwarding | null
 }
 
 const stepKeys = ["payment", "preferences", "agent", "number", "test", "activation"] as const
@@ -189,6 +211,62 @@ function serviceConfiguration(value: unknown): ServiceConfiguration | null | und
   }
 }
 
+const forwardingNotice = "Do not enable call forwarding yet. Your receptionist is still being prepared and tested. We will tell you when it is ready for the final connection."
+const forwardingModes = ["UNANSWERED", "BUSY", "UNREACHABLE", "UNANSWERED_BUSY_UNREACHABLE"]
+
+function serviceForwarding(value: unknown): ServiceForwarding | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!value || typeof value !== "object") return undefined
+  const row = value as Record<string, unknown>
+  const allowed = ["state", "sharedCount", "locationCount", "locations"]
+  if (Object.keys(row).some(key => !allowed.includes(key))) return undefined
+  if (row.state !== "needed" && row.state !== "review" && row.state !== "partial" && row.state !== "shared") return undefined
+  if (typeof row.sharedCount !== "number" || !Number.isInteger(row.sharedCount) || row.sharedCount < 0) return undefined
+  if (typeof row.locationCount !== "number" || !Number.isInteger(row.locationCount) || row.locationCount < 0) return undefined
+  if (row.sharedCount > row.locationCount) return undefined
+  if (!Array.isArray(row.locations) || row.locations.length !== row.locationCount) return undefined
+  const locations: ServiceForwardingLocation[] = []
+  for (const entry of row.locations) {
+    if (!entry || typeof entry !== "object") return undefined
+    const location = entry as Record<string, unknown>
+    const locationKeys = ["locationId", "locationName", "status", "e164", "forwardingMode", "forwardingLabel", "carrierKnown", "carrierName", "instruction", "instructionVersion", "notice"]
+    if (Object.keys(location).some(key => !locationKeys.includes(key))) return undefined
+    if (typeof location.locationId !== "string" || !uuid.test(location.locationId)) return undefined
+    if (typeof location.locationName !== "string" || location.locationName.trim().length === 0) return undefined
+    if (location.status !== "needed" && location.status !== "draft" && location.status !== "review" && location.status !== "shared") return undefined
+    if (typeof location.notice !== "string" || location.notice.trim().length === 0) return undefined
+    if (location.status === "shared") {
+      if (typeof location.e164 !== "string" || !/^\+[1-9][0-9]{7,14}$/.test(location.e164)) return undefined
+      if (!forwardingModes.includes(String(location.forwardingMode))) return undefined
+      if (typeof location.forwardingLabel !== "string" || location.forwardingLabel.trim().length === 0) return undefined
+      if (typeof location.carrierKnown !== "boolean") return undefined
+      if (location.carrierKnown) {
+        if (typeof location.carrierName !== "string" || location.carrierName.trim().length < 2) return undefined
+      } else if (location.carrierName !== null) return undefined
+      if (typeof location.instruction !== "string" || !location.instruction.includes(forwardingNotice) || !location.instruction.includes(location.e164)) return undefined
+      if (typeof location.instructionVersion !== "number" || !Number.isInteger(location.instructionVersion) || location.instructionVersion < 1) return undefined
+      if (!location.notice.includes(forwardingNotice)) return undefined
+    } else if (location.e164 !== null || location.forwardingMode !== null || location.forwardingLabel !== null || location.carrierKnown !== null || location.carrierName !== null || location.instruction !== null || location.instructionVersion !== null) {
+      return undefined
+    }
+    locations.push({
+      locationId: location.locationId,
+      locationName: location.locationName,
+      status: location.status,
+      e164: location.status === "shared" ? location.e164 as string : null,
+      forwardingMode: location.status === "shared" ? location.forwardingMode as ServiceForwardingLocation["forwardingMode"] : null,
+      forwardingLabel: location.status === "shared" ? location.forwardingLabel as string : null,
+      carrierKnown: location.status === "shared" ? location.carrierKnown as boolean : null,
+      carrierName: location.status === "shared" ? location.carrierName as string | null : null,
+      instruction: location.status === "shared" ? location.instruction as string : null,
+      instructionVersion: location.status === "shared" ? location.instructionVersion as number : null,
+      notice: location.notice,
+    })
+  }
+  if (locations.filter(location => location.status === "shared").length !== row.sharedCount) return undefined
+  return { state: row.state, sharedCount: row.sharedCount, locationCount: row.locationCount, locations }
+}
+
 function location(value: unknown): HandoverLocation | null {
   if (!value || typeof value !== "object") return null
   const row = value as Record<string, unknown>
@@ -258,7 +336,9 @@ export function parseSetupHandover(value: unknown): HandoverSubscription[] | nul
     if (configuration === undefined) return null
     const allocation = serviceConfiguration(row.serviceAllocation)
     if (allocation === undefined) return null
-    if ("configurationProgress" in row || "preferenceProgress" in row || "allocationProgress" in row || "agentRef" in row) return null
+    const forwarding = serviceForwarding(row.serviceForwarding)
+    if (forwarding === undefined) return null
+    if ("configurationProgress" in row || "preferenceProgress" in row || "allocationProgress" in row || "forwardingProgress" in row || "agentRef" in row) return null
     subscriptions.push({
       reference: row.reference,
       businessName: row.businessName,
@@ -284,6 +364,7 @@ export function parseSetupHandover(value: unknown): HandoverSubscription[] | nul
       servicePreferences: preferences,
       serviceConfiguration: configuration,
       serviceAllocation: allocation,
+      serviceForwarding: forwarding,
     })
   }
   return subscriptions

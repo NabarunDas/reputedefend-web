@@ -42,6 +42,7 @@ const item: SetupQueueItem = {
   preferenceProgress: null,
   configurationProgress: null,
   allocationProgress: null,
+  forwardingProgress: null,
   checklist: [
     { key: "payment", label: "Payment confirmed", state: "complete" },
     { key: "preferences", label: "Business and service preferences", state: "planned" },
@@ -447,6 +448,94 @@ describe("paid setup queue", () => {
       allocationRef: "evidence-dock-01",
       staffConfirmed: true,
     })
+    vi.unstubAllGlobals()
+  })
+
+  it("reviews forwarding instructions and blocks a stale allocation from being shared", () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message: "The forwarding instructions are shared in the customer portal. Forwarding is not enabled, and the receptionist is not live." }) })
+    vi.stubGlobal("fetch", fetchMock)
+    const notice = "Do not enable call forwarding yet. Your receptionist is still being prepared and tested. We will tell you when it is ready for the final connection."
+    const number = "+441632960441"
+    const locationId = item.locations[0].locationId
+    render(<SetupQueueView recordForwardingInstructionsEnabled providerLane="dev" items={[{
+      ...item,
+      operationalStatus: "setup_started",
+      nextAction: "Record forwarding instructions",
+      forwardingProgress: {
+        sharedCount: 0,
+        reviewCount: 0,
+        draftCount: 0,
+        locationCount: 1,
+        locations: [{
+          locationId,
+          locationName: "High Street",
+          status: "needed",
+          instructionVersion: 0,
+          allocationId: "a033a000-0000-4000-8000-000000000071",
+          allocationVersion: 1,
+          configurationVersion: 1,
+          preferenceVersion: 1,
+          provisionVersion: 3,
+          agentRef: "agent-high-01",
+          e164: number,
+          forwardingMode: null,
+          carrierKnown: null,
+          carrierName: null,
+          customerTelephone: null,
+          instructionText: null,
+          instructionRevision: null,
+          attestation: null,
+          sharedAt: null,
+        }],
+      },
+    }]} />)
+    expect(screen.getByRole("heading", { name: "Record forwarding instructions" })).toBeTruthy()
+    expect(screen.getByText(number)).toBeTruthy()
+    expect(screen.getAllByText(notice).length).toBeGreaterThan(0)
+    expect(screen.queryByRole("button", { name: "Enable forwarding" })).toBeNull()
+    fireEvent.change(screen.getByLabelText("Staff attestation"), { target: { value: "The operator prepared these forwarding notes from the recorded allocation." } })
+    fireEvent.click(screen.getByRole("button", { name: "Share instructions" }))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const submitted = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(submitted.allocationId).toBe("a033a000-0000-4000-8000-000000000071")
+    expect(submitted.instruction.status).toBe("SHARED")
+    expect(submitted.instruction.instructionText).toContain(number)
+    expect(submitted.instruction.instructionText).toContain(notice)
+    expect(submitted.instruction.staffConfirmed).toBe(true)
+    cleanup()
+    render(<SetupQueueView recordForwardingInstructionsEnabled providerLane="dev" items={[{
+      ...item,
+      forwardingProgress: {
+        sharedCount: 0,
+        reviewCount: 1,
+        draftCount: 0,
+        locationCount: 1,
+        locations: [{
+          locationId,
+          locationName: "High Street",
+          status: "review",
+          instructionVersion: 1,
+          allocationId: "a033a000-0000-4000-8000-000000000072",
+          allocationVersion: 2,
+          configurationVersion: 1,
+          preferenceVersion: 1,
+          provisionVersion: 4,
+          agentRef: "agent-high-01",
+          e164: "+441632960442",
+          forwardingMode: "UNANSWERED",
+          carrierKnown: false,
+          carrierName: null,
+          customerTelephone: null,
+          instructionText: `1. Keep +441632960441 for the old number. 2. Menu names vary. 3. ${notice}`,
+          instructionRevision: "guide-0001",
+          attestation: "The operator prepared these forwarding notes from the recorded allocation.",
+          sharedAt: null,
+        }],
+      },
+    }]} />)
+    expect(screen.getByText("These instructions need to be checked again against the current allocation and preferences before they can be shared.")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Share instructions" })).toBeDisabled()
+    expect((screen.getByLabelText("Instructions") as HTMLTextAreaElement).value).toContain("+441632960442")
     vi.unstubAllGlobals()
   })
 })

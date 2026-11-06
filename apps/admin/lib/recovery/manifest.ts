@@ -1751,6 +1751,24 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya standard location cap", probe: "admin_private.prevent_plan_overlap_v1" },
   },
+  {
+    // Controlled web-call initiation. Not applied to DEV.
+    // The verified DEV ledger contains 114 entries and ends at 20261106140000.
+    // 20261106120000 and 20261106140000 are applied and must not be replayed.
+    // Do not apply 20261106200000 to DEV. Do not apply 20261106200000 to Production.
+    // The command writes an intent and then a binding from the provider create response.
+    // It does not place a telephone call, enable forwarding, or move a service to live.
+    // Writes are inside the command. containsDataChange stays false.
+    // safeToReplay stays false.
+    version: "20261106200000",
+    filename: "20261106200000_admin_commercial_initiate_agent_test_call_v1.sql",
+    step: "Controlled AI receptionist web-call initiation",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Controlled AI receptionist web-call initiation", probe: "public.admin_commercial_prepare_agent_test_call_v1" },
+  },
 ]
 
 /**
@@ -1896,9 +1914,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` is empty. `20261106120000` and `20261106140000` are
- * already applied on DEV and must not be replayed. Do not apply
- * `20261106120000` or `20261106140000` to Production.
+ * `pendingMigrations()` contains `20261106200000`. It is not applied to DEV.
+ * Do not apply `20261106200000` to DEV. Do not apply `20261106200000` to Production.
+ * `20261106120000` and `20261106140000` are already applied on DEV and must not
+ * be replayed. Do not apply `20261106120000` or `20261106140000` to Production.
  * `20261105120000` is already applied on DEV and must not be replayed.
  * Do not replay `20261105120000`. Do not apply `20261105120000` to Production.
  * `20261104220000` is already applied on DEV and must not be

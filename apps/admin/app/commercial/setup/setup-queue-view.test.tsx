@@ -1123,3 +1123,42 @@ describe("verify AI receptionist test call", () => {
     vi.unstubAllGlobals()
   })
 })
+
+describe("start controlled receptionist test", () => {
+  it("posts the selected location and does not accept a typed call reference", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: "A controlled web call is open for this location. Telephone forwarding is not verified, and the receptionist is not live.",
+      callId: "call_created_01",
+      accessToken: "join-token-value-123456",
+      expiresAt: "2026-11-06T20:00:00.000Z",
+      forwardingVerified: false,
+      testPassed: false,
+    }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    render(<SetupQueueView initiateAgentTestCallEnabled providerLane="dev" items={[{
+      ...item,
+      operationalStatus: "setup_started",
+      nextAction: "Start controlled receptionist test",
+      testProgress: {
+        passedCount: 0,
+        reviewCount: 0,
+        failedCount: 0,
+        pendingCount: 0,
+        locationCount: 1,
+        locations: [testLocation()],
+      },
+    }]} />)
+    expect(screen.queryByLabelText("Provider call reference")).toBeNull()
+    expect(screen.getByText(/A typed call reference is not accepted/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Start controlled test" }))
+    await screen.findByText(/Provider call reference call_created_01/)
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>
+    expect(sent.locationId).toBe(item.locations[0].locationId)
+    expect(sent.callId).toBeUndefined()
+    expect(sent.providerCallId).toBeUndefined()
+    expect(screen.getByLabelText("Join token for this session")).toHaveValue("join-token-value-123456")
+    expect(screen.getByText(/It is not stored/)).toBeTruthy()
+    expect(document.body.textContent).not.toContain("has passed its conversation test")
+    vi.unstubAllGlobals()
+  })
+})

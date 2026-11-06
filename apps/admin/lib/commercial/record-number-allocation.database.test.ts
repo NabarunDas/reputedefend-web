@@ -1606,9 +1606,9 @@ async function verify(
 }
 
 /**
- * Disposable fixture for a future server-initiated call-creation workflow.
- * The migration exposes no runtime helper that accepts a call id and marks it trusted.
- * These rows are simulated provider-creation evidence, not a product capability.
+ * Direct insert used by verification tests.
+ * The initiation command is the product path that binds a provider create response.
+ * This fixture is not that command and does not call a provider.
  */
 async function simulateProviderCreatedTest(
   subscription: string,
@@ -2025,14 +2025,15 @@ describe("audited AI receptionist test call", () => {
   it("accepts only a pre-authorised intent with a matching provider binding", async () => {
     const armed = await shared(high, "+441632960661")
     expect(await rows<{ name: string | null }>(`select to_regprocedure('admin_private.commercial_agent_test_trust_call_v1(text,uuid,uuid,text)')::text as name`)).toEqual([{ name: null }])
-    expect(await rows<{ count: number }>(
-      `select count(*)::int as count
+    expect(await rows<{ name: string }>(
+      `select procedure.proname as name
        from pg_proc procedure
        join pg_namespace namespace on namespace.oid = procedure.pronamespace
        where namespace.nspname in ('admin_private', 'public')
          and procedure.prokind = 'f'
-         and procedure.prosrc ~* 'insert[[:space:]]+into[[:space:]]+admin_private\\.commercial_agent_test_bindings'`,
-    )).toEqual([{ count: 0 }])
+         and procedure.prosrc ~* 'insert[[:space:]]+into[[:space:]]+admin_private\\.commercial_agent_test_bindings'
+       order by procedure.proname`,
+    )).toEqual([{ name: "admin_commercial_bind_agent_test_call_v1" }])
     expect(await rows<{ allowed: boolean }>(
       `select has_table_privilege('service_role', 'admin_private.commercial_agent_test_intents', 'INSERT') as allowed`,
     )).toEqual([{ allowed: false }])
@@ -2101,4 +2102,134 @@ describe("audited AI receptionist test call", () => {
     expect(await rows<{ count: number }>(`select count(*)::int as count from public.telloya_voice_number_bindings`)).toEqual([{ count: 0 }])
     expect(await rows<{ count: number }>(`select count(*)::int as count from public.service_provisions where state = 'LIVE' or live_at is not null`)).toEqual([{ count: 0 }])
   })
+
+  it("opens a controlled web call only from the server response and leaves the service unactivated", async () => {
+    const source = readFileSync(new URL("../../../../supabase/migrations/20261106200000_admin_commercial_initiate_agent_test_call_v1.sql", import.meta.url), "utf8")
+    expect(source).toContain("Do not apply 20261106200000 to hosted DEV")
+    expect(source).toContain("Do not apply 20261106200000 to Production")
+    expect(source).not.toContain("commercial_agent_test_trust_call_v1")
+    expect(source).not.toContain("p_call_id")
+    expect(source).not.toContain("state = 'LIVE'")
+    expect(source).not.toContain("INSERT INTO public.telloya_voice_number_bindings")
+    expect(source).not.toMatch(/\bretell\b/i)
+    expect(await rows<{ name: string }>(
+      `select proname as name from pg_proc
+       where prokind = 'f' and pronamespace = 'public'::regnamespace
+         and prosrc ilike '%insert into admin_private.commercial_agent_test_bindings%'
+       order by proname`,
+    )).toEqual([{ name: "admin_commercial_bind_agent_test_call_v1" }])
+    expect(await rows<{ allowed: boolean }>(
+      `select has_function_privilege('anon', 'public.admin_commercial_prepare_agent_test_call_v1(text,uuid,uuid,integer,text,jsonb)', 'execute') as allowed`,
+    )).toEqual([{ allowed: false }])
+    expect(await rows<{ allowed: boolean }>(
+      `select has_function_privilege('service_role', 'public.admin_commercial_bind_agent_test_call_v1(text,uuid,uuid,integer,text,jsonb)', 'execute') as allowed`,
+    )).toEqual([{ allowed: true }])
+
+    const denied = await pay({ locations: [high] })
+    expect(await begin(denied)).toMatchObject({ status: "success" })
+    expect(await confirm(denied, high)).toMatchObject({ status: "success" })
+    expect(await configure(denied, high, { revision: "note-0004", agentRef: "agent-0021" })).toMatchObject({ status: "success" })
+    expect(await allocate(denied, high, { revision: "note-0004", agentRef: "agent-0021", e164: "+441632960691" })).toMatchObject({ status: "success" })
+    expect(await instruct(denied, high, { status: "SHARED" })).toMatchObject({ status: "success", provisionState: "TEST_REQUIRED" })
+    const deniedRequest = randomUUID()
+    expect(await rpc<Row>("admin_commercial_prepare_agent_test_call_v1", [
+      adminToken,
+      deniedRequest,
+      denied.prepared.subscription,
+      (await versions(denied.prepared.subscription)).subscription_version,
+      "dev",
+      JSON.stringify(await initiationContext(denied, high)),
+    ])).toMatchObject({ status: "denied", reason: "revision" })
+    expect(await rows<{ count: number }>(
+      `select count(*)::int as count from admin_private.commercial_agent_test_intents where initiation_request_id = $1`,
+      [deniedRequest],
+    )).toEqual([{ count: 0 }])
+
+    const armed = await shared(yard, "+441632960692", { ready: { business: twin }, agentRef: "agent-0026" })
+    const request = randomUUID()
+    const context = await initiationContext(armed, yard)
+    const prepared = await rpc<Row>("admin_commercial_prepare_agent_test_call_v1", [
+      adminToken,
+      request,
+      armed.prepared.subscription,
+      (await versions(armed.prepared.subscription)).subscription_version,
+      "dev",
+      JSON.stringify(context),
+    ])
+    expect(prepared).toMatchObject({ status: "prepared", agentRef: "agent-0026", agentVersion: 4, environment: "dev" })
+    expect(prepared).not.toHaveProperty("callId")
+    expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_agent_test_bindings`)).toEqual([{ count: 0 }])
+    expect((await serviceRow(yard)).state).toBe("TEST_REQUIRED")
+    const bound = await rpc<Row>("admin_commercial_bind_agent_test_call_v1", [
+      adminToken,
+      request,
+      armed.prepared.subscription,
+      (await versions(armed.prepared.subscription)).subscription_version,
+      "dev",
+      JSON.stringify({ ...context, providerCallId: "calldockweb1", reportedAgentId: "agent-0026", reportedAgentVersion: 4, callType: "web_call" }),
+    ])
+    expect(bound).toMatchObject({
+      status: "success",
+      callId: "calldockweb1",
+      agentVersion: 4,
+      provisionState: "TEST_REQUIRED",
+      forwardingVerified: false,
+      testPassed: false,
+    })
+    const binding = (await rows<{ bound_at: string | Date }>(
+      `select bound_at from admin_private.commercial_agent_test_bindings where provider_call_id = 'calldockweb1'`,
+    ))[0]
+    const started = binding.bound_at instanceof Date ? binding.bound_at.toISOString() : new Date(binding.bound_at).toISOString()
+    const ended = new Date(Date.parse(started) + 60_000).toISOString()
+    expect(await verify(armed, yard, {
+      evidence: { callId: "calldockweb1", agentId: "agent-0026", agentVersion: 4, startedAt: started, endedAt: ended },
+    })).toMatchObject({ evidenceOutcome: "VERIFIED_PASSED", provisionState: "AWAITING_CONFIRMATION", forwardingVerified: false, testPassed: true })
+    const replay = await rpc<Row>("admin_commercial_prepare_agent_test_call_v1", [
+      adminToken,
+      request,
+      armed.prepared.subscription,
+      (await versions(armed.prepared.subscription)).subscription_version,
+      "dev",
+      JSON.stringify(context),
+    ])
+    expect(replay).toMatchObject({ status: "bound", callId: "calldockweb1" })
+    expect(await rpc<Row>("admin_commercial_bind_agent_test_call_v1", [
+      adminToken,
+      randomUUID(),
+      armed.prepared.subscription,
+      (await versions(armed.prepared.subscription)).subscription_version,
+      "dev",
+      JSON.stringify({ ...context, providerCallId: "calltyped001", reportedAgentId: "agent-0022", reportedAgentVersion: 4, callType: "web_call" }),
+    ])).toMatchObject({ status: "denied", reason: "intent" })
+    expect(await rows<{ count: number }>(`select count(*)::int as count from public.service_provisions where state = 'LIVE' or live_at is not null`)).toEqual([{ count: 0 }])
+    expect(await rows<{ count: number }>(`select count(*)::int as count from public.telloya_voice_number_bindings`)).toEqual([{ count: 0 }])
+  })
 })
+
+async function initiationContext(armed: Awaited<ReturnType<typeof pay>>, location: string) {
+  const current = await versions(armed.prepared.subscription)
+  const allocation = (await rows<{ id: string; version: number }>(
+    `select id::text as id, version from admin_private.commercial_location_allocations
+     where subscription_id = $1 and location_id = $2 order by version desc limit 1`,
+    [armed.prepared.subscription, location],
+  ))[0]
+  const instruction = (await rows<{ id: string; version: number }>(
+    `select id::text as id, version from admin_private.commercial_forwarding_instructions
+     where subscription_id = $1 and location_id = $2 order by version desc limit 1`,
+    [armed.prepared.subscription, location],
+  ))[0]
+  return {
+    customerId: alex,
+    businessId: armed.prepared.business,
+    onboardingRequestId: current.request_id,
+    onboardingVersion: current.request_version,
+    locationId: location,
+    preferenceVersion: 1,
+    provisionVersion: await provisionVersion(armed.prepared.subscription, location),
+    configurationVersion: 1,
+    allocationId: allocation.id,
+    allocationVersion: allocation.version,
+    instructionId: instruction.id,
+    instructionVersion: instruction.version,
+  }
+}

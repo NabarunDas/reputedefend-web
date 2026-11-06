@@ -30,11 +30,14 @@ const agentPattern = /^[A-Za-z0-9_-]{8,128}$/
 const reasonPattern = /^[a-z0-9_]{1,64}$/
 const lookupWindowMs = 60_000
 const lookupLimit = 6
+const createLimit = 3
 const lookupTimeoutMs = 4_000
 const lookups = new Map<string, number[]>()
+const creates = new Map<string, number[]>()
 
 export function resetAgentTestLookups() {
   lookups.clear()
+  creates.clear()
 }
 
 export function allowAgentTestLookup(operatorId: string, now = Date.now()): boolean {
@@ -45,6 +48,17 @@ export function allowAgentTestLookup(operatorId: string, now = Date.now()): bool
   }
   recent.push(now)
   lookups.set(operatorId, recent)
+  return true
+}
+
+export function allowAgentTestCreate(operatorId: string, now = Date.now()): boolean {
+  const recent = (creates.get(operatorId) ?? []).filter(time => now - time < lookupWindowMs)
+  if (recent.length >= createLimit) {
+    creates.set(operatorId, recent)
+    return false
+  }
+  recent.push(now)
+  creates.set(operatorId, recent)
   return true
 }
 
@@ -146,6 +160,78 @@ export async function retrieveAgentTestCall(input: {
     const evidence = project(body as Record<string, unknown>, input.callId, input.lane)
     if (!evidence) return { availability: "incomplete", evidence: blank(input.callId, input.lane, "incomplete") }
     return { availability: "retrieved", evidence }
+  } catch {
+    return { availability: "uncertain" }
+  }
+}
+
+export type CreatedAgentWebCall =
+  | { availability: "uncertain" }
+  | { availability: "rejected" }
+  | {
+      availability: "created"
+      callId: string
+      accessToken: string
+      transport: "gateway"
+      expiresAt: string
+    }
+
+const createWebCallEndpoint = "https://api.retellai.com/v3/create-web-call"
+
+function createdCall(body: Record<string, unknown>, agentId: string, agentVersion: number): CreatedAgentWebCall {
+  const callId = text(body.call_id)
+  const accessToken = text(body.access_token)
+  const transport = text(body.transport)
+  const expires = body.expires_at
+  if (!callId || !callIdPattern.test(callId)) return { availability: "rejected" }
+  if (!accessToken || accessToken.length < 16 || accessToken.length > 4096) return { availability: "rejected" }
+  if (transport !== "gateway") return { availability: "rejected" }
+  if (!Array.isArray(body.ice_servers) || body.ice_servers.length < 1) return { availability: "rejected" }
+  if (typeof expires !== "number" || !Number.isSafeInteger(expires) || expires <= 0) return { availability: "rejected" }
+  const echoedAgent = text(body.agent_id)
+  if (echoedAgent && echoedAgent !== agentId) return { availability: "rejected" }
+  const echoedVersion = agentVersionValue(body.agent_version)
+  if (echoedVersion !== undefined && echoedVersion !== agentVersion) return { availability: "rejected" }
+  const expiresAt = new Date(expires).toISOString()
+  if (Number.isNaN(Date.parse(expiresAt))) return { availability: "rejected" }
+  return { availability: "created", callId, accessToken, transport: "gateway", expiresAt }
+}
+
+function agentVersionValue(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 999_999_999) return value
+  return Number.NaN
+}
+
+export async function createAgentWebCall(input: {
+  agentId: string
+  agentVersion: number
+  lane: AgentTestLane
+  fetchImpl?: typeof fetch
+}): Promise<CreatedAgentWebCall> {
+  if (!agentPattern.test(input.agentId)) return { availability: "rejected" }
+  if (!Number.isSafeInteger(input.agentVersion) || input.agentVersion < 0 || input.agentVersion > 999_999_999) {
+    return { availability: "rejected" }
+  }
+  const apiKey = telloyaVoiceApiKey(input.lane)
+  if (!apiKey) return { availability: "rejected" }
+  try {
+    const response = await (input.fetchImpl ?? fetch)(createWebCallEndpoint, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ agent_id: input.agentId, agent_version: input.agentVersion }),
+      redirect: "error",
+      signal: AbortSignal.timeout(lookupTimeoutMs),
+    })
+    if (response.status === 408 || response.status === 429 || response.status >= 500) return { availability: "uncertain" }
+    if (response.status !== 200 && response.status !== 201) return { availability: "rejected" }
+    const body = await response.json() as unknown
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { availability: "rejected" }
+    return createdCall(body as Record<string, unknown>, input.agentId, input.agentVersion)
   } catch {
     return { availability: "uncertain" }
   }

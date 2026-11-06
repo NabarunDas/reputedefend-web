@@ -12,6 +12,7 @@ const futureCommands = [
   "Confirm AI configuration",
   "Record provider and number allocation",
   "Record forwarding instructions",
+  "Start controlled receptionist test",
   "Verify AI receptionist test call",
   "Confirm readiness for the final telephone connection",
   "Approve activation",
@@ -1233,6 +1234,109 @@ function uncertainTestStatus(status: number) {
   return status === 408 || status === 429 || status >= 500
 }
 
+function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "dev" | "production" }) {
+  const router = useRouter()
+  const keyRef = useRef("")
+  const fingerRef = useRef("")
+  const initial = item.testProgress?.locations.find(location => location.status !== "passed")?.locationId ?? item.testProgress?.locations[0]?.locationId ?? ""
+  const [selected, setSelected] = useState(initial)
+  const place = item.testProgress?.locations.find(entry => entry.locationId === selected) ?? null
+  const [message, setMessage] = useState<string | null>(null)
+  const [tone, setTone] = useState<"success" | "warning" | "danger">("warning")
+  const [pending, setPending] = useState(false)
+  const [opened, setOpened] = useState<{ callId: string; accessToken: string | null; expiresAt: string | null } | null>(null)
+  const passed = place?.status === "passed"
+
+  function requestBody() {
+    if (!place?.allocationId || !place.instructionId || !place.agentRef || !place.e164 || item.subscriptionId === null || item.subscriptionVersion === null || item.customerId === null || item.onboardingRequestId === null || item.onboardingVersion === null) return null
+    if (place.environment !== lane || passed) return null
+    return {
+      subscriptionId: item.subscriptionId,
+      version: item.subscriptionVersion,
+      customerId: item.customerId,
+      businessId: item.businessId,
+      onboardingRequestId: item.onboardingRequestId,
+      onboardingVersion: item.onboardingVersion,
+      locationId: place.locationId,
+      preferenceVersion: place.preferenceVersion,
+      provisionVersion: place.provisionVersion,
+      configurationVersion: place.configurationVersion,
+      allocationId: place.allocationId,
+      allocationVersion: place.allocationVersion,
+      instructionId: place.instructionId,
+      instructionVersion: place.instructionVersion,
+    }
+  }
+
+  function currentKey(fingerprint: string) {
+    if (fingerRef.current !== fingerprint || !isUuidKey(keyRef.current)) {
+      keyRef.current = crypto.randomUUID()
+      fingerRef.current = fingerprint
+    }
+    return keyRef.current
+  }
+
+  async function send() {
+    const live = requestBody()
+    if (!live || passed) return
+    const fingerprint = JSON.stringify(live)
+    const requestKey = currentKey(fingerprint)
+    setPending(true)
+    setMessage(null)
+    try {
+      const response = await fetch("/api/commercial/initiate-agent-test-call", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": requestKey },
+        body: fingerprint,
+      })
+      const body = await response.json().catch(() => null) as { message?: string; callId?: string; accessToken?: string; expiresAt?: string } | null
+      if (!response.ok) {
+        if (!uncertainTestStatus(response.status)) {
+          keyRef.current = ""
+          fingerRef.current = ""
+        }
+        setMessage(body?.message ?? "A controlled web call was not opened.")
+        setTone(uncertainTestStatus(response.status) ? "danger" : "warning")
+        return
+      }
+      keyRef.current = ""
+      fingerRef.current = ""
+      setOpened({ callId: body?.callId ?? "", accessToken: body?.accessToken ?? null, expiresAt: body?.expiresAt ?? null })
+      setMessage(body?.message ?? "A controlled web call is open for this location.")
+      setTone("success")
+      router.refresh()
+    } catch {
+      setMessage("A controlled web call was not opened. Check the connection and try the same action again.")
+      setTone("danger")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  if (!item.testProgress || item.testProgress.locations.length === 0 || !place) return null
+  const ready = Boolean(requestBody())
+  return (
+    <form className="commercial-command" onSubmit={event => event.preventDefault()}>
+      <h3>Start controlled receptionist test</h3>
+      <p>{item.customerName} · {item.businessName}. This asks the provider to open a web conversation for the configured receptionist and version. It does not place a telephone call, enable forwarding, or make the receptionist live. A typed call reference is not accepted.</p>
+      <label>Controlled test location<select value={selected} onChange={event => { setSelected(event.target.value); setOpened(null); setMessage(null); keyRef.current = ""; fingerRef.current = "" }}>{item.testProgress.locations.map(entry => <option key={entry.locationId} value={entry.locationId}>{entry.locationName} · {entry.status}</option>)}</select></label>
+      <dl className="commercial-review">
+        <div><dt>Subscription</dt><dd>{item.reference}</dd></div>
+        <div><dt>Location</dt><dd>{place.locationName}</dd></div>
+        <div><dt>Receptionist</dt><dd>{place.agentRef ?? "Not recorded"}</dd></div>
+        <div><dt>Configuration version</dt><dd>{place.configurationVersion}</dd></div>
+      </dl>
+      {passed ? <Notice tone="success"><span role="status">This location already has a passed conversation test.</span></Notice> : null}
+      {!place.instructionId ? <Notice tone="warning">Share the forwarding instructions for this location before opening a controlled web call.</Notice> : null}
+      {passed ? null : <button type="button" disabled={pending || !ready} onClick={() => void send()}>Start controlled test</button>}
+      {opened?.callId ? <p role="status">Provider call reference {opened.callId}. Telephone forwarding is not verified, and the receptionist is not live.</p> : null}
+      {opened?.accessToken ? <label>Join token for this session<input readOnly value={opened.accessToken} /></label> : null}
+      {opened?.expiresAt ? <p>The join token expires at {opened.expiresAt}. It is not stored.</p> : null}
+      {message ? <Notice tone={tone}><span role="status">{message}</span></Notice> : null}
+    </form>
+  )
+}
+
 function VerifyAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "dev" | "production" }) {
   const router = useRouter()
   const keyRef = useRef("")
@@ -1485,13 +1589,14 @@ function VerifyAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "dev"
   )
 }
 
-export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, recordNumberAllocationEnabled = false, recordForwardingInstructionsEnabled = false, verifyAgentTestCallEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; recordNumberAllocationEnabled?: boolean; recordForwardingInstructionsEnabled?: boolean; verifyAgentTestCallEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
+export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, recordNumberAllocationEnabled = false, recordForwardingInstructionsEnabled = false, initiateAgentTestCallEnabled = false, verifyAgentTestCallEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; recordNumberAllocationEnabled?: boolean; recordForwardingInstructionsEnabled?: boolean; initiateAgentTestCallEnabled?: boolean; verifyAgentTestCallEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
   const later = futureCommands.filter(command => {
     if (beginSetupEnabled && command === "Begin setup") return false
     if (confirmPreferencesEnabled && command === "Confirm business preferences") return false
     if (confirmAiConfigurationEnabled && command === "Confirm AI configuration") return false
     if (recordNumberAllocationEnabled && command === "Record provider and number allocation") return false
     if (recordForwardingInstructionsEnabled && command === "Record forwarding instructions") return false
+    if (initiateAgentTestCallEnabled && command === "Start controlled receptionist test") return false
     if (verifyAgentTestCallEnabled && command === "Verify AI receptionist test call") return false
     return true
   })
@@ -1550,6 +1655,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
                   {confirmAiConfigurationEnabled ? <ConfirmAiConfiguration item={item} providerLane={providerLane} /> : null}
                   {recordNumberAllocationEnabled ? <RecordNumberAllocation item={item} providerLane={providerLane} /> : null}
                   {recordForwardingInstructionsEnabled && providerLane ? <RecordForwardingInstructions item={item} lane={providerLane} /> : null}
+                  {initiateAgentTestCallEnabled && providerLane ? <InitiateAgentTestCall item={item} lane={providerLane} /> : null}
                   {verifyAgentTestCallEnabled && providerLane ? <VerifyAgentTestCall item={item} lane={providerLane} /> : null}
                 </td>
               </tr>
@@ -1559,7 +1665,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
       </div>
     )}
     <h2>Later setup commands</h2>
-    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Record provider and number allocation records an assigned telephone number for one location. It does not make that number active, start forwarding, or record a test call. Record forwarding instructions prepares location-specific notes for a later connection. Sharing those notes does not enable forwarding. Verify AI receptionist test call checks a controlled conversation. It does not verify telephone forwarding or show that the receptionist is answering calls.</p>
+    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Record provider and number allocation records an assigned telephone number for one location. It does not make that number active, start forwarding, or record a test call. Record forwarding instructions prepares location-specific notes for a later connection. Sharing those notes does not enable forwarding. Start controlled receptionist test asks the provider to open a web conversation for the configured receptionist. It does not place a telephone call or accept a typed call reference. Verify AI receptionist test call checks a controlled conversation. It does not verify telephone forwarding or show that the receptionist is answering calls.</p>
     <ul>
       {later.map(command => <li key={command}>{command}</li>)}
     </ul>

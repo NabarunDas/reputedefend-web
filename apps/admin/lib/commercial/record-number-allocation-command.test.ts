@@ -89,6 +89,7 @@ describe("record number allocation command messages", () => {
     ["conflict", undefined, 409, "This request was already used with different details. Reload the queue and start again."],
     ["denied", "configuration", 403, "Record a current AI configuration for this location before recording a telephone number."],
     ["denied", "number", 403, "That telephone number is already recorded for a different location or business."],
+    ["denied", "routing", 403, "That provider agent already has an active telephone binding, so this number cannot be recorded as pending."],
     ["denied", "environment", 403, "That provider environment does not match the recorded configuration."],
     ["denied", "payment", 403, "This subscription is not a verified paid subscription, so the telephone number cannot be recorded."],
     ["denied", "inactive", 403, "This subscription is not active, so the telephone number cannot be recorded."],

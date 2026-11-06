@@ -32,11 +32,14 @@
 -- lock when the binding is active. A commercial reservation stores the exact
 -- configured agent with the number. A binding must use that agent and the
 -- same environment, business, and location, and it must stay inactive.
--- active = true is rejected for a reserved number, including an update of an
+-- active = true is rejected for a reserved number and for any commercially
+-- owned agent, on every telephone number. That includes an update of an
 -- inactive row and a call to telloya_voice_bind_number_v1. A commercially
--- owned agent cannot be attached to another tenant. A binding with no
--- commercial reservation keeps the existing voice rules. An already active
--- voice binding blocks commercial allocation of that number.
+-- owned agent cannot be attached to another tenant. A binding for an agent
+-- with no commercial ownership keeps the existing voice rules. An already
+-- active voice binding for the number, or for the configured agent on any
+-- number, blocks commercial allocation. The agent lock is held during that
+-- read, so this command does not lock every other number.
 
 BEGIN;
 
@@ -1254,6 +1257,24 @@ BEGIN
   ) THEN
     -- An active routing row is not a pending commercial allocation.
     outcome := jsonb_build_object('status', 'denied', 'reason', 'number');
+  ELSIF outcome IS NULL AND EXISTS (
+    SELECT 1
+    FROM public.telloya_voice_number_bindings binding
+    WHERE binding.agent_id = agent
+      AND binding.active
+      AND binding.environment IS DISTINCT FROM env
+  ) THEN
+    outcome := jsonb_build_object('status', 'denied', 'reason', 'environment');
+  ELSIF outcome IS NULL AND EXISTS (
+    SELECT 1
+    FROM public.telloya_voice_number_bindings binding
+    WHERE binding.agent_id = agent
+      AND binding.active
+  ) THEN
+    -- The commercial agent lock is already held. A binding write for this
+    -- agent takes that same lock, so an active row on another number cannot
+    -- commit underneath this read.
+    outcome := jsonb_build_object('status', 'denied', 'reason', 'routing');
   END IF;
 
   IF outcome IS NULL AND EXISTS (
@@ -1537,6 +1558,7 @@ BEGIN
         owner.environment IS DISTINCT FROM NEW.environment
         OR owner.business_id IS DISTINCT FROM NEW.business_id
         OR owner.location_id IS DISTINCT FROM NEW.location_id
+        OR NEW.active
       )
   ) THEN
     PERFORM admin_private.telloya_voice_reject_v1();
@@ -1560,7 +1582,7 @@ $fn$;
 REVOKE ALL ON FUNCTION admin_private.telloya_voice_binding_guard_v1() FROM PUBLIC, anon, authenticated, service_role;
 
 COMMENT ON FUNCTION admin_private.telloya_voice_binding_guard_v1() IS
-  'Rejects a voice binding whose agent, environment, business, or location disagrees with a commercial number reservation. Rejects active = true for a reserved number, including an update and telloya_voice_bind_number_v1. A future activation command must use its own audited gates. Preserves the active-agent location rule. A binding with no commercial reservation keeps the existing voice rules.';
+  'Rejects a voice binding whose agent, environment, business, or location disagrees with a commercial number reservation. Rejects active = true for a reserved number and for every commercially owned agent, on any telephone number, including an update and telloya_voice_bind_number_v1. A matching inactive binding stays allowed. A future activation command must use its own audited gates. Preserves the active-agent location rule for an agent that has no commercial owner.';
 
 REVOKE ALL ON FUNCTION public.admin_commercial_record_number_allocation_v1(text, uuid, uuid, integer, jsonb)
   FROM PUBLIC, anon, authenticated;

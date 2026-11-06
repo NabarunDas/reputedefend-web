@@ -101,6 +101,7 @@ function denied(reason: string | undefined): string {
   if (reason === "configuration") return "Record a current AI configuration for this location before recording a telephone number."
   if (reason === "number") return "That telephone number is already recorded for a different location or business."
   if (reason === "provider") return "That provider agent does not match the latest configuration for this location."
+  if (reason === "routing") return "That provider agent already has an active telephone binding, so this number cannot be recorded as pending."
   if (reason === "environment") return "That provider environment does not match the recorded configuration."
   if (reason === "setup") return "This location is not ready for a telephone number record."
   if (reason === "revoked" || reason === "membership") return "Business authority is not verified, so the telephone number cannot be recorded."

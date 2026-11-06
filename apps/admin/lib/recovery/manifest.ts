@@ -1676,7 +1676,8 @@ export const migrationChain: readonly MigrationEntry[] = [
     // A correction moves provider_binding_ref to the latest allocation id and
     // keeps number_allocated_at. Each reserved number stores its configured
     // agent. The voice-binding trigger rejects a different agent and rejects
-    // active = true for a reserved number.
+    // active = true for a reserved number and for every commercially owned
+    // agent. An agent that already has an active binding cannot be allocated.
     // The command does not write a routing binding, buy a number, enable
     // forwarding, run a test call, enable Guard, change billing, send mail,
     // or move a service to live.

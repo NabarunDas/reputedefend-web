@@ -843,14 +843,15 @@ describe("audited record number allocation", () => {
     expect(await rows<{ active: boolean }>(
       `select active from public.telloya_voice_number_bindings where inbound_to_number = '+441632960493'`,
     )).toEqual([{ active: false }])
-    await db.query(
+    await db.exec("SAVEPOINT owned_agent_active")
+    await expect(db.query(
       `insert into public.telloya_voice_number_bindings(environment, inbound_to_number, agent_id, business_id, location_id, active)
        values ('dev', '+441632960494', 'agent-0022', $1, $2, true)`,
       [bakery, dock],
-    )
-    expect(await allocate(armed, dock, { agentRef: "agent-0022", e164: "+441632960494", allocationVersion: 0 })).toMatchObject({ status: "denied", reason: "number" })
+    )).rejects.toThrow(/telloya_voice_rejected/)
+    await db.exec("ROLLBACK TO SAVEPOINT owned_agent_active")
     expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_provider_number_owners where e164 = '+441632960494'`)).toEqual([{ count: 0 }])
-    expect(await rows<{ count: number }>(`select count(*)::int as count from public.telloya_voice_number_bindings`)).toEqual([{ count: 4 }])
+    expect(await rows<{ count: number }>(`select count(*)::int as count from public.telloya_voice_number_bindings`)).toEqual([{ count: 3 }])
   })
 
   it("replays the same request, rejects a conflicting retry, and keeps allocation history", async () => {
@@ -1031,6 +1032,33 @@ describe("audited record number allocation", () => {
     expect(await rows<{ active: boolean }>(
       `select active from public.telloya_voice_number_bindings where inbound_to_number = '+441632960541'`,
     )).toEqual([{ active: false }])
+    await rejectedBinding(
+      `insert into public.telloya_voice_number_bindings(environment, inbound_to_number, agent_id, business_id, location_id, active)
+       values ('dev', '+441632960546', 'agent-0021', $1, $2, true)`,
+      [bakery, high],
+    )
+    await db.exec("SAVEPOINT generic_other_number")
+    await expect(rpc("telloya_voice_bind_number_v1", ["dev", "+441632960547", "agent-0021", bakery, high])).rejects.toThrow(/telloya_voice_rejected/)
+    await db.exec("ROLLBACK TO SAVEPOINT generic_other_number")
+    await db.query(
+      `insert into public.telloya_voice_number_bindings(environment, inbound_to_number, agent_id, business_id, location_id, active)
+       values ('dev', '+441632960548', 'agent-0021', $1, $2, false)`,
+      [bakery, high],
+    )
+    await db.exec("SAVEPOINT promote_other_number")
+    await expect(db.query(
+      `update public.telloya_voice_number_bindings set active = true where inbound_to_number = '+441632960548'`,
+    )).rejects.toThrow(/telloya_voice_rejected/)
+    await db.exec("ROLLBACK TO SAVEPOINT promote_other_number")
+    expect(await rows<{ number: string; active: boolean }>(
+      `select inbound_to_number as number, active
+       from public.telloya_voice_number_bindings
+       where agent_id = 'agent-0021'
+       order by inbound_to_number`,
+    )).toEqual([
+      { number: "+441632960541", active: false },
+      { number: "+441632960548", active: false },
+    ])
     const legacy = await rpc<string>("telloya_voice_bind_number_v1", ["dev", "+441632960543", "agent-legacy1", bakery, high])
     expect(legacy).toMatch(/^[0-9a-f-]{36}$/)
     await db.exec("SAVEPOINT legacy_agent")
@@ -1044,6 +1072,30 @@ describe("audited record number allocation", () => {
     expect(await rows<{ count: number }>(`select count(*)::int as count from public.telloya_voice_number_bindings where active`)).toEqual([{ count: 1 }])
     expect(await rows<{ count: number }>(`select count(*)::int as count from public.service_provisions where state = 'LIVE' or forwarding_instructed_at is not null or agent_test_passed_at is not null`)).toEqual([{ count: 0 }])
     expect(await rows<{ count: number }>(`select count(*)::int as count from public.guard_coverages`)).toEqual([{ count: 0 }])
+  })
+
+  it("refuses a pending allocation when the configured agent already has an active binding", async () => {
+    const armed = await pay({ locations: [high] })
+    expect(await begin(armed)).toMatchObject({ status: "success" })
+    expect(await confirm(armed, high)).toMatchObject({ status: "success" })
+    await db.query(
+      `insert into public.telloya_voice_number_bindings(environment, inbound_to_number, agent_id, business_id, location_id, active)
+       values ('dev', '+441632960561', 'agent-0021', $1, $2, true)`,
+      [bakery, high],
+    )
+    expect(await configure(armed, high, { agentRef: "agent-0021" })).toMatchObject({ status: "success" })
+    expect(await allocate(armed, high, { agentRef: "agent-0021", e164: "+441632960561" })).toMatchObject({ status: "denied", reason: "number" })
+    expect(await allocate(armed, high, { agentRef: "agent-0021", e164: "+441632960562" })).toMatchObject({ status: "denied", reason: "routing" })
+    expect(await rows<{ count: number }>(
+      `select count(*)::int as count from admin_private.commercial_provider_number_owners where e164 in ('+441632960561', '+441632960562')`,
+    )).toEqual([{ count: 0 }])
+    expect(await rows<{ number: string; active: boolean }>(
+      `select inbound_to_number as number, active from public.telloya_voice_number_bindings where agent_id = 'agent-0021'`,
+    )).toEqual([{ number: "+441632960561", active: true }])
+    expect(await rows<{ state: string; allocated: string | null }>(
+      `select state, number_allocated_at as allocated from public.service_provisions where location_id = $1`,
+      [high],
+    )).toEqual([{ state: "NUMBER_REQUIRED", allocated: null }])
   })
 
   it("rolls a failed allocation back with its receipt and provision", async () => {

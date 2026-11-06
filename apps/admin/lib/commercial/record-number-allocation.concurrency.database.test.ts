@@ -51,6 +51,8 @@ const quay = "a033c000-0000-4000-8000-000000000016"
 const quayLoc = "a033c000-0000-4000-8000-000000000029"
 const kiln = "a033c000-0000-4000-8000-000000000017"
 const kilnLoc = "a033c000-0000-4000-8000-00000000002a"
+const hearth = "a033c000-0000-4000-8000-00000000001d"
+const hearthLoc = "a033c000-0000-4000-8000-00000000002d"
 const north = "a033c000-0000-4000-8000-000000000018"
 const northLoc = "a033c000-0000-4000-8000-00000000002b"
 const south = "a033c000-0000-4000-8000-000000000019"
@@ -390,6 +392,7 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
         ('${loft}', 'Loft Bakery'),
         ('${quay}', 'Quay Bakery'),
         ('${kiln}', 'Kiln Bakery'),
+        ('${hearth}', 'Hearth Bakery'),
         ('${north}', 'North Bakery'),
         ('${south}', 'South Bakery');
       insert into public.locations(id, business_id, country, location_name) values
@@ -400,6 +403,7 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
         ('${loftLoc}', '${loft}', 'GB', 'Loft'),
         ('${quayLoc}', '${quay}', 'GB', 'Quay'),
         ('${kilnLoc}', '${kiln}', 'GB', 'Kiln'),
+        ('${hearthLoc}', '${hearth}', 'GB', 'Hearth'),
         ('${northLoc}', '${north}', 'GB', 'North'),
         ('${southLoc}', '${south}', 'GB', 'South');
       insert into public.business_memberships(customer_id, business_id, status, verified_at, verified_by, evidence) values
@@ -408,6 +412,7 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
         ('${alex}', '${pier}', 'verified', now(), '${actor}', 'Mailbox already proved for Pier'),
         ('${alex}', '${loft}', 'verified', now(), '${actor}', 'Mailbox already proved for Loft'),
         ('${alex}', '${quay}', 'verified', now(), '${actor}', 'Mailbox already proved for Quay'),
+        ('${alex}', '${hearth}', 'verified', now(), '${actor}', 'Mailbox already proved for Hearth'),
         ('${alex}', '${north}', 'verified', now(), '${actor}', 'Mailbox already proved for North'),
         ('${alex}', '${south}', 'verified', now(), '${actor}', 'Mailbox already proved for South'),
         ('${blake}', '${kiln}', 'verified', now(), '${actor}', 'Mailbox already proved for Kiln');
@@ -647,6 +652,44 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
     }
     expect(owners === "1" && activeBindings === "1").toBe(false)
     expect(await psql(`select count(*)::text from public.service_provisions where location_id = '${yard}' and (state = 'LIVE' or forwarding_instructed_at is not null)`)).toBe("0")
+  }, 180000)
+
+  it("does not let the generic binding command activate an owned agent on another number during reservation", async () => {
+    const number = "+441632961008"
+    const other = "+441632961009"
+    const reserved = await configured({ business: hearth, locations: [hearthLoc], ref: "VC-26-NUMAL9", amount: 6900, version: 79 }, hearthLoc, "agent-hearth1")
+    const bindSql = `select public.telloya_voice_bind_number_v1('dev', '${other}', 'agent-hearth1', '${hearth}', '${hearthLoc}')`
+    const [allocation, binding] = await Promise.all([
+      call<{ status: string; reason?: string }>(allocateSql(reserved.armed, randomUUID(), reserved.current.version, allocationBody(reserved.armed, reserved.current.body, hearthLoc, reserved.agent, number, "dev", reserved.provision))).then(
+        value => ({ ok: true, value, error: "" }),
+        (error: { message?: string }) => ({ ok: false, value: { status: "error" }, error: error.message ?? "" }),
+      ),
+      execFile(join(pgBin!, "psql"), [
+        "-h", socketDir, "-p", port, "-U", "postgres", "-d", "commercialalloc",
+        "-v", "ON_ERROR_STOP=1", "-c", bindSql,
+      ], { env: { ...process.env, PGOPTIONS: "-c statement_timeout=60000" }, maxBuffer: 8 * 1024 * 1024 }).then(
+        () => ({ ok: true, error: "" }),
+        (error: { stderr?: string; message?: string }) => ({ ok: false, error: `${error.stderr ?? ""}\n${error.message ?? ""}` }),
+      ),
+    ])
+    expect(`${allocation.error}\n${binding.error}`).not.toMatch(/deadlock detected/i)
+    const owners = await psql(`select count(*)::text from admin_private.commercial_provider_number_owners where agent_ref = 'agent-hearth1'`)
+    const activeBindings = await psql(`select count(*)::text from public.telloya_voice_number_bindings where agent_id = 'agent-hearth1' and active`)
+    if (allocation.ok && allocation.value.status === "success") {
+      expect(binding.ok).toBe(false)
+      expect(binding.error).toMatch(/telloya_voice_rejected/)
+      expect(owners).toBe("1")
+      expect(await psql(`select e164 from admin_private.commercial_provider_number_owners where agent_ref = 'agent-hearth1'`)).toBe(number)
+      expect(activeBindings).toBe("0")
+    } else {
+      expect(allocation.value).toMatchObject({ status: "denied", reason: "routing" })
+      expect(binding.ok).toBe(true)
+      expect(owners).toBe("0")
+      expect(activeBindings).toBe("1")
+      expect(await psql(`select inbound_to_number from public.telloya_voice_number_bindings where agent_id = 'agent-hearth1' and active`)).toBe(other)
+    }
+    expect(owners === "1" && activeBindings === "1").toBe(false)
+    expect(await psql(`select count(*)::text from public.service_provisions where location_id = '${hearthLoc}' and (state = 'LIVE' or forwarding_instructed_at is not null)`)).toBe("0")
   }, 180000)
 })
 

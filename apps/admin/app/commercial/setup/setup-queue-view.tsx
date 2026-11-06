@@ -860,6 +860,11 @@ function startingText(location: ForwardingLocationProgress | null) {
 }
 
 const forwardingAcknowledgement = "I have reviewed these instructions against the current business location and allocated number. I confirm they are suitable to share with this customer. I understand this will not enable call forwarding or activate the receptionist."
+const uncertainForwardingMessage = "We couldn’t confirm whether the forwarding instructions were recorded. Try the same action again without changing the notes."
+
+function uncertainForwardingStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500
+}
 
 function forwardingLabel(mode: (typeof forwardingModes)[number][0]) {
   return forwardingModes.find(([value]) => value === mode)?.[1] ?? mode
@@ -918,6 +923,7 @@ function RecordForwardingInstructions({ item, lane }: { item: SetupQueueItem; la
   const [message, setMessage] = useState<string | null>(null)
   const [tone, setTone] = useState<"success" | "warning" | "danger">("warning")
   const [pending, setPending] = useState(false)
+  const [reconcile, setReconcile] = useState<{ locationId: string; instructionVersion: number; provisionVersion: number; allocationId: string; allocationVersion: number; preferenceVersion: number; configurationVersion: number; subscriptionVersion: number; onboardingVersion: number } | null>(null)
   const place = serverLocation && held?.locationId === serverLocation.locationId
     ? {
       ...serverLocation,
@@ -941,9 +947,23 @@ function RecordForwardingInstructions({ item, lane }: { item: SetupQueueItem; la
     setReview(false)
     setReviewed(null)
     setConfirmed(false)
+    setReconcile(null)
   }
   if (held && serverLocation && held.locationId === serverLocation.locationId && serverLocation.instructionVersion >= held.instructionVersion && serverLocation.provisionVersion >= held.provisionVersion) {
     setHeld(null)
+  }
+  if (reconcile && serverLocation && (
+    reconcile.locationId !== serverLocation.locationId
+    || serverLocation.instructionVersion !== reconcile.instructionVersion
+    || serverLocation.provisionVersion !== reconcile.provisionVersion
+    || serverLocation.allocationId !== reconcile.allocationId
+    || serverLocation.allocationVersion !== reconcile.allocationVersion
+    || serverLocation.preferenceVersion !== reconcile.preferenceVersion
+    || serverLocation.configurationVersion !== reconcile.configurationVersion
+    || item.subscriptionVersion !== reconcile.subscriptionVersion
+    || item.onboardingVersion !== reconcile.onboardingVersion
+  )) {
+    setReconcile(null)
   }
 
   function requestBody(status: "DRAFT" | "SHARED"): ForwardingRequest | null {
@@ -985,6 +1005,16 @@ function RecordForwardingInstructions({ item, lane }: { item: SetupQueueItem; la
     setReview(false)
   }
   const reviewFresh = review && reviewed !== null && reviewed === shareText
+  const queueConflict = Boolean(reconcile && serverLocation
+    && reconcile.locationId === serverLocation.locationId
+    && serverLocation.instructionVersion === reconcile.instructionVersion
+    && serverLocation.provisionVersion === reconcile.provisionVersion
+    && serverLocation.allocationId === reconcile.allocationId
+    && serverLocation.allocationVersion === reconcile.allocationVersion
+    && serverLocation.preferenceVersion === reconcile.preferenceVersion
+    && serverLocation.configurationVersion === reconcile.configurationVersion
+    && item.subscriptionVersion === reconcile.subscriptionVersion
+    && item.onboardingVersion === reconcile.onboardingVersion)
   const draftBlocked = place?.status === "shared" || place?.sharedAt !== null
   const readyToReview = Boolean(place?.allocationId && place.e164 && text.includes(place.e164) && text.includes(forwardingNotice) && text.trim().length >= 160 && attestation.trim().length >= 20 && revision.trim().length >= 4 && (!carrierKnown || carrierName.trim().length >= 2) && (telephone.trim() === "" || /^\+[1-9][0-9]{7,14}$/.test(telephone.trim())))
 
@@ -1007,6 +1037,7 @@ function RecordForwardingInstructions({ item, lane }: { item: SetupQueueItem; la
     setText(startingText(next))
     setAttestation("")
     setMessage(null)
+    setReconcile(null)
     clearShareReview()
     draftKey.current = ""
     draftFingerprint.current = ""
@@ -1035,7 +1066,7 @@ function RecordForwardingInstructions({ item, lane }: { item: SetupQueueItem; la
   }
 
   async function send(kind: "DRAFT" | "SHARED") {
-    if (!place?.allocationId || !item.onboardingRequestId || !item.onboardingVersion) return
+    if (queueConflict || !place?.allocationId || !item.onboardingRequestId || !item.onboardingVersion) return
     if (kind === "DRAFT" && draftBlocked) return
     const live = requestBody(kind)
     if (!live) return
@@ -1056,8 +1087,35 @@ function RecordForwardingInstructions({ item, lane }: { item: SetupQueueItem; la
       })
       const body = await response.json().catch(() => null) as { message?: string; instructionVersion?: number; sharingStatus?: "DRAFT" | "SHARED" } | null
       if (!response.ok) {
+        if (uncertainForwardingStatus(response.status)) {
+          setMessage(uncertainForwardingMessage)
+          setTone("danger")
+          return
+        }
         keyRef.current = ""
         fingerRef.current = ""
+        const versionConflict = response.status === 409 && (body?.message ?? "").includes("have changed")
+        if (versionConflict) {
+          setHeld(null)
+          setReview(false)
+          setReviewed(null)
+          setConfirmed(false)
+          shareKey.current = ""
+          shareFingerprint.current = ""
+          shareEpoch.current = -1
+          setReconcile({
+            locationId: payload.locationId,
+            instructionVersion: payload.instructionVersion,
+            provisionVersion: payload.provisionVersion,
+            allocationId: payload.allocationId,
+            allocationVersion: payload.allocationVersion,
+            preferenceVersion: payload.preferenceVersion,
+            configurationVersion: payload.configurationVersion,
+            subscriptionVersion: payload.version,
+            onboardingVersion: payload.onboardingVersion,
+          })
+          router.refresh()
+        }
         setMessage(body?.message ?? "We couldn’t record the forwarding instructions. Reload the queue before trying again.")
         setTone("warning")
         return
@@ -1132,11 +1190,11 @@ function RecordForwardingInstructions({ item, lane }: { item: SetupQueueItem; la
           <input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
           {" "}{forwardingAcknowledgement}
         </label>
-        <button type="button" disabled={!confirmed || pending} onClick={() => void send("SHARED")}>Confirm and share instructions</button>
-      </section> : <button type="button" disabled={pending || !readyToReview} onClick={beginReview}>Review instructions</button>}
+        <button type="button" disabled={!confirmed || pending || queueConflict} onClick={() => void send("SHARED")}>Confirm and share instructions</button>
+      </section> : <button type="button" disabled={pending || !readyToReview || queueConflict} onClick={beginReview}>Review instructions</button>}
       {message ? <Notice tone={tone}><span role="status">{message}</span></Notice> : null}
       <div className="commercial-actions">
-        <button type="button" disabled={pending || draftBlocked || !readyToReview} onClick={() => void send("DRAFT")}>Save draft</button>
+        <button type="button" disabled={pending || draftBlocked || !readyToReview || queueConflict} onClick={() => void send("DRAFT")}>Save draft</button>
       </div>
     </form>
   )

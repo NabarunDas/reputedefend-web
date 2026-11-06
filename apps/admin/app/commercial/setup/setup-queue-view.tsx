@@ -3,7 +3,7 @@
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ukDate } from "@/lib/admin/activity"
-import type { AllocationLocationProgress, ConfigurationLocationProgress, SetupQueueItem } from "@/lib/commercial/setup-queue"
+import type { AllocationLocationProgress, ConfigurationLocationProgress, ForwardingLocationProgress, SetupQueueItem } from "@/lib/commercial/setup-queue"
 import { Badge, EmptyState, Notice } from "../../ui"
 
 const futureCommands = [
@@ -11,6 +11,7 @@ const futureCommands = [
   "Confirm business preferences",
   "Confirm AI configuration",
   "Record provider and number allocation",
+  "Record forwarding instructions",
   "Record successful test call",
   "Request customer forwarding confirmation",
   "Approve activation",
@@ -835,12 +836,377 @@ function RecordNumberAllocation({ item, providerLane }: { item: SetupQueueItem; 
   </div>
 }
 
-export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, recordNumberAllocationEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; recordNumberAllocationEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
+const forwardingNotice = "Do not enable call forwarding yet. Your receptionist is still being prepared and tested. We will tell you when it is ready for the final connection."
+
+const forwardingModes = [
+  ["UNANSWERED", "Unanswered calls"],
+  ["BUSY", "Busy calls"],
+  ["UNREACHABLE", "Unreachable calls"],
+  ["UNANSWERED_BUSY_UNREACHABLE", "Unanswered, busy, and unreachable calls"],
+] as const
+
+function forwardingText(number: string) {
+  return [
+    `1. Keep ${number} for the customer’s telephone provider. This is the number calls can be sent to once the receptionist is approved.`,
+    "2. The exact menu names vary by telephone provider. These notes prepare the later connection and do not change the telephone line.",
+    `3. ${forwardingNotice}`,
+  ].join(" ")
+}
+
+function startingText(location: ForwardingLocationProgress | null) {
+  if (!location?.e164) return ""
+  if (location.status === "review" || !location.instructionText?.includes(location.e164)) return forwardingText(location.e164)
+  return location.instructionText
+}
+
+const forwardingAcknowledgement = "I have reviewed these instructions against the current business location and allocated number. I confirm they are suitable to share with this customer. I understand this will not enable call forwarding or activate the receptionist."
+const uncertainForwardingMessage = "We couldn’t confirm whether the forwarding instructions were recorded. Try the same action again without changing the notes."
+
+function uncertainForwardingStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500
+}
+
+function forwardingLabel(mode: (typeof forwardingModes)[number][0]) {
+  return forwardingModes.find(([value]) => value === mode)?.[1] ?? mode
+}
+
+type ForwardingRequest = {
+  subscriptionId: string
+  version: number
+  customerId: string
+  businessId: string
+  onboardingRequestId: string
+  onboardingVersion: number
+  locationId: string
+  preferenceVersion: number
+  provisionVersion: number
+  configurationVersion: number
+  allocationId: string
+  allocationVersion: number
+  instructionVersion: number
+  instruction: {
+    environment: "dev" | "production"
+    forwardingMode: (typeof forwardingModes)[number][0]
+    carrierKnown: boolean
+    carrierName: string | null
+    customerTelephone: string | null
+    instructionRevision: string
+    instructionText: string
+    attestation: string
+    staffConfirmed: true
+    status: "DRAFT" | "SHARED"
+  }
+}
+
+function RecordForwardingInstructions({ item, lane }: { item: SetupQueueItem; lane: "dev" | "production" }) {
+  const router = useRouter()
+  const draftKey = useRef("")
+  const draftFingerprint = useRef("")
+  const draftEpoch = useRef(-1)
+  const shareKey = useRef("")
+  const shareFingerprint = useRef("")
+  const shareEpoch = useRef(-1)
+  const initial = item.forwardingProgress?.locations.find(location => location.status !== "shared")?.locationId ?? item.forwardingProgress?.locations[0]?.locationId ?? ""
+  const [selected, setSelected] = useState(initial)
+  const serverLocation: ForwardingLocationProgress | null = item.forwardingProgress?.locations.find(entry => entry.locationId === selected) ?? null
+  const [held, setHeld] = useState<{ locationId: string; instructionVersion: number; provisionVersion: number } | null>(null)
+  const [mode, setMode] = useState<(typeof forwardingModes)[number][0]>(serverLocation?.forwardingMode ?? "UNANSWERED_BUSY_UNREACHABLE")
+  const [carrierKnown, setCarrierKnown] = useState(serverLocation?.carrierKnown === true)
+  const [carrierName, setCarrierName] = useState(serverLocation?.carrierName ?? "")
+  const [telephone, setTelephone] = useState(serverLocation?.customerTelephone ?? "")
+  const [revision, setRevision] = useState(serverLocation?.instructionRevision ?? "guide-0001")
+  const [text, setText] = useState(startingText(serverLocation))
+  const [attestation, setAttestation] = useState("")
+  const [review, setReview] = useState(false)
+  const [reviewed, setReviewed] = useState<string | null>(null)
+  const [confirmed, setConfirmed] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [tone, setTone] = useState<"success" | "warning" | "danger">("warning")
+  const [pending, setPending] = useState(false)
+  const [reconcile, setReconcile] = useState<{ locationId: string; instructionVersion: number; provisionVersion: number; allocationId: string; allocationVersion: number; preferenceVersion: number; configurationVersion: number; subscriptionVersion: number; onboardingVersion: number } | null>(null)
+  const place = serverLocation && held?.locationId === serverLocation.locationId
+    ? {
+      ...serverLocation,
+      instructionVersion: Math.max(serverLocation.instructionVersion, held.instructionVersion),
+      provisionVersion: Math.max(serverLocation.provisionVersion, held.provisionVersion),
+    }
+    : serverLocation
+  const allocationKey = `${place?.locationId ?? ""}:${place?.allocationId ?? ""}:${place?.allocationVersion ?? 0}:${place?.e164 ?? ""}`
+  const [seenAllocation, setSeenAllocation] = useState(allocationKey)
+  const [allocationEpoch, setAllocationEpoch] = useState(0)
+  if (seenAllocation !== allocationKey) {
+    setSeenAllocation(allocationKey)
+    setAllocationEpoch(value => value + 1)
+    setMode(place?.forwardingMode ?? "UNANSWERED_BUSY_UNREACHABLE")
+    setCarrierKnown(place?.carrierKnown === true)
+    setCarrierName(place?.carrierName ?? "")
+    setTelephone(place?.customerTelephone ?? "")
+    setRevision(place?.instructionRevision ?? "guide-0001")
+    setText(startingText(place))
+    setAttestation("")
+    setReview(false)
+    setReviewed(null)
+    setConfirmed(false)
+    setReconcile(null)
+  }
+  if (held && serverLocation && held.locationId === serverLocation.locationId && serverLocation.instructionVersion >= held.instructionVersion && serverLocation.provisionVersion >= held.provisionVersion) {
+    setHeld(null)
+  }
+  if (reconcile && serverLocation && (
+    reconcile.locationId !== serverLocation.locationId
+    || serverLocation.instructionVersion !== reconcile.instructionVersion
+    || serverLocation.provisionVersion !== reconcile.provisionVersion
+    || serverLocation.allocationId !== reconcile.allocationId
+    || serverLocation.allocationVersion !== reconcile.allocationVersion
+    || serverLocation.preferenceVersion !== reconcile.preferenceVersion
+    || serverLocation.configurationVersion !== reconcile.configurationVersion
+    || item.subscriptionVersion !== reconcile.subscriptionVersion
+    || item.onboardingVersion !== reconcile.onboardingVersion
+  )) {
+    setReconcile(null)
+  }
+
+  function requestBody(status: "DRAFT" | "SHARED"): ForwardingRequest | null {
+    if (!place?.allocationId || item.subscriptionId === null || item.subscriptionVersion === null || item.customerId === null || item.onboardingRequestId === null || item.onboardingVersion === null) return null
+    return {
+      subscriptionId: item.subscriptionId,
+      version: item.subscriptionVersion,
+      customerId: item.customerId,
+      businessId: item.businessId,
+      onboardingRequestId: item.onboardingRequestId,
+      onboardingVersion: item.onboardingVersion,
+      locationId: place.locationId,
+      preferenceVersion: place.preferenceVersion,
+      provisionVersion: place.provisionVersion,
+      configurationVersion: place.configurationVersion,
+      allocationId: place.allocationId,
+      allocationVersion: place.allocationVersion,
+      instructionVersion: place.instructionVersion,
+      instruction: {
+        environment: lane,
+        forwardingMode: mode,
+        carrierKnown,
+        carrierName: carrierKnown ? carrierName.trim() : null,
+        customerTelephone: telephone.trim() === "" ? null : telephone.trim(),
+        instructionRevision: revision.trim(),
+        instructionText: text.trim(),
+        attestation: attestation.trim(),
+        staffConfirmed: true,
+        status,
+      },
+    }
+  }
+
+  const shareBody = requestBody("SHARED")
+  const shareText = shareBody ? JSON.stringify(shareBody) : ""
+  if (reviewed !== null && reviewed !== shareText) {
+    setReviewed(null)
+    setConfirmed(false)
+    setReview(false)
+  }
+  const reviewFresh = review && reviewed !== null && reviewed === shareText
+  const queueConflict = Boolean(reconcile && serverLocation
+    && reconcile.locationId === serverLocation.locationId
+    && serverLocation.instructionVersion === reconcile.instructionVersion
+    && serverLocation.provisionVersion === reconcile.provisionVersion
+    && serverLocation.allocationId === reconcile.allocationId
+    && serverLocation.allocationVersion === reconcile.allocationVersion
+    && serverLocation.preferenceVersion === reconcile.preferenceVersion
+    && serverLocation.configurationVersion === reconcile.configurationVersion
+    && item.subscriptionVersion === reconcile.subscriptionVersion
+    && item.onboardingVersion === reconcile.onboardingVersion)
+  const draftBlocked = place?.status === "shared" || place?.sharedAt !== null
+  const readyToReview = Boolean(place?.allocationId && place.e164 && text.includes(place.e164) && text.includes(forwardingNotice) && text.trim().length >= 160 && attestation.trim().length >= 20 && revision.trim().length >= 4 && (!carrierKnown || carrierName.trim().length >= 2) && (telephone.trim() === "" || /^\+[1-9][0-9]{7,14}$/.test(telephone.trim())))
+
+  function clearShareReview() {
+    setReview(false)
+    setReviewed(null)
+    setConfirmed(false)
+    shareKey.current = ""
+    shareFingerprint.current = ""
+  }
+
+  function choose(id: string) {
+    const next = item.forwardingProgress?.locations.find(entry => entry.locationId === id) ?? null
+    setSelected(id)
+    setMode(next?.forwardingMode ?? "UNANSWERED_BUSY_UNREACHABLE")
+    setCarrierKnown(next?.carrierKnown === true)
+    setCarrierName(next?.carrierName ?? "")
+    setTelephone(next?.customerTelephone ?? "")
+    setRevision(next?.instructionRevision ?? "guide-0001")
+    setText(startingText(next))
+    setAttestation("")
+    setMessage(null)
+    setReconcile(null)
+    clearShareReview()
+    draftKey.current = ""
+    draftFingerprint.current = ""
+    draftEpoch.current = -1
+  }
+
+  function currentKey(kind: "DRAFT" | "SHARED", fingerprint: string) {
+    const keyRef = kind === "DRAFT" ? draftKey : shareKey
+    const fingerRef = kind === "DRAFT" ? draftFingerprint : shareFingerprint
+    const epochRef = kind === "DRAFT" ? draftEpoch : shareEpoch
+    if (fingerRef.current !== fingerprint || epochRef.current !== allocationEpoch || !isUuidKey(keyRef.current)) {
+      keyRef.current = crypto.randomUUID()
+      fingerRef.current = fingerprint
+      epochRef.current = allocationEpoch
+    }
+    return keyRef.current
+  }
+
+  function beginReview() {
+    if (!readyToReview || !shareBody) return
+    const fingerprint = JSON.stringify(shareBody)
+    currentKey("SHARED", fingerprint)
+    setReviewed(fingerprint)
+    setConfirmed(false)
+    setReview(true)
+  }
+
+  async function send(kind: "DRAFT" | "SHARED") {
+    if (queueConflict || !place?.allocationId || !item.onboardingRequestId || !item.onboardingVersion) return
+    if (kind === "DRAFT" && draftBlocked) return
+    const live = requestBody(kind)
+    if (!live) return
+    if (kind === "SHARED" && (!confirmed || reviewed === null || reviewed !== JSON.stringify(requestBody("SHARED")))) return
+    const payload: ForwardingRequest = kind === "SHARED" ? JSON.parse(reviewed ?? "") as ForwardingRequest : live
+    if (kind === "SHARED" && payload.instruction.staffConfirmed !== true) return
+    const fingerprint = JSON.stringify(payload)
+    const keyRef = kind === "DRAFT" ? draftKey : shareKey
+    const fingerRef = kind === "DRAFT" ? draftFingerprint : shareFingerprint
+    const requestKey = currentKey(kind, fingerprint)
+    setPending(true)
+    setMessage(null)
+    try {
+      const response = await fetch("/api/commercial/record-forwarding-instructions", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": requestKey },
+        body: fingerprint,
+      })
+      const body = await response.json().catch(() => null) as { message?: string; instructionVersion?: number; sharingStatus?: "DRAFT" | "SHARED" } | null
+      if (!response.ok) {
+        if (uncertainForwardingStatus(response.status)) {
+          setMessage(uncertainForwardingMessage)
+          setTone("danger")
+          return
+        }
+        keyRef.current = ""
+        fingerRef.current = ""
+        const versionConflict = response.status === 409 && (body?.message ?? "").includes("have changed")
+        if (versionConflict) {
+          setHeld(null)
+          setReview(false)
+          setReviewed(null)
+          setConfirmed(false)
+          shareKey.current = ""
+          shareFingerprint.current = ""
+          shareEpoch.current = -1
+          setReconcile({
+            locationId: payload.locationId,
+            instructionVersion: payload.instructionVersion,
+            provisionVersion: payload.provisionVersion,
+            allocationId: payload.allocationId,
+            allocationVersion: payload.allocationVersion,
+            preferenceVersion: payload.preferenceVersion,
+            configurationVersion: payload.configurationVersion,
+            subscriptionVersion: payload.version,
+            onboardingVersion: payload.onboardingVersion,
+          })
+          router.refresh()
+        }
+        setMessage(body?.message ?? "We couldn’t record the forwarding instructions. Reload the queue before trying again.")
+        setTone("warning")
+        return
+      }
+      const nextInstruction = typeof body?.instructionVersion === "number" ? body.instructionVersion : payload.instructionVersion + 1
+      const sharing = body?.sharingStatus ?? kind
+      const wasShared = place.status === "shared" || place.sharedAt !== null
+      setHeld({
+        locationId: place.locationId,
+        instructionVersion: nextInstruction,
+        provisionVersion: sharing === "SHARED" && !wasShared ? place.provisionVersion + 1 : place.provisionVersion,
+      })
+      keyRef.current = ""
+      fingerRef.current = ""
+      if (kind === "SHARED") clearShareReview()
+      setMessage(body?.message ?? "The forwarding instructions were recorded.")
+      setTone("success")
+      router.refresh()
+    } catch {
+      setMessage("We couldn’t record the forwarding instructions. Check the connection and try again.")
+      setTone("danger")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  if (!item.forwardingProgress || item.forwardingProgress.locations.length === 0 || !place) return null
+  const reviewedPayload: ForwardingRequest | null = reviewFresh && reviewed ? JSON.parse(reviewed) as ForwardingRequest : null
+  return (
+    <form className="commercial-command" onSubmit={event => event.preventDefault()}>
+      <h3>Record forwarding instructions</h3>
+      <p>{item.customerName} · {item.businessName}. These notes explain a later connection. Sharing them does not enable forwarding.</p>
+      <label>Location<select value={selected} onChange={event => choose(event.target.value)}>{item.forwardingProgress.locations.map(entry => <option key={entry.locationId} value={entry.locationId}>{entry.locationName} · {entry.status}</option>)}</select></label>
+      <dl className="commercial-review">
+        <div><dt>Subscription</dt><dd>{item.reference}</dd></div>
+        <div><dt>Receptionist</dt><dd>{place.agentRef ?? "Not recorded"}</dd></div>
+        <div><dt>Configuration version</dt><dd>{place.configurationVersion}</dd></div>
+        <div><dt>Assigned number</dt><dd>{place.e164 ?? "Not recorded"}</dd></div>
+        <div><dt>Allocation version</dt><dd>{place.allocationVersion}</dd></div>
+        <div><dt>Instruction version</dt><dd>{place.instructionVersion}</dd></div>
+        <div><dt>Sharing status</dt><dd>{place.status}</dd></div>
+      </dl>
+      <label>Forwarding method<select value={mode} onChange={event => setMode(event.target.value as (typeof forwardingModes)[number][0])}>{forwardingModes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label><input type="checkbox" checked={carrierKnown} onChange={event => setCarrierKnown(event.target.checked)} /> The telephone provider is known</label>
+      {carrierKnown ? <label>Telephone provider<input value={carrierName} onChange={event => setCarrierName(event.target.value)} /></label> : <p>Exact settings vary by telephone provider.</p>}
+      <label>Customer telephone, if known<input value={telephone} onChange={event => setTelephone(event.target.value)} placeholder="+44…" /></label>
+      <label>Instruction revision<input value={revision} onChange={event => setRevision(event.target.value)} /></label>
+      <label>Instructions<textarea value={text} onChange={event => setText(event.target.value)} rows={6} /></label>
+      <p>{forwardingNotice}</p>
+      <label>Staff attestation<textarea value={attestation} onChange={event => setAttestation(event.target.value)} rows={3} /></label>
+      {place.status === "review" ? <Notice tone="warning">These instructions need to be prepared again for the current allocation. Use the assigned number above, save a corrected draft or review the corrected notes, then share that version.</Notice> : null}
+      {draftBlocked ? <p>A shared instruction stays shared. Review a new version to correct it. A draft cannot replace it.</p> : null}
+      {reviewedPayload ? <section aria-label={`Review forwarding instructions for ${item.reference}`}>
+        <h4>Review instructions</h4>
+        <dl>
+          <div><dt>Customer</dt><dd>{item.customerName}</dd></div>
+          <div><dt>Business</dt><dd>{item.businessName}</dd></div>
+          <div><dt>Subscription</dt><dd>{item.reference}</dd></div>
+          <div><dt>Location</dt><dd>{place.locationName}</dd></div>
+          <div><dt>Allocation</dt><dd>Version {reviewedPayload.allocationVersion}. {place.e164}</dd></div>
+          <div><dt>Receptionist</dt><dd>{place.agentRef ?? "Not recorded"}, configuration version {reviewedPayload.configurationVersion}</dd></div>
+          <div><dt>Forwarding method</dt><dd>{forwardingLabel(reviewedPayload.instruction.forwardingMode)}</dd></div>
+          <div><dt>Telephone provider</dt><dd>{reviewedPayload.instruction.carrierKnown ? reviewedPayload.instruction.carrierName : "Exact settings vary by telephone provider."}</dd></div>
+          {reviewedPayload.instruction.customerTelephone ? <div><dt>Customer telephone</dt><dd>{reviewedPayload.instruction.customerTelephone}</dd></div> : null}
+          <div><dt>Instruction revision</dt><dd>{reviewedPayload.instruction.instructionRevision}</dd></div>
+          <div><dt>Instructions</dt><dd>{reviewedPayload.instruction.instructionText}</dd></div>
+          <div><dt>Warning</dt><dd>{forwardingNotice}</dd></div>
+          <div><dt>Staff attestation</dt><dd>{reviewedPayload.instruction.attestation}</dd></div>
+        </dl>
+        <p>Sharing these instructions makes them visible in the Customer Portal. It does not enable call forwarding or activate the receptionist.</p>
+        <label>
+          <input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
+          {" "}{forwardingAcknowledgement}
+        </label>
+        <button type="button" disabled={!confirmed || pending || queueConflict} onClick={() => void send("SHARED")}>Confirm and share instructions</button>
+      </section> : <button type="button" disabled={pending || !readyToReview || queueConflict} onClick={beginReview}>Review instructions</button>}
+      {message ? <Notice tone={tone}><span role="status">{message}</span></Notice> : null}
+      <div className="commercial-actions">
+        <button type="button" disabled={pending || draftBlocked || !readyToReview || queueConflict} onClick={() => void send("DRAFT")}>Save draft</button>
+      </div>
+    </form>
+  )
+}
+
+export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, recordNumberAllocationEnabled = false, recordForwardingInstructionsEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; recordNumberAllocationEnabled?: boolean; recordForwardingInstructionsEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
   const later = futureCommands.filter(command => {
     if (beginSetupEnabled && command === "Begin setup") return false
     if (confirmPreferencesEnabled && command === "Confirm business preferences") return false
     if (confirmAiConfigurationEnabled && command === "Confirm AI configuration") return false
     if (recordNumberAllocationEnabled && command === "Record provider and number allocation") return false
+    if (recordForwardingInstructionsEnabled && command === "Record forwarding instructions") return false
     return true
   })
   return <>
@@ -897,6 +1263,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
                   {confirmPreferencesEnabled ? <ConfirmPreferences item={item} /> : null}
                   {confirmAiConfigurationEnabled ? <ConfirmAiConfiguration item={item} providerLane={providerLane} /> : null}
                   {recordNumberAllocationEnabled ? <RecordNumberAllocation item={item} providerLane={providerLane} /> : null}
+                  {recordForwardingInstructionsEnabled && providerLane ? <RecordForwardingInstructions item={item} lane={providerLane} /> : null}
                 </td>
               </tr>
             ))}
@@ -905,7 +1272,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
       </div>
     )}
     <h2>Later setup commands</h2>
-    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Record provider and number allocation records an assigned telephone number for one location. It does not make that number active, start forwarding, or record a test call.</p>
+    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Record provider and number allocation records an assigned telephone number for one location. It does not make that number active, start forwarding, or record a test call. Record forwarding instructions prepares location-specific notes for a later connection. Sharing those notes does not enable forwarding.</p>
     <ul>
       {later.map(command => <li key={command}>{command}</li>)}
     </ul>

@@ -1,14 +1,14 @@
-# Telloya Phase C-01 commercial readiness
+# Telloya Phase C commercial readiness
 
-Status: local rehearsal only. Hosted DEV and Production were not changed.
+Status: the seven commercial migrations below were applied once to Supabase DEV project `profilerelaunch-dev`. This repository records that ledger. It does not apply SQL, seed catalogue rows, approve agreements, or change Production.
 
-Observed DEV head, from the recovery manifest and not from a new hosted query: `20261105120000_telloya_voice_persistence_v1`. The verified ledger has 105 entries. The repository has 115 migration files. Three foundation files are present in the repository and in the live schema, and absent from that 105-row ledger: `20260915120000_core_data_foundation_v1`, `20260915193000_case_intake_transaction_v1`, and `20260916000000_relaunch_guard_data_foundation_v1` (issue #190). Do not replay them and do not invent ledger rows for them.
+Verified DEV head: `20261106003939_admin_commercial_record_forwarding_instructions_v1`. The verified ledger has 112 entries. The previous ledger had 105 entries and ended at `20261105120000_telloya_voice_persistence_v1`. The repository has 115 migration files. Three foundation files are present in the repository and in the live schema, and absent from the live ledger: `20260915120000_core_data_foundation_v1`, `20260915193000_case_intake_transaction_v1`, and `20260916000000_relaunch_guard_data_foundation_v1` (issue #190). Do not replay them and do not invent ledger rows for them. The live ledger is 112 because those three files stay omitted: 115 repository files minus that gap.
 
-The unapplied tail starts with these seven files, in this order. Each has `appliedToDev: false`, `containsDataChange: false`, and `safeToReplay: false`. A later approved migration may be appended after them. The rehearsal checks this ordered prefix, so that append does not by itself fail the check.
+The Technical Architect applied these seven files under their canonical versions. The stored SQL matches each GitHub file SHA-256. Each manifest entry is `appliedToDev: true`, `containsDataChange: false`, and `safeToReplay: false`. Do not replay them. Do not apply them to Production. `pendingMigrations()` is empty on this branch. A later repository file, including the unmerged test-call migration `20261106120000_admin_commercial_verify_agent_test_call_v1.sql` from PR #435, stays unapplied until its own DEV ledger entry is verified.
 
 ## 1. Migration order and dependencies
 
-Apply only in this order. A later file replaces functions installed by an earlier one. Applying the tier catalogue after the Guard file would drop Guard pricing.
+These seven files were applied in this order. A later file replaces functions installed by an earlier one. Applying the tier catalogue after the Guard file would drop Guard pricing. Do not replay the chain.
 
 | Order | File | Depends on | What it adds |
 | --- | --- | --- | --- |
@@ -20,7 +20,7 @@ Apply only in this order. A later file replaces functions installed by an earlie
 | 6 | `20261105200000_admin_commercial_record_number_allocation_v1.sql` | Begin-setup events and the configuration tables from files 1 and 3. It stays after file 5 because handover reads the accepted Guard quantity | Operator-attested number allocation. Replaces handover and the voice-binding guard. A recorded number does not enable forwarding, does not turn routing on, and is not live. |
 | 7 | `20261106003939_admin_commercial_record_forwarding_instructions_v1.sql` | The number allocation from file 6. Merged PR #431. It stays after that file and does not include the earlier six | Operator-attested forwarding instructions. A draft stays inside Admin. Sharing shows the approved text and assigned number, sets `forwarding_instructed_at`, and may move `FORWARDING_REQUIRED` to `TEST_REQUIRED`. Sharing does not enable forwarding, place a test call, or move the service to live. |
 
-Repository checksums for a later hosted apply. Compare the file bytes before applying. Do not edit the files.
+Repository checksums of the files applied to DEV. The SQL files were not edited for this record. Do not replay them.
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
@@ -32,15 +32,15 @@ Repository checksums for a later hosted apply. Compare the file bytes before app
 | `20261105200000_admin_commercial_record_number_allocation_v1.sql` | 73,483 | `4b6ab6b1f383c3bfbc0b2b3a7b2ba907c37eed836294edca86661d7fe70a1dbe` |
 | `20261106003939_admin_commercial_record_forwarding_instructions_v1.sql` | 64,845 | `64cd1aceb6aa66cd8ab1bac56758b189103a0b7b9bbb813a709a0f3d3981abda` |
 
-PR #431 is merged on `develop` at `e415922e2f50d2336a80fa2046d678c3cb198663`. Its forwarding-instructions file is the seventh unapplied migration. The checksum above was taken from that merged file.
+PR #431 is merged on `develop` at `e415922e2f50d2336a80fa2046d678c3cb198663`. Its forwarding-instructions file is the current DEV ledger head. The checksum above is the GitHub file that the hosted statement matches.
 
 ## 2. Local rehearsal
 
 Both rehearsals used in-process PGlite. Neither opened a connection to hosted DEV or Production.
 
 - Clean schema: `telloya-commercial-readiness.database.test.ts` applies the repository chain from empty and finds begin setup, confirm preferences, confirm AI configuration, `plan_versions.tier_code`, `commercial_offer_guard_locations`, record-number allocation, and record-forwarding instructions. The commercial command body is the Guard version, so file 5 replaced file 4.
-- Upgrade from the Step 10 checkpoint `20260929183214`: `upgrade.database.test.ts` applies the unseen tail in order. The seven commercial files stay not applied to DEV and not safe to replay. The current repository head is `20261106003939`.
-- Recovery manifest: `manifest.test.ts` and `readiness.test.ts` agree that the DEV head is `20261105120000` and the repository head is `20261106003939`.
+- Upgrade from the Step 10 checkpoint `20260929183214`: `upgrade.database.test.ts` applies the unseen tail in order. The seven commercial files are applied on DEV and are not safe to replay. The current repository head and DEV head are `20261106003939`.
+- Recovery manifest: `manifest.test.ts` and `readiness.test.ts` agree that the DEV head and the repository head are `20261106003939`. Any file after that head stays pending.
 
 Payment preparation leaves the Stripe product, price, and checkout session empty. Number allocation is a separate command and does not enable forwarding. Recording or sharing forwarding instructions is also separate: sharing can move a provision to `TEST_REQUIRED` and does not make it `LIVE`. Guard monitoring does not start from payment, begin setup, or forwarding instructions.
 
@@ -80,27 +80,26 @@ Journey covered in the same test:
 - Tax behaviour. The rehearsal uses `NOT_APPLICABLE` so a price can be accepted. That is not a tax decision.
 - Whether any Custom quotation is offered, and at what amount. £150 is a test figure.
 - The customer’s overage cap, which is still chosen at acceptance and is not authorised by the enquiry.
-- Approval to apply the seven files to hosted DEV. Production stays at `20261014170000`.
+- Production stays at `20261014170000`. The seven files are already on DEV and must not be replayed there or applied to Production.
 
 ## 5. Later DEV steps
 
-Do not run these until the owner approves the apply. This phase did not.
+The seven files are already applied. Do not apply them again.
 
-1. Read the DEV migration ledger. Stop unless the newest version is `20261105120000` and the count is 105. Stop if Production is not still `20261014170000`.
-2. Compare each of the seven files with the SHA-256 above. Apply them one at a time, in the table order, without editing the SQL. Stop if a newer unapplied file has been appended and is not in this table.
-3. After each file, confirm its manifest probe exists and that no commercial catalogue row was inserted.
+1. Read the DEV migration ledger. Stop unless the newest version is `20261106003939` and the count is 112. Stop if Production is not still `20261014170000`.
+2. Compare each of the seven stored statements with the SHA-256 above. Stop if a stored statement differs. Do not edit the SQL and do not replay it.
+3. A file newer than `20261106003939` is pending. Do not mark it applied, and do not apply it, until its own ledger entry is verified. PR #435’s `20261106120000_admin_commercial_verify_agent_test_call_v1.sql` is in that class.
 4. Do not insert `product_catalogue`, `plan_versions`, `plan_components`, `commercial_plan_conditions`, or `commercial_agreement_versions` until the location caps, agreement text, tax behaviour, and Custom amount are approved.
 5. Leave `TELLOYA_ENQUIRY_ENABLED`, `TELLOYA_LAUNCHED`, `ADMIN_COMMERCIAL_SETUP_QUEUE_ENABLED`, `ADMIN_COMMERCIAL_BEGIN_SETUP_ENABLED`, `ADMIN_COMMERCIAL_CONFIRM_PREFERENCES_ENABLED`, `ADMIN_COMMERCIAL_CONFIRM_AI_CONFIGURATION_ENABLED`, `ADMIN_COMMERCIAL_RECORD_NUMBER_ALLOCATION_ENABLED`, `ADMIN_COMMERCIAL_RECORD_FORWARDING_INSTRUCTIONS_ENABLED`, and `CUSTOMER_COMMERCIAL_SETUP_HANDOVER_READ_ENABLED` false.
 6. Do not create Stripe products, prices, customers, or payment objects. Do not call Retell or change telephone routing.
 
 ## 6. Blockers to a real DEV end-to-end test
 
-- The seven migrations are not on hosted DEV.
 - No approved hosted plan, agreement, or location cap exists. The test agreement is not that approval.
 - Tax treatment and any Custom price are undecided.
-- Stripe prices for a combined Telloya and Guard total do not exist, and this phase must not create them.
+- Stripe prices for a combined Telloya and Guard total do not exist, and this record must not create them.
 - Public enquiries stay off.
-- Begin setup, preferences, AI configuration, number allocation, and forwarding instructions stay separate gated commands. Settlement does not run them.
-- Forwarding instructions are merged in the repository and still unapplied on DEV. Sharing them does not enable forwarding or make the service live.
+- Begin setup, preferences, AI configuration, number allocation, and forwarding instructions stay separate gated commands. Their migrations are on DEV. Settlement does not run them, and their flags stay off.
+- Sharing forwarding instructions does not enable forwarding or make the service live.
 - Guard monitoring, a live agent, and telephone routing do not start from payment, begin setup, number allocation, or forwarding instructions.
-- The three foundation files missing from the DEV ledger remain a known history gap. Do not repair that gap while applying this tail.
+- The three foundation files missing from the DEV ledger remain a known history gap. Do not repair that gap.

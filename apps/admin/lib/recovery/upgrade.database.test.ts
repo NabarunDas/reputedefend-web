@@ -59,8 +59,8 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The repository head is the unapplied 20261106003939 admin_commercial_record_forwarding_instructions_v1. 20261105200000 stays unapplied earlier. 20261105190000, 20261105180000, 20261105172055, 20261105144256 and 20261105130000 stay unapplied earlier in the chain.
-    // The DEV ledger head is the applied 20261105120000 telloya_voice_persistence_v1.
+    // The repository head is the applied 20261106003939 admin_commercial_record_forwarding_instructions_v1. 20261105200000, 20261105190000, 20261105180000, 20261105172055, 20261105144256 and 20261105130000 are applied earlier in the chain. None is safe to replay.
+    // The previous DEV ledger head is the applied 20261105120000 telloya_voice_persistence_v1.
     // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
     // The previous DEV ledger head is 20261104220000 customer_commercial_setup_handover_v1.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
@@ -85,31 +85,31 @@ describe("upgrading a database that is already running", () => {
     // request 20261030200000 is applied on DEV and must not be replayed. This
     // disposable rebuild is not a live apply. Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261106003939_admin_commercial_record_forwarding_instructions_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261105200000_admin_commercial_record_number_allocation_v1.sql")
-    expect(pending.at(-2)?.appliedToDev).toBe(false)
+    expect(pending.at(-2)?.appliedToDev).toBe(true)
     expect(pending.at(-2)?.containsDataChange).toBe(false)
     expect(pending.at(-2)?.safeToReplay).toBe(false)
     expect(pending.at(-3)?.filename).toBe("20261105190000_telloya_guard_addon_v1.sql")
-    expect(pending.at(-3)?.appliedToDev).toBe(false)
+    expect(pending.at(-3)?.appliedToDev).toBe(true)
     expect(pending.at(-3)?.containsDataChange).toBe(false)
     expect(pending.at(-3)?.safeToReplay).toBe(false)
     expect(pending.at(-4)?.filename).toBe("20261105180000_telloya_tier_catalogue_v1.sql")
-    expect(pending.at(-4)?.appliedToDev).toBe(false)
+    expect(pending.at(-4)?.appliedToDev).toBe(true)
     expect(pending.at(-4)?.containsDataChange).toBe(false)
     expect(pending.at(-4)?.safeToReplay).toBe(false)
     expect(pending.at(-5)?.filename).toBe("20261105172055_admin_commercial_confirm_ai_configuration_v1.sql")
-    expect(pending.at(-5)?.appliedToDev).toBe(false)
+    expect(pending.at(-5)?.appliedToDev).toBe(true)
     expect(pending.at(-5)?.containsDataChange).toBe(false)
     expect(pending.at(-5)?.safeToReplay).toBe(false)
     expect(pending.at(-6)?.filename).toBe("20261105144256_admin_commercial_confirm_preferences_v1.sql")
-    expect(pending.at(-6)?.appliedToDev).toBe(false)
+    expect(pending.at(-6)?.appliedToDev).toBe(true)
     expect(pending.at(-6)?.containsDataChange).toBe(false)
     expect(pending.at(-6)?.safeToReplay).toBe(false)
     expect(pending.at(-7)?.filename).toBe("20261105130000_admin_commercial_begin_setup_v1.sql")
-    expect(pending.at(-7)?.appliedToDev).toBe(false)
+    expect(pending.at(-7)?.appliedToDev).toBe(true)
     expect(pending.at(-7)?.containsDataChange).toBe(false)
     expect(pending.at(-7)?.safeToReplay).toBe(false)
     expect(pending.at(-8)?.filename).toBe("20261105120000_telloya_voice_persistence_v1.sql")

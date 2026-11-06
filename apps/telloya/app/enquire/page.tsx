@@ -58,7 +58,7 @@ export default async function EnquirePage({
           <p className={styles.heroLead}>
             Tell us a bit about your business and requirements. We&apos;ll review your enquiry and get in touch to discuss how Telloya can help.
           </p>
-          <p className={styles.heroNote}>No payment is taken at this stage. This is a no-obligation enquiry.</p>
+          <p className={styles.heroNote}>No payment is taken at this stage. Submitting this form does not activate the service or authorise a recurring charge. This is a no-obligation enquiry.</p>
         </div>
       </section>
 

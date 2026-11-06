@@ -29,10 +29,14 @@
 -- is the latest allocation for the location.
 -- Voice-binding inserts and updates take the same commercial agent lock and
 -- then the same number lock as this command, after the existing active-agent
--- lock when the binding is active. A commercial reservation rejects a
--- binding for a different environment, business, or location. A commercially
+-- lock when the binding is active. A commercial reservation stores the exact
+-- configured agent with the number. A binding must use that agent and the
+-- same environment, business, and location, and it must stay inactive.
+-- active = true is rejected for a reserved number, including an update of an
+-- inactive row and a call to telloya_voice_bind_number_v1. A commercially
 -- owned agent cannot be attached to another tenant. A binding with no
--- commercial reservation keeps the existing voice rules.
+-- commercial reservation keeps the existing voice rules. An already active
+-- voice binding blocks commercial allocation of that number.
 
 BEGIN;
 
@@ -77,11 +81,12 @@ CREATE TABLE admin_private.commercial_provider_number_owners (
   business_id uuid NOT NULL,
   location_id uuid NOT NULL,
   subscription_id uuid NOT NULL,
+  agent_ref text NOT NULL CHECK (agent_ref ~ '^[A-Za-z0-9_-]{8,128}$'),
   PRIMARY KEY (provider, e164)
 );
 
 COMMENT ON TABLE admin_private.commercial_provider_number_owners IS
-  'One telephone number has one owner in this database, including while inbound routing is inactive. The primary key does not include environment, so DEV and Production cannot both own the same number here. A separate database is not covered by this constraint.';
+  'One telephone number has one owner and one assigned agent in this database, including while inbound routing is inactive. The agent is the configured receptionist for that reservation and does not change without a future audited release. The primary key does not include environment, so DEV and Production cannot both own the same number here. A separate database is not covered by this constraint.';
 
 ALTER TABLE admin_private.commercial_provider_number_owners ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE admin_private.commercial_provider_number_owners FROM PUBLIC, anon, authenticated, service_role;
@@ -1241,6 +1246,14 @@ BEGIN
       AND binding.agent_id IS DISTINCT FROM agent
   ) THEN
     outcome := jsonb_build_object('status', 'denied', 'reason', 'provider');
+  ELSIF outcome IS NULL AND EXISTS (
+    SELECT 1
+    FROM public.telloya_voice_number_bindings binding
+    WHERE binding.inbound_to_number = chosen_number
+      AND binding.active
+  ) THEN
+    -- An active routing row is not a pending commercial allocation.
+    outcome := jsonb_build_object('status', 'denied', 'reason', 'number');
   END IF;
 
   IF outcome IS NULL AND EXISTS (
@@ -1264,6 +1277,14 @@ BEGIN
       )
   ) THEN
     outcome := jsonb_build_object('status', 'denied', 'reason', 'number');
+  ELSIF outcome IS NULL AND EXISTS (
+    SELECT 1
+    FROM admin_private.commercial_provider_number_owners owner
+    WHERE owner.provider = 'telloya_voice'
+      AND owner.e164 = chosen_number
+      AND owner.agent_ref IS DISTINCT FROM agent
+  ) THEN
+    outcome := jsonb_build_object('status', 'denied', 'reason', 'provider');
   END IF;
 
   IF outcome IS NULL THEN
@@ -1309,17 +1330,19 @@ BEGIN
       'OPERATOR_ATTESTED', p_payload #>> '{provider,attestation}', actor, p_request
     ) RETURNING id INTO allocation_id;
     INSERT INTO admin_private.commercial_provider_number_owners (
-      provider, e164, environment, customer_id, business_id, location_id, subscription_id
+      provider, e164, environment, customer_id, business_id, location_id, subscription_id, agent_ref
     ) VALUES (
-      'telloya_voice', chosen_number, env, sub.customer_id, sub.business_id, chosen_location, sub.id
+      'telloya_voice', chosen_number, env, sub.customer_id, sub.business_id, chosen_location, sub.id, agent
     )
     ON CONFLICT (provider, e164) DO UPDATE
-    SET environment = admin_private.commercial_provider_number_owners.environment
+    SET environment = admin_private.commercial_provider_number_owners.environment,
+        agent_ref = admin_private.commercial_provider_number_owners.agent_ref
     WHERE admin_private.commercial_provider_number_owners.customer_id = EXCLUDED.customer_id
       AND admin_private.commercial_provider_number_owners.business_id = EXCLUDED.business_id
       AND admin_private.commercial_provider_number_owners.location_id = EXCLUDED.location_id
       AND admin_private.commercial_provider_number_owners.subscription_id = EXCLUDED.subscription_id
-      AND admin_private.commercial_provider_number_owners.environment = EXCLUDED.environment;
+      AND admin_private.commercial_provider_number_owners.environment = EXCLUDED.environment
+      AND admin_private.commercial_provider_number_owners.agent_ref = EXCLUDED.agent_ref;
     GET DIAGNOSTICS claimed = ROW_COUNT;
     IF claimed IS DISTINCT FROM 1 THEN
       RAISE EXCEPTION 'provider number owner conflict';
@@ -1498,6 +1521,8 @@ BEGIN
         owner.environment IS DISTINCT FROM NEW.environment
         OR owner.business_id IS DISTINCT FROM NEW.business_id
         OR owner.location_id IS DISTINCT FROM NEW.location_id
+        OR owner.agent_ref IS DISTINCT FROM NEW.agent_id
+        OR NEW.active
       )
   ) THEN
     PERFORM admin_private.telloya_voice_reject_v1();
@@ -1535,7 +1560,7 @@ $fn$;
 REVOKE ALL ON FUNCTION admin_private.telloya_voice_binding_guard_v1() FROM PUBLIC, anon, authenticated, service_role;
 
 COMMENT ON FUNCTION admin_private.telloya_voice_binding_guard_v1() IS
-  'Rejects a voice binding that disagrees with a commercial number or agent reservation, for both active and inactive rows. Preserves the active-agent location rule. A binding with no commercial reservation keeps the existing voice rules. Does not activate routing.';
+  'Rejects a voice binding whose agent, environment, business, or location disagrees with a commercial number reservation. Rejects active = true for a reserved number, including an update and telloya_voice_bind_number_v1. A future activation command must use its own audited gates. Preserves the active-agent location rule. A binding with no commercial reservation keeps the existing voice rules.';
 
 REVOKE ALL ON FUNCTION public.admin_commercial_record_number_allocation_v1(text, uuid, uuid, integer, jsonb)
   FROM PUBLIC, anon, authenticated;

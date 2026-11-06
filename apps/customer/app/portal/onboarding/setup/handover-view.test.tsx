@@ -39,7 +39,7 @@ const paid: HandoverSubscription = {
     { key: "preferences", label: "Business and service preferences", state: "planned" },
     { key: "agent", label: "AI receptionist configuration", state: "planned" },
     { key: "number", label: "Telephone number and forwarding", state: "planned" },
-    { key: "test", label: "Test call and verification", state: "planned" },
+    { key: "test", label: "AI receptionist test call", state: "planned" },
     { key: "activation", label: "Service activation", state: "planned" },
   ],
 }
@@ -116,7 +116,7 @@ describe("post-payment setup page", () => {
     expect(screen.getByText("Business and service preferences").parentElement?.textContent).toContain("Planned")
     expect(screen.getByText("AI receptionist configuration").parentElement?.textContent).toContain("Planned")
     expect(screen.getByText("Telephone number and forwarding").parentElement?.textContent).toContain("Planned")
-    expect(screen.getByText("Test call and verification").parentElement?.textContent).toContain("Planned")
+    expect(screen.getByText("AI receptionist test call").parentElement?.textContent).toContain("Planned")
     expect(screen.getByText("Service activation").parentElement?.textContent).toContain("Planned")
     expect(screen.getByText("1 location included. Monitoring has not started.")).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/Service active|Open dashboard|Mark active/)
@@ -242,7 +242,7 @@ describe("post-payment setup page", () => {
     expect(checklist).toContain("AI receptionist configuration")
     expect(checklist).toContain("Complete")
     expect(checklist).toContain("Telephone number and forwarding")
-    expect(checklist).toContain("Test call and verification")
+    expect(checklist).toContain("AI receptionist test call")
     expect(checklist).not.toContain("Telephone number and forwardingComplete")
     expect(document.body.textContent).not.toContain("The receptionist is not configured or active")
     expect(document.body.textContent).not.toMatch(/can answer calls|is live|forwarding is complete|test call passed/)
@@ -332,5 +332,31 @@ describe("post-payment setup page", () => {
     expect(screen.getByText("Forwarding instructions are not available for this location yet. Do not enable call forwarding.")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Enable forwarding" })).toBeNull()
     expect(document.body.textContent).not.toContain("+441632960442")
+  })
+
+  it("shows a passed conversation test without claiming the telephone line is connected", () => {
+    render(<HandoverView subscriptions={[{
+      ...paid,
+      checklist: paid.checklist.map(step => step.key === "test" ? { ...step, state: "complete" as const } : step),
+      serviceTest: {
+        state: "passed",
+        passedCount: 1,
+        locationCount: 1,
+        locations: [{
+          locationId: paid.locations[0].locationId,
+          locationName: "Oven",
+          status: "passed",
+          note: "Your AI receptionist has passed its conversation test. We still need to confirm the final telephone connection before your service can go live.",
+        }],
+      },
+    }]} />)
+    expect(screen.getByRole("heading", { name: "AI receptionist test call" })).toBeTruthy()
+    expect(screen.getAllByText("Your AI receptionist has passed its conversation test. We still need to confirm the final telephone connection before your service can go live.").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("AI receptionist test call").some(node => node.parentElement?.textContent?.includes("Complete"))).toBe(true)
+    const text = document.body.textContent ?? ""
+    expect(text).not.toContain("Call forwarding verified")
+    expect(text).not.toContain("Your telephone line is connected")
+    expect(text).not.toContain("Your receptionist is answering calls")
+    expect(text).not.toContain("Service activated")
   })
 })

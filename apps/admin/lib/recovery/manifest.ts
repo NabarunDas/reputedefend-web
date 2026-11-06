@@ -1714,13 +1714,31 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Audited record forwarding instructions", probe: "public.admin_commercial_record_forwarding_instructions_v1" },
   },
   {
+    // Audited direct agent conversation test. Not applied to DEV.
+    // The verified DEV ledger contains 112 entries and ends at 20261106003939.
+    // Do not apply 20261106120000 to DEV. Do not apply 20261106120000 to Production.
+    // A passed conversation may move TEST_REQUIRED to AWAITING_CONFIRMATION.
+    // It does not verify telephone forwarding, write a routing binding, or move a service to live.
+    // Writes are inside the command. containsDataChange stays false.
+    // safeToReplay stays false.
+    version: "20261106120000",
+    filename: "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
+    step: "Audited AI receptionist test call",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Audited AI receptionist test call", probe: "public.admin_commercial_verify_agent_test_call_v1" },
+  },
+  {
     // Standard Telloya location cap. Not applied to DEV. Do not apply
     // 20261106140000 to DEV. Do not apply 20261106140000 to Production.
     // The DEV ledger head remains 20261106003939. This file replaces
     // prevent_plan_overlap_v1 and adds the one-location check for BASIC,
-    // GROWTH and PRO. It does not delete number-owner rows, buy a number,
-    // or enable forwarding. containsDataChange stays false.
-    // safeToReplay stays false. PR #435's 20261106120000 file is independent.
+    // GROWTH and PRO, including a Complete bundle on those tiers. It does
+    // not delete number-owner rows, buy a number, or enable forwarding.
+    // containsDataChange stays false. safeToReplay stays false.
+    // 20261106120000 stays ahead of this file and is also unapplied.
     version: "20261106140000",
     filename: "20261106140000_telloya_standard_location_cap_v1.sql",
     step: "Telloya standard location cap",
@@ -1868,13 +1886,14 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` contains only
- * `20261106140000`, which is not applied to DEV.
- * `20261105130000`, `20261105144256`, `20261105172055`, `20261105180000`,
- * `20261105190000`, `20261105200000` and `20261106003939` are already applied
- * on DEV and must not be replayed. Do not replay them. Do not apply them to
- * Production. A later repository file stays unapplied until its own ledger
- * entry is verified. `20261105120000` is already applied on DEV and must not be replayed.
+ * applied and must not be replayed. `20261105130000`, `20261105144256`,
+ * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
+ * and `20261106003939` are already applied on DEV and must not be replayed.
+ * Do not replay them. Do not apply them to Production.
+ * `pendingMigrations()` contains `20261106120000` and then `20261106140000`.
+ * Neither file is applied to DEV. Do not apply `20261106120000` to DEV.
+ * Do not apply `20261106140000` to DEV. Do not apply either file to Production.
+ * `20261105120000` is already applied on DEV and must not be replayed.
  * Do not replay `20261105120000`. Do not apply `20261105120000` to Production.
  * `20261104220000` is already applied on DEV and must not be
  * replayed. Do not replay `20261104220000`. Do not apply `20261104220000`

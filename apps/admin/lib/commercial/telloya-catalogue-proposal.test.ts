@@ -101,8 +101,11 @@ describe("Telloya catalogue proposal", () => {
     expect(capMigration).not.toContain("DELETE FROM admin_private.commercial_provider_number_owners")
     expect(migrations).toContain("20261106140000_telloya_standard_location_cap_v1.sql")
     expect(migrations).not.toContain("proposed-location-number-constraint.sql")
-    expect(migrations).not.toContain("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261106140000_telloya_standard_location_cap_v1.sql"])
+    expect(migrations).toContain("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
+      "20261106140000_telloya_standard_location_cap_v1.sql",
+    ])
     expect(pendingMigrations().every(entry => entry.appliedToDev === false && entry.containsDataChange === false && entry.safeToReplay === false)).toBe(true)
   })
 })

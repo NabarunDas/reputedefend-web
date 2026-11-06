@@ -126,6 +126,15 @@ describe("confirm AI configuration command messages", () => {
     expect(mocks.rpc.mock.calls[0][1].p_payload.provider.environment).toBe("dev")
   })
 
+  it("rejects a provider revision that is not rev- and four digits", async () => {
+    for (const revision of ["fingerprint", "4", "rev-4", "rev-00004", "REV-0004"]) {
+      const response = await POST(req({ ...body, provider: { ...body.provider, revision } }))
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({ message: "Check the provider evidence before recording the configuration." })
+    }
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it("rejects Production evidence on a DEV deployment before the database", async () => {
     const response = await POST(req({ ...body, provider: { ...body.provider, environment: "production" } }))
     expect(response.status).toBe(400)

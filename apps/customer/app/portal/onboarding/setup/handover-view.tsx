@@ -128,6 +128,20 @@ function SubscriptionSetup({ subscription }: { subscription: HandoverSubscriptio
           </article>
         ))}
       </section> : null}
+      {subscription.serviceTest ? <section>
+        <h3>AI receptionist test call</h3>
+        {subscription.serviceTest.state === "passed" ? (
+          <p>Your AI receptionist has passed its conversation test. We still need to confirm the final telephone connection before your service can go live.</p>
+        ) : (
+          <p>This step checks a controlled conversation with the AI receptionist. It does not check the telephone connection, and the receptionist is not answering calls.</p>
+        )}
+        {subscription.serviceTest.locations.map(location => (
+          <article key={location.locationId}>
+            <h4>{location.locationName}</h4>
+            <p>{location.note}</p>
+          </article>
+        ))}
+      </section> : null}
       {subscription.serviceForwarding && subscription.serviceForwarding.sharedCount > 0 ? <section>
         <h3>Telephone setup</h3>
         <p>Instructions ready — service testing pending. These notes prepare a later connection. They are not proof that forwarding is switched on.</p>

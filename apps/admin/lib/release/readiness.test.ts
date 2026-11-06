@@ -152,7 +152,10 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations().map(entry => entry.version)).toEqual(["20261106140000"])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
+      "20261106140000_telloya_standard_location_cap_v1.sql",
+    ])
     expect(pendingMigrations().every(entry => entry.appliedToDev === false && entry.safeToReplay === false)).toBe(true)
     expect(appliedMigrationHead.version).toBe("20261106003939")
     expect(appliedMigrationHead.containsDataChange).toBe(false)
@@ -246,7 +249,7 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("Do not replay 20261105120000.")
     expect(supabase?.requirement).toContain("Do not apply 20261105120000 to Production.")
     expect(supabase?.requirement).not.toContain("Do not apply 20261105120000 to DEV")
-    expect(supabase?.requirement).toContain("pendingMigrations() contains only 20261106140000 telloya_standard_location_cap_v1. Do not apply 20261106140000 to DEV.")
+    expect(supabase?.requirement).toContain("pendingMigrations() contains 20261106120000_admin_commercial_verify_agent_test_call_v1.sql and 20261106140000 telloya_standard_location_cap_v1. Do not apply 20261106120000 or 20261106140000 to DEV.")
     expect(supabase?.requirement).toContain("20261106003939 admin_commercial_record_forwarding_instructions_v1 are already applied on DEV and must not be replayed.")
     expect(supabase?.requirement).toContain("Do not replay 20261105130000.")
     expect(supabase?.requirement).toContain("Do not apply 20261106003939 to Production.")

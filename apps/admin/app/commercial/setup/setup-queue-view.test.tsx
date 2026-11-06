@@ -67,6 +67,7 @@ describe("paid setup queue", () => {
     expect(screen.getAllByText("Verified initial settlement").length).toBeGreaterThan(0)
     expect(screen.getAllByText(/A later period is not shown as paid/).length).toBeGreaterThan(0)
     expect(screen.getAllByText("Next action: Begin setup").length).toBeGreaterThan(0)
+    expect(screen.getByText("Verify AI receptionist test call")).toBeTruthy()
     expect(screen.getByText("Approve activation")).toBeTruthy()
     expect(document.body.innerHTML).not.toMatch(/<button|Mark active|Provision now|cus_|evt_/)
   })
@@ -295,7 +296,14 @@ describe("paid setup queue", () => {
     expect(panel).toHaveTextContent("Monday 09:00–17:30")
     expect(panel).toHaveTextContent("Configuration requiring review because preferences changed")
     expect(panel).not.toHaveTextContent("The receptionist can answer")
+    expect(panel).toHaveTextContent("Accepted revision form: rev- and exactly four digits, for example rev-0004.")
     fireEvent.change(within(panel).getByLabelText("Provider agent reference"), { target: { value: "agent-dock-01" } })
+    fireEvent.change(within(panel).getByLabelText("Configuration revision"), { target: { value: "fingerprint" } })
+    fireEvent.change(within(panel).getByLabelText("Chosen provider voice"), { target: { value: "Harbour" } })
+    fireEvent.change(within(panel).getByLabelText("Chosen provider language"), { target: { value: "en-GB" } })
+    fireEvent.change(within(panel).getByLabelText("Staff attestation"), { target: { value: "The operator recorded this configuration in the provider console." } })
+    fireEvent.click(within(panel).getByRole("button", { name: "Review configuration" }))
+    expect(panel).toHaveTextContent("Enter the provider revision as rev- followed by exactly four digits, for example rev-0004.")
     fireEvent.change(within(panel).getByLabelText("Configuration revision"), { target: { value: "rev-0007" } })
     fireEvent.change(within(panel).getByLabelText("Chosen provider voice"), { target: { value: "Harbour" } })
     fireEvent.change(within(panel).getByLabelText("Chosen provider language"), { target: { value: "en-GB" } })
@@ -963,3 +971,155 @@ function sent(fetchMock: ReturnType<typeof vi.fn>, call: number) {
     },
   }
 }
+
+const instructionId = "a033a000-0000-4000-8000-000000000081"
+const testAttestation = "I reviewed this controlled agent conversation against the confirmed preferences."
+
+function testLocation(overrides: {
+  locationId?: string
+  locationName?: string
+  status?: "needed" | "pending" | "review" | "failed" | "passed"
+  configurationVersion?: number
+  preferenceVersion?: number
+  provisionVersion?: number
+  allocationVersion?: number
+  instructionVersion?: number
+  evidenceVersion?: number
+  latestOutcome?: "PENDING_VERIFICATION" | "VERIFIED_PASSED" | "VERIFIED_FAILED" | "REQUIRES_REVIEW" | null
+  providerCallId?: string | null
+} = {}) {
+  return {
+    locationId: item.locations[0].locationId,
+    locationName: "High Street",
+    status: "needed" as "needed" | "pending" | "review" | "failed" | "passed",
+    configurationVersion: 1,
+    preferenceVersion: 1,
+    provisionVersion: 3,
+    allocationId,
+    allocationVersion: 1,
+    e164: "+441632960441",
+    agentRef: "agent-high-01",
+    environment: "dev" as const,
+    instructionId,
+    instructionVersion: 1,
+    evidenceVersion: 0,
+    latestOutcome: null,
+    providerCallId: null,
+    ...overrides,
+  }
+}
+
+function testView(locations = [testLocation(), testLocation({
+  locationId: item.locations[1].locationId,
+  locationName: "Dock",
+  status: "failed",
+  latestOutcome: "VERIFIED_FAILED",
+  providerCallId: "call_dock_failed",
+  evidenceVersion: 1,
+})]) {
+  return <SetupQueueView verifyAgentTestCallEnabled providerLane="dev" items={[{
+    ...item,
+    operationalStatus: "setup_started",
+    nextAction: "Verify AI receptionist test call",
+    testProgress: {
+      passedCount: locations.filter(location => location.status === "passed").length,
+      reviewCount: locations.filter(location => location.status === "review").length,
+      failedCount: locations.filter(location => location.status === "failed").length,
+      pendingCount: locations.filter(location => location.status === "pending").length,
+      locationCount: locations.length,
+      locations,
+    },
+  }]} />
+}
+
+function prepareTest(callReference = "call_direct_01") {
+  fireEvent.change(screen.getByLabelText("Provider call reference"), { target: { value: callReference } })
+  for (const label of [
+    "Correct business greeting",
+    "Appropriate spoken language and voice",
+    "Captures the caller name and callback number",
+    "Collects the relevant enquiry details",
+    "Handles preferred callback windows",
+    "Follows business hours and out-of-hours rules",
+    "Follows urgent enquiry and escalation instructions",
+    "Avoids unsupported promises",
+    "Produces a suitable conclusion",
+  ]) fireEvent.click(screen.getByLabelText(label))
+  fireEvent.change(screen.getByLabelText("Staff attestation"), { target: { value: testAttestation } })
+}
+
+describe("verify AI receptionist test call", () => {
+  it("requires a separate review and does not treat a typed reference as a pass", () => {
+    render(testView())
+    expect(screen.getByRole("combobox", { name: "Location" })).toBeTruthy()
+    expect(screen.getByRole("option", { name: "Dock · failed" })).toBeTruthy()
+    fireEvent.change(screen.getByRole("combobox", { name: "Location" }), { target: { value: item.locations[1].locationId } })
+    expect(screen.getByText(/call_dock_failed/)).toBeTruthy()
+    expect(screen.getByText(/The last conversation test did not pass/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Record verification" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Review test call" }))
+    expect(screen.queryByRole("button", { name: "Record verification" })).toBeNull()
+    prepareTest()
+    fireEvent.click(screen.getByRole("button", { name: "Review test call" }))
+    const record = screen.getByRole("button", { name: "Record verification" })
+    expect(record).toBeDisabled()
+    expect(screen.getByText(/Typing a reference is not proof/)).toBeTruthy()
+    expect(screen.getByLabelText(/does not verify telephone forwarding/)).not.toBeChecked()
+  })
+
+  it("keeps the same request when the provider response is uncertain and rotates it after a pass", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: "We couldn’t confirm whether the provider call could be read. Try the same action again without changing the assessment." }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        message: "Your AI receptionist has passed its conversation test. We still need to confirm the final telephone connection before your service can go live. Telephone forwarding is not verified, and the receptionist is not live.",
+        evidenceOutcome: "VERIFIED_PASSED",
+        testPassed: true,
+        forwardingVerified: false,
+      }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    render(testView())
+    prepareTest()
+    fireEvent.click(screen.getByRole("button", { name: "Review test call" }))
+    fireEvent.click(screen.getByLabelText(/does not verify telephone forwarding/))
+    fireEvent.click(screen.getByRole("button", { name: "Record verification" }))
+    await screen.findByText(/couldn’t confirm whether the provider call could be read/)
+    expect(document.body.textContent).not.toContain("has passed its conversation test")
+    fireEvent.click(screen.getByRole("button", { name: "Record verification" }))
+    await screen.findByText(/has passed its conversation test/)
+    const first = JSON.parse(fetchMock.mock.calls[0][1].body as string) as { callId: string; evidence?: unknown; qa: { staffConfirmed: boolean } }
+    const second = JSON.parse(fetchMock.mock.calls[1][1].body as string) as { callId: string }
+    expect(first.callId).toBe("call_direct_01")
+    expect(first.evidence).toBeUndefined()
+    expect(first.qa.staffConfirmed).toBe(true)
+    expect(second.callId).toBe(first.callId)
+    expect(fetchMock.mock.calls[0][1].headers["idempotency-key"]).toBe(fetchMock.mock.calls[1][1].headers["idempotency-key"])
+    expect(refresh).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+
+  it("drops a reviewed assessment when the configuration changes and shows a failed test without a pass", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: "The conversation test was recorded as failed. The service was not advanced. Telephone forwarding is not verified, and the receptionist is not live.",
+      evidenceOutcome: "VERIFIED_FAILED",
+      testPassed: false,
+      forwardingVerified: false,
+    }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const view = render(testView())
+    prepareTest()
+    fireEvent.click(screen.getByRole("button", { name: "Review test call" }))
+    fireEvent.click(screen.getByLabelText(/does not verify telephone forwarding/))
+    view.rerender(testView([testLocation({ configurationVersion: 2 })]))
+    expect(screen.queryByRole("button", { name: "Record verification" })).toBeNull()
+    prepareTest("call_direct_02")
+    fireEvent.click(screen.getByRole("button", { name: "Review test call" }))
+    fireEvent.click(screen.getByLabelText(/does not verify telephone forwarding/))
+    fireEvent.click(screen.getByRole("button", { name: "Record verification" }))
+    await screen.findByText(/recorded as failed/)
+    expect(document.body.textContent).not.toContain("has passed its conversation test")
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as { configurationVersion: number; callId: string }
+    expect(sentBody.configurationVersion).toBe(2)
+    expect(sentBody.callId).toBe("call_direct_02")
+    vi.unstubAllGlobals()
+  })
+})

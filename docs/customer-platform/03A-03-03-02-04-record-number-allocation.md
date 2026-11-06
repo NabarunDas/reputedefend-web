@@ -1,6 +1,6 @@
 # 03A-03-03-02-04 Record provider and number allocation
 
-Repository only. `20261105200000_admin_commercial_record_number_allocation_v1.sql` is not applied to hosted DEV or Production. The verified DEV ledger still contains 105 entries and ends at `20261105120000_telloya_voice_persistence_v1`. Begin setup `20261105130000`, confirm preferences `20261105144256`, confirm AI configuration `20261105172055`, the tier catalogue `20261105180000`, and the Guard offer `20261105190000` are also unapplied and earlier. Do not apply `20261105200000` to DEV. Do not apply `20261105200000` to Production.
+`20261105200000_admin_commercial_record_number_allocation_v1.sql` was applied once to hosted DEV. The verified DEV ledger contains 112 entries and ends at `20261106003939`. Begin setup `20261105130000`, confirm preferences `20261105144256`, confirm AI configuration `20261105172055`, the tier catalogue `20261105180000`, and the Guard offer `20261105190000` are applied earlier. Do not replay `20261105200000`. Do not apply `20261105200000` to Production.
 
 `public.admin_commercial_record_number_allocation_v1(text, uuid, uuid, integer, jsonb)` records one existing telephone allocation for one selected Telloya location. It runs only after Begin Setup, confirmed preferences for every selected location, and a current AI configuration for that location. It is service-role only. The Admin route also requires `ADMIN_COMMERCIAL_SETUP_QUEUE_ENABLED` and `ADMIN_COMMERCIAL_RECORD_NUMBER_ALLOCATION_ENABLED`. Both default off. The database does not read either flag.
 

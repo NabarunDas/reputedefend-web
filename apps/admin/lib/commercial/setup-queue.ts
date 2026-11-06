@@ -121,6 +121,34 @@ export type ForwardingProgress = {
   locations: ForwardingLocationProgress[]
 }
 
+export type AgentTestLocationProgress = {
+  locationId: string
+  locationName: string
+  status: "needed" | "pending" | "review" | "failed" | "passed"
+  configurationVersion: number
+  preferenceVersion: number
+  provisionVersion: number
+  allocationId: string | null
+  allocationVersion: number
+  e164: string | null
+  agentRef: string | null
+  environment: "dev" | "production" | null
+  instructionId: string | null
+  instructionVersion: number
+  evidenceVersion: number
+  latestOutcome: "PENDING_VERIFICATION" | "VERIFIED_PASSED" | "VERIFIED_FAILED" | "REQUIRES_REVIEW" | null
+  providerCallId: string | null
+}
+
+export type AgentTestProgress = {
+  passedCount: number
+  reviewCount: number
+  failedCount: number
+  pendingCount: number
+  locationCount: number
+  locations: AgentTestLocationProgress[]
+}
+
 export type SetupQueueItem = {
   reference: string
   customerName: string
@@ -160,6 +188,7 @@ export type SetupQueueItem = {
   configurationProgress: ConfigurationProgress | null
   allocationProgress: AllocationProgress | null
   forwardingProgress: ForwardingProgress | null
+  testProgress?: AgentTestProgress | null
 }
 
 const stepKeys = ["payment", "preferences", "agent", "number", "test", "activation"] as const
@@ -432,6 +461,69 @@ function forwardingProgress(value: unknown): ForwardingProgress | null | undefin
   return { sharedCount: row.sharedCount, reviewCount: row.reviewCount, draftCount: row.draftCount, locationCount: row.locationCount, locations }
 }
 
+function testProgress(value: unknown): AgentTestProgress | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!value || typeof value !== "object") return undefined
+  const row = value as Record<string, unknown>
+  const counts = { passedCount: 0, reviewCount: 0, failedCount: 0, pendingCount: 0, locationCount: 0 }
+  for (const key of ["passedCount", "reviewCount", "failedCount", "pendingCount", "locationCount"] as const) {
+    const count = row[key]
+    if (typeof count !== "number" || !Number.isInteger(count) || count < 0) return undefined
+    counts[key] = count
+  }
+  if (counts.passedCount + counts.reviewCount + counts.failedCount + counts.pendingCount > counts.locationCount) return undefined
+  if (!Array.isArray(row.locations) || row.locations.length !== counts.locationCount) return undefined
+  const outcomes = ["PENDING_VERIFICATION", "VERIFIED_PASSED", "VERIFIED_FAILED", "REQUIRES_REVIEW"]
+  const locations: AgentTestLocationProgress[] = []
+  for (const entry of row.locations) {
+    if (!entry || typeof entry !== "object") return undefined
+    const location = entry as Record<string, unknown>
+    if (typeof location.locationId !== "string" || !uuid.test(location.locationId)) return undefined
+    if (typeof location.locationName !== "string" || location.locationName.trim().length === 0) return undefined
+    if (location.status !== "needed" && location.status !== "pending" && location.status !== "review" && location.status !== "failed" && location.status !== "passed") return undefined
+    for (const key of ["configurationVersion", "preferenceVersion", "provisionVersion", "allocationVersion", "instructionVersion", "evidenceVersion"] as const) {
+      if (typeof location[key] !== "number" || !Number.isInteger(location[key]) || (location[key] as number) < 0) return undefined
+    }
+    if (location.allocationId !== null && (typeof location.allocationId !== "string" || !uuid.test(location.allocationId))) return undefined
+    if (location.instructionId !== null && (typeof location.instructionId !== "string" || !uuid.test(location.instructionId))) return undefined
+    if (location.e164 !== null && typeof location.e164 !== "string") return undefined
+    if (location.agentRef !== null && typeof location.agentRef !== "string") return undefined
+    if (location.environment !== null && location.environment !== "dev" && location.environment !== "production") return undefined
+    if (location.latestOutcome !== null && !outcomes.includes(String(location.latestOutcome))) return undefined
+    if (location.providerCallId !== null && typeof location.providerCallId !== "string") return undefined
+    locations.push({
+      locationId: location.locationId,
+      locationName: location.locationName,
+      status: location.status,
+      configurationVersion: location.configurationVersion as number,
+      preferenceVersion: location.preferenceVersion as number,
+      provisionVersion: location.provisionVersion as number,
+      allocationId: location.allocationId as string | null,
+      allocationVersion: location.allocationVersion as number,
+      e164: location.e164 as string | null,
+      agentRef: location.agentRef as string | null,
+      environment: location.environment as AgentTestLocationProgress["environment"],
+      instructionId: location.instructionId as string | null,
+      instructionVersion: location.instructionVersion as number,
+      evidenceVersion: location.evidenceVersion as number,
+      latestOutcome: location.latestOutcome as AgentTestLocationProgress["latestOutcome"],
+      providerCallId: location.providerCallId as string | null,
+    })
+  }
+  if (locations.filter(location => location.status === "passed").length !== counts.passedCount) return undefined
+  if (locations.filter(location => location.status === "review").length !== counts.reviewCount) return undefined
+  if (locations.filter(location => location.status === "failed").length !== counts.failedCount) return undefined
+  if (locations.filter(location => location.status === "pending").length !== counts.pendingCount) return undefined
+  return {
+    passedCount: counts.passedCount,
+    reviewCount: counts.reviewCount,
+    failedCount: counts.failedCount,
+    pendingCount: counts.pendingCount,
+    locationCount: counts.locationCount,
+    locations,
+  }
+}
+
 function checklist(value: unknown): SetupChecklistStep[] | null {
   if (!Array.isArray(value) || value.length !== stepKeys.length) return null
   const steps: SetupChecklistStep[] = []
@@ -529,6 +621,8 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
     if (allocation === undefined) return null
     const forwarding = forwardingProgress(row.forwardingProgress)
     if (forwarding === undefined) return null
+    const tests = testProgress(row.testProgress)
+    if (tests === undefined) return null
     if (subscriptionId === undefined || customerId === undefined || onboardingRequestId === undefined || subscriptionVersion === undefined || onboardingVersion === undefined || setupStartedAt === undefined) return null
     if (JSON.stringify(row).includes("cus_") || JSON.stringify(row).includes("evt_")) return null
     items.push({
@@ -570,6 +664,7 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
       configurationProgress: configuration,
       allocationProgress: allocation,
       forwardingProgress: forwarding,
+      testProgress: tests,
     })
   }
   return items

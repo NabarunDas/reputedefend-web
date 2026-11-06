@@ -7,7 +7,7 @@ Foundation verified from the repository after PR #438 merged to `develop` at `99
 - Supabase DEV project `profilerelaunch-dev` ledger: 112 applied migrations, head `20261106003939`.
 - The seven commercial migrations through forwarding instructions are applied and must not be replayed.
 - Repository migrations do not insert `product_catalogue`, `plan_versions`, `commercial_agreement_versions`, or `commercial_subscriptions`. A later onboarding command can insert a `DRAFT` product row for its own request. This phase does not run that command against DEV.
-- PR #435 remains a separate workstream. Its test-call migration is not part of this proposal and is not marked applied.
+- The test-call migration `20261106120000_admin_commercial_verify_agent_test_call_v1.sql` is in the repository and is not marked applied. It is not part of this catalogue proposal. Do not apply it to DEV or Production.
 
 The existing commercial command, offer acceptance, and checkout preparation stay the billing path. This proposal does not add a second catalogue or a second payment command.
 

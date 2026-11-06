@@ -1,6 +1,6 @@
 # Telloya Phase C commercial readiness
 
-Status: the seven commercial migrations below were applied once to Supabase DEV project `profilerelaunch-dev`. This repository records that ledger. It does not apply SQL, seed catalogue rows, approve agreements, or change Production.
+Status: the seven commercial migrations below were applied once to Supabase DEV project `profilerelaunch-dev`. This repository records that ledger. It does not apply SQL, seed catalogue rows, approve agreements, or change Production. The catalogue proposal for owner review is `docs/telloya/phase-c/catalogue-proposal.md`. The `TELLOYA-TEST-` fixture in this rehearsal is not that proposal and is not customer terms.
 
 Verified DEV head: `20261106003939_admin_commercial_record_forwarding_instructions_v1`. The verified ledger has 112 entries. The previous ledger had 105 entries and ended at `20261105120000_telloya_voice_persistence_v1`. The repository has 115 migration files. Three foundation files are present in the repository and in the live schema, and absent from the live ledger: `20260915120000_core_data_foundation_v1`, `20260915193000_case_intake_transaction_v1`, and `20260916000000_relaunch_guard_data_foundation_v1` (issue #190). Do not replay them and do not invent ledger rows for them. The live ledger is 112 because those three files stay omitted: 115 repository files minus that gap.
 

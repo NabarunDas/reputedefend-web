@@ -43,7 +43,7 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       safeToReplay: false,
     })
     // Telloya voice persistence 20261105120000 is the DEV ledger head.
-    // Begin setup, confirm preferences, confirm AI configuration, the tier catalogue, and the Guard add-on stay pending.
+    // Begin setup, preferences, AI configuration, the tier catalogue, the Guard add-on, and number allocation stay pending.
     // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
     // Do not apply 20261105130000 to hosted DEV or Production.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
@@ -54,6 +54,7 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       "20261105172055_admin_commercial_confirm_ai_configuration_v1.sql",
       "20261105180000_telloya_tier_catalogue_v1.sql",
       "20261105190000_telloya_guard_addon_v1.sql",
+      "20261105200000_admin_commercial_record_number_allocation_v1.sql",
     ])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])

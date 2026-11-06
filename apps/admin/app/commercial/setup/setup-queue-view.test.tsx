@@ -41,6 +41,7 @@ const item: SetupQueueItem = {
   setupStartedAt: null,
   preferenceProgress: null,
   configurationProgress: null,
+  allocationProgress: null,
   checklist: [
     { key: "payment", label: "Payment confirmed", state: "complete" },
     { key: "preferences", label: "Business and service preferences", state: "planned" },
@@ -318,6 +319,134 @@ describe("paid setup queue", () => {
       staffConfirmed: true,
     })
     expect(submitted.provider.attestation).toContain("provider console")
+    vi.unstubAllGlobals()
+  })
+
+  it("reviews an assigned number and clears the review when the number changes", () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message: "The telephone number is recorded for this location. It is not active. Forwarding and testing are still required." }) })
+    vi.stubGlobal("fetch", fetchMock)
+    const high = item.locations[0].locationId
+    const dock = item.locations[1].locationId
+    render(<SetupQueueView recordNumberAllocationEnabled providerLane="dev" items={[{
+      ...item,
+      operationalStatus: "setup_started",
+      customerDisplay: "Setup in progress",
+      nextAction: "Record provider and number allocation",
+      setupStartedAt: "2026-11-05T09:15:00.000Z",
+      preferenceProgress: {
+        confirmedCount: 2,
+        locationCount: 2,
+        locations: [
+          { locationId: high, locationName: "High Street", confirmed: true, version: 1 },
+          { locationId: dock, locationName: "Dock", confirmed: true, version: 1 },
+        ],
+      },
+      configurationProgress: {
+        recordedCount: 2,
+        reviewCount: 0,
+        locationCount: 2,
+        locations: [high, dock].map(id => ({
+          locationId: id,
+          locationName: id === high ? "High Street" : "Dock",
+          status: "recorded" as const,
+          configurationVersion: 1,
+          preferenceVersion: 1,
+          provisionVersion: 2,
+          timezone: "Europe/London",
+          hoursSummary: "Monday 09:00–17:30",
+          greeting: "Thank you for calling.",
+          exceptionalHours: "Christmas Day is closed.",
+          outOfHours: "Take a message.",
+          callbackInstructions: "Offer a Monday morning callback.",
+          urgentRules: "There is no emergency cover.",
+          directContactRules: "Pass the caller through only when they ask.",
+          specialInstructions: null,
+          spokenLanguage: "en-GB",
+          additionalLanguages: [],
+          voicePresentation: "no_preference" as const,
+          accent: "British",
+          pronunciationNotes: null,
+          environment: "dev" as const,
+          agentRef: id === high ? "agent-high-01" : "agent-dock-01",
+          providerRevision: "rev-0004",
+          chosenVoice: "Harbour",
+          chosenLanguage: "en-GB",
+          verificationBasis: "OPERATOR_ATTESTED" as const,
+          attestation: "The operator checked the provider console for this location.",
+        })),
+      },
+      allocationProgress: {
+        recordedCount: 1,
+        reviewCount: 0,
+        locationCount: 2,
+        locations: [
+          {
+            locationId: high,
+            locationName: "High Street",
+            status: "recorded" as const,
+            allocationVersion: 1,
+            configurationVersion: 1,
+            preferenceVersion: 1,
+            provisionVersion: 3,
+            environment: "dev" as const,
+            agentRef: "agent-high-01",
+            e164: "+441632960441",
+            allocationRef: "evidence-high-01",
+            verificationBasis: "OPERATOR_ATTESTED" as const,
+            attestation: "The operator recorded the assigned number.",
+            recordedAt: "2026-11-05T10:00:00.000Z",
+          },
+          {
+            locationId: dock,
+            locationName: "Dock",
+            status: "needed" as const,
+            allocationVersion: 0,
+            configurationVersion: 1,
+            preferenceVersion: 1,
+            provisionVersion: 2,
+            environment: null,
+            agentRef: null,
+            e164: null,
+            allocationRef: null,
+            verificationBasis: null,
+            attestation: null,
+            recordedAt: null,
+          },
+        ],
+      },
+    }]} />)
+    expect(screen.getByText("Telephone numbers: 1 of 2 locations recorded.")).toBeTruthy()
+    expect(screen.queryByRole("listitem", { name: "Record provider and number allocation" })).toBeNull()
+    expect(document.body.textContent).toContain("The number is not active.")
+    fireEvent.click(screen.getByRole("button", { name: "Record telephone number" }))
+    const panel = screen.getByRole("region", { name: "Record telephone number for VC-26-HND2AB" })
+    expect(panel).toHaveTextContent("does not buy a number")
+    expect(panel).toHaveTextContent("Provider environment")
+    expect(panel).toHaveTextContent("DEV")
+    expect(within(panel).queryByLabelText("Environment")).toBeNull()
+    fireEvent.change(within(panel).getByLabelText("Assigned telephone number"), { target: { value: "+441632960442" } })
+    fireEvent.change(within(panel).getByLabelText("Provider allocation reference"), { target: { value: "evidence-dock-01" } })
+    fireEvent.change(within(panel).getByLabelText("Staff attestation"), { target: { value: "The operator recorded this assigned number from the provider allocation." } })
+    fireEvent.click(within(panel).getByRole("button", { name: "Review allocation" }))
+    expect(panel).toHaveTextContent("Operator attested. This is not an independent check")
+    expect(panel).toHaveTextContent("Number recorded — not active")
+    fireEvent.change(within(panel).getByLabelText("Assigned telephone number"), { target: { value: "+441632960443" } })
+    expect(within(panel).queryByRole("checkbox", { name: /authorised operator recorded this assigned number/ })).toBeNull()
+    fireEvent.click(within(panel).getByRole("button", { name: "Review allocation" }))
+    fireEvent.click(within(panel).getByRole("checkbox", { name: /authorised operator recorded this assigned number/ }))
+    fireEvent.click(within(panel).getByRole("button", { name: "Record telephone number" }))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const submitted = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(submitted.locationId).toBe(dock)
+    expect(submitted.allocationVersion).toBe(0)
+    expect(submitted.configurationVersion).toBe(1)
+    expect(submitted.provider).toMatchObject({
+      environment: "dev",
+      agentRef: "agent-dock-01",
+      e164: "+441632960443",
+      allocationRef: "evidence-dock-01",
+      staffConfirmed: true,
+    })
     vi.unstubAllGlobals()
   })
 })

@@ -67,6 +67,30 @@ export type ConfigurationProgress = {
   locations: ConfigurationLocationProgress[]
 }
 
+export type AllocationLocationProgress = {
+  locationId: string
+  locationName: string
+  status: "needed" | "review" | "recorded"
+  allocationVersion: number
+  configurationVersion: number
+  preferenceVersion: number
+  provisionVersion: number
+  environment: "dev" | "production" | null
+  agentRef: string | null
+  e164: string | null
+  allocationRef: string | null
+  verificationBasis: "OPERATOR_ATTESTED" | null
+  attestation: string | null
+  recordedAt: string | null
+}
+
+export type AllocationProgress = {
+  recordedCount: number
+  reviewCount: number
+  locationCount: number
+  locations: AllocationLocationProgress[]
+}
+
 export type SetupQueueItem = {
   reference: string
   customerName: string
@@ -104,6 +128,7 @@ export type SetupQueueItem = {
   setupStartedAt: string | null
   preferenceProgress: PreferenceProgress | null
   configurationProgress: ConfigurationProgress | null
+  allocationProgress: AllocationProgress | null
 }
 
 const stepKeys = ["payment", "preferences", "agent", "number", "test", "activation"] as const
@@ -252,6 +277,71 @@ function configurationProgress(value: unknown): ConfigurationProgress | null | u
   return { recordedCount: row.recordedCount, reviewCount: row.reviewCount, locationCount: row.locationCount, locations }
 }
 
+function allocationProgress(value: unknown): AllocationProgress | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!value || typeof value !== "object") return undefined
+  const row = value as Record<string, unknown>
+  if (typeof row.recordedCount !== "number" || !Number.isInteger(row.recordedCount) || row.recordedCount < 0) return undefined
+  if (typeof row.reviewCount !== "number" || !Number.isInteger(row.reviewCount) || row.reviewCount < 0) return undefined
+  if (typeof row.locationCount !== "number" || !Number.isInteger(row.locationCount) || row.locationCount < 0) return undefined
+  if (row.recordedCount + row.reviewCount > row.locationCount) return undefined
+  if (!Array.isArray(row.locations) || row.locations.length !== row.locationCount) return undefined
+  const locations: AllocationLocationProgress[] = []
+  for (const entry of row.locations) {
+    if (!entry || typeof entry !== "object") return undefined
+    const location = entry as Record<string, unknown>
+    if (typeof location.locationId !== "string" || !uuid.test(location.locationId)) return undefined
+    if (typeof location.locationName !== "string" || location.locationName.trim().length === 0) return undefined
+    if (location.status !== "needed" && location.status !== "review" && location.status !== "recorded") return undefined
+    if (typeof location.allocationVersion !== "number" || !Number.isInteger(location.allocationVersion) || location.allocationVersion < 0) return undefined
+    if (typeof location.configurationVersion !== "number" || !Number.isInteger(location.configurationVersion) || location.configurationVersion < 0) return undefined
+    if (typeof location.preferenceVersion !== "number" || !Number.isInteger(location.preferenceVersion) || location.preferenceVersion < 0) return undefined
+    if (typeof location.provisionVersion !== "number" || !Number.isInteger(location.provisionVersion) || location.provisionVersion < 0) return undefined
+    const environment = location.environment === null || location.environment === undefined
+      ? null
+      : location.environment === "dev" || location.environment === "production"
+        ? location.environment
+        : undefined
+    const agentRef = optionalText(location.agentRef)
+    const e164 = optionalText(location.e164)
+    const allocationRef = optionalText(location.allocationRef)
+    const attestation = optionalText(location.attestation)
+    const recordedAt = location.recordedAt === null || location.recordedAt === undefined
+      ? null
+      : typeof location.recordedAt === "string" && !Number.isNaN(new Date(location.recordedAt).getTime())
+        ? location.recordedAt
+        : undefined
+    const verificationBasis = location.verificationBasis === null || location.verificationBasis === undefined
+      ? null
+      : location.verificationBasis === "OPERATOR_ATTESTED"
+        ? "OPERATOR_ATTESTED"
+        : undefined
+    if (environment === undefined || agentRef === undefined || e164 === undefined || allocationRef === undefined || attestation === undefined || recordedAt === undefined || verificationBasis === undefined) return undefined
+    if (e164 !== null && !/^\+[1-9][0-9]{7,14}$/.test(e164)) return undefined
+    if (location.status === "recorded" && (e164 === null || allocationRef === null || agentRef === null || environment === null || verificationBasis === null || attestation === null || recordedAt === null || location.allocationVersion < 1)) return undefined
+    if (location.status === "needed" && (e164 !== null || allocationRef !== null || location.allocationVersion !== 0)) return undefined
+    locations.push({
+      locationId: location.locationId,
+      locationName: location.locationName,
+      status: location.status,
+      allocationVersion: location.allocationVersion,
+      configurationVersion: location.configurationVersion,
+      preferenceVersion: location.preferenceVersion,
+      provisionVersion: location.provisionVersion,
+      environment,
+      agentRef,
+      e164,
+      allocationRef,
+      verificationBasis,
+      attestation,
+      recordedAt,
+    })
+  }
+  if (locations.filter(location => location.status === "recorded").length !== row.recordedCount) return undefined
+  if (locations.filter(location => location.status === "review").length !== row.reviewCount) return undefined
+  return { recordedCount: row.recordedCount, reviewCount: row.reviewCount, locationCount: row.locationCount, locations }
+}
+
 function checklist(value: unknown): SetupChecklistStep[] | null {
   if (!Array.isArray(value) || value.length !== stepKeys.length) return null
   const steps: SetupChecklistStep[] = []
@@ -345,6 +435,8 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
     if (preferences === undefined) return null
     const configuration = configurationProgress(row.configurationProgress)
     if (configuration === undefined) return null
+    const allocation = allocationProgress(row.allocationProgress)
+    if (allocation === undefined) return null
     if (subscriptionId === undefined || customerId === undefined || onboardingRequestId === undefined || subscriptionVersion === undefined || onboardingVersion === undefined || setupStartedAt === undefined) return null
     if (JSON.stringify(row).includes("cus_") || JSON.stringify(row).includes("evt_")) return null
     items.push({
@@ -384,6 +476,7 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
       setupStartedAt,
       preferenceProgress: preferences,
       configurationProgress: configuration,
+      allocationProgress: allocation,
     })
   }
   return items

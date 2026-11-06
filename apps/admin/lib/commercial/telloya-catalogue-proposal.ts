@@ -1,10 +1,12 @@
 /**
- * Proposed Telloya commercial catalogue.
+ * Telloya commercial catalogue proposal.
  *
- * These values are a proposal for owner review. They are not approved prices,
- * not an approved location cap, not an approved agreement, and not a tax
- * decision. The installer may copy them into an isolated database as DRAFT
- * rows. It must not be run against hosted DEV or Production.
+ * Basic, Growth and Pro prices stay at the owner-approved amounts. The
+ * operating-location and receptionist-number policy is owner-approved.
+ * The customer agreement, tax treatment, unused-minute rollover, cancellation
+ * and refund terms, Custom prices, and hosted catalogue seeding remain open.
+ * The installer may copy the draft rows into an isolated database. It must
+ * not be run against hosted DEV or Production.
  */
 
 export const telloyaDraftMarker = "DRAFT — NOT A LEGAL AGREEMENT."
@@ -27,33 +29,69 @@ export const telloyaCatalogueProposal = {
   },
 } as const
 
-/** One location on a standard plan is a proposal. It is not an approved cap. */
+/**
+ * Owner-approved on 2026-11-06. Basic, Growth and Pro each include one
+ * Telloya operating location and one receptionist telephone number.
+ */
 export const telloyaLocationPolicy = {
-  status: "PROPOSED" as const,
-  proposedStandardLocations: 1,
-  customHandling: "A Custom quotation may name more than one location. That cap is part of the quotation and is not created by this proposal.",
+  status: "APPROVED" as const,
+  approvedOn: "2026-11-06",
+  standardLocations: 1,
+  standardNumbers: 1,
+  selectedAlternative: "one-location-standard",
+  customHandling:
+    "Multiple Telloya operating locations and receptionist numbers require a separately approved Custom quotation. The quotation names the location quantity, the receptionist-number quantity, and the price. The current commands give one receptionist number to each entitled operating location, so the number quantity is the location quantity. A quotation that asks for more numbers than locations has no representation in the current commands.",
+  guard:
+    "Optional Relaunch Guard costs 999 minor units per confirmed paid Guard location per month. A Guard-only location does not receive a receptionist entitlement, a telephone number, or voice routing.",
+  duplicateSubscriptions:
+    "One business cannot hold a second occupying Telloya subscription. A second open voice onboarding request cannot attach to that business, and a second ACTIVE, PAUSED, PAST_DUE, or CANCEL_AT_PERIOD_END subscription is rejected.",
   alternatives: [
     {
       id: "one-location-standard",
-      summary: "Basic, Growth and Pro each cover one location. A second location needs a Custom quotation.",
-      impact: "Matches the current rule of one occupying Telloya subscription per business. The location cap on that subscription is the business location count. A second subscription for the same business is already rejected.",
+      summary: "Basic, Growth and Pro each cover one location and one receptionist number. More locations and numbers need a Custom quotation.",
+      impact: "Matches one occupying Telloya subscription per business. The location cap on that subscription is one, and the number allowance is one.",
     },
     {
       id: "several-locations-same-price",
       summary: "A standard tier has several approved versions, one per location cap, at the same monthly price.",
-      impact: "The schema allows one current approved version per tier and cap. The price does not rise with locations. The owner would be choosing how many locations the published price includes.",
+      impact: "The schema allows one current approved version per tier and cap. This alternative was not selected.",
     },
     {
       id: "price-per-location",
       summary: "The monthly Telloya amount is a unit price multiplied by location count.",
-      impact: "Today the plan stores one monthly amount. Only Guard is multiplied. This alternative needs a later command change and is not part of this proposal.",
+      impact: "The plan stores one monthly amount. Only Guard is multiplied. This alternative was not selected.",
     },
     {
       id: "unlimited-locations",
       summary: "A standard plan covers every location the business adds.",
-      impact: "An approved Telloya plan must include one Telloya location component. Omitting it does not mean unlimited, and this proposal does not do that.",
+      impact: "An approved Telloya plan must include one Telloya location component. This alternative was not selected.",
     },
   ],
+  missingConstraints: [
+    {
+      id: "standard-tier-cap-not-checked-at-approval",
+      summary:
+        "Approving BASIC, GROWTH, or PRO does not require the TELLOYA plan component quantity_limit to be 1. Offer and begin-setup enforce whatever cap is stored. An approved standard plan with a higher cap would grant that many receptionist locations and numbers.",
+    },
+    {
+      id: "number-correction-keeps-previous-reservation",
+      summary:
+        "A number correction records a new E.164 and leaves the previous E.164 in commercial_provider_number_owners. The provision points at the latest allocation, and another business cannot take the reserved number. The subscription still owns both numbers.",
+    },
+  ],
+} as const
+
+/**
+ * A local figure for rehearsing a Custom quotation that names two locations
+ * and two numbers. It is not a customer price and it is not seeded.
+ */
+export const telloyaUnapprovedCustomRehearsal = {
+  status: "NOT AN APPROVED PRICE" as const,
+  locations: 2,
+  numbers: 2,
+  amountMinor: 25000,
+  statement:
+    "£250 is a local rehearsal of a Custom quotation for two operating locations and two receptionist numbers. It is not a customer price.",
 } as const
 
 /**

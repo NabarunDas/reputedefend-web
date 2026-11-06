@@ -32,7 +32,7 @@ A failed notification stays in the outbox with `delivery_status = failed` and an
 - The owner-reported Retell proof of concept remains evidence pending. It is not a production integration.
 - Legal publication decisions recorded in `docs/telloya/05d-02/` stay open.
 - `TELLOYA_ENQUIRY_ENABLED` and `TELLOYA_LAUNCHED` are unchanged.
-- The migration manifest records `20261105120000_telloya_voice_persistence_v1.sql` with `appliedToDev: true` and `safeToReplay: false`. It was applied once. The repository SQL is unchanged. The observed DEV ledger contains 112 entries and ends at `20261106003939`. Do not replay this voice migration. Do not apply it to Production. Admin Begin Setup `20261105130000`, confirm preferences `20261105144256`, confirm AI configuration `20261105172055`, the tier catalogue `20261105180000`, and the Guard add-on `20261105190000` are applied and must not be replayed. The customer handover migration `20261104220000` remains applied and must not be replayed.
+- The migration manifest records `20261105120000_telloya_voice_persistence_v1.sql` with `appliedToDev: true` and `safeToReplay: false`. It was applied once. The repository SQL is unchanged. The observed DEV ledger contains 114 entries and ends at `20261106140000`. Do not replay this voice migration. Do not apply it to Production. Admin Begin Setup `20261105130000`, confirm preferences `20261105144256`, confirm AI configuration `20261105172055`, the tier catalogue `20261105180000`, and the Guard add-on `20261105190000` are applied and must not be replayed. The customer handover migration `20261104220000` remains applied and must not be replayed.
 
 ## Tests
 

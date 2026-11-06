@@ -7,8 +7,8 @@ const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // This validator fixture models the complete applied manifest, not a literal
 // copy of live DEV migration history. Live DEV is still missing the three
 // initial foundation entries tracked in issue #190. The synthetic chain ends
-// at the observed DEV ledger head 20261106003939. The verified live ledger
-// has 112 entries. This synthetic chain includes the three foundation files,
+// at the observed DEV ledger head 20261106140000. The verified live ledger
+// has 114 entries. This synthetic chain includes the three foundation files,
 // so it is longer than the live ledger. The invitation file is applied and
 // must not be replayed. Do not apply it to Production. The products
 // projection file remains applied and must not be replayed.
@@ -33,12 +33,8 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([
-      "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
-      "20261106140000_telloya_standard_location_cap_v1.sql",
-    ])
-    expect(pending.every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
-    expect(healthyRemote.slice(-8).map(entry => entry.version)).toEqual([
+    expect(pending).toEqual([])
+    expect(healthyRemote.slice(-10).map(entry => entry.version)).toEqual([
       "20261105120000",
       "20261105130000",
       "20261105144256",
@@ -47,11 +43,17 @@ describe("the migration history validator", () => {
       "20261105190000",
       "20261105200000",
       "20261106003939",
+      "20261106120000",
+      "20261106140000",
     ])
-    const priorApplied = healthyRemote.slice(0, -8)
+    const priorApplied = healthyRemote.slice(0, -10)
     expect(healthyRemote.at(-1)).toEqual({
-      version: "20261106003939",
-      name: "admin_commercial_record_forwarding_instructions_v1",
+      version: "20261106140000",
+      name: "telloya_standard_location_cap_v1",
+    })
+    expect(healthyRemote.at(-2)).toEqual({
+      version: "20261106120000",
+      name: "admin_commercial_verify_agent_test_call_v1",
     })
     expect(priorApplied.at(-1)).toEqual({
       version: "20261104220000",

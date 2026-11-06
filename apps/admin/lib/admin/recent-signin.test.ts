@@ -42,17 +42,18 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       containsDataChange: false,
       safeToReplay: false,
     })
-    // Forwarding instructions 20261106003939 are the DEV ledger head.
+    // The location cap 20261106140000 is the DEV ledger head.
+    // The test-call file 20261106120000 is applied immediately before it.
+    // Do not replay 20261106140000. Do not apply 20261106140000 to Production.
+    // Do not replay 20261106120000. Do not apply 20261106120000 to Production.
+    // Forwarding instructions 20261106003939 were applied once.
     // Begin setup, preferences, AI configuration, the tier catalogue, the Guard add-on, and number allocation are applied earlier.
     // Do not replay 20261106003939. Do not apply 20261106003939 to Production.
     // Do not replay 20261105130000. Do not apply 20261105130000 to Production.
     // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply it to Production.
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
-      "20261106140000_telloya_standard_location_cap_v1.sql",
-    ])
+    expect(pendingMigrations()).toEqual([])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])
     expect(sql).not.toContain("interval '5 minutes'")

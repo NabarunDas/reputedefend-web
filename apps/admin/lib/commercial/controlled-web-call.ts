@@ -14,6 +14,7 @@ type StartControlledCall = {
   onError: (error: Error) => void
   onOutcome: (outcome: ControlledCallOutcome) => void
   onCall: (call: { callId: string; maxDurationSeconds: number }) => void
+  onLocalEnd?: () => void
 }
 
 // The placeholder is not a provider credential. The adapter below is the only
@@ -24,14 +25,56 @@ export function startControlledReceptionistCall(input: StartControlledCall): { e
   let session: WebCallSession | null = null
   let timer: number | undefined
   let closed = false
+  let serverSettled = false
+  let localEndNotified = false
+  let connected = false
   let activeCallId = ""
+  const unresolved = "We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation."
   const releaseLocal = () => {
     if (timer !== undefined) window.clearTimeout(timer)
     void session?.end()
   }
+  const noteLocalEnd = () => {
+    if (!connected || serverSettled || localEndNotified || closed) return
+    localEndNotified = true
+    input.onLocalEnd?.()
+  }
+  const forwardStop = async (lookupId: string) => {
+    let message = unresolved
+    let status = 409
+    let payloadStatus = ""
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const response = await fetch(input.cancelEndpoint, {
+        method: "POST",
+        keepalive: true,
+        headers: { "content-type": "application/json", "idempotency-key": input.idempotencyKey },
+        body: JSON.stringify({ ...input.body, providerCallId: lookupId }),
+      })
+      const payload = await response.json().catch(() => null) as { message?: string; status?: string } | null
+      message = typeof payload?.message === "string" ? payload.message : unresolved
+      status = response.status
+      payloadStatus = typeof payload?.status === "string" ? payload.status : ""
+      if (payloadStatus === "pending" && attempt < 3) {
+        await new Promise(resolve => window.setTimeout(resolve, 200))
+        continue
+      }
+      const completed = response.ok && payloadStatus === "completed"
+      return { completed, message, status, payloadStatus }
+    }
+    return { completed: false, message, status, payloadStatus }
+  }
   const release = () => {
     if (closed) return
     closed = true
+    const callId = activeCallId
+    if (callId && !serverSettled) {
+      void fetch(input.cancelEndpoint, {
+        method: "POST",
+        keepalive: true,
+        headers: { "content-type": "application/json", "idempotency-key": input.idempotencyKey },
+        body: JSON.stringify({ ...input.body, providerCallId: callId }),
+      }).catch(() => undefined)
+    }
     releaseLocal()
   }
   const end = () => {
@@ -42,22 +85,17 @@ export function startControlledReceptionistCall(input: StartControlledCall): { e
     void (async () => {
       if (callId) {
         try {
-          const response = await fetch(input.cancelEndpoint, {
-            method: "POST",
-            headers: { "content-type": "application/json", "idempotency-key": input.idempotencyKey },
-            body: JSON.stringify({ ...input.body, providerCallId: callId }),
-          })
-          const payload = await response.json().catch(() => null) as { message?: string } | null
-          const message = typeof payload?.message === "string" ? payload.message : "We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation."
-          if (!response.ok) {
-            input.onStatus("error")
-            input.onError(new Error(message))
-          } else {
+          const result = await forwardStop(callId)
+          if (result.completed) {
+            serverSettled = true
             input.onStatus("ended")
+          } else if (result.payloadStatus !== "stopping") {
+            input.onStatus("error")
+            input.onError(new Error(result.message))
           }
         } catch {
           input.onStatus("error")
-          input.onError(new Error("We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation."))
+          input.onError(new Error(unresolved))
         }
       }
       releaseLocal()
@@ -112,8 +150,31 @@ export function startControlledReceptionistCall(input: StartControlledCall): { e
           expires_at: Number.isFinite(expiresAt) ? expiresAt : Date.now() + 600_000,
         }, 201)
       }
-      if (path.includes("/stop-call")) {
-        return jsonResponse({ message: "The browser cannot stop a provider call directly. Use the controlled end action." }, 409)
+      const stopMatch = path.match(/\/v2\/stop-call\/([^/]+)$/)
+      if (init?.method === "POST" && stopMatch) {
+        const lookupId = decodeURIComponent(stopMatch[1] ?? "")
+        if (!/^[A-Za-z0-9_-]{8,128}$/.test(lookupId)) {
+          return jsonResponse({ message: "That call reference is not the controlled test recorded for this action." }, 409)
+        }
+        try {
+          const result = await forwardStop(lookupId)
+          if (result.completed) {
+            serverSettled = true
+            input.onStatus("ended")
+            return jsonResponse({ status: "completed", message: result.message }, 200)
+          }
+          if (!serverSettled && result.payloadStatus !== "stopping") {
+            input.onStatus("error")
+            input.onError(new Error(result.message))
+          }
+          return jsonResponse({ message: result.message, status: result.payloadStatus }, result.status >= 400 ? result.status : 409)
+        } catch {
+          if (!serverSettled) {
+            input.onStatus("error")
+            input.onError(new Error(unresolved))
+          }
+          return jsonResponse({ message: unresolved }, 503)
+        }
       }
       input.onOutcome("reconciliation")
       return jsonResponse({ message: "That provider request is not available from the browser." }, 403)
@@ -125,10 +186,12 @@ export function startControlledReceptionistCall(input: StartControlledCall): { e
     hooks: {
       onStatus: status => {
         if (status === "connecting") input.onStatus("connecting")
-        else if (status === "live") input.onStatus("connected")
-        else if (status === "ended") input.onStatus("ended")
+        else if (status === "live") {
+          connected = true
+          input.onStatus("connected")
+        } else if (status === "ended") noteLocalEnd()
       },
-      onEnd: () => input.onStatus("ended"),
+      onEnd: () => noteLocalEnd(),
       onError: error => {
         input.onStatus("error")
         input.onError(error)

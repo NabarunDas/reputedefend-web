@@ -187,6 +187,12 @@ export async function cancelAgentTestCallCommand(request: NextRequest) {
     if (authorized.status === "completed") {
       return reply("The controlled web call has ended. Telephone forwarding is not verified, and the receptionist is not live.", 200, { status: "completed" })
     }
+    if (authorized.status === "pending") {
+      return reply("The controlled test is still being recorded. Do not start another one.", 409, { status: "pending" })
+    }
+    if (authorized.status === "stopping") {
+      return reply("A cancellation for this controlled test is already in progress. Do not start another one.", 409, { status: "stopping" })
+    }
     if (authorized.callId !== command.providerCallId) {
       return reply("That call reference is not the controlled test recorded for this action.", 409)
     }
@@ -216,6 +222,7 @@ export async function cancelAgentTestCallCommand(request: NextRequest) {
       return reply("We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation.", 503, { status: "reconciliation" })
     }
     if (stopped.availability === "rejected") {
+      await settle("release", { callType: "web_call", callStatus: found.availability === "retrieved" ? found.evidence.callStatus : null })
       return reply("The provider did not end the controlled web call. The attempt is still open. Do not start another one.", 502, { status: "rejected" })
     }
     const settled = await settle("cancelled", { callType: "web_call", callStatus: "ended" })

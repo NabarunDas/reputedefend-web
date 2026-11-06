@@ -173,6 +173,50 @@ describe("cancel a controlled receptionist test", () => {
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
+  it("does not call the provider when the attempt is still binding or a stop is already claimed", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    installRpc({ status: "pending", reason: "binding", attemptState: "CREATION_IN_PROGRESS" })
+    const pending = await POST(req())
+    expect(pending.status).toBe(409)
+    expect((await pending.json()).status).toBe("pending")
+    installRpc({ status: "stopping", callId, attemptState: "BOUND" })
+    const stopping = await POST(req())
+    expect(stopping.status).toBe(409)
+    expect((await stopping.json()).status).toBe("stopping")
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("does not stop the provider twice when a second cancellation arrives while the first is claimed", async () => {
+    let claims = 0
+    mocks.rpc.mockImplementation(async (name: string, args: { p_payload?: Record<string, unknown> }) => {
+      if (name === "admin_commercial_authorize_agent_test_cancel_v1") {
+        claims += 1
+        return claims === 1
+          ? { status: "authorized", callId, attemptState: "BOUND", environment: "dev" }
+          : { status: "stopping", callId, attemptState: "BOUND" }
+      }
+      if (name === "admin_commercial_settle_agent_test_call_v1") {
+        return { status: args.p_payload?.outcome === "uncertain" ? "reconciliation" : "completed" }
+      }
+      throw new Error(name)
+    })
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const target = String(url)
+      if (target.endsWith(`/v2/get-call/${callId}`)) return providerGet()
+      if (target.endsWith(`/v2/stop-call/${callId}`) && init?.method === "POST") return new Response(null, { status: 204 })
+      return new Response("no", { status: 404 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const first = await POST(req())
+    const second = await POST(req())
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(409)
+    expect((await second.json()).status).toBe("stopping")
+    expect(fetchMock.mock.calls.filter(call => String(call[0]).includes("/v2/stop-call/"))).toHaveLength(1)
+    expect(fetchMock.mock.calls.map(call => String(call[0])).join(" ")).not.toContain("create-web-call")
+  })
+
   it("keeps cancellation on the server and away from a phone-call endpoint", () => {
     const source = readFileSync(new URL("./cancel-agent-test-call.ts", import.meta.url), "utf8")
     const browser = readFileSync(new URL("./controlled-web-call.ts", import.meta.url), "utf8")
@@ -181,6 +225,8 @@ describe("cancel a controlled receptionist test", () => {
     expect(source).not.toContain("create-phone-call")
     expect(source).not.toContain("create-web-call")
     expect(browser).toContain("cancelEndpoint")
+    expect(browser).toContain("stop-call")
+    expect(browser).not.toContain("cannot stop a provider call directly")
     expect(browser).not.toContain("status: 204")
     expect(browser).not.toContain("TELLOYA_RETELL")
     expect(view).toContain("/api/commercial/cancel-agent-test-call")

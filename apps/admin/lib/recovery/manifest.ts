@@ -1757,6 +1757,7 @@ export const migrationChain: readonly MigrationEntry[] = [
     // 20261106120000 and 20261106140000 are applied and must not be replayed.
     // Do not apply 20261106200000 to DEV. Do not apply 20261106200000 to Production.
     // The command writes an intent and then a binding from the provider create response.
+    // A provider stop is claimed once. A status read can settle the attempt after provider evidence.
     // It does not place a telephone call, enable forwarding, or move a service to live.
     // Writes are inside the command. containsDataChange stays false.
     // safeToReplay stays false.

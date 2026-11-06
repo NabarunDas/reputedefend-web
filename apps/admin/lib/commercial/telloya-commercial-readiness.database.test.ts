@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, preparePlatform } from "../recovery/harness"
-import { appliedMigrationHead, chainAfter, pendingMigrations } from "../recovery/manifest"
+import { appliedMigrationHead, chainAfter, findMigration, pendingMigrations } from "../recovery/manifest"
 import {
   installTelloyaCatalogueFixture,
   telloyaCatalogueFixtureMarker,
@@ -27,19 +27,23 @@ const commercialTail = [
 ]
 
 describe("Telloya commercial migration chain", () => {
-  it("keeps the commercial tail pending, in order, after the DEV head", () => {
-    expect(appliedMigrationHead.version).toBe("20261105120000")
+  it("records the commercial tail as applied and leaves every later file pending", () => {
+    expect(appliedMigrationHead.filename).toBe("20261106003939_admin_commercial_record_forwarding_instructions_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
+    expect(appliedMigrationHead.containsDataChange).toBe(false)
+    expect(appliedMigrationHead.safeToReplay).toBe(false)
     const pending = pendingMigrations()
-    const pendingNames = pending.map(entry => entry.filename)
-    const afterDev = chainAfter("20261105120000").map(entry => entry.filename)
-    expect(pendingNames.slice(0, commercialTail.length)).toEqual(commercialTail)
-    expect(afterDev.slice(0, commercialTail.length)).toEqual(commercialTail)
+    const afterPreviousHead = chainAfter("20261105120000")
+    expect(afterPreviousHead.slice(0, commercialTail.length).map(entry => entry.filename)).toEqual(commercialTail)
+    expect(pending.map(entry => entry.filename)).toEqual(chainAfter(appliedMigrationHead.version).map(entry => entry.filename))
+    expect(pending.every(entry => entry.appliedToDev === false && entry.containsDataChange === false && entry.safeToReplay === false)).toBe(true)
     for (const filename of commercialTail) {
-      const entry = pending.find(item => item.filename === filename)
-      expect(entry?.appliedToDev).toBe(false)
-      expect(entry?.containsDataChange).toBe(false)
-      expect(entry?.safeToReplay).toBe(false)
+      expect(pending.map(entry => entry.filename)).not.toContain(filename)
+      expect(findMigration(filename)).toMatchObject({
+        appliedToDev: true,
+        containsDataChange: false,
+        safeToReplay: false,
+      })
       const source = readFileSync(new URL(`../../../../supabase/migrations/${filename}`, import.meta.url), "utf8")
       expect(source).toContain("Do not apply")
       expect(source).toContain("Production")

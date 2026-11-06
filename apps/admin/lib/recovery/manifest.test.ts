@@ -19,12 +19,12 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261105120000_telloya_voice_persistence_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261106003939_admin_commercial_record_forwarding_instructions_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     expect(migrationHead.filename).toBe("20261106003939_admin_commercial_record_forwarding_instructions_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
@@ -39,15 +39,8 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261105130000_admin_commercial_begin_setup_v1.sql",
-      "20261105144256_admin_commercial_confirm_preferences_v1.sql",
-      "20261105172055_admin_commercial_confirm_ai_configuration_v1.sql",
-      "20261105180000_telloya_tier_catalogue_v1.sql",
-      "20261105190000_telloya_guard_addon_v1.sql",
-      "20261105200000_admin_commercial_record_number_allocation_v1.sql",
-      "20261106003939_admin_commercial_record_forwarding_instructions_v1.sql",
-    ])
+    expect(pendingMigrations()).toEqual([])
+    expect(chainAfter(appliedMigrationHead.version)).toEqual([])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
@@ -103,15 +96,14 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Telloya voice persistence is the DEV ledger head. It was applied once.
+    // Forwarding instructions are the DEV ledger head. They were applied once.
+    // Do not replay 20261106003939. Do not apply 20261106003939 to Production.
+    // The seven commercial files are applied and are not safe to replay.
     // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
-    // The repository head is the unapplied Guard add-on 20261105190000.
-    // 20261105180000, 20261105144256 and 20261105130000 stay unapplied ahead of it.
-    // Do not apply 20261105190000, 20261105180000, 20261105144256, or 20261105130000 to hosted DEV or Production.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
     // Do not replay 20261103230000. Do not apply 20261103230000 to Production.
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration("20261103230000_customer_commercial_payment_verification_v1.sql")).toMatchObject({
@@ -215,7 +207,7 @@ describe("the migration chain manifest", () => {
     expect(beginSetupSql).not.toContain("TO anon")
     expect(beginSetupSql).not.toContain("TO authenticated")
     expect(findMigration("20261105130000_admin_commercial_begin_setup_v1.sql")).toMatchObject({
-      appliedToDev: false,
+      appliedToDev: true,
       containsDataChange: false,
       safeToReplay: false,
     })

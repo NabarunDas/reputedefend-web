@@ -809,15 +809,41 @@ describe("Telloya catalogue proposal", () => {
        values ($1, 'TELLOYA', 2, 'LOCATION')`,
       [capGap],
     )
-    const approvedCap = await db.query(
+    await expect(db.query(
       `update public.plan_versions
        set status = 'APPROVED', approved_by = $2, approved_at = now()
        where id = $1 and status = 'DRAFT'
        returning id`,
       [capGap, admin],
+    )).rejects.toThrow(/standard Telloya plan includes exactly one location/)
+    expect((await rows<{ status: string }>("select status from public.plan_versions where id = $1", [capGap]))[0].status).toBe("DRAFT")
+    const missingPlan = "c03c0000-0000-4000-8000-000000000007"
+    await db.query(
+      `insert into public.plan_versions(
+        id, product_code, version_number, tier_code, status, effective_from, billing_cadence, currency,
+        amount_minor, tax_behaviour, terms_ref
+      ) values ($1, 'TELLOYA', 9307, 'GROWTH', 'DRAFT', now() - interval '1 day', 'MONTH', 'GBP', 7900, 'NOT_APPLICABLE', $2)`,
+      [missingPlan, telloyaDraftAgreement.versionRef],
     )
-    expect(approvedCap.rows).toHaveLength(1)
-    expect(telloyaLocationPolicy.missingConstraints.map(item => item.id)).toContain("standard-tier-cap-not-checked-at-approval")
+    await expect(db.query(
+      `update public.plan_versions
+       set status = 'APPROVED', approved_by = $2, approved_at = now()
+       where id = $1 and status = 'DRAFT'`,
+      [missingPlan, admin],
+    )).rejects.toThrow(/approved Telloya plan requires one Telloya location component/)
+    const zeroPlan = "c03c0000-0000-4000-8000-000000000008"
+    await db.query(
+      `insert into public.plan_versions(
+        id, product_code, version_number, tier_code, status, effective_from, billing_cadence, currency,
+        amount_minor, tax_behaviour, terms_ref
+      ) values ($1, 'TELLOYA', 9308, 'PRO', 'DRAFT', now() - interval '1 day', 'MONTH', 'GBP', 12000, 'NOT_APPLICABLE', $2)`,
+      [zeroPlan, telloyaDraftAgreement.versionRef],
+    )
+    await expect(db.query(
+      `insert into public.plan_components(plan_version_id, component_code, quantity_limit, scope)
+       values ($1, 'TELLOYA', 0, 'LOCATION')`,
+      [zeroPlan],
+    )).rejects.toThrow(/check constraint/)
 
     const growth = await subscriptionContext("proposal.growth@example.test")
     expect(growth.locationIds).toHaveLength(telloyaLocationPolicy.standardLocations)
@@ -863,6 +889,20 @@ describe("Telloya catalogue proposal", () => {
        where subscription_id = $1 order by e164`,
       [growth.subscriptionId],
     )).map(row => row.e164)).toEqual(["+441632960711", "+441632960712"])
+    const binding = await rows<{ ref: string }>(
+      `select provider_binding_ref as ref from public.service_provisions where location_id = $1`,
+      [growth.locationIds[0]],
+    )
+    expect(binding).toHaveLength(1)
+    expect(await rows<{ e164: string }>(
+      `select e164 from admin_private.commercial_location_allocations
+       where subscription_id = $1 and ('alloc:' || id::text) = $2`,
+      [growth.subscriptionId, binding[0].ref],
+    )).toEqual([{ e164: "+441632960712" }])
+    expect((await rows<{ n: number }>(
+      `select count(*)::int as n from public.telloya_voice_number_bindings
+       where active and inbound_to_number in ('+441632960711', '+441632960712')`,
+    ))[0].n).toBe(0)
     expect(telloyaLocationPolicy.missingConstraints.map(item => item.id)).toContain("number-correction-keeps-previous-reservation")
 
     const duplicateEnquiry = await secondEnquiry("proposal.growth@example.test", growth.businessId)

@@ -1713,6 +1713,23 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Audited record forwarding instructions", probe: "public.admin_commercial_record_forwarding_instructions_v1" },
   },
+  {
+    // Standard Telloya location cap. Not applied to DEV. Do not apply
+    // 20261106140000 to DEV. Do not apply 20261106140000 to Production.
+    // The DEV ledger head remains 20261106003939. This file replaces
+    // prevent_plan_overlap_v1 and adds the one-location check for BASIC,
+    // GROWTH and PRO. It does not delete number-owner rows, buy a number,
+    // or enable forwarding. containsDataChange stays false.
+    // safeToReplay stays false. PR #435's 20261106120000 file is independent.
+    version: "20261106140000",
+    filename: "20261106140000_telloya_standard_location_cap_v1.sql",
+    step: "Telloya standard location cap",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya standard location cap", probe: "admin_private.prevent_plan_overlap_v1" },
+  },
 ]
 
 /**
@@ -1851,7 +1868,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
+ * applied and must not be replayed. `pendingMigrations()` contains only
+ * `20261106140000`, which is not applied to DEV.
  * `20261105130000`, `20261105144256`, `20261105172055`, `20261105180000`,
  * `20261105190000`, `20261105200000` and `20261106003939` are already applied
  * on DEV and must not be replayed. Do not replay them. Do not apply them to

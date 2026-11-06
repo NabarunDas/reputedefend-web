@@ -1235,7 +1235,7 @@ function staffCallError(error: Error) {
   if (error.name === "NotAllowedError" || /notallowed|permission denied|microphone|getUserMedia/i.test(`${error.name} ${error.message}`)) {
     return "The microphone was not available, so the browser could not join the controlled web call. Another call was not started."
   }
-  if (/provider charge|reconciliation|Do not start another|already recorded|was not opened|not ready/i.test(error.message)) return error.message
+  if (/provider charge|reconciliation|Do not start another|already recorded|was not opened|not ready|time limit|telephone route|still open/i.test(error.message)) return error.message
   return "The browser could not keep the audio connection. Another call was not started."
 }
 
@@ -1244,6 +1244,7 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
   const keyRef = useRef("")
   const fingerRef = useRef("")
   const endRef = useRef<(() => void) | null>(null)
+  const releaseRef = useRef<(() => void) | null>(null)
   const failedRef = useRef(false)
   const initial = item.testProgress?.locations.find(location => location.status !== "passed")?.locationId ?? item.testProgress?.locations[0]?.locationId ?? ""
   const [selected, setSelected] = useState(initial)
@@ -1256,7 +1257,7 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
   const [phase, setPhase] = useState<"idle" | "connecting" | "connected" | "ended" | "error">("idle")
   const [callId, setCallId] = useState<string | null>(null)
   const passed = place?.status === "passed"
-  useEffect(() => () => { endRef.current?.() }, [])
+  useEffect(() => () => { releaseRef.current?.() }, [])
 
   function requestBody() {
     if (!place?.allocationId || !place.instructionId || !place.agentRef || !place.e164 || item.subscriptionId === null || item.subscriptionVersion === null || item.customerId === null || item.onboardingRequestId === null || item.onboardingVersion === null) return null
@@ -1301,6 +1302,7 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
     try {
       const handle = startControlledReceptionistCall({
         endpoint: "/api/commercial/initiate-agent-test-call",
+        cancelEndpoint: "/api/commercial/cancel-agent-test-call",
         idempotencyKey: requestKey,
         body: live,
         onStatus: next => {
@@ -1343,6 +1345,7 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
         },
       })
       endRef.current = handle.end
+      releaseRef.current = handle.release
     } catch {
       setPhase("error")
       setLocked(true)

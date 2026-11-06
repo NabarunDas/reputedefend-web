@@ -7,6 +7,7 @@ export type ControlledCallOutcome = "accepted" | "rejected" | "reconciliation"
 
 type StartControlledCall = {
   endpoint: string
+  cancelEndpoint: string
   idempotencyKey: string
   body: Record<string, unknown>
   onStatus: (phase: ControlledCallPhase) => void
@@ -19,15 +20,48 @@ type StartControlledCall = {
 // call-creation path, and it talks to our authenticated command.
 const sessionPlaceholder = "session"
 
-export function startControlledReceptionistCall(input: StartControlledCall): { end: () => void } {
+export function startControlledReceptionistCall(input: StartControlledCall): { end: () => void; release: () => void } {
   let session: WebCallSession | null = null
   let timer: number | undefined
   let closed = false
+  let activeCallId = ""
+  const releaseLocal = () => {
+    if (timer !== undefined) window.clearTimeout(timer)
+    void session?.end()
+  }
+  const release = () => {
+    if (closed) return
+    closed = true
+    releaseLocal()
+  }
   const end = () => {
     if (closed) return
     closed = true
     if (timer !== undefined) window.clearTimeout(timer)
-    void session?.end()
+    const callId = activeCallId
+    void (async () => {
+      if (callId) {
+        try {
+          const response = await fetch(input.cancelEndpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json", "idempotency-key": input.idempotencyKey },
+            body: JSON.stringify({ ...input.body, providerCallId: callId }),
+          })
+          const payload = await response.json().catch(() => null) as { message?: string } | null
+          const message = typeof payload?.message === "string" ? payload.message : "We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation."
+          if (!response.ok) {
+            input.onStatus("error")
+            input.onError(new Error(message))
+          } else {
+            input.onStatus("ended")
+          }
+        } catch {
+          input.onStatus("error")
+          input.onError(new Error("We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation."))
+        }
+      }
+      releaseLocal()
+    })()
   }
   const client = new RetellClient({
     key: sessionPlaceholder,
@@ -62,7 +96,14 @@ export function startControlledReceptionistCall(input: StartControlledCall): { e
         }
         input.onOutcome("accepted")
         input.onCall({ callId, maxDurationSeconds })
-        timer = window.setTimeout(() => end(), maxDurationSeconds * 1000)
+        activeCallId = callId
+        timer = window.setTimeout(() => {
+          if (closed) return
+          closed = true
+          input.onStatus("error")
+          input.onError(new Error("The browser reached the time limit and left the audio connection. The controlled test stays open until the provider confirms it has ended. Another call was not started."))
+          releaseLocal()
+        }, maxDurationSeconds * 1000)
         return jsonResponse({
           call_id: callId,
           access_token: accessToken,
@@ -71,7 +112,9 @@ export function startControlledReceptionistCall(input: StartControlledCall): { e
           expires_at: Number.isFinite(expiresAt) ? expiresAt : Date.now() + 600_000,
         }, 201)
       }
-      if (path.includes("/stop-call")) return new Response(null, { status: 204 })
+      if (path.includes("/stop-call")) {
+        return jsonResponse({ message: "The browser cannot stop a provider call directly. Use the controlled end action." }, 409)
+      }
       input.onOutcome("reconciliation")
       return jsonResponse({ message: "That provider request is not available from the browser." }, 403)
     },
@@ -92,7 +135,7 @@ export function startControlledReceptionistCall(input: StartControlledCall): { e
       },
     },
   })
-  return { end }
+  return { end, release }
 }
 
 function jsonResponse(body: unknown, status: number) {

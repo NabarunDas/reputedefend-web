@@ -227,6 +227,34 @@ function agentVersionValue(value: unknown): number | undefined {
   return Number.NaN
 }
 
+export type StoppedAgentWebCall =
+  | { availability: "stopped" }
+  | { availability: "rejected" }
+  | { availability: "uncertain" }
+
+export async function stopAgentWebCall(input: {
+  callId: string
+  lane: AgentTestLane
+  fetchImpl?: typeof fetch
+}): Promise<StoppedAgentWebCall> {
+  if (!callIdPattern.test(input.callId)) return { availability: "rejected" }
+  const apiKey = telloyaVoiceApiKey(input.lane)
+  if (!apiKey) return { availability: "rejected" }
+  try {
+    const response = await (input.fetchImpl ?? fetch)(`https://api.retellai.com/v2/stop-call/${encodeURIComponent(input.callId)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+      redirect: "error",
+      signal: AbortSignal.timeout(lookupTimeoutMs),
+    })
+    if (response.status >= 200 && response.status < 300) return { availability: "stopped" }
+    if (response.status === 408 || response.status === 429 || response.status >= 500) return { availability: "uncertain" }
+    return { availability: "rejected" }
+  } catch {
+    return { availability: "uncertain" }
+  }
+}
+
 export async function createAgentWebCall(input: {
   agentId: string
   agentVersion: number

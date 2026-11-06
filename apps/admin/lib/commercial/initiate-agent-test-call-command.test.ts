@@ -53,10 +53,8 @@ function installRpc(options: { session?: unknown; preflight?: unknown; prepare?:
       sessionRef: "TS-26-ABCDEF01",
       agentRef: "agent-0021",
       agentVersion: 4,
-      accessToken: "join-token-value-123456",
-      transport: "gateway",
-      iceServers: [{ urls: "stun:example.invalid" }],
-      expiresAt: "2026-11-06T20:00:00.000Z",
+      accessToken: "stored-token-should-not-leak",
+      iceServers: [{ urls: "stun:stored.invalid", credential: "stored-ice" }],
       maxDurationSeconds: 600,
       providerConfirmedAgent: false,
       providerConfirmedVersion: false,
@@ -221,7 +219,7 @@ describe("start controlled receptionist test", () => {
       agentVersion: 4,
       accessToken: "join-token-value-123456",
       transport: "gateway",
-      iceServers: [{ urls: "stun:example.invalid" }],
+      iceServers: [{ urls: "turn:example.invalid", username: "turn-user", credential: "turn-secret" }],
       maxDurationSeconds: 600,
       providerConfirmedAgent: false,
       providerConfirmedVersion: false,
@@ -229,7 +227,8 @@ describe("start controlled receptionist test", () => {
       testPassed: false,
     })
     expect(json.message).toContain("Telephone forwarding is not verified")
-    expect(JSON.stringify(json)).not.toContain("turn-secret")
+    expect(JSON.stringify(json)).not.toContain("stored-token-should-not-leak")
+    expect(JSON.stringify(json)).not.toContain("stored-ice")
     expect(JSON.stringify(json)).not.toContain("ice_servers")
     const called = fetchMock.mock.calls[0]
     expect(String(called[0])).toBe("https://api.retellai.com/v3/create-web-call")
@@ -247,10 +246,14 @@ describe("start controlled receptionist test", () => {
       outcome: "created",
       providerCallId: "call_created_01",
       transport: "gateway",
-      connectionToken: "join-token-value-123456",
       echoedAgentId: null,
       echoedAgentVersion: null,
     })
+    expect(recorded).not.toHaveProperty("connectionToken")
+    expect(recorded).not.toHaveProperty("iceServers")
+    expect(recorded).not.toHaveProperty("accessToken")
+    expect(JSON.stringify(recorded)).not.toContain("join-token-value")
+    expect(JSON.stringify(recorded)).not.toContain("turn-secret")
     const bound = bindCall()?.[1].p_payload
     expect(bound).toMatchObject({ confirmedCharge: true, locationId: body.locationId })
     expect(bound).not.toHaveProperty("providerCallId")
@@ -261,7 +264,7 @@ describe("start controlled receptionist test", () => {
     expect(prepareCall()?.[1].p_payload).not.toHaveProperty("providerCallId")
   })
 
-  it("returns a recorded connection without a second provider request when the browser response was lost", async () => {
+  it("returns reconciliation without a second provider request when the browser response was lost", async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal("fetch", fetchMock)
     installRpc({
@@ -273,7 +276,7 @@ describe("start controlled receptionist test", () => {
         agentVersion: 4,
         accessToken: "join-token-value-123456",
         transport: "gateway",
-        iceServers: [{ urls: "stun:example.invalid" }],
+        iceServers: [{ urls: "stun:example.invalid", credential: "turn-secret" }],
         expiresAt: "2026-11-06T20:00:00.000Z",
         maxDurationSeconds: 600,
         providerConfirmedAgent: false,
@@ -283,12 +286,16 @@ describe("start controlled receptionist test", () => {
       },
     })
     const response = await POST(req())
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(409)
     const json = await response.json()
+    expect(json.status).toBe("reconciliation")
     expect(json.callId).toBe("call_created_01")
-    expect(json.accessToken).toBe("join-token-value-123456")
-    expect(json.iceServers).toEqual([{ urls: "stun:example.invalid" }])
-    expect(json.message).toContain("already recorded")
+    expect(json.accessToken).toBeUndefined()
+    expect(json.iceServers).toBeUndefined()
+    expect(JSON.stringify(json)).not.toContain("join-token-value")
+    expect(JSON.stringify(json)).not.toContain("turn-secret")
+    expect(json.message).toContain("cannot be issued again")
+    expect(json.message).toContain("Do not start another provider call")
     expect(fetchMock).not.toHaveBeenCalled()
     expect(bindCall()).toBeUndefined()
     expect(claimCall()).toHaveLength(0)
@@ -391,5 +398,7 @@ describe("start controlled receptionist test", () => {
     expect(provider).not.toContain("/v2/create-web-call")
     expect(provider).not.toContain("allowAgentTestCreate")
     expect(provider).not.toContain("const creates")
+    expect(provider).toContain("https://api.retellai.com/v2/stop-call/")
+    expect(source).not.toContain("connectionToken")
   })
 })

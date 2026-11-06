@@ -5,7 +5,10 @@
 -- A browser-typed call id is rejected and is not a binding.
 -- The intent is written before the provider call exists. Its attempt state changes only on the attempt row.
 -- The binding is a separate immutable row for that same request, actor, agent, and version.
+-- Connection tokens and ICE credentials are not stored on an attempt, a binding, or a command receipt.
 -- An uncertain provider response stays REQUIRES_RECONCILIATION and cannot open another call.
+-- COMPLETED is recorded only from provider evidence that the web call ended or was cancelled.
+-- A completed attempt leaves the active-location slot. An ongoing or uncertain attempt does not.
 -- This does not place a telephone call, buy a number, enable forwarding, write a routing binding, or move a service to live.
 -- A passed conversation still requires the later verification command.
 -- An unrecognised stored revision cannot open a call.
@@ -32,22 +35,30 @@ CREATE TABLE admin_private.commercial_agent_test_attempts (
     'PROVIDER_CREATED',
     'BOUND',
     'REQUIRES_RECONCILIATION',
-    'FAILED_BEFORE_CREATION'
+    'FAILED_BEFORE_CREATION',
+    'COMPLETED'
   )),
   reason text,
   provider_call_id text CHECK (provider_call_id IS NULL OR provider_call_id ~ '^[A-Za-z0-9_-]{8,128}$'),
+  transport text CHECK (transport IS NULL OR transport = 'gateway'),
   echoed_agent_ref text,
   echoed_agent_version integer,
   provider_echoed_agent boolean NOT NULL DEFAULT false,
   provider_echoed_version boolean NOT NULL DEFAULT false,
   creation_claimed_at timestamptz,
+  completed_at timestamptz,
+  completion_basis text CHECK (completion_basis IS NULL OR completion_basis IN ('provider_ended', 'provider_cancelled')),
   max_duration_seconds integer NOT NULL DEFAULT 600 CHECK (max_duration_seconds = 600),
   created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
-  updated_at timestamptz NOT NULL DEFAULT pg_catalog.now()
+  updated_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
+  CHECK (
+    (state = 'COMPLETED' AND completed_at IS NOT NULL AND completion_basis IS NOT NULL)
+    OR (state <> 'COMPLETED' AND completed_at IS NULL AND completion_basis IS NULL)
+  )
 );
 
 COMMENT ON TABLE admin_private.commercial_agent_test_attempts IS
-  'Durable state for one controlled web-call attempt. Provider creation can be claimed once. A connection token is not stored on this row.';
+  'Durable non-secret state for one controlled web-call attempt. Provider creation can be claimed once. A connection token and ICE credentials are not stored.';
 
 CREATE UNIQUE INDEX commercial_agent_test_attempts_active_location_uidx
   ON admin_private.commercial_agent_test_attempts (subscription_id, location_id)
@@ -61,20 +72,6 @@ CREATE UNIQUE INDEX commercial_agent_test_attempts_active_location_uidx
 
 ALTER TABLE admin_private.commercial_agent_test_attempts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE admin_private.commercial_agent_test_attempts FROM PUBLIC, anon, authenticated, service_role;
-
-CREATE TABLE admin_private.commercial_agent_test_connection_secrets (
-  attempt_id uuid PRIMARY KEY REFERENCES admin_private.commercial_agent_test_attempts (id) ON DELETE RESTRICT,
-  connection_token text NOT NULL CHECK (char_length(connection_token) BETWEEN 16 AND 4096),
-  transport text NOT NULL CHECK (transport = 'gateway'),
-  ice_servers jsonb NOT NULL,
-  expires_at timestamptz NOT NULL
-);
-
-COMMENT ON TABLE admin_private.commercial_agent_test_connection_secrets IS
-  'Connection material for a provider call the server created. Readable only inside the security-definer commands, and only after binding.';
-
-ALTER TABLE admin_private.commercial_agent_test_connection_secrets ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE admin_private.commercial_agent_test_connection_secrets FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE FUNCTION admin_private.commercial_agent_test_context_v1(p_payload jsonb)
 RETURNS jsonb
@@ -133,28 +130,6 @@ $$;
 REVOKE ALL ON FUNCTION admin_private.commercial_agent_test_context_v1(jsonb)
   FROM PUBLIC, anon, authenticated, service_role;
 
-CREATE FUNCTION admin_private.commercial_agent_test_connection_v1(p_attempt uuid)
-RETURNS jsonb
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-  SELECT CASE WHEN secret.attempt_id IS NULL THEN NULL ELSE jsonb_build_object(
-    'accessToken', secret.connection_token,
-    'transport', secret.transport,
-    'iceServers', secret.ice_servers,
-    'expiresAt', secret.expires_at,
-    'maxDurationSeconds', 600
-  ) END
-  FROM (SELECT 1) AS present
-  LEFT JOIN admin_private.commercial_agent_test_connection_secrets secret
-    ON secret.attempt_id = p_attempt;
-$$;
-
-REVOKE ALL ON FUNCTION admin_private.commercial_agent_test_connection_v1(uuid)
-  FROM PUBLIC, anon, authenticated, service_role;
-
 CREATE FUNCTION admin_private.commercial_agent_test_attempt_status_v1(
   p_attempt admin_private.commercial_agent_test_attempts
 ) RETURNS jsonb
@@ -196,6 +171,7 @@ BEGIN
     WHEN 'PROVIDER_CREATED' THEN 'provider_created'
     WHEN 'BOUND' THEN 'bound'
     WHEN 'REQUIRES_RECONCILIATION' THEN 'reconciliation'
+    WHEN 'COMPLETED' THEN 'completed'
     ELSE 'failed'
   END;
   IF p_attempt.state = 'BOUND' AND p_attempt.provider_echoed_agent AND p_attempt.echoed_agent_ref = intent.agent_ref THEN
@@ -287,11 +263,6 @@ BEGIN
       RETURN jsonb_build_object('status', 'conflict');
     END IF;
     outcome := admin_private.commercial_agent_test_attempt_status_v1(attempt);
-    IF (outcome ->> 'status') = 'bound' THEN
-      outcome := outcome || COALESCE(admin_private.commercial_agent_test_connection_v1(attempt.id), '{}'::jsonb);
-    ELSE
-      outcome := outcome - 'accessToken' - 'iceServers' - 'transport' - 'expiresAt';
-    END IF;
     IF (s ->> 'createdAt')::timestamptz < pg_catalog.now() - interval '30 minutes' THEN
       RETURN jsonb_build_object('status', 'reauth_required');
     END IF;
@@ -523,8 +494,7 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM pg_catalog.jsonb_object_keys(p_payload) AS key
     WHERE key NOT IN (
-      'outcome', 'providerCallId', 'transport', 'expiresAt', 'connectionToken',
-      'iceServers', 'echoedAgentId', 'echoedAgentVersion'
+      'outcome', 'providerCallId', 'transport', 'echoedAgentId', 'echoedAgentVersion'
     )
   ) THEN
     RETURN jsonb_build_object('status', 'invalid');
@@ -593,10 +563,6 @@ BEGIN
     created_ok := false;
     IF (p_payload ->> 'providerCallId') ~ '^[A-Za-z0-9_-]{8,128}$'
       AND (p_payload ->> 'transport') = 'gateway'
-      AND char_length(p_payload ->> 'connectionToken') BETWEEN 16 AND 4096
-      AND (p_payload ->> 'expiresAt') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
-      AND jsonb_typeof(p_payload -> 'iceServers') = 'array'
-      AND pg_catalog.jsonb_array_length(p_payload -> 'iceServers') BETWEEN 1 AND 8
       AND (NOT echoed_agent_present OR (p_payload ->> 'echoedAgentId') ~ '^[A-Za-z0-9_-]{8,128}$')
       AND (NOT echoed_version_present OR (p_payload ->> 'echoedAgentVersion') ~ '^[0-9]{1,9}$')
     THEN
@@ -611,6 +577,7 @@ BEGIN
     SET state = 'PROVIDER_CREATED',
         reason = 'created',
         provider_call_id = p_payload ->> 'providerCallId',
+        transport = 'gateway',
         echoed_agent_ref = echoed_agent,
         echoed_agent_version = echoed_version,
         provider_echoed_agent = echoed_agent_present,
@@ -619,17 +586,6 @@ BEGIN
     WHERE recorded.id = attempt.id
       AND recorded.state = 'CREATION_IN_PROGRESS'
     RETURNING * INTO stored;
-    IF stored.id IS NOT NULL THEN
-      INSERT INTO admin_private.commercial_agent_test_connection_secrets(
-        attempt_id, connection_token, transport, ice_servers, expires_at
-      ) VALUES (
-        stored.id,
-        p_payload ->> 'connectionToken',
-        'gateway',
-        p_payload -> 'iceServers',
-        (p_payload ->> 'expiresAt')::timestamptz
-      );
-    END IF;
   END IF;
   IF stored.id IS NULL THEN
     RETURN jsonb_build_object('status', 'conflict');
@@ -675,7 +631,6 @@ DECLARE
   confirmed_agent boolean;
   confirmed_version boolean;
   outcome jsonb;
-  connection jsonb;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN
@@ -816,7 +771,6 @@ BEGIN
   SELECT provision.state INTO provision_state
   FROM public.service_provisions provision
   WHERE provision.entitlement_id = intent.entitlement_id;
-  connection := admin_private.commercial_agent_test_connection_v1(attempt.id);
   outcome := jsonb_build_object(
     'status', 'success',
     'attemptState', 'BOUND',
@@ -832,7 +786,7 @@ BEGIN
     'forwardingVerified', false,
     'testPassed', false,
     'maxDurationSeconds', 600
-  ) || COALESCE(connection, '{}'::jsonb);
+  );
   INSERT INTO admin_private.commercial_command_receipts(request_id, actor_id, fingerprint, response)
   VALUES (p_request, actor, fingerprint, outcome);
   RETURN outcome;
@@ -845,4 +799,239 @@ COMMENT ON FUNCTION public.admin_commercial_bind_agent_test_call_v1(text, uuid, 
 REVOKE ALL ON FUNCTION public.admin_commercial_bind_agent_test_call_v1(text, uuid, uuid, integer, text, jsonb)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_commercial_bind_agent_test_call_v1(text, uuid, uuid, integer, text, jsonb)
+  TO service_role;
+
+CREATE FUNCTION public.admin_commercial_authorize_agent_test_cancel_v1(
+  p_token text,
+  p_request uuid,
+  p_subscription uuid,
+  p_version integer,
+  p_environment text,
+  p_payload jsonb
+) RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  s jsonb;
+  actor uuid;
+  attempt admin_private.commercial_agent_test_attempts;
+  intent admin_private.commercial_agent_test_intents;
+BEGIN
+  s := public.admin_session_v1(p_token);
+  IF s IS NULL THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+  actor := (s ->> 'userId')::uuid;
+  IF (s ->> 'createdAt')::timestamptz < pg_catalog.now() - interval '30 minutes' THEN
+    RETURN jsonb_build_object('status', 'reauth_required');
+  END IF;
+  IF p_request IS NULL OR p_subscription IS NULL OR p_version IS NULL OR p_version < 1
+    OR p_environment IS NULL OR p_environment NOT IN ('dev', 'production')
+    OR p_payload IS NULL OR jsonb_typeof(p_payload) IS DISTINCT FROM 'object'
+    OR octet_length(p_payload::text) > 8000
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.jsonb_object_keys(p_payload) AS key
+    WHERE key NOT IN (
+      'customerId', 'businessId', 'onboardingRequestId', 'onboardingVersion', 'locationId',
+      'preferenceVersion', 'provisionVersion', 'configurationVersion', 'allocationId',
+      'allocationVersion', 'instructionId', 'instructionVersion', 'confirmedCharge', 'providerCallId'
+    )
+  ) THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  IF (admin_private.commercial_agent_test_context_v1(p_payload - 'providerCallId') ->> 'ok') IS DISTINCT FROM 'true'
+    OR (p_payload ->> 'providerCallId') IS NULL
+    OR (p_payload ->> 'providerCallId') !~ '^[A-Za-z0-9_-]{8,128}$'
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_request::text, 0));
+  SELECT * INTO attempt
+  FROM admin_private.commercial_agent_test_attempts recorded
+  WHERE recorded.initiation_request_id = p_request
+  FOR UPDATE;
+  IF attempt.id IS NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'attempt');
+  END IF;
+  SELECT * INTO intent
+  FROM admin_private.commercial_agent_test_intents recorded
+  WHERE recorded.id = attempt.intent_id;
+  IF intent.id IS NULL
+    OR attempt.actor_id IS DISTINCT FROM actor
+    OR intent.actor_id IS DISTINCT FROM actor
+    OR attempt.subscription_id IS DISTINCT FROM p_subscription
+    OR intent.subscription_id IS DISTINCT FROM p_subscription
+    OR attempt.location_id IS DISTINCT FROM (p_payload ->> 'locationId')::uuid
+    OR intent.location_id IS DISTINCT FROM (p_payload ->> 'locationId')::uuid
+    OR intent.environment IS DISTINCT FROM p_environment
+  THEN
+    RETURN jsonb_build_object('status', 'conflict');
+  END IF;
+  IF attempt.provider_call_id IS DISTINCT FROM (p_payload ->> 'providerCallId') THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'call');
+  END IF;
+  IF attempt.state = 'COMPLETED' THEN
+    RETURN jsonb_build_object('status', 'completed', 'attemptState', 'COMPLETED', 'callId', attempt.provider_call_id, 'forwardingVerified', false, 'testPassed', false);
+  END IF;
+  IF attempt.state = 'REQUIRES_RECONCILIATION' THEN
+    RETURN jsonb_build_object('status', 'reconciliation', 'attemptState', 'REQUIRES_RECONCILIATION', 'callId', attempt.provider_call_id, 'forwardingVerified', false, 'testPassed', false);
+  END IF;
+  IF attempt.state IN ('BOUND', 'PROVIDER_CREATED') THEN
+    RETURN jsonb_build_object('status', 'authorized', 'attemptState', attempt.state, 'callId', attempt.provider_call_id, 'environment', intent.environment, 'forwardingVerified', false, 'testPassed', false);
+  END IF;
+  RETURN jsonb_build_object('status', 'denied', 'reason', 'attempt', 'attemptState', attempt.state);
+END;
+$$;
+
+COMMENT ON FUNCTION public.admin_commercial_authorize_agent_test_cancel_v1(text, uuid, uuid, integer, text, jsonb) IS
+  'Authorises cancellation only for the stored provider call on this controlled attempt. A different call id is rejected and does not stop anything. It does not mark the attempt ended.';
+
+REVOKE ALL ON FUNCTION public.admin_commercial_authorize_agent_test_cancel_v1(text, uuid, uuid, integer, text, jsonb)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_commercial_authorize_agent_test_cancel_v1(text, uuid, uuid, integer, text, jsonb)
+  TO service_role;
+
+CREATE FUNCTION public.admin_commercial_settle_agent_test_call_v1(
+  p_token text,
+  p_request uuid,
+  p_subscription uuid,
+  p_version integer,
+  p_environment text,
+  p_payload jsonb
+) RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  s jsonb;
+  actor uuid;
+  attempt admin_private.commercial_agent_test_attempts;
+  intent admin_private.commercial_agent_test_intents;
+  stored admin_private.commercial_agent_test_attempts;
+  settlement text;
+  basis text;
+BEGIN
+  s := public.admin_session_v1(p_token);
+  IF s IS NULL THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+  actor := (s ->> 'userId')::uuid;
+  IF (s ->> 'createdAt')::timestamptz < pg_catalog.now() - interval '30 minutes' THEN
+    RETURN jsonb_build_object('status', 'reauth_required');
+  END IF;
+  IF p_request IS NULL OR p_subscription IS NULL OR p_version IS NULL OR p_version < 1
+    OR p_environment IS NULL OR p_environment NOT IN ('dev', 'production')
+    OR p_payload IS NULL OR jsonb_typeof(p_payload) IS DISTINCT FROM 'object'
+    OR octet_length(p_payload::text) > 8000
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.jsonb_object_keys(p_payload) AS key
+    WHERE key NOT IN ('outcome', 'providerCallId', 'callType', 'callStatus', 'locationId')
+  ) THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  settlement := p_payload ->> 'outcome';
+  IF settlement IS NULL OR settlement NOT IN ('ended', 'cancelled', 'uncertain', 'ongoing', 'telephone')
+    OR (p_payload ->> 'providerCallId') IS NULL
+    OR (p_payload ->> 'providerCallId') !~ '^[A-Za-z0-9_-]{8,128}$'
+    OR (p_payload ->> 'locationId') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_request::text, 0));
+  SELECT * INTO attempt
+  FROM admin_private.commercial_agent_test_attempts recorded
+  WHERE recorded.initiation_request_id = p_request
+  FOR UPDATE;
+  IF attempt.id IS NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'attempt');
+  END IF;
+  SELECT * INTO intent
+  FROM admin_private.commercial_agent_test_intents recorded
+  WHERE recorded.id = attempt.intent_id;
+  IF intent.id IS NULL
+    OR attempt.actor_id IS DISTINCT FROM actor
+    OR intent.subscription_id IS DISTINCT FROM p_subscription
+    OR attempt.location_id IS DISTINCT FROM (p_payload ->> 'locationId')::uuid
+    OR intent.environment IS DISTINCT FROM p_environment
+  THEN
+    RETURN jsonb_build_object('status', 'conflict');
+  END IF;
+  IF attempt.provider_call_id IS DISTINCT FROM (p_payload ->> 'providerCallId') THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'call');
+  END IF;
+  IF attempt.state = 'COMPLETED' THEN
+    RETURN jsonb_build_object('status', 'completed', 'attemptState', 'COMPLETED', 'callId', attempt.provider_call_id, 'completionBasis', attempt.completion_basis, 'forwardingVerified', false, 'testPassed', false);
+  END IF;
+  IF attempt.state NOT IN ('BOUND', 'PROVIDER_CREATED', 'REQUIRES_RECONCILIATION') THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'attempt', 'attemptState', attempt.state);
+  END IF;
+  IF (p_payload ->> 'callType') = 'phone_call' OR settlement = 'telephone' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'route', 'attemptState', attempt.state, 'forwardingVerified', false, 'testPassed', false);
+  END IF;
+  IF settlement = 'ongoing' THEN
+    RETURN jsonb_build_object('status', 'ongoing', 'attemptState', attempt.state, 'callId', attempt.provider_call_id, 'forwardingVerified', false, 'testPassed', false);
+  END IF;
+  IF settlement = 'uncertain' THEN
+    UPDATE admin_private.commercial_agent_test_attempts recorded
+    SET state = 'REQUIRES_RECONCILIATION',
+        reason = 'cancellation_uncertain',
+        updated_at = pg_catalog.clock_timestamp()
+    WHERE recorded.id = attempt.id
+      AND recorded.state IN ('BOUND', 'PROVIDER_CREATED', 'REQUIRES_RECONCILIATION')
+    RETURNING * INTO stored;
+    IF stored.id IS NULL THEN
+      RETURN jsonb_build_object('status', 'conflict');
+    END IF;
+    RETURN jsonb_build_object('status', 'reconciliation', 'attemptState', 'REQUIRES_RECONCILIATION', 'callId', stored.provider_call_id, 'forwardingVerified', false, 'testPassed', false);
+  END IF;
+  basis := NULL;
+  IF settlement = 'ended' AND (p_payload ->> 'callType') = 'web_call' AND (p_payload ->> 'callStatus') = 'ended' THEN
+    basis := 'provider_ended';
+  END IF;
+  IF settlement = 'cancelled' AND (p_payload ->> 'callType') = 'web_call' THEN
+    basis := 'provider_cancelled';
+  END IF;
+  IF basis IS NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'open', 'attemptState', attempt.state, 'forwardingVerified', false, 'testPassed', false);
+  END IF;
+  UPDATE admin_private.commercial_agent_test_attempts recorded
+  SET state = 'COMPLETED',
+      reason = basis,
+      completion_basis = basis,
+      completed_at = pg_catalog.clock_timestamp(),
+      updated_at = pg_catalog.clock_timestamp()
+  WHERE recorded.id = attempt.id
+    AND recorded.state IN ('BOUND', 'PROVIDER_CREATED', 'REQUIRES_RECONCILIATION')
+  RETURNING * INTO stored;
+  IF stored.id IS NULL THEN
+    RETURN jsonb_build_object('status', 'conflict');
+  END IF;
+  RETURN jsonb_build_object(
+    'status', 'completed',
+    'attemptState', 'COMPLETED',
+    'callId', stored.provider_call_id,
+    'completionBasis', stored.completion_basis,
+    'forwardingVerified', false,
+    'testPassed', false
+  );
+END;
+$$;
+
+COMMENT ON FUNCTION public.admin_commercial_settle_agent_test_call_v1(text, uuid, uuid, integer, text, jsonb) IS
+  'Completes a controlled attempt only after provider evidence that the matching web call ended or was cancelled. An uncertain cancellation stays in reconciliation. A telephone route is not changed. Closing a browser does not complete an attempt.';
+
+REVOKE ALL ON FUNCTION public.admin_commercial_settle_agent_test_call_v1(text, uuid, uuid, integer, text, jsonb)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_commercial_settle_agent_test_call_v1(text, uuid, uuid, integer, text, jsonb)
   TO service_role;

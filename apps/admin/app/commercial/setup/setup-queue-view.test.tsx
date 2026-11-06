@@ -1169,6 +1169,14 @@ describe("start controlled receptionist test", () => {
         if (init?.method === "DELETE") return new Response(null, { status: 204 })
         return new Response(JSON.stringify({ session_id: "session-1", sdp: "v=0" }), { status: 201, headers: { "content-type": "application/json" } })
       }
+      if (target.includes("cancel-agent-test-call")) {
+        return new Response(JSON.stringify({
+          status: "completed",
+          message: "The controlled web call has ended. Telephone forwarding is not verified, and the receptionist is not live.",
+          forwardingVerified: false,
+          testPassed: false,
+        }), { status: 200, headers: { "content-type": "application/json" } })
+      }
       return new Response(JSON.stringify({
         message: "A controlled web call is open for this location. Telephone forwarding is not verified, and the receptionist is not live.",
         callId: "call_created_01",
@@ -1232,8 +1240,16 @@ describe("start controlled receptionist test", () => {
     expect(document.body.textContent).not.toContain("has passed its conversation test")
     fireEvent.click(screen.getByRole("button", { name: "End call" }))
     await screen.findByText(/The controlled web call has ended/)
+    const cancelled = vi.mocked(fetch).mock.calls.find(call => String(call[0]).includes("cancel-agent-test-call"))
+    expect(cancelled?.[1]?.method).toBe("POST")
+    const cancelBody = JSON.parse(String(cancelled?.[1]?.body)) as Record<string, unknown>
+    expect(cancelBody.providerCallId).toBe("call_created_01")
+    expect(cancelBody.locationId).toBe(item.locations[0].locationId)
+    expect(cancelBody.confirmedCharge).toBe(true)
+    expect(JSON.stringify(cancelBody)).not.toContain(token)
     expect(fetches.some(call => call.startsWith("DELETE "))).toBe(true)
     expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(1)
+    expect(fetches.filter(call => call.includes("cancel-agent-test-call"))).toHaveLength(1)
   })
 
   it("reports a denied microphone and does not start another provider call", async () => {
@@ -1280,5 +1296,6 @@ describe("start controlled receptionist test", () => {
     view.unmount()
     await vi.waitFor(() => expect(fetches.some(call => call.startsWith("DELETE "))).toBe(true))
     expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(1)
+    expect(fetches.filter(call => call.includes("cancel-agent-test-call"))).toHaveLength(0)
   })
 })

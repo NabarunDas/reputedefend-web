@@ -2112,9 +2112,13 @@ describe("audited AI receptionist test call", () => {
     expect(source).not.toContain("state = 'LIVE'")
     expect(source).not.toContain("INSERT INTO public.telloya_voice_number_bindings")
     expect(source).not.toMatch(/\bretell\b/i)
-    for (const state of ["INTENT_RECORDED", "CREATION_IN_PROGRESS", "PROVIDER_CREATED", "BOUND", "REQUIRES_RECONCILIATION", "FAILED_BEFORE_CREATION"]) {
+    for (const state of ["INTENT_RECORDED", "CREATION_IN_PROGRESS", "PROVIDER_CREATED", "BOUND", "REQUIRES_RECONCILIATION", "FAILED_BEFORE_CREATION", "COMPLETED"]) {
       expect(source).toContain(state)
     }
+    expect(source).not.toContain("commercial_agent_test_connection_secrets")
+    expect(source).not.toContain("connection_token")
+    expect(source).not.toContain("ice_servers")
+    expect(source).not.toContain("accessToken")
     expect(source).toContain("commercial_agent_test_attempts_active_location_uidx")
     expect(source).toContain("interval '60 minutes'")
     expect(source).toContain("interval '24 hours'")
@@ -2196,10 +2200,11 @@ describe("audited AI receptionist test call", () => {
       provisionState: "TEST_REQUIRED",
       forwardingVerified: false,
       testPassed: false,
-      accessToken: "join-token-value-123456",
-      transport: "gateway",
       maxDurationSeconds: 600,
     })
+    expect(bound).not.toHaveProperty("accessToken")
+    expect(bound).not.toHaveProperty("iceServers")
+    expect(JSON.stringify(bound)).not.toContain("join-token")
     const binding = (await rows<{ bound_at: string | Date }>(
       `select bound_at from admin_private.commercial_agent_test_bindings where provider_call_id = 'calldockweb1'`,
     ))[0]
@@ -2211,14 +2216,20 @@ describe("audited AI receptionist test call", () => {
     const replay = await rpc<Row>("admin_commercial_prepare_agent_test_call_v1", [
       adminToken, request, armed.prepared.subscription, version, "dev", JSON.stringify(context),
     ])
-    expect(replay).toMatchObject({ status: "bound", callId: "calldockweb1", accessToken: "join-token-value-123456" })
+    expect(replay).toMatchObject({ status: "bound", callId: "calldockweb1" })
+    expect(replay).not.toHaveProperty("accessToken")
+    expect(JSON.stringify(replay)).not.toContain("join-token")
     expect(await rpc<Row>("admin_commercial_prepare_agent_test_call_v1", [
       adminToken, randomUUID(), armed.prepared.subscription, version, "dev", JSON.stringify(context),
     ])).toMatchObject({ status: "conflict", reason: "active" })
     expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_agent_test_bindings`)).toEqual([{ count: 1 }])
-    expect(await rows<{ allowed: boolean }>(
-      `select has_table_privilege('service_role', 'admin_private.commercial_agent_test_connection_secrets', 'select') as allowed`,
-    )).toEqual([{ allowed: false }])
+    expect(await rows<{ name: string | null }>(
+      `select to_regclass('admin_private.commercial_agent_test_connection_secrets')::text as name`,
+    )).toEqual([{ name: null }])
+    expect(await rows<{ count: number }>(
+      `select count(*)::int as count from admin_private.commercial_command_receipts
+       where response::text ilike '%join-token%' or response::text ilike '%ice_servers%' or response::text ilike '%connection_token%'`,
+    )).toEqual([{ count: 0 }])
     expect(await rows<{ count: number }>(`select count(*)::int as count from public.service_provisions where state = 'LIVE' or live_at is not null`)).toEqual([{ count: 0 }])
     expect(await rows<{ count: number }>(`select count(*)::int as count from public.telloya_voice_number_bindings`)).toEqual([{ count: 0 }])
   })
@@ -2312,6 +2323,121 @@ describe("audited AI receptionist test call", () => {
     expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_agent_test_bindings`)).toEqual([{ count: 0 }])
     expect((await serviceRow(dock)).state).toBe("TEST_REQUIRED")
   })
+
+  it("omits connection secrets and starts another test only after provider evidence completes a failed conversation", async () => {
+    const secret = "join-token-value-123456"
+    const armed = await shared(dock, "+441632960696", { ready: { business: bakery }, agentRef: "agent-0022" })
+    const version = (await versions(armed.prepared.subscription)).subscription_version
+    const context = await initiationContext(armed, dock)
+    const request = randomUUID()
+    expect(await rpc<Row>("admin_commercial_prepare_agent_test_call_v1", [
+      adminToken, request, armed.prepared.subscription, version, "dev", JSON.stringify(context),
+    ])).toMatchObject({ status: "prepared" })
+    expect(await rpc<Row>("admin_commercial_claim_agent_test_creation_v1", [
+      adminToken, request, armed.prepared.subscription, version, "dev", JSON.stringify(context),
+    ])).toMatchObject({ status: "claimed" })
+    expect(await rpc<Row>("admin_commercial_record_agent_test_creation_v1", [
+      adminToken, request, armed.prepared.subscription, version, "dev",
+      JSON.stringify({ ...createdRecord("calldocklife1"), connectionToken: secret, iceServers: [{ urls: "stun:example.invalid", credential: "turn-secret" }] }),
+    ])).toMatchObject({ status: "invalid" })
+    expect(await rows<{ count: number }>(
+      `select count(*)::int as count from admin_private.commercial_agent_test_attempts where state = 'CREATION_IN_PROGRESS' and location_id = $1`,
+      [dock],
+    )).toEqual([{ count: 1 }])
+    expect(await rpc<Row>("admin_commercial_record_agent_test_creation_v1", [
+      adminToken, request, armed.prepared.subscription, version, "dev", JSON.stringify(createdRecord("calldocklife1")),
+    ])).toMatchObject({ status: "recorded", attemptState: "PROVIDER_CREATED" })
+    expect(await rpc<Row>("admin_commercial_bind_agent_test_call_v1", [
+      adminToken, request, armed.prepared.subscription, version, "dev", JSON.stringify(context),
+    ])).toMatchObject({ status: "success", attemptState: "BOUND", callId: "calldocklife1" })
+    const durable = JSON.stringify(await rows(
+      `select response::text as response from admin_private.commercial_command_receipts
+       union all
+       select state || coalesce(provider_call_id, '') || coalesce(transport, '') || coalesce(reason, '') || coalesce(completion_basis, '')
+       from admin_private.commercial_agent_test_attempts
+       union all
+       select provider_call_id from admin_private.commercial_agent_test_bindings
+       union all
+       select agent_ref || provider_revision from admin_private.commercial_agent_test_intents`,
+    ))
+    expect(durable).not.toContain(secret)
+    expect(durable).not.toContain("turn-secret")
+    expect(durable).not.toContain("iceServers")
+    expect(await rows<{ name: string | null }>(
+      `select to_regclass('admin_private.commercial_agent_test_connection_secrets')::text as name`,
+    )).toEqual([{ name: null }])
+    const binding = (await rows<{ bound_at: string | Date }>(
+      `select bound_at from admin_private.commercial_agent_test_bindings where provider_call_id = 'calldocklife1'`,
+    ))[0]
+    const started = binding.bound_at instanceof Date ? binding.bound_at.toISOString() : new Date(binding.bound_at).toISOString()
+    const ended = new Date(Date.parse(started) + 60_000).toISOString()
+    expect(await verify(armed, dock, {
+      evidence: { callId: "calldocklife1", agentId: "agent-0022", agentVersion: 4, startedAt: started, endedAt: ended },
+      qa: { greeting: false },
+    })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED", testPassed: false })
+    expect((await serviceRow(dock)).state).toBe("TEST_REQUIRED")
+    const evidenceCount = (await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_agent_test_evidence`))[0].count
+    expect(await rpc<Row>("admin_commercial_prepare_agent_test_call_v1", [
+      adminToken, randomUUID(), armed.prepared.subscription, version, "dev", JSON.stringify(context),
+    ])).toMatchObject({ status: "conflict", reason: "active" })
+    expect(await rpc<Row>("admin_commercial_settle_agent_test_call_v1", [
+      adminToken, request, armed.prepared.subscription, version, "dev",
+      JSON.stringify({ outcome: "ongoing", providerCallId: "calldocklife1", callType: "web_call", callStatus: "ongoing", locationId: dock }),
+    ])).toMatchObject({ status: "ongoing", attemptState: "BOUND" })
+    expect(await rpc<Row>("admin_commercial_authorize_agent_test_cancel_v1", [
+      adminToken, request, armed.prepared.subscription, version, "dev",
+      JSON.stringify({ ...context, providerCallId: "callother001" }),
+    ])).toMatchObject({ status: "denied", reason: "call" })
+    expect(await rpc<Row>("admin_commercial_settle_agent_test_call_v1", [
+      adminToken, request, armed.prepared.subscription, version, "dev",
+      JSON.stringify({ outcome: "cancelled", providerCallId: "calldocklife1", callType: "phone_call", callStatus: "ended", locationId: dock }),
+    ])).toMatchObject({ status: "denied", reason: "route", attemptState: "BOUND" })
+    expect(await rows<{ state: string }>(
+      `select state from admin_private.commercial_agent_test_attempts where initiation_request_id = $1`,
+      [request],
+    )).toEqual([{ state: "BOUND" }])
+    expect(await rpc<Row>("admin_commercial_settle_agent_test_call_v1", [
+      adminToken, request, armed.prepared.subscription, version, "dev",
+      JSON.stringify({ outcome: "ended", providerCallId: "calldocklife1", callType: "web_call", callStatus: "ended", locationId: dock }),
+    ])).toMatchObject({ status: "completed", attemptState: "COMPLETED", completionBasis: "provider_ended" })
+    expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_agent_test_bindings`)).toEqual([{ count: 1 }])
+    expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_agent_test_intents`)).toEqual([{ count: 1 }])
+    expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_agent_test_evidence`)).toEqual([{ count: evidenceCount }])
+    expect(await rpc<Row>("admin_commercial_prepare_agent_test_call_v1", [
+      adminToken, randomUUID(), armed.prepared.subscription, version, "dev", JSON.stringify(context),
+    ])).toMatchObject({ status: "prepared", attemptState: "INTENT_RECORDED" })
+
+    const uncertain = await shared(yard, "+441632960697", { ready: { business: twin }, agentRef: "agent-0026" })
+    const uncertainVersion = (await versions(uncertain.prepared.subscription)).subscription_version
+    const uncertainContext = await initiationContext(uncertain, yard)
+    const uncertainRequest = randomUUID()
+    expect(await rpc<Row>("admin_commercial_prepare_agent_test_call_v1", [
+      adminToken, uncertainRequest, uncertain.prepared.subscription, uncertainVersion, "dev", JSON.stringify(uncertainContext),
+    ])).toMatchObject({ status: "prepared" })
+    expect(await rpc<Row>("admin_commercial_claim_agent_test_creation_v1", [
+      adminToken, uncertainRequest, uncertain.prepared.subscription, uncertainVersion, "dev", JSON.stringify(uncertainContext),
+    ])).toMatchObject({ status: "claimed" })
+    expect(await rpc<Row>("admin_commercial_record_agent_test_creation_v1", [
+      adminToken, uncertainRequest, uncertain.prepared.subscription, uncertainVersion, "dev", JSON.stringify(createdRecord("callyardlife1")),
+    ])).toMatchObject({ status: "recorded" })
+    expect(await rpc<Row>("admin_commercial_bind_agent_test_call_v1", [
+      adminToken, uncertainRequest, uncertain.prepared.subscription, uncertainVersion, "dev", JSON.stringify(uncertainContext),
+    ])).toMatchObject({ status: "success" })
+    expect(await rpc<Row>("admin_commercial_settle_agent_test_call_v1", [
+      adminToken, uncertainRequest, uncertain.prepared.subscription, uncertainVersion, "dev",
+      JSON.stringify({ outcome: "uncertain", providerCallId: "callyardlife1", callType: "web_call", callStatus: "ongoing", locationId: yard }),
+    ])).toMatchObject({ status: "reconciliation", attemptState: "REQUIRES_RECONCILIATION" })
+    expect(await rpc<Row>("admin_commercial_prepare_agent_test_call_v1", [
+      adminToken, randomUUID(), uncertain.prepared.subscription, uncertainVersion, "dev", JSON.stringify(uncertainContext),
+    ])).toMatchObject({ status: "conflict", reason: "active" })
+    expect(await rpc<Row>("admin_commercial_settle_agent_test_call_v1", [
+      adminToken, uncertainRequest, uncertain.prepared.subscription, uncertainVersion, "dev",
+      JSON.stringify({ outcome: "cancelled", providerCallId: "callyardlife1", callType: "web_call", callStatus: "ended", locationId: yard }),
+    ])).toMatchObject({ status: "completed", completionBasis: "provider_cancelled" })
+    expect(await rows<{ count: number }>(`select count(*)::int as count from public.service_provisions where state = 'LIVE' or live_at is not null`)).toEqual([{ count: 0 }])
+    expect(await rows<{ count: number }>(`select count(*)::int as count from public.telloya_voice_number_bindings`)).toEqual([{ count: 0 }])
+    expect((await serviceRow(dock)).state).toBe("TEST_REQUIRED")
+  })
 })
 
 function createdRecord(callId: string, extra: Record<string, unknown> = {}) {
@@ -2319,9 +2445,6 @@ function createdRecord(callId: string, extra: Record<string, unknown> = {}) {
     outcome: "created",
     providerCallId: callId,
     transport: "gateway",
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    connectionToken: "join-token-value-123456",
-    iceServers: [{ urls: "stun:example.invalid" }],
     echoedAgentId: null,
     echoedAgentVersion: null,
     ...extra,

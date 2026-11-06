@@ -230,16 +230,16 @@ export async function initiateAgentTestCallCommand(request: NextRequest) {
       const prepared = await backend().rpc<Prepared>("admin_commercial_prepare_agent_test_call_v1", args)
       const preparedReply = terminalAttempt(prepared)
       if (preparedReply) return preparedReply
-      if (prepared.status === "bound") return connectionReply(prepared, "The controlled web call is already recorded for this action. Telephone forwarding is not verified, and the receptionist is not live.")
-      if (prepared.status === "provider_created") return connectionReply(await bind(), "A controlled web call is open for this location. Telephone forwarding is not verified, and the receptionist is not live.")
+      if (prepared.status === "bound" || prepared.status === "provider_created") return lostConnection(prepared.status === "provider_created" ? await bind() : prepared)
+      if (prepared.status === "completed") return reply("This controlled test has already ended. Another connection cannot be issued for the same action.", 409)
       if (prepared.status !== "prepared" || !prepared.agentRef || typeof prepared.agentVersion !== "number") {
         return reply("A controlled web call cannot be opened for this subscription.", 403)
       }
       const claimed = await backend().rpc<Prepared>("admin_commercial_claim_agent_test_creation_v1", args)
       const claimedReply = terminalAttempt(claimed)
       if (claimedReply) return claimedReply
-      if (claimed.status === "bound") return connectionReply(claimed, "The controlled web call is already recorded for this action. Telephone forwarding is not verified, and the receptionist is not live.")
-      if (claimed.status === "provider_created") return connectionReply(await bind(), "A controlled web call is open for this location. Telephone forwarding is not verified, and the receptionist is not live.")
+      if (claimed.status === "bound" || claimed.status === "provider_created") return lostConnection(claimed.status === "provider_created" ? await bind() : claimed)
+      if (claimed.status === "completed") return reply("This controlled test has already ended. Another connection cannot be issued for the same action.", 409)
       if (claimed.status !== "claimed" || !claimed.agentRef || typeof claimed.agentVersion !== "number") {
         return reply("A controlled web call cannot be opened for this subscription.", 403)
       }
@@ -259,9 +259,6 @@ export async function initiateAgentTestCallCommand(request: NextRequest) {
         outcome: "created",
         providerCallId: created.callId,
         transport: created.transport,
-        expiresAt: created.expiresAt,
-        connectionToken: created.accessToken,
-        iceServers: created.iceServers,
         echoedAgentId: created.echoedAgentId,
         echoedAgentVersion: created.echoedAgentVersion,
       })
@@ -269,7 +266,16 @@ export async function initiateAgentTestCallCommand(request: NextRequest) {
       if (recorded.status !== "recorded") {
         return reply("We couldn’t confirm whether the provider opened the web call. Do not start another one. This attempt needs reconciliation.", 503)
       }
-      return connectionReply(await bind(), "A controlled web call is open for this location. Telephone forwarding is not verified, and the receptionist is not live.")
+      return connectionReply(
+        await bind(),
+        "A controlled web call is open for this location. Telephone forwarding is not verified, and the receptionist is not live.",
+        {
+          accessToken: created.accessToken,
+          transport: created.transport,
+          iceServers: created.iceServers,
+          expiresAt: created.expiresAt,
+        },
+      )
     } catch {
       if (needsRecord) {
         try { await record({ outcome: "uncertain", providerCallId: null }) } catch { /* the attempt stays claimed until reconciliation */ }
@@ -295,29 +301,45 @@ function terminalAttempt(state: Prepared) {
   return null
 }
 
-function connected(state: Prepared) {
-  return typeof state.accessToken === "string"
-    && state.accessToken.length >= 16
-    && state.transport === "gateway"
-    && Array.isArray(state.iceServers)
-    && state.iceServers.length > 0
-    && typeof state.callId === "string"
-}
-
-function connectionReply(state: Prepared, message: string) {
+function lostConnection(state: Prepared) {
   const closed = terminalAttempt(state)
   if (closed) return closed
-  if ((state.status === "success" || state.status === "bound") && connected(state)) {
+  return NextResponse.json({
+    status: "reconciliation",
+    message: "This controlled test is already bound. The connection is not stored and cannot be issued again. Do not start another provider call. This attempt needs reconciliation.",
+    callId: state.callId,
+    forwardingVerified: false,
+    testPassed: false,
+  }, { status: 409, headers: privateResponseHeaders })
+}
+
+function connectionReply(
+  state: Prepared,
+  message: string,
+  connection?: { accessToken: string; transport: "gateway"; iceServers: unknown; expiresAt: string },
+) {
+  const closed = terminalAttempt(state)
+  if (closed) return closed
+  const accessToken = connection?.accessToken
+  const iceServers = connection?.iceServers
+  const ready = state.status === "success"
+    && typeof accessToken === "string"
+    && accessToken.length >= 16
+    && connection?.transport === "gateway"
+    && Array.isArray(iceServers)
+    && iceServers.length > 0
+    && typeof state.callId === "string"
+  if (ready) {
     return NextResponse.json({
       message,
       callId: state.callId,
       sessionRef: state.sessionRef,
       agentRef: state.agentRef,
       agentVersion: state.agentVersion,
-      accessToken: state.accessToken,
-      transport: state.transport,
-      iceServers: state.iceServers,
-      expiresAt: state.expiresAt,
+      accessToken,
+      transport: "gateway",
+      iceServers,
+      expiresAt: connection?.expiresAt,
       maxDurationSeconds: state.maxDurationSeconds ?? 600,
       providerConfirmedAgent: state.providerConfirmedAgent === true,
       providerConfirmedVersion: state.providerConfirmedVersion === true,
@@ -326,8 +348,6 @@ function connectionReply(state: Prepared, message: string) {
       testPassed: false,
     }, { headers: privateResponseHeaders })
   }
-  if (state.status === "success" || state.status === "bound") {
-    return reply("The controlled web call is already recorded for this action. Do not start another one. Telephone forwarding is not verified, and the receptionist is not live.", 409)
-  }
+  if (state.status === "success" || state.status === "bound") return lostConnection(state)
   return reply("The provider call could not be bound to this test session. Do not start another one.", 409)
 }

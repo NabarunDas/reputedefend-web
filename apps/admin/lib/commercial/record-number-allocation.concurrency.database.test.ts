@@ -851,7 +851,35 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
       evidence,
       qa,
     }
-    expect(JSON.parse(await psql(`select admin_private.commercial_agent_test_trust_call_v1('${adminToken}', '${prepared.armed.subscription}', '${gateLoc}', 'callgate0001')`))).toMatchObject({ status: "bound" })
+    const simulatedBinding = await psql(`
+      WITH cfg AS (
+        SELECT id, subscription_id, customer_id, business_id, entitlement_id, location_id, version, agent_ref, provider_revision, environment
+        FROM admin_private.commercial_location_configurations
+        WHERE subscription_id = '${prepared.armed.subscription}' AND location_id = '${gateLoc}'
+        ORDER BY version DESC LIMIT 1
+      ),
+      timing AS (
+        SELECT agent_configured_at + interval '1 second' AS started
+        FROM public.service_provisions WHERE location_id = '${gateLoc}'
+      ),
+      intent AS (
+        INSERT INTO admin_private.commercial_agent_test_intents(
+          subscription_id, customer_id, business_id, entitlement_id, location_id, actor_id,
+          configuration_id, configuration_version, agent_ref, provider_revision, environment,
+          window_starts_at, window_ends_at, test_session_ref, created_at
+        )
+        SELECT cfg.subscription_id, cfg.customer_id, cfg.business_id, cfg.entitlement_id, cfg.location_id,
+               '${adminUser}', cfg.id, cfg.version, cfg.agent_ref, cfg.provider_revision, cfg.environment,
+               timing.started - interval '1 minute', timing.started + interval '30 minutes',
+               'TS-26-A11C0DE1', timing.started - interval '30 seconds'
+        FROM cfg CROSS JOIN timing
+        RETURNING id
+      )
+      INSERT INTO admin_private.commercial_agent_test_bindings(intent_id, provider_call_id, bound_at)
+      SELECT intent.id, 'callgate0001', (SELECT started FROM timing) FROM intent
+      RETURNING id::text
+    `)
+    expect(simulatedBinding.split("\n")[0]).toMatch(/^[0-9a-f-]{36}$/)
     const sql = (request: string) => `select public.admin_commercial_verify_agent_test_call_v1('${adminToken}', '${request}', '${prepared.armed.subscription}', ${fresh.version}, $json$${JSON.stringify(verifyBody)}$json$::jsonb)`
     const [first, second] = await Promise.all([
       call<{ status: string; evidenceOutcome?: string; reason?: string }>(sql(randomUUID())),

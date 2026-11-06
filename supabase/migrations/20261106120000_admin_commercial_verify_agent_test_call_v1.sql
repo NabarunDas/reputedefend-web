@@ -4,7 +4,10 @@
 -- It does not place a call, buy a number, write a routing binding, enable forwarding, or move a service to live.
 -- A provider call lookup cannot prove that a call was a controlled staff test.
 -- A typed call id and caller-editable provider metadata are not trusted correlation.
--- VERIFIED_PASSED requires a server-bound test intent for the same call, agent, version, environment, and location.
+-- Stage A records a pre-authorised test intent before any provider call exists.
+-- Stage B is a separate immutable binding from that intent to a provider call id.
+-- This migration does not create a function that accepts a call id and marks it trusted.
+-- VERIFIED_PASSED requires the pre-authorised intent and its matching binding.
 -- This command does not create a provider call and does not bind a typed call id.
 -- 20261106120000 must not be applied to hosted DEV or Production.
 
@@ -26,6 +29,7 @@ CREATE TABLE admin_private.commercial_agent_test_evidence (
   instruction_version integer NOT NULL CHECK (instruction_version >= 1),
   provider_call_id text NOT NULL CHECK (provider_call_id ~ '^[A-Za-z0-9_-]{8,128}$'),
   test_intent_id uuid,
+  test_binding_id uuid,
   test_session_ref text,
   test_scope text NOT NULL CHECK (test_scope = 'AGENT_DIRECT'),
   outcome text NOT NULL CHECK (outcome IN ('PENDING_VERIFICATION', 'VERIFIED_PASSED', 'VERIFIED_FAILED', 'REQUIRES_REVIEW')),
@@ -48,7 +52,7 @@ CREATE TABLE admin_private.commercial_agent_test_evidence (
   ),
   CONSTRAINT commercial_agent_test_evidence_controlled CHECK (
     outcome IS DISTINCT FROM 'VERIFIED_PASSED'
-    OR (test_intent_id IS NOT NULL AND test_session_ref IS NOT NULL)
+    OR (test_intent_id IS NOT NULL AND test_binding_id IS NOT NULL AND test_session_ref IS NOT NULL)
   )
 );
 
@@ -839,28 +843,18 @@ CREATE TABLE admin_private.commercial_agent_test_intents (
   configuration_id uuid NOT NULL,
   configuration_version integer NOT NULL CHECK (configuration_version >= 1),
   agent_ref text NOT NULL CHECK (agent_ref ~ '^[A-Za-z0-9_-]{8,128}$'),
-  provider_revision text NOT NULL CHECK (char_length(provider_revision) BETWEEN 1 AND 128),
+  provider_revision text NOT NULL CHECK (char_length(provider_revision) BETWEEN 4 AND 128),
   environment text NOT NULL CHECK (environment IN ('dev', 'production')),
   window_starts_at timestamptz NOT NULL,
   window_ends_at timestamptz NOT NULL,
   test_session_ref text NOT NULL UNIQUE CHECK (test_session_ref ~ '^TS-[0-9]{2}-[A-F0-9]{8}$'),
-  provider_call_id text CHECK (provider_call_id IS NULL OR provider_call_id ~ '^[A-Za-z0-9_-]{8,128}$'),
-  correlation text NOT NULL CHECK (correlation IN ('UNBOUND', 'SERVER_BOUND')),
-  bound_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
   CHECK (window_ends_at > window_starts_at),
-  CHECK (
-    (correlation = 'UNBOUND' AND provider_call_id IS NULL AND bound_at IS NULL)
-    OR (correlation = 'SERVER_BOUND' AND provider_call_id IS NOT NULL AND bound_at IS NOT NULL)
-  )
+  CHECK (created_at >= window_starts_at AND created_at <= window_ends_at)
 );
 
-CREATE UNIQUE INDEX commercial_agent_test_intent_call_idx
-  ON admin_private.commercial_agent_test_intents (provider_call_id)
-  WHERE provider_call_id IS NOT NULL;
-
 COMMENT ON TABLE admin_private.commercial_agent_test_intents IS
-  'Location-scoped controlled-test intent. SERVER_BOUND is written only by a server workflow that already knows the provider call id. A typed call id is not trusted correlation. The verification HTTP command does not bind a call and does not create a provider call.';
+  'Pre-authorised controlled-test intent recorded before a provider call exists. It stores no provider call id. A typed call id is not trusted correlation.';
 
 ALTER TABLE admin_private.commercial_agent_test_intents ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE admin_private.commercial_agent_test_intents FROM PUBLIC, anon, authenticated, service_role;
@@ -868,6 +862,60 @@ REVOKE ALL ON TABLE admin_private.commercial_agent_test_intents FROM PUBLIC, ano
 CREATE TRIGGER commercial_agent_test_intents_append_only
   BEFORE UPDATE OR DELETE OR TRUNCATE ON admin_private.commercial_agent_test_intents
   FOR EACH STATEMENT EXECUTE FUNCTION admin_private.reject_commercial_append_only_v1();
+
+CREATE TABLE admin_private.commercial_agent_test_bindings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  intent_id uuid NOT NULL UNIQUE REFERENCES admin_private.commercial_agent_test_intents (id) ON DELETE RESTRICT,
+  provider_call_id text NOT NULL UNIQUE CHECK (provider_call_id ~ '^[A-Za-z0-9_-]{8,128}$'),
+  bound_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT pg_catalog.now()
+);
+
+COMMENT ON TABLE admin_private.commercial_agent_test_bindings IS
+  'Immutable link from a pre-authorised test intent to a provider call id. A future server-initiated call-creation workflow writes this row from the provider response. No function in this migration accepts a typed call id and inserts a binding.';
+
+ALTER TABLE admin_private.commercial_agent_test_bindings ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE admin_private.commercial_agent_test_bindings FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.commercial_agent_test_binding_guard_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  intent admin_private.commercial_agent_test_intents;
+BEGIN
+  SELECT * INTO intent
+  FROM admin_private.commercial_agent_test_intents recorded
+  WHERE recorded.id = NEW.intent_id;
+  IF intent.id IS NULL
+    OR NEW.bound_at < intent.created_at
+    OR NEW.bound_at < intent.window_starts_at
+    OR NEW.bound_at > intent.window_ends_at
+  THEN
+    RAISE EXCEPTION 'agent test binding is outside the pre-authorised window';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.commercial_agent_test_binding_guard_v1()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER commercial_agent_test_bindings_guard
+  BEFORE INSERT ON admin_private.commercial_agent_test_bindings
+  FOR EACH ROW EXECUTE FUNCTION admin_private.commercial_agent_test_binding_guard_v1();
+
+CREATE TRIGGER commercial_agent_test_bindings_append_only
+  BEFORE UPDATE OR DELETE OR TRUNCATE ON admin_private.commercial_agent_test_bindings
+  FOR EACH STATEMENT EXECUTE FUNCTION admin_private.reject_commercial_append_only_v1();
+
+ALTER TABLE admin_private.commercial_agent_test_evidence
+  ADD CONSTRAINT commercial_agent_test_evidence_intent_fk
+  FOREIGN KEY (test_intent_id) REFERENCES admin_private.commercial_agent_test_intents (id) ON DELETE RESTRICT,
+  ADD CONSTRAINT commercial_agent_test_evidence_binding_fk
+  FOREIGN KEY (test_binding_id) REFERENCES admin_private.commercial_agent_test_bindings (id) ON DELETE RESTRICT;
 
 CREATE FUNCTION public.admin_commercial_agent_test_preflight_v1(
   p_token text,
@@ -1092,75 +1140,6 @@ REVOKE ALL ON FUNCTION public.admin_commercial_agent_test_preflight_v1(text, uui
 GRANT EXECUTE ON FUNCTION public.admin_commercial_agent_test_preflight_v1(text, uuid, integer, uuid, uuid, uuid, text, uuid, integer, integer, integer, uuid, integer, uuid, integer, integer)
   TO service_role;
 
-CREATE FUNCTION admin_private.commercial_agent_test_trust_call_v1(
-  p_token text,
-  p_subscription uuid,
-  p_location uuid,
-  p_call_id text
-) RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-DECLARE
-  s public.admin_sessions;
-  cfg admin_private.commercial_location_configurations;
-  provision public.service_provisions;
-  session_ref text;
-  intent_id uuid;
-BEGIN
-  IF p_call_id IS NULL OR p_call_id !~ '^[A-Za-z0-9_-]{8,128}$' THEN
-    RETURN jsonb_build_object('status', 'invalid');
-  END IF;
-  SELECT * INTO s FROM public.admin_sessions session
-  WHERE session.token_hash = p_token
-    AND session.auth_user_id = public.admin_identity_id_v1()
-    AND session.revoked_at IS NULL
-    AND session.expires_at > pg_catalog.now()
-    AND session.created_at >= pg_catalog.now() - interval '30 minutes';
-  IF s.id IS NULL THEN
-    RETURN jsonb_build_object('status', 'unauthorized');
-  END IF;
-  SELECT * INTO cfg
-  FROM admin_private.commercial_location_configurations config
-  WHERE config.subscription_id = p_subscription
-    AND config.location_id = p_location
-  ORDER BY config.version DESC
-  LIMIT 1;
-  IF cfg.id IS NULL THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'setup');
-  END IF;
-  SELECT * INTO provision
-  FROM public.service_provisions service
-  WHERE service.location_id = p_location
-    AND service.business_id = cfg.business_id
-    AND service.entitlement_id = cfg.entitlement_id;
-  IF NOT FOUND OR provision.entitlement_id IS NULL OR provision.state IS DISTINCT FROM 'TEST_REQUIRED' THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'setup');
-  END IF;
-  session_ref := 'TS-' || to_char(pg_catalog.now(), 'YY') || '-' || upper(substr(md5(gen_random_uuid()::text), 1, 8));
-  INSERT INTO admin_private.commercial_agent_test_intents(
-    subscription_id, customer_id, business_id, entitlement_id, location_id, actor_id,
-    configuration_id, configuration_version, agent_ref, provider_revision, environment,
-    window_starts_at, window_ends_at, test_session_ref, provider_call_id, correlation, bound_at
-  ) VALUES (
-    cfg.subscription_id, cfg.customer_id, cfg.business_id, cfg.entitlement_id, cfg.location_id, s.auth_user_id,
-    cfg.id, cfg.version, cfg.agent_ref, cfg.provider_revision, cfg.environment,
-    pg_catalog.now() - interval '15 minutes', pg_catalog.now() + interval '20 minutes',
-    session_ref, p_call_id, 'SERVER_BOUND', pg_catalog.now()
-  ) RETURNING id INTO intent_id;
-  RETURN jsonb_build_object('status', 'bound', 'testSessionRef', session_ref, 'intentId', intent_id);
-END;
-$$;
-
-COMMENT ON FUNCTION admin_private.commercial_agent_test_trust_call_v1(text, uuid, uuid, text) IS
-  'Records a server-bound controlled-test intent. The Admin verification HTTP command does not call this function. A provider call lookup cannot supply this correlation, and a typed call id is not accepted here from that command.';
-
-REVOKE ALL ON FUNCTION admin_private.commercial_agent_test_trust_call_v1(text, uuid, uuid, text)
-  FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION admin_private.commercial_agent_test_trust_call_v1(text, uuid, uuid, text)
-  TO service_role;
-
 CREATE FUNCTION public.admin_commercial_verify_agent_test_call_v1(
   p_token text,
   p_request uuid,
@@ -1228,6 +1207,7 @@ DECLARE
   qa_passed boolean := false;
   prior_configured timestamptz;
   intent_id uuid;
+  binding_id uuid;
   intent_ref text;
   version_text text;
   controlled boolean := false;
@@ -1676,10 +1656,13 @@ BEGIN
         IF jsonb_typeof(p_payload #> '{evidence,endedAt}') = 'string' THEN
           ended_at := (p_payload #>> '{evidence,endedAt}')::timestamptz;
         END IF;
-        SELECT intent.id, intent.test_session_ref
-        INTO intent_id, intent_ref
-        FROM admin_private.commercial_agent_test_intents intent
-        WHERE intent.subscription_id = sub.id
+        SELECT intent.id, intent.test_session_ref, binding.id
+        INTO intent_id, intent_ref, binding_id
+        FROM admin_private.commercial_agent_test_bindings binding
+        JOIN admin_private.commercial_agent_test_intents intent
+          ON intent.id = binding.intent_id
+        WHERE binding.provider_call_id = call_reference
+          AND intent.subscription_id = sub.id
           AND intent.location_id = chosen_location
           AND intent.business_id = sub.business_id
           AND intent.customer_id = sub.customer_id
@@ -1690,14 +1673,25 @@ BEGIN
           AND intent.agent_ref = cfg.agent_ref
           AND intent.provider_revision = cfg.provider_revision
           AND intent.environment = cfg.environment
-          AND intent.correlation = 'SERVER_BOUND'
-          AND intent.provider_call_id = call_reference
+          AND intent.created_at >= intent.window_starts_at
+          AND intent.created_at <= intent.window_ends_at
+          AND binding.bound_at >= intent.created_at
+          AND binding.bound_at >= intent.window_starts_at
+          AND binding.bound_at <= intent.window_ends_at
+          AND intent.created_at <= coalesce(started_at, pg_catalog.now())
           AND intent.window_starts_at <= coalesce(started_at, pg_catalog.now())
           AND intent.window_ends_at >= coalesce(started_at, pg_catalog.now())
-        ORDER BY intent.bound_at DESC
+          AND (
+            started_at IS NULL
+            OR (
+              started_at >= binding.bound_at - interval '2 minutes'
+              AND started_at <= binding.bound_at + interval '2 minutes'
+            )
+          )
+        ORDER BY binding.bound_at DESC
         LIMIT 1
-        FOR UPDATE;
-        controlled := intent_id IS NOT NULL;
+        FOR UPDATE OF binding, intent;
+        controlled := intent_id IS NOT NULL AND binding_id IS NOT NULL;
         IF p_payload #>> '{evidence,callStatus}' IN ('registered', 'ongoing') THEN
           IF started_at IS NOT NULL AND (
             started_at < provision.agent_configured_at
@@ -1752,7 +1746,7 @@ BEGIN
       subscription_id, customer_id, business_id, entitlement_id, location_id,
       configuration_id, configuration_version, environment, agent_ref,
       allocation_id, allocation_version, instruction_id, instruction_version,
-      provider_call_id, test_intent_id, test_session_ref, test_scope, outcome, provider_status, call_status,
+      provider_call_id, test_intent_id, test_binding_id, test_session_ref, test_scope, outcome, provider_status, call_status,
       started_at, ended_at, qa, verified_at, verifier_id, evidence_source,
       attestation, request_id, version
     ) VALUES (
@@ -1761,6 +1755,7 @@ BEGIN
       alloc.id, alloc.version, shared_instruction.id, shared_instruction.version,
       call_reference,
       CASE WHEN recorded_outcome = 'VERIFIED_PASSED' THEN intent_id ELSE NULL END,
+      CASE WHEN recorded_outcome = 'VERIFIED_PASSED' THEN binding_id ELSE NULL END,
       CASE WHEN recorded_outcome = 'VERIFIED_PASSED' THEN intent_ref ELSE NULL END,
       'AGENT_DIRECT', recorded_outcome, provider_status,
       CASE WHEN jsonb_typeof(p_payload #> '{evidence,callStatus}') = 'null' THEN NULL ELSE p_payload #>> '{evidence,callStatus}' END,
@@ -1874,7 +1869,7 @@ $$;
 
 
 COMMENT ON FUNCTION public.admin_commercial_verify_agent_test_call_v1(text, uuid, uuid, integer, jsonb) IS
-  'Audited Admin record of a controlled direct agent conversation test for one selected location. A pass requires a server-bound test intent, the current agent version, a finished call with a valid duration, and completed staff QA. A provider lookup cannot prove the call was a controlled staff test. A typed call id is not bound here. A passed conversation may move TEST_REQUIRED to AWAITING_CONFIRMATION. It does not verify telephone forwarding, write a routing binding, place a call, or move a service to live.';
+  'Audited Admin record of a controlled direct agent conversation test for one selected location. A pass requires a pre-authorised test intent, a separate immutable binding to the provider call, the current agent version, a finished call with a valid duration, and completed staff QA. A provider lookup cannot prove the call was a controlled staff test. A typed call id is not bound here. A passed conversation may move TEST_REQUIRED to AWAITING_CONFIRMATION. It does not verify telephone forwarding, write a routing binding, place a call, or move a service to live.';
 
 REVOKE ALL ON FUNCTION public.admin_commercial_verify_agent_test_call_v1(text, uuid, uuid, integer, jsonb)
   FROM PUBLIC, anon, authenticated;

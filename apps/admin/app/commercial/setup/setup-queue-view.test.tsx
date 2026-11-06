@@ -1132,6 +1132,7 @@ describe("start controlled receptionist test", () => {
   let reviewCheck: "ongoing" | "ended" | "reconcile"
   let recovery: Record<string, unknown> | null
   let gateInitiate: Promise<Response> | null
+  let cancelResult: "completed" | "uncertain"
 
   function installBrowser() {
     fetches = []
@@ -1139,6 +1140,7 @@ describe("start controlled receptionist test", () => {
     reviewCheck = "ongoing"
     recovery = null
     gateInitiate = null
+    cancelResult = "completed"
     media = vi.fn(async () => ({ getTracks: () => [{ kind: "audio", stop() {}, enabled: true }] }))
     vi.stubGlobal("Audio", class {
       autoplay = false
@@ -1179,6 +1181,14 @@ describe("start controlled receptionist test", () => {
         return new Response(JSON.stringify({ session_id: "session-1", sdp: "v=0" }), { status: 201, headers: { "content-type": "application/json" } })
       }
       if (target.includes("cancel-agent-test-call")) {
+        if (cancelResult === "uncertain") {
+          return new Response(JSON.stringify({
+            status: "reconciliation",
+            message: "We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation.",
+            forwardingVerified: false,
+            testPassed: false,
+          }), { status: 503, headers: { "content-type": "application/json" } })
+        }
         return new Response(JSON.stringify({
           status: "completed",
           message: "The controlled web call has ended. Telephone forwarding is not verified, and the receptionist is not live.",
@@ -1295,6 +1305,10 @@ describe("start controlled receptionist test", () => {
     expect(fetches.some(call => call.startsWith("DELETE "))).toBe(true)
     expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(1)
     expect(fetches.filter(call => call.includes("cancel-agent-test-call"))).toHaveLength(1)
+    expect(screen.getByRole("checkbox", { name: /may incur a provider usage charge/ })).not.toBeChecked()
+    expect(screen.getByRole("button", { name: "Start controlled test" })).toBeDisabled()
+    fireEvent.click(screen.getByRole("button", { name: "Start controlled test" }))
+    expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(1)
   })
 
   it("reports a denied microphone and does not start another provider call", async () => {
@@ -1461,7 +1475,102 @@ describe("start controlled receptionist test", () => {
     await screen.findByText(/Test session TS-06-AB12CD35/)
     expect(screen.getByText(/needs investigation before another call can start/)).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Check test-call status" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "End call" })).toBeNull()
     expect(screen.getByRole("button", { name: "Start controlled test" })).toBeDisabled()
     expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(0)
+    expect(fetches.filter(call => call.includes("cancel-agent-test-call"))).toHaveLength(0)
+  })
+
+  it("ends a reloaded attempt with the stored request and requires a fresh charge acknowledgement", async () => {
+    installBrowser()
+    recovery = {
+      status: "found",
+      attemptState: "BOUND",
+      sessionRef: "TS-06-AB12CD34",
+      requestId: "33333333-3333-4333-8333-333333333333",
+      callId: "call_created_01",
+      businessId: item.businessId,
+      locationId: item.locations[0].locationId,
+      forwardingVerified: false,
+      testPassed: false,
+    }
+    renderStart()
+    await screen.findByText(/Test session TS-06-AB12CD34/)
+    fireEvent.click(screen.getByRole("button", { name: "Check test-call status" }))
+    await screen.findByText(/not yet complete/)
+    fireEvent.click(screen.getByRole("button", { name: "End call" }))
+    await screen.findByText(/The controlled web call has ended/)
+    const cancelled = vi.mocked(fetch).mock.calls.find(call => String(call[0]).includes("cancel-agent-test-call"))
+    expect(new Headers(cancelled?.[1]?.headers).get("idempotency-key")).toBe("33333333-3333-4333-8333-333333333333")
+    const body = JSON.parse(String(cancelled?.[1]?.body)) as Record<string, unknown>
+    expect(body.providerCallId).toBe("call_created_01")
+    expect(body.locationId).toBe(item.locations[0].locationId)
+    expect(body.callId).toBeUndefined()
+    expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(0)
+    expect(fetches.filter(call => call.includes("cancel-agent-test-call"))).toHaveLength(1)
+    const start = screen.getByRole("button", { name: "Start controlled test" })
+    expect(start).toBeDisabled()
+    expect(screen.getByRole("checkbox", { name: /may incur a provider usage charge/ })).not.toBeChecked()
+    fireEvent.click(start)
+    expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(0)
+    fireEvent.click(screen.getByRole("checkbox", { name: /may incur a provider usage charge/ }))
+    expect(start).toBeEnabled()
+  })
+
+  it("keeps the recovered attempt locked when cancellation is uncertain", async () => {
+    installBrowser()
+    cancelResult = "uncertain"
+    recovery = {
+      status: "found",
+      attemptState: "BOUND",
+      sessionRef: "TS-06-AB12CD34",
+      requestId: "33333333-3333-4333-8333-333333333333",
+      callId: "call_created_01",
+      businessId: item.businessId,
+      locationId: item.locations[0].locationId,
+      forwardingVerified: false,
+      testPassed: false,
+    }
+    renderStart()
+    await screen.findByRole("button", { name: "End call" })
+    fireEvent.click(screen.getByRole("button", { name: "End call" }))
+    await screen.findByText(/needs reconciliation/)
+    expect(screen.getByText(/Test session TS-06-AB12CD34/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Start controlled test" })).toBeDisabled()
+    expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(0)
+    expect(fetches.filter(call => call.includes("cancel-agent-test-call"))).toHaveLength(1)
+  })
+
+  it("clears the charge acknowledgement when the location changes and when the form is opened again", async () => {
+    installBrowser()
+    const locations = [testLocation(), testLocation({
+      locationId: item.locations[1].locationId,
+      locationName: "Dock",
+      status: "failed",
+    })]
+    const view = render(<SetupQueueView initiateAgentTestCallEnabled providerLane="dev" items={[{
+      ...item,
+      operationalStatus: "setup_started",
+      nextAction: "Start controlled receptionist test",
+      testProgress: {
+        passedCount: 0,
+        reviewCount: 0,
+        failedCount: 1,
+        pendingCount: 0,
+        locationCount: 2,
+        locations,
+      },
+    }]} />)
+    const checkbox = screen.getByRole("checkbox", { name: /may incur a provider usage charge/ })
+    fireEvent.click(checkbox)
+    expect(checkbox).toBeChecked()
+    fireEvent.change(screen.getByLabelText("Controlled test location"), { target: { value: item.locations[1].locationId } })
+    expect(screen.getByRole("checkbox", { name: /may incur a provider usage charge/ })).not.toBeChecked()
+    fireEvent.click(screen.getByRole("button", { name: "Start controlled test" }))
+    expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(0)
+    view.unmount()
+    renderStart()
+    expect(screen.getByRole("checkbox", { name: /may incur a provider usage charge/ })).not.toBeChecked()
+    expect(screen.getByRole("button", { name: "Start controlled test" })).toBeDisabled()
   })
 })

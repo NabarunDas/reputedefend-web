@@ -1284,6 +1284,7 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
   const endRef = useRef<(() => void) | null>(null)
   const releaseRef = useRef<(() => void) | null>(null)
   const failedRef = useRef(false)
+  const endingRef = useRef(false)
   const initial = item.testProgress?.locations.find(location => location.status !== "passed")?.locationId ?? item.testProgress?.locations[0]?.locationId ?? ""
   const [selected, setSelected] = useState(initial)
   const place = item.testProgress?.locations.find(entry => entry.locationId === selected) ?? null
@@ -1296,6 +1297,7 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
   const [callId, setCallId] = useState<string | null>(null)
   const [saved, setSaved] = useState<SavedAttempt | null>(null)
   const [checking, setChecking] = useState(false)
+  const [ending, setEnding] = useState(false)
   const [providerOpen, setProviderOpen] = useState(false)
   const passed = place?.status === "passed"
   useEffect(() => () => { releaseRef.current?.() }, [])
@@ -1377,6 +1379,7 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
         setSaved(current => current ? { ...current, attemptState: "COMPLETED" } : current)
         setProviderOpen(false)
         setLocked(false)
+        setChargeAccepted(false)
         setPhase("ended")
         setPending(false)
         keyRef.current = ""
@@ -1408,6 +1411,55 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
     }
   }
 
+  async function endRecovered() {
+    const live = requestBody()
+    const attempt = saved
+    if (!live || !attempt?.callId || !isUuidKey(attempt.requestId) || endingRef.current) return
+    endingRef.current = true
+    setEnding(true)
+    try {
+      const { confirmedCharge, ...identity } = live
+      void confirmedCharge
+      const response = await fetch("/api/commercial/cancel-agent-test-call", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": attempt.requestId,
+        },
+        body: JSON.stringify({ ...identity, confirmedCharge: true, providerCallId: attempt.callId }),
+      })
+      const payload = await response.json().catch(() => null) as { status?: string; message?: string } | null
+      const text = typeof payload?.message === "string" ? payload.message : "We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation."
+      if (response.ok && payload?.status === "completed") {
+        setSaved(current => current ? { ...current, attemptState: "COMPLETED" } : current)
+        setProviderOpen(false)
+        setLocked(false)
+        setChargeAccepted(false)
+        setPhase("ended")
+        setPending(false)
+        keyRef.current = ""
+        fingerRef.current = ""
+        setMessage(text)
+        setTone("warning")
+        return
+      }
+      setLocked(true)
+      setProviderOpen(true)
+      setPending(false)
+      setMessage(text)
+      setTone("danger")
+    } catch {
+      setLocked(true)
+      setProviderOpen(true)
+      setPending(false)
+      setMessage("We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation.")
+      setTone("danger")
+    } finally {
+      endingRef.current = false
+      setEnding(false)
+    }
+  }
+
   function currentKey(fingerprint: string) {
     if (fingerRef.current !== fingerprint || !isUuidKey(keyRef.current)) {
       keyRef.current = crypto.randomUUID()
@@ -1418,7 +1470,9 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
 
   function send() {
     const live = requestBody()
-    if (!live || passed || !chargeAccepted || locked || pending) return
+    if (!live || passed || !chargeAccepted || locked || pending || ending) return
+    if (phase === "connecting" || phase === "connected" || providerOpen) return
+    if (saved && activeAttemptStates.has(saved.attemptState)) return
     const fingerprint = JSON.stringify(live)
     const requestKey = currentKey(fingerprint)
     setPending(true)
@@ -1446,10 +1500,15 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
             router.refresh()
           }
           if (next === "ended") {
+            setSaved(current => current ? { ...current, attemptState: "COMPLETED" } : current)
+            setProviderOpen(false)
             setMessage("The controlled web call has ended. Telephone forwarding is not verified, and the receptionist is not live.")
             setTone("warning")
             setPending(false)
-            setLocked(true)
+            setLocked(false)
+            setChargeAccepted(false)
+            keyRef.current = ""
+            fingerRef.current = ""
           }
         },
         onOutcome: outcome => {
@@ -1457,6 +1516,7 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
             keyRef.current = ""
             fingerRef.current = ""
             setLocked(false)
+            setChargeAccepted(false)
             return
           }
           setLocked(true)
@@ -1488,11 +1548,20 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
   const liveCall = phase === "connecting" || phase === "connected"
   const attemptOpen = saved !== null && activeAttemptStates.has(saved.attemptState)
   const holdLocation = liveCall || providerOpen || attemptOpen
+  const canEndBrowser = liveCall
+  const canEndRecovered = !liveCall && attemptOpen && Boolean(saved?.callId)
+  function endCall() {
+    if (canEndBrowser && endRef.current) {
+      endRef.current()
+      return
+    }
+    if (canEndRecovered) void endRecovered()
+  }
   return (
     <form className="commercial-command" onSubmit={event => event.preventDefault()}>
       <h3>Start controlled receptionist test</h3>
       <p>{item.customerName} · {item.businessName}. This asks the provider to open a web conversation for the configured receptionist and version. It does not place a telephone call, enable forwarding, or make the receptionist live. A typed call reference is not accepted.</p>
-      <label>Controlled test location<select value={selected} disabled={holdLocation} onChange={event => { if (holdLocation) return; setSelected(event.target.value); setCallId(null); setSaved(null); setProviderOpen(false); setMessage(null); setPhase("idle"); setLocked(false); keyRef.current = ""; fingerRef.current = "" }}>{item.testProgress.locations.map(entry => <option key={entry.locationId} value={entry.locationId}>{entry.locationName} · {entry.status}</option>)}</select></label>
+      <label>Controlled test location<select value={selected} disabled={holdLocation} onChange={event => { if (holdLocation) return; setSelected(event.target.value); setCallId(null); setSaved(null); setProviderOpen(false); setMessage(null); setPhase("idle"); setLocked(false); setChargeAccepted(false); keyRef.current = ""; fingerRef.current = "" }}>{item.testProgress.locations.map(entry => <option key={entry.locationId} value={entry.locationId}>{entry.locationName} · {entry.status}</option>)}</select></label>
       <dl className="commercial-review">
         <div><dt>Subscription</dt><dd>{item.reference}</dd></div>
         <div><dt>Location</dt><dd>{place.locationName}</dd></div>
@@ -1505,7 +1574,7 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
       {saved && attemptOpen && !saved.callId ? <p role="status">This controlled test needs investigation before another call can start. Another call was not started.</p> : null}
       {passed ? null : <label><input type="checkbox" checked={chargeAccepted} onChange={event => setChargeAccepted(event.target.checked)} /> I understand this controlled web call may incur a provider usage charge.</label>}
       {passed ? null : <button type="button" disabled={pending || locked || !ready || !chargeAccepted || liveCall || attemptOpen || providerOpen} onClick={send}>Start controlled test</button>}
-      {liveCall || providerOpen ? <button type="button" onClick={() => endRef.current?.()}>End call</button> : null}
+      {canEndBrowser || canEndRecovered ? <button type="button" disabled={ending} onClick={endCall}>End call</button> : null}
       {(saved?.callId || callId) && !liveCall ? <button type="button" disabled={checking} onClick={() => void checkStatus()}>Check test-call status</button> : null}
       {phase === "connecting" ? <p role="status">Connecting the browser to the controlled web call.</p> : null}
       {callId ? <p role="status">Provider call reference {callId}. Telephone forwarding is not verified, and the receptionist is not live.</p> : null}

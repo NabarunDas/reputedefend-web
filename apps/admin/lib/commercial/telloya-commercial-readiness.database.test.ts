@@ -16,28 +16,40 @@ import {
   telloyaPublishedPrices,
 } from "./telloya-catalogue.fixture"
 
-const pendingNames = [
+const commercialTail = [
   "20261105130000_admin_commercial_begin_setup_v1.sql",
   "20261105144256_admin_commercial_confirm_preferences_v1.sql",
   "20261105172055_admin_commercial_confirm_ai_configuration_v1.sql",
   "20261105180000_telloya_tier_catalogue_v1.sql",
   "20261105190000_telloya_guard_addon_v1.sql",
   "20261105200000_admin_commercial_record_number_allocation_v1.sql",
+  "20261106003939_admin_commercial_record_forwarding_instructions_v1.sql",
 ]
 
 describe("Telloya commercial migration chain", () => {
-  it("keeps the six merged files pending, in order, after the DEV head", () => {
+  it("keeps the commercial tail pending, in order, after the DEV head", () => {
     expect(appliedMigrationHead.version).toBe("20261105120000")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const pending = pendingMigrations()
-    expect(pending.map(entry => entry.filename)).toEqual(pendingNames)
-    expect(pending.every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
-    expect(chainAfter("20261105120000").map(entry => entry.filename)).toEqual(pendingNames)
-    for (const filename of pendingNames) {
+    const pendingNames = pending.map(entry => entry.filename)
+    const afterDev = chainAfter("20261105120000").map(entry => entry.filename)
+    expect(pendingNames.slice(0, commercialTail.length)).toEqual(commercialTail)
+    expect(afterDev.slice(0, commercialTail.length)).toEqual(commercialTail)
+    for (const filename of commercialTail) {
+      const entry = pending.find(item => item.filename === filename)
+      expect(entry?.appliedToDev).toBe(false)
+      expect(entry?.containsDataChange).toBe(false)
+      expect(entry?.safeToReplay).toBe(false)
       const source = readFileSync(new URL(`../../../../supabase/migrations/${filename}`, import.meta.url), "utf8")
       expect(source).toContain("Do not apply")
       expect(source).toContain("Production")
     }
+    const allocation = readFileSync(new URL("../../../../supabase/migrations/20261105200000_admin_commercial_record_number_allocation_v1.sql", import.meta.url), "utf8")
+    const forwarding = readFileSync(new URL("../../../../supabase/migrations/20261106003939_admin_commercial_record_forwarding_instructions_v1.sql", import.meta.url), "utf8")
+    expect(allocation).toContain("Does not buy a number")
+    expect(allocation).not.toContain("state = 'LIVE'")
+    expect(forwarding).toContain("It does not enable forwarding, place a test call, or")
+    expect(forwarding).not.toContain("state = 'LIVE'")
   })
 })
 
@@ -272,13 +284,15 @@ describe("Telloya commercial readiness rehearsal", () => {
          'admin_commercial_begin_setup_v1',
          'admin_commercial_confirm_preferences_v1',
          'admin_commercial_confirm_ai_configuration_v1',
-         'admin_commercial_record_number_allocation_v1'
+         'admin_commercial_record_number_allocation_v1',
+         'admin_commercial_record_forwarding_instructions_v1'
        )`,
     )
     expect(installed.map(row => row.proname).sort()).toEqual([
       "admin_commercial_begin_setup_v1",
       "admin_commercial_confirm_ai_configuration_v1",
       "admin_commercial_confirm_preferences_v1",
+      "admin_commercial_record_forwarding_instructions_v1",
       "admin_commercial_record_number_allocation_v1",
     ])
     const guardCommand = await rows<{ present: boolean }>(
@@ -323,10 +337,10 @@ describe("Telloya commercial readiness rehearsal", () => {
     expect(acceptedOne.agreementRef).toBe("TELLOYA-TEST-GROWTH-CAP-1")
     const checkout = await rpc<Result>("customer_portal_commercial_payment_prepare_v1", [oneSession, randomUUID(), oneRow.public_ref])
     expect(checkout).toMatchObject({ status: "success", amountMinor: 8899 })
-    expect((await rows<{ stripe_price_id: string | null; livemode: boolean }>(
-      "select stripe_price_id, livemode from public.commercial_checkout_preparations where subscription_id = $1",
+    expect((await rows<{ stripe_product_id: string | null; stripe_price_id: string | null; checkout_session_id: string | null; livemode: boolean }>(
+      "select stripe_product_id, stripe_price_id, checkout_session_id, livemode from public.commercial_checkout_preparations where subscription_id = $1",
       [oneRow.id],
-    ))[0]).toEqual({ stripe_price_id: null, livemode: false })
+    ))[0]).toEqual({ stripe_product_id: null, stripe_price_id: null, checkout_session_id: null, livemode: false })
     const pendingHandover = await rpc<{ subscriptions: Result[] }>("customer_portal_setup_handover_v1", [oneSession])
     const pending = pendingHandover.subscriptions.find(entry => entry.reference === oneRow.public_ref)
     expect(pending?.financialStatus).not.toBe("verified")
@@ -361,6 +375,10 @@ describe("Telloya commercial readiness rehearsal", () => {
     expect((await submit(session, pinned.public_ref, 7900)).accepted.status).toBe("success")
     const started = await rpc<Result>("customer_portal_commercial_payment_prepare_v1", [session, randomUUID(), pinned.public_ref])
     expect(started).toMatchObject({ status: "success", amountMinor: 7900 })
+    expect((await rows<{ stripe_product_id: string | null; stripe_price_id: string | null; checkout_session_id: string | null; livemode: boolean }>(
+      "select stripe_product_id, stripe_price_id, checkout_session_id, livemode from public.commercial_checkout_preparations where subscription_id = $1",
+      [pinned.id],
+    ))[0]).toEqual({ stripe_product_id: null, stripe_price_id: null, checkout_session_id: null, livemode: false })
     const current = await rows<{ subscription_version: number; request_id: string; request_version: number; business_id: string }>(
       `select subscription.record_version as subscription_version, request.id as request_id,
               request.record_version as request_version, subscription.business_id
@@ -507,6 +525,10 @@ describe("Telloya commercial readiness rehearsal", () => {
     expect((await rows<{ n: number }>("select count(*)::int as n from public.paid_service_acceptances"))[0].n).toBe(0)
     expect((await rows<{ n: number }>("select count(*)::int as n from public.guard_subscriptions"))[0].n).toBe(0)
     expect((await rows<{ n: number }>("select count(*)::int as n from public.commercial_checkout_preparations where livemode = true"))[0].n).toBe(0)
+    expect((await rows<{ n: number }>("select count(*)::int as n from admin_private.commercial_forwarding_instructions"))[0].n).toBe(0)
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from public.service_provisions where state = 'LIVE' or forwarding_instructed_at is not null or live_at is not null",
+    ))[0].n).toBe(0)
   })
 
   it("offers a matching Custom quotation and refuses a location cap that was not approved", async () => {

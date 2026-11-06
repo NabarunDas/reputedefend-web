@@ -1146,3 +1146,329 @@ describe("audited record number allocation", () => {
     expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_location_allocations`)).toEqual([{ count: 0 }])
   })
 })
+
+const forwardingNotice = "Do not enable call forwarding yet. Your receptionist is still being prepared and tested. We will tell you when it is ready for the final connection."
+const forwardingSqlPath = new URL("../../../../supabase/migrations/20261106003939_admin_commercial_record_forwarding_instructions_v1.sql", import.meta.url)
+
+function forwardingText(number: string) {
+  return `1. Keep ${number} for the telephone provider. This is the number calls can be sent to once the receptionist is approved. 2. The exact menu names vary by telephone provider. These notes prepare the later connection and do not change the telephone line. 3. ${forwardingNotice}`
+}
+
+async function instruct(
+  armed: Awaited<ReturnType<typeof pay>>,
+  location: string,
+  options: {
+    request?: string
+    status?: "DRAFT" | "SHARED"
+    allocationId?: string
+    allocationVersion?: number
+    instructionVersion?: number
+    preferenceVersion?: number
+    provisionVersion?: number
+    configurationVersion?: number
+    subscriptionVersion?: number
+    customerId?: string
+    environment?: "dev" | "production"
+    forwardingMode?: string
+    carrierKnown?: boolean
+    carrierName?: string | null
+    customerTelephone?: string | null
+    instructionText?: string
+    attestation?: string
+    staffConfirmed?: boolean
+    e164?: string
+    drop?: string
+  } = {},
+) {
+  const current = await versions(armed.prepared.subscription)
+  const allocation = (await rows<{ id: string; version: number; e164: string }>(
+    `select id::text as id, version, e164
+     from admin_private.commercial_location_allocations
+     where subscription_id = $1 and location_id = $2
+     order by version desc
+     limit 1`,
+    [armed.prepared.subscription, location],
+  ))[0]
+  const instruction: Record<string, unknown> = {
+    environment: options.environment ?? "dev",
+    forwardingMode: options.forwardingMode ?? "UNANSWERED_BUSY_UNREACHABLE",
+    carrierKnown: options.carrierKnown ?? false,
+    carrierName: options.carrierKnown ? options.carrierName ?? "Example Carrier" : null,
+    customerTelephone: options.customerTelephone ?? null,
+    instructionRevision: "guide-0001",
+    instructionText: options.instructionText ?? forwardingText(options.e164 ?? allocation?.e164 ?? "+441632960441"),
+    attestation: options.attestation ?? "The operator prepared these forwarding notes from the recorded allocation.",
+    staffConfirmed: options.staffConfirmed ?? true,
+    status: options.status ?? "SHARED",
+  }
+  if (options.drop) delete instruction[options.drop]
+  const body = {
+    customerId: options.customerId ?? alex,
+    businessId: armed.prepared.business,
+    onboardingRequestId: current.request_id,
+    onboardingVersion: current.request_version,
+    locationId: location,
+    preferenceVersion: options.preferenceVersion ?? 1,
+    provisionVersion: options.provisionVersion ?? await provisionVersion(armed.prepared.subscription, location),
+    configurationVersion: options.configurationVersion ?? 1,
+    allocationId: options.allocationId ?? allocation?.id,
+    allocationVersion: options.allocationVersion ?? allocation?.version ?? 1,
+    instructionVersion: options.instructionVersion ?? 0,
+    instruction,
+  }
+  return rpc<Row>("admin_commercial_record_forwarding_instructions_v1", [
+    adminToken,
+    options.request ?? randomUUID(),
+    armed.prepared.subscription,
+    options.subscriptionVersion ?? current.subscription_version,
+    JSON.stringify(body),
+  ])
+}
+
+describe("audited record forwarding instructions", () => {
+  it("keeps the command service-role only and does not enable forwarding", () => {
+    const source = readFileSync(forwardingSqlPath, "utf8")
+    expect(source).toContain("Do not apply 20261106003939 to DEV")
+    expect(source).toContain("Do not apply 20261106003939 to Production")
+    expect(source).toContain("OPERATOR_ATTESTED")
+    expect(source).toContain("FORWARDING_REQUIRED")
+    expect(source).toContain("TEST_REQUIRED")
+    expect(source).toContain(forwardingNotice)
+    expect(source).toContain("preferences_complete := false")
+    expect(source).not.toContain("INDEPENDENTLY_VERIFIED")
+    expect(source).not.toContain("INSERT INTO public.telloya_voice_number_bindings")
+    expect(source).not.toContain("state = 'LIVE'")
+    expect(source).not.toMatch(/\bretell\b|\bResend\b|ADMIN_COMMERCIAL_RECORD_FORWARDING_INSTRUCTIONS_ENABLED|voice_id/i)
+    expect(source).toContain("REVOKE ALL ON FUNCTION public.admin_commercial_record_forwarding_instructions_v1(text, uuid, uuid, integer, jsonb)")
+    expect(source).toContain("GRANT EXECUTE ON FUNCTION public.admin_commercial_record_forwarding_instructions_v1(text, uuid, uuid, integer, jsonb)")
+  })
+
+  it("keeps a Telloya draft internal and shares the current number without enabling forwarding", async () => {
+    const armed = await ready([high])
+    expect(await allocate(armed, high, { agentRef: "agent-0021", e164: "+441632960441" })).toMatchObject({ status: "success" })
+    const before = await effects(armed.prepared.subscription)
+    const bindings = await rows<{ count: number }>(`select count(*)::int as count from public.telloya_voice_number_bindings`)
+    const allocated = await rows<{ allocated: string; binding: string }>(
+      `select number_allocated_at as allocated, provider_binding_ref as binding from public.service_provisions where location_id = $1`,
+      [high],
+    )
+    const draft = await instruct(armed, high, { status: "DRAFT", forwardingMode: "UNANSWERED", carrierKnown: false })
+    expect(draft).toMatchObject({ status: "success", sharingStatus: "DRAFT", instructionVersion: 1, forwardingInstructed: false, provisionState: "FORWARDING_REQUIRED", routingActive: false })
+    const hidden = JSON.stringify(await rpc<Row>("customer_portal_setup_handover_v1", [session]))
+    expect(hidden).not.toContain("+441632960441")
+    expect(hidden).not.toContain("agent-0021")
+    expect(hidden).not.toContain("OPERATOR_ATTESTED")
+    expect(hidden).not.toContain("forwardingProgress")
+    const shared = await instruct(armed, high, { status: "SHARED", instructionVersion: 1, forwardingMode: "UNANSWERED" })
+    expect(shared).toMatchObject({
+      status: "success",
+      sharingStatus: "SHARED",
+      instructionVersion: 2,
+      forwardingInstructed: true,
+      provisionState: "TEST_REQUIRED",
+      routingActive: false,
+      e164: "+441632960441",
+      nextAction: "Record successful test call",
+    })
+    const provision = await rows<{ state: string; allocated: string; binding: string; forwarding: string | null; test_ref: string | null; tested: string | null; confirmed: string | null; live: string | null }>(
+      `select state, number_allocated_at as allocated, provider_binding_ref as binding, forwarding_instructed_at as forwarding,
+              provider_test_call_ref as test_ref, agent_test_passed_at as tested, customer_confirmed_at as confirmed, live_at as live
+       from public.service_provisions where location_id = $1`,
+      [high],
+    )
+    expect(provision[0].state).toBe("TEST_REQUIRED")
+    expect(provision[0].allocated).toEqual(allocated[0].allocated)
+    expect(provision[0].binding).toBe(allocated[0].binding)
+    expect(provision[0].forwarding).not.toBeNull()
+    expect(provision[0].test_ref).toBeNull()
+    expect(provision[0].tested).toBeNull()
+    expect(provision[0].confirmed).toBeNull()
+    expect(provision[0].live).toBeNull()
+    const after = await effects(armed.prepared.subscription)
+    expect(after.communications).toBe(before.communications)
+    expect(after.live).toBe(0)
+    expect(after.amount_minor).toBe(before.amount_minor)
+    expect(await rows<{ count: number }>(`select count(*)::int as count from public.telloya_voice_number_bindings`)).toEqual(bindings)
+    const handover = (await rows<{ value: Row }>(`select admin_private.commercial_setup_handover_v1($1) as value`, [armed.prepared.subscription]))[0].value
+    expect((handover?.checklist as { state: string }[])[3].state).toBe("complete")
+    expect((handover?.checklist as { state: string }[])[4].state).toBe("planned")
+    expect((handover?.checklist as { state: string }[])[5].state).toBe("planned")
+    const customer = JSON.stringify(await rpc<Row>("customer_portal_setup_handover_v1", [session]))
+    expect(customer).toContain("+441632960441")
+    expect(customer).toContain("Unanswered calls")
+    expect(customer).toContain(forwardingNotice)
+    expect(customer).toContain("Instructions ready — service testing pending")
+    expect(customer).not.toContain("agent-0021")
+    expect(customer).not.toContain("OPERATOR_ATTESTED")
+    expect(customer).not.toContain("forwardingProgress")
+    expect(customer).not.toContain("allocationId")
+    const blakePending = hash(randomBytes(32).toString("hex"))
+    expect((await rpc<{ status: string }>("customer_portal_begin_login_v1", ["blake.begin@example.com", blakePending])).status).toBe("ok")
+    expect((await rpc<{ status: string }>("customer_portal_confirm_otp_sent_v1", [blakePending])).status).toBe("ok")
+    const blakeHash = hash(randomBytes(32).toString("hex"))
+    expect((await rpc<{ status: string }>("customer_portal_finish_otp_v1", [blakePending, blakeHash, blakeAuth, "blake.begin@example.com"])).status).toBe("ok")
+    const otherCustomer = JSON.stringify(await rpc<Row>("customer_portal_setup_handover_v1", [blakeHash]))
+    expect(otherCustomer).not.toContain("+441632960441")
+    expect(otherCustomer).not.toContain(armed.prepared.ref)
+    const originalForwarding = provision[0].forwarding
+    const revised = await instruct(armed, high, { status: "SHARED", instructionVersion: 2, forwardingMode: "BUSY", instructionText: forwardingText("+441632960441").replace("UNANSWERED", "BUSY") })
+    expect(revised).toMatchObject({ status: "success", instructionVersion: 3, sharingStatus: "SHARED" })
+    const kept = await rows<{ forwarding: string; state: string }>(
+      `select forwarding_instructed_at as forwarding, state from public.service_provisions where location_id = $1`,
+      [high],
+    )
+    expect(kept[0].forwarding).toEqual(originalForwarding)
+    expect(kept[0].state).toBe("TEST_REQUIRED")
+    expect(await instruct(armed, high, { status: "DRAFT", instructionVersion: 3 })).toMatchObject({ status: "denied", reason: "setup" })
+    await db.exec("SAVEPOINT forwarding_bind")
+    await expect(db.query(
+      `select public.telloya_voice_bind_number_v1('dev', '+441632960441', 'agent-0021', $1, $2)`,
+      [bakery, high],
+    )).rejects.toThrow(/telloya_voice_rejected/)
+    await db.exec("ROLLBACK TO SAVEPOINT forwarding_bind")
+  })
+
+  it("shares one location of a multi-location Telloya subscription and keeps the other number hidden", async () => {
+    const armed = await ready([high, dock])
+    expect(await allocate(armed, high, { agentRef: "agent-0021", e164: "+441632960451" })).toMatchObject({ status: "success" })
+    expect(await allocate(armed, dock, { agentRef: "agent-0022", e164: "+441632960452" })).toMatchObject({ status: "success" })
+    const shared = await instruct(armed, high, { status: "SHARED", forwardingMode: "BUSY", carrierKnown: true, carrierName: "Example Carrier" })
+    expect(shared).toMatchObject({ status: "success", sharedCount: 1, locationCount: 2, forwardingInstructed: true })
+    const dockProvision = await rows<{ state: string; forwarding: string | null }>(
+      `select state, forwarding_instructed_at as forwarding from public.service_provisions where location_id = $1`,
+      [dock],
+    )
+    expect(dockProvision[0]).toEqual({ state: "FORWARDING_REQUIRED", forwarding: null })
+    const handover = (await rows<{ value: Row }>(`select admin_private.commercial_setup_handover_v1($1) as value`, [armed.prepared.subscription]))[0].value
+    expect((handover?.checklist as { state: string }[])[3].state).toBe("planned")
+    const customer = JSON.stringify(await rpc<Row>("customer_portal_setup_handover_v1", [session]))
+    expect(customer).toContain("+441632960451")
+    expect(customer).toContain("Busy calls")
+    expect(customer).toContain("Example Carrier")
+    expect(customer).not.toContain("+441632960452")
+    expect(customer).not.toContain("agent-0022")
+    const queue = await rpc<{ items: Row[] }>("admin_commercial_setup_queue_v1", [adminToken])
+    const progress = queue?.items.find(entry => entry.reference === armed.prepared.ref)?.forwardingProgress as { sharedCount: number; locationCount: number; locations: { locationName: string; status: string }[] }
+    expect(progress.sharedCount).toBe(1)
+    expect(progress.locationCount).toBe(2)
+    expect(progress.locations.map(location => location.status).sort()).toEqual(["needed", "shared"])
+  })
+
+  it("shares both locations of a Complete subscription without activating either service", async () => {
+    const armed = await ready([oven, counter], { product: "COMPLETE", business: kitchen })
+    expect(await allocate(armed, oven, { agentRef: "agent-0024", e164: "+441632960461" })).toMatchObject({ status: "success" })
+    expect(await allocate(armed, counter, { agentRef: "agent-0025", e164: "+441632960462" })).toMatchObject({ status: "success" })
+    expect(await instruct(armed, oven, { status: "SHARED", forwardingMode: "UNREACHABLE" })).toMatchObject({ status: "success", sharedCount: 1, locationCount: 2 })
+    expect(await instruct(armed, counter, { status: "SHARED", forwardingMode: "UNANSWERED_BUSY_UNREACHABLE" })).toMatchObject({
+      status: "success",
+      sharedCount: 2,
+      locationCount: 2,
+      nextAction: "Record successful test call",
+    })
+    const customer = JSON.stringify(await rpc<Row>("customer_portal_setup_handover_v1", [session]))
+    expect(customer).toContain("+441632960461")
+    expect(customer).toContain("+441632960462")
+    expect(customer).toContain("Unreachable calls")
+    expect(customer).toContain("Unanswered, busy, and unreachable calls")
+    expect(customer).not.toContain("agent-0024")
+    expect(customer).not.toContain("agent-0025")
+    expect(await rows<{ live: number }>(
+      `select count(*)::int as live from public.service_provisions where state = 'LIVE' or agent_test_passed_at is not null or customer_confirmed_at is not null or live_at is not null`,
+    )).toEqual([{ live: 0 }])
+  })
+
+  it("rejects an invalid, stale, or unrelated allocation and a corrected allocation invalidates the earlier review", async () => {
+    const armed = await ready([high, dock])
+    expect(await allocate(armed, high, { agentRef: "agent-0021", e164: "+441632960471", allocationRef: "evidence-first" })).toMatchObject({ status: "success" })
+    expect(await allocate(armed, dock, { agentRef: "agent-0022", e164: "+441632960472" })).toMatchObject({ status: "success" })
+    const first = (await rows<{ id: string }>(
+      `select id::text as id from admin_private.commercial_location_allocations where location_id = $1`,
+      [high],
+    ))[0]
+    const other = (await rows<{ id: string }>(
+      `select id::text as id from admin_private.commercial_location_allocations where location_id = $1`,
+      [dock],
+    ))[0]
+    expect(await instruct(armed, high, { allocationId: randomUUID() })).toMatchObject({ status: "denied", reason: "allocation" })
+    expect(await instruct(armed, high, { allocationId: other.id })).toMatchObject({ status: "denied", reason: "allocation" })
+    expect(await instruct(armed, high, { allocationVersion: 9 })).toMatchObject({ status: "conflict", reason: "version" })
+    expect(await instruct(armed, high, { status: "DRAFT" })).toMatchObject({ status: "success", sharingStatus: "DRAFT" })
+    const bumped = await provisionVersion(armed.prepared.subscription, high)
+    expect(await allocate(armed, high, {
+      agentRef: "agent-0021",
+      e164: "+441632960473",
+      allocationRef: "evidence-corrected",
+      allocationVersion: 1,
+      configurationVersion: 1,
+      provisionVersion: bumped,
+      preferenceVersion: 1,
+    })).toMatchObject({ status: "success", allocationVersion: 2 })
+    const projection = await rows<{ value: { admin: { locations: { locationId: string; status: string; allocationId: string }[] } } }>(
+      `select admin_private.commercial_forwarding_projection_v1($1) as value`,
+      [armed.prepared.subscription],
+    )
+    const reviewed = projection[0].value.admin.locations.find(location => location.locationId === high)
+    expect(reviewed?.status).toBe("review")
+    expect(reviewed?.allocationId).not.toBe(first.id)
+    expect(await instruct(armed, high, { allocationId: first.id, instructionVersion: 1, e164: "+441632960471" })).toMatchObject({ status: "denied", reason: "allocation" })
+    const shared = await instruct(armed, high, { instructionVersion: 1, e164: "+441632960473" })
+    expect(shared).toMatchObject({ status: "success", sharingStatus: "SHARED", e164: "+441632960473" })
+    const binding = await rows<{ binding: string; forwarding: string | null }>(
+      `select provider_binding_ref as binding, forwarding_instructed_at as forwarding from public.service_provisions where location_id = $1`,
+      [high],
+    )
+    expect(binding[0].binding).toBe(`alloc:${reviewed?.allocationId}`)
+    expect(binding[0].forwarding).not.toBeNull()
+    expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_forwarding_instructions where location_id = $1`, [high])).toEqual([{ count: 2 }])
+  })
+
+  it("replays one request and rejects a conflicting retry", async () => {
+    const armed = await ready([high])
+    expect(await allocate(armed, high, { agentRef: "agent-0021", e164: "+441632960481" })).toMatchObject({ status: "success" })
+    const request = randomUUID()
+    const first = await instruct(armed, high, { request, status: "DRAFT" })
+    expect(first).toMatchObject({ status: "success", instructionVersion: 1 })
+    expect(await instruct(armed, high, { request, status: "DRAFT" })).toEqual(first)
+    expect(await instruct(armed, high, { request, status: "SHARED" })).toEqual({ status: "conflict" })
+    expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_forwarding_instructions`)).toEqual([{ count: 1 }])
+    expect(await rows<{ forwarding: string | null }>(`select forwarding_instructed_at as forwarding from public.service_provisions where location_id = $1`, [high])).toEqual([{ forwarding: null }])
+  })
+
+  it("rejects revoked authority, an ended period, and an unpaid subscription", async () => {
+    const armed = await ready([high])
+    expect(await allocate(armed, high, { agentRef: "agent-0021", e164: "+441632960491" })).toMatchObject({ status: "success" })
+    await db.query(
+      `update public.business_memberships set status = 'revoked', verified_at = null, verified_by = null where customer_id = $1 and business_id = $2`,
+      [alex, bakery],
+    )
+    expect(await instruct(armed, high)).toMatchObject({ status: "denied", reason: "revoked" })
+    await db.query(
+      `update public.business_memberships set status = 'verified', verified_at = now(), verified_by = $3 where customer_id = $1 and business_id = $2`,
+      [alex, bakery, actor],
+    )
+
+    const expired = await ready([yard], { business: twin })
+    expect(await allocate(expired, yard, { agentRef: "agent-0026", e164: "+441632960492" })).toMatchObject({ status: "success" })
+    await db.exec("set local session_replication_role = replica")
+    await db.query(`update public.commercial_subscriptions set current_period_end = now() - interval '1 day' where id = $1`, [expired.prepared.subscription])
+    await db.exec("set local session_replication_role = origin")
+    expect(await instruct(expired, yard)).toMatchObject({ status: "denied", reason: "expired" })
+
+    const unpaid = await ready([oven], { product: "COMPLETE", business: kitchen })
+    expect(await allocate(unpaid, oven, { agentRef: "agent-0024", e164: "+441632960493" })).toMatchObject({ status: "success" })
+    await db.exec("set local session_replication_role = replica")
+    await db.query(`delete from public.commercial_payment_evidence where subscription_id = $1`, [unpaid.prepared.subscription])
+    await db.exec("set local session_replication_role = origin")
+    expect(await instruct(unpaid, oven)).toMatchObject({ status: "denied", reason: "payment" })
+    expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_forwarding_instructions`)).toEqual([{ count: 0 }])
+  })
+
+  it("rejects another customer and does not disclose the number before sharing", async () => {
+    const armed = await ready([high])
+    expect(await allocate(armed, high, { agentRef: "agent-0021", e164: "+441632960494" })).toMatchObject({ status: "success" })
+    expect(await instruct(armed, high, { customerId: blake, status: "DRAFT" })).toMatchObject({ status: "denied", reason: "customer" })
+    const customer = JSON.stringify(await rpc<Row>("customer_portal_setup_handover_v1", [session]))
+    expect(customer).not.toContain("+441632960494")
+    expect(customer).not.toContain("agent-0021")
+  })
+})

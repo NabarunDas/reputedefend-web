@@ -1692,6 +1692,26 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Audited record provider and number allocation", probe: "public.admin_commercial_record_number_allocation_v1" },
   },
+  {
+    // Audited forwarding instructions. Not applied to DEV.
+    // The verified DEV ledger contains 105 entries and ends at 20261105120000.
+    // Begin setup, preferences, AI configuration, the tier catalogue, the Guard
+    // offer, and number allocation stay unapplied and earlier.
+    // Do not apply 20261106003939 to DEV. Do not apply 20261106003939 to Production.
+    // DRAFT stays internal. SHARED sets forwarding_instructed_at and may move
+    // FORWARDING_REQUIRED to TEST_REQUIRED. It does not enable forwarding,
+    // write a routing binding, run a test call, or move a service to live.
+    // Writes are inside the command. containsDataChange stays false.
+    // safeToReplay stays false.
+    version: "20261106003939",
+    filename: "20261106003939_admin_commercial_record_forwarding_instructions_v1.sql",
+    step: "Audited record forwarding instructions",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Audited record forwarding instructions", probe: "public.admin_commercial_record_forwarding_instructions_v1" },
+  },
 ]
 
 /**
@@ -1829,8 +1849,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * volatility `20261028223000` and draft document role `20261028200000` remain
  * applied and must not be replayed. `pendingMigrations()` contains
  * `20261105130000`, `20261105144256`, `20261105172055`, `20261105180000`,
- * `20261105190000` and `20261105200000`. All six stay local and must not be applied to hosted DEV
- * or Production.
+ * `20261105190000`, `20261105200000` and `20261106003939`. All seven stay local and must not be applied to hosted DEV
+ * or Production. Do not apply `20261106003939` to hosted DEV or Production.
  * `20261105120000` is already applied on DEV and must not be replayed.
  * Do not replay `20261105120000`. Do not apply `20261105120000` to Production.
  * `20261104220000` is already applied on DEV and must not be

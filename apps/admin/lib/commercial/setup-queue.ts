@@ -91,6 +91,36 @@ export type AllocationProgress = {
   locations: AllocationLocationProgress[]
 }
 
+export type ForwardingLocationProgress = {
+  locationId: string
+  locationName: string
+  status: "needed" | "draft" | "review" | "shared"
+  instructionVersion: number
+  allocationId: string | null
+  allocationVersion: number
+  configurationVersion: number
+  preferenceVersion: number
+  provisionVersion: number
+  agentRef: string | null
+  e164: string | null
+  forwardingMode: "UNANSWERED" | "BUSY" | "UNREACHABLE" | "UNANSWERED_BUSY_UNREACHABLE" | null
+  carrierKnown: boolean | null
+  carrierName: string | null
+  customerTelephone: string | null
+  instructionText: string | null
+  instructionRevision: string | null
+  attestation: string | null
+  sharedAt: string | null
+}
+
+export type ForwardingProgress = {
+  sharedCount: number
+  reviewCount: number
+  draftCount: number
+  locationCount: number
+  locations: ForwardingLocationProgress[]
+}
+
 export type SetupQueueItem = {
   reference: string
   customerName: string
@@ -129,6 +159,7 @@ export type SetupQueueItem = {
   preferenceProgress: PreferenceProgress | null
   configurationProgress: ConfigurationProgress | null
   allocationProgress: AllocationProgress | null
+  forwardingProgress: ForwardingProgress | null
 }
 
 const stepKeys = ["payment", "preferences", "agent", "number", "test", "activation"] as const
@@ -342,6 +373,65 @@ function allocationProgress(value: unknown): AllocationProgress | null | undefin
   return { recordedCount: row.recordedCount, reviewCount: row.reviewCount, locationCount: row.locationCount, locations }
 }
 
+function forwardingProgress(value: unknown): ForwardingProgress | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!value || typeof value !== "object") return undefined
+  const row = value as Record<string, unknown>
+  if (typeof row.sharedCount !== "number" || !Number.isInteger(row.sharedCount) || row.sharedCount < 0) return undefined
+  if (typeof row.reviewCount !== "number" || !Number.isInteger(row.reviewCount) || row.reviewCount < 0) return undefined
+  if (typeof row.draftCount !== "number" || !Number.isInteger(row.draftCount) || row.draftCount < 0) return undefined
+  if (typeof row.locationCount !== "number" || !Number.isInteger(row.locationCount) || row.locationCount < 0) return undefined
+  if (row.sharedCount + row.reviewCount + row.draftCount > row.locationCount) return undefined
+  if (!Array.isArray(row.locations) || row.locations.length !== row.locationCount) return undefined
+  const modes = ["UNANSWERED", "BUSY", "UNREACHABLE", "UNANSWERED_BUSY_UNREACHABLE"]
+  const locations: ForwardingLocationProgress[] = []
+  for (const entry of row.locations) {
+    if (!entry || typeof entry !== "object") return undefined
+    const location = entry as Record<string, unknown>
+    if (typeof location.locationId !== "string" || !uuid.test(location.locationId)) return undefined
+    if (typeof location.locationName !== "string" || location.locationName.trim().length === 0) return undefined
+    if (location.status !== "needed" && location.status !== "draft" && location.status !== "review" && location.status !== "shared") return undefined
+    if (typeof location.instructionVersion !== "number" || !Number.isInteger(location.instructionVersion) || location.instructionVersion < 0) return undefined
+    if (location.allocationId !== null && (typeof location.allocationId !== "string" || !uuid.test(location.allocationId))) return undefined
+    for (const key of ["allocationVersion", "configurationVersion", "preferenceVersion", "provisionVersion"] as const) {
+      if (typeof location[key] !== "number" || !Number.isInteger(location[key]) || (location[key] as number) < 0) return undefined
+    }
+    if (location.agentRef !== null && typeof location.agentRef !== "string") return undefined
+    if (location.e164 !== null && typeof location.e164 !== "string") return undefined
+    if (location.forwardingMode !== null && !modes.includes(String(location.forwardingMode))) return undefined
+    if (location.carrierKnown !== null && typeof location.carrierKnown !== "boolean") return undefined
+    for (const key of ["carrierName", "customerTelephone", "instructionText", "instructionRevision", "attestation"] as const) {
+      if (location[key] !== null && typeof location[key] !== "string") return undefined
+    }
+    if (location.sharedAt !== null && (typeof location.sharedAt !== "string" || Number.isNaN(new Date(location.sharedAt).getTime()))) return undefined
+    locations.push({
+      locationId: location.locationId,
+      locationName: location.locationName,
+      status: location.status,
+      instructionVersion: location.instructionVersion,
+      allocationId: location.allocationId,
+      allocationVersion: location.allocationVersion as number,
+      configurationVersion: location.configurationVersion as number,
+      preferenceVersion: location.preferenceVersion as number,
+      provisionVersion: location.provisionVersion as number,
+      agentRef: location.agentRef as string | null,
+      e164: location.e164 as string | null,
+      forwardingMode: location.forwardingMode as ForwardingLocationProgress["forwardingMode"],
+      carrierKnown: location.carrierKnown as boolean | null,
+      carrierName: location.carrierName as string | null,
+      customerTelephone: location.customerTelephone as string | null,
+      instructionText: location.instructionText as string | null,
+      instructionRevision: location.instructionRevision as string | null,
+      attestation: location.attestation as string | null,
+      sharedAt: location.sharedAt as string | null,
+    })
+  }
+  if (locations.filter(location => location.status === "shared").length !== row.sharedCount) return undefined
+  if (locations.filter(location => location.status === "review").length !== row.reviewCount) return undefined
+  if (locations.filter(location => location.status === "draft").length !== row.draftCount) return undefined
+  return { sharedCount: row.sharedCount, reviewCount: row.reviewCount, draftCount: row.draftCount, locationCount: row.locationCount, locations }
+}
+
 function checklist(value: unknown): SetupChecklistStep[] | null {
   if (!Array.isArray(value) || value.length !== stepKeys.length) return null
   const steps: SetupChecklistStep[] = []
@@ -437,6 +527,8 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
     if (configuration === undefined) return null
     const allocation = allocationProgress(row.allocationProgress)
     if (allocation === undefined) return null
+    const forwarding = forwardingProgress(row.forwardingProgress)
+    if (forwarding === undefined) return null
     if (subscriptionId === undefined || customerId === undefined || onboardingRequestId === undefined || subscriptionVersion === undefined || onboardingVersion === undefined || setupStartedAt === undefined) return null
     if (JSON.stringify(row).includes("cus_") || JSON.stringify(row).includes("evt_")) return null
     items.push({
@@ -477,6 +569,7 @@ export function parseSetupQueue(value: unknown): SetupQueueItem[] | null {
       preferenceProgress: preferences,
       configurationProgress: configuration,
       allocationProgress: allocation,
+      forwardingProgress: forwarding,
     })
   }
   return items

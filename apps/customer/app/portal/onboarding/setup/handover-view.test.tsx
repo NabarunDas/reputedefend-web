@@ -279,4 +279,58 @@ describe("post-payment setup page", () => {
     expect(screen.getByText("Telephone number and forwarding").parentElement?.textContent).toContain("Planned")
     expect(document.body.textContent).not.toMatch(/active number|number is active|forwarding is ready|can answer calls/)
   })
+
+  it("shows a shared forwarding number for one location and keeps the other location private", () => {
+    const notice = "Do not enable call forwarding yet. Your receptionist is still being prepared and tested. We will tell you when it is ready for the final connection."
+    const instruction = `1. Keep +441632960441 for your telephone provider. 2. Exact menu names vary by telephone provider. 3. ${notice}`
+    render(<HandoverView subscriptions={[{
+      ...paid,
+      operationalStatus: "setup_started",
+      customerDisplay: "Setup in progress",
+      message: "Instructions ready — service testing pending. Do not enable call forwarding yet. Your receptionist is still being prepared and tested. We will tell you when it is ready for the final connection.",
+      serviceForwarding: {
+        state: "partial",
+        sharedCount: 1,
+        locationCount: 2,
+        locations: [
+          {
+            locationId: paid.locations[0].locationId,
+            locationName: "Oven",
+            status: "shared",
+            e164: "+441632960441",
+            forwardingMode: "UNANSWERED",
+            forwardingLabel: "Unanswered calls",
+            carrierKnown: false,
+            carrierName: null,
+            instruction,
+            instructionVersion: 1,
+            notice,
+          },
+          {
+            locationId: paid.locations[1].locationId,
+            locationName: "Counter",
+            status: "needed",
+            e164: null,
+            forwardingMode: null,
+            forwardingLabel: null,
+            carrierKnown: null,
+            carrierName: null,
+            instruction: null,
+            instructionVersion: null,
+            notice: "Forwarding instructions are not available for this location yet. Do not enable call forwarding.",
+          },
+        ],
+      },
+    }]} />)
+    expect(screen.getByRole("heading", { name: "Telephone setup" })).toBeTruthy()
+    expect(screen.getByText("Instructions ready — service testing pending. These notes prepare a later connection. They are not proof that forwarding is switched on.")).toBeTruthy()
+    expect(screen.getByText("+441632960441")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy()
+    expect(screen.getByText("Forwarding method: Unanswered calls.")).toBeTruthy()
+    expect(screen.getByText("Exact settings vary by telephone provider.")).toBeTruthy()
+    expect(screen.getAllByText(notice).length).toBeGreaterThan(0)
+    expect(screen.getByText("Forwarding instructions are not available for this location yet. Do not enable call forwarding.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Enable forwarding" })).toBeNull()
+    expect(document.body.textContent).not.toContain("+441632960442")
+  })
 })

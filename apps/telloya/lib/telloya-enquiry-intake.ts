@@ -4,7 +4,7 @@
  */
 
 import "server-only"
-import { persistGeneralEnquiry, type CustomEmailBuilder } from "@shared/enquiries/intake"
+import { persistGeneralEnquiry, type CustomEmailBuilder, type GeneralIntakeOptions } from "@shared/enquiries/intake"
 import { formattedFromAddress, type EnquiryEmailConfig } from "@shared/enquiry-config"
 import type { EnquiryEmailMessage } from "@shared/enquiry-provider"
 import { 
@@ -135,6 +135,7 @@ const telloyaEmailBuilder: CustomEmailBuilder = {
 export async function persistTelloyaEnquiry(
   data: TelloyaEnquiryInput,
   key: string,
+  overrides: Pick<GeneralIntakeOptions, "create" | "finish" | "provider" | "config" | "nodeEnv"> = {},
 ): Promise<TelloyaEnquiryResult> {
   // Convert Telloya fields to database payload format
   const payload = telloyaEnquiryToPayload(data)
@@ -143,6 +144,7 @@ export async function persistTelloyaEnquiry(
 
   // Use existing enquiry persistence infrastructure with Telloya-specific settings
   const result = await persistGeneralEnquiry(payload as unknown as EnquiryInput, key, {
+    ...overrides,
     customEmailBuilder: telloyaEmailBuilder,
     // Enable customer acknowledgement for Telloya (source-specific policy)
     sendCustomerAck: true,

@@ -16,13 +16,30 @@ export type EnquiryPayload = {
   businessProfileUrl: string
   reviewUrl: string
   source: string
-  // Telloya-specific fields
+  // Telloya-specific fields. These record customer interest. They are not a purchase.
   product?: string
   trade?: string
   locations?: string
   missedCallProblem?: string
   phoneSetup?: string
   contactPreference?: string
+  planTier?: string
+  guardInterested?: boolean
+  guardLocationCount?: number
+  customMonthlyMinutes?: number
+  customMonthlyCalls?: number
+  customPhoneNumbers?: number
+  customLocations?: number
+  customLanguages?: string
+  customRequirements?: string
+  voicePreference?: string
+  voiceAccent?: string
+  primaryLanguage?: string
+  speakingStyle?: string
+  additionalLanguages?: string
+  overageInterested?: boolean
+  overageMonthlyCapGbp?: number
+  privacyAccepted?: boolean
 }
 export type EnquiryRow = { 
   id: string

@@ -276,8 +276,8 @@ describe("Telloya and optional Relaunch Guard offers", () => {
     quotedTwo = await approvePlan({ tier: "CUSTOM", version: 2, amount: 7900, minutes: null, telloya: 2 })
     await approvePlan({ tier: "CUSTOM", version: 4, amount: 7900, minutes: null, telloya: 4, base: 1000 })
     await approvePlan({ tier: "CUSTOM", version: 5, amount: 7900, minutes: null, telloya: 5, agreed: false })
+    await approvePlan({ tier: "CUSTOM", version: 8, amount: 15000, minutes: null, telloya: 6, conditions: false, guardUnit: null })
     await db.exec("set local session_replication_role = replica")
-    await approvePlan({ tier: "CUSTOM", version: 8, amount: 15000, minutes: null, telloya: 2, conditions: false, guardUnit: null })
     const mismatched = randomUUID()
     await db.query(
       `insert into public.plan_versions(

@@ -9,10 +9,11 @@
 -- Replaces prevent_plan_overlap_v1 in full. The financial immutability
 -- check, the Telloya and Complete component counts, the terms check, the
 -- overlap lock and the overlap rejection stay. The added check is that an
--- approved BASIC, GROWTH or PRO plan has TELLOYA quantity_limit 1.
--- CUSTOM is not limited to one location. The quotation's quantity_limit is
--- the approved location count, and the offer command still requires the
--- onboarding locations to match it.
+-- approved BASIC, GROWTH or PRO plan has TELLOYA quantity_limit 1. That
+-- includes a Complete bundle on those tiers, so the bundle cannot carry a
+-- second Telloya location. CUSTOM is not limited to one location. The
+-- quotation's quantity_limit is the approved location count, and the offer
+-- command still requires the onboarding locations to match it.
 -- This file does not delete commercial_provider_number_owners rows, does
 -- not buy or release a telephone number, and does not enable forwarding.
 
@@ -85,12 +86,13 @@ BEGIN
     FROM public.plan_components component
     WHERE component.plan_version_id = NEW.id
       AND component.component_code = 'TELLOYA';
-    -- Basic, Growth and Pro include exactly one Telloya operating location.
-    -- Custom keeps the quantity on the approved quotation. Missing, zero,
-    -- two and any other quantity fail this check. A missing component is
-    -- also rejected above. This does not release a receptionist number.
-    IF NEW.product_code = 'TELLOYA'
-      AND NEW.tier_code IN ('BASIC', 'GROWTH', 'PRO')
+    -- Basic, Growth and Pro include exactly one Telloya operating location,
+    -- whether the product is Telloya or the Complete bundle. Custom keeps
+    -- the quantity on the approved quotation. Missing, zero, two and any
+    -- other quantity fail this check. A missing component is also rejected
+    -- above. This does not release a receptionist number.
+    IF NEW.tier_code IN ('BASIC', 'GROWTH', 'PRO')
+      AND NEW.product_code IN ('TELLOYA', 'COMPLETE')
       AND telloya_limit IS DISTINCT FROM 1
     THEN
       RAISE EXCEPTION 'standard Telloya plan includes exactly one location';
@@ -134,6 +136,6 @@ $$;
 
 
 COMMENT ON FUNCTION admin_private.prevent_plan_overlap_v1() IS
-  'Keeps approved plan financial fields immutable, requires one Telloya location component, requires Basic, Growth and Pro to include exactly one location, and rejects overlapping approved versions. Custom quantity stays the quoted cap. Does not release a receptionist number.';
+  'Keeps approved plan financial fields immutable, requires one Telloya location component, requires Basic, Growth and Pro on Telloya and Complete to include exactly one location, and rejects overlapping approved versions. Custom quantity stays the quoted cap. Does not release a receptionist number.';
 
 COMMIT;

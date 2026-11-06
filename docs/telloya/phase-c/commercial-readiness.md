@@ -75,7 +75,7 @@ Journey covered in the same test:
 
 ## 4. Owner decisions still required
 
-- The location and number policy is approved in `docs/telloya/phase-c/catalogue-proposal.md`: one operating location and one receptionist number on Basic, Growth and Pro. The cap-2 Growth row stays `DRAFT`. Approving it is rejected once `20261106140000` is present. That file is not applied to hosted DEV. A Custom cap of 2 is a separate quotation and is not limited to one location. A number correction keeps the previous E.164 reserved. Do not delete that owner row. The retirement states are in `docs/telloya/phase-c/number-lifecycle.md`. Do not approve an unlimited cap by leaving the component off a plan: an approved Telloya plan requires the component.
+- The location and number policy is approved in `docs/telloya/phase-c/catalogue-proposal.md`: one operating location and one receptionist number on Basic, Growth and Pro. The cap-2 Growth row stays `DRAFT`. Approving it is rejected once `20261106140000` is present. That file is not applied to hosted DEV. The same one-location check applies to a Complete bundle on Basic, Growth or Pro. A Custom cap of 2 is a separate quotation and is not limited to one location. A number correction keeps the previous E.164 reserved. Do not delete that owner row. The retirement states are in `docs/telloya/phase-c/number-lifecycle.md`. Do not approve an unlimited cap by leaving the component off a plan: an approved Telloya plan requires the component.
 - The legal agreement text. The fixture text must not be copied into hosted DEV.
 - Tax behaviour. The rehearsal uses `NOT_APPLICABLE` so a price can be accepted. That is not a tax decision.
 - Whether any Custom quotation is offered, and at what amount. £150 is a test figure.

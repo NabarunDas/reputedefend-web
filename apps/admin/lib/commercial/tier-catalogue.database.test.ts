@@ -277,7 +277,10 @@ describe("tier-aware commercial catalogue", () => {
     const growth = await approvePlan({ product: "TELLOYA", tier: "GROWTH", version: 2, amount: 7900, minutes: 300, telloya: 1, guardUnit: 999 })
     const pro = await approvePlan({ product: "TELLOYA", tier: "PRO", version: 3, amount: 12000, minutes: 500, telloya: 1, guardUnit: 999 })
     const custom = await approvePlan({ product: "TELLOYA", tier: "CUSTOM", version: 4, amount: 15000, minutes: null, telloya: 2, guardUnit: null, overage: null })
-    const complete = await approvePlan({ product: "COMPLETE", tier: "GROWTH", version: 1, amount: 19900, minutes: 300, telloya: 2, guard: 1, guardUnit: 999 })
+    await db.exec("SAVEPOINT complete_cap")
+    await expect(approvePlan({ product: "COMPLETE", tier: "GROWTH", version: 12, amount: 19900, minutes: 300, telloya: 2, guard: 1, guardUnit: 999 })).rejects.toThrow(/standard Telloya plan includes exactly one location/)
+    await db.exec("ROLLBACK TO SAVEPOINT complete_cap")
+    const complete = await approvePlan({ product: "COMPLETE", tier: "GROWTH", version: 1, amount: 19900, minutes: 300, telloya: 1, guard: 1, guardUnit: 999 })
     const approved = await rows<{ tier_code: string; product_code: string }>(
       "select product_code, tier_code from public.plan_versions where status = 'APPROVED' order by product_code, tier_code",
     )
@@ -404,7 +407,7 @@ describe("tier-aware commercial catalogue", () => {
     expect((await rows<{ n: number }>("select count(*)::int as n from public.commercial_offer_acceptances"))[0].n).toBe(0)
     expect((await rows<{ state: string }>("select state from public.commercial_subscriptions where customer_id = $1", [alex]))[0].state).toBe("OFFERED")
 
-    const completeEnquiry = await readyEnquiry("alex.tier@example.com", "growth", "COMPLETE", 2)
+    const completeEnquiry = await readyEnquiry("alex.tier@example.com", "growth", "COMPLETE", 1)
     const completeOffer = await command("prepare_offer", { enquiryId: completeEnquiry.id, planVersionId: complete, reason }, completeEnquiry.version)
     expect(completeOffer.status).toBe("success")
     const guard = await rows<{ component_code: string; quantity: number }>(
@@ -417,7 +420,7 @@ describe("tier-aware commercial catalogue", () => {
     )
     expect(guard).toEqual([
       { component_code: "GUARD", quantity: 1 },
-      { component_code: "TELLOYA", quantity: 2 },
+      { component_code: "TELLOYA", quantity: 1 },
     ])
     const completeAmount = await rows<{ amount_minor: number }>(
       "select amount_minor from public.commercial_subscriptions where plan_version_id = $1",

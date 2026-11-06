@@ -2,9 +2,39 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 import { sessionCookie } from "../auth/config"
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
-vi.mock("@/lib/auth/backend", async original => ({ ...await original<typeof import("@/lib/auth/backend")>(), backend: () => mocks }))
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), sessionFromToken: vi.fn() }))
+vi.mock("@/lib/auth/backend", async original => ({
+  ...await original<typeof import("@/lib/auth/backend")>(),
+  backend: () => mocks,
+  sessionFromToken: (token: string | undefined) => mocks.sessionFromToken(token),
+}))
 import { POST } from "@/app/api/commercial/verify-agent-test-call/route"
+import { allowAgentTestLookup, resetAgentTestLookups } from "@/lib/commercial/agent-test-call-provider"
+
+const operator = "11111111-1111-4111-8111-111111111111"
+
+function freshSession(createdAt = new Date().toISOString()) {
+  return {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    userId: operator,
+    createdAt,
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+  }
+}
+
+function installRpc(options: { session?: unknown; preflight?: unknown; verify?: unknown } = {}) {
+  mocks.sessionFromToken.mockResolvedValue(options.session === undefined ? freshSession() : options.session)
+  mocks.rpc.mockImplementation(async (name: string) => {
+    if (name === "admin_session_v1") return options.session === undefined ? freshSession() : options.session
+    if (name === "admin_commercial_agent_test_preflight_v1") return options.preflight ?? { status: "eligible" }
+    if (name === "admin_commercial_verify_agent_test_call_v1") return options.verify ?? { status: "success", evidenceOutcome: "REQUIRES_REVIEW", testPassed: false, forwardingVerified: false }
+    throw new Error(name)
+  })
+}
+
+function verifyCall() {
+  return mocks.rpc.mock.calls.find(call => call[0] === "admin_commercial_verify_agent_test_call_v1")
+}
 
 const origin = "https://admin.profilerelaunch.com"
 const key = "33333333-3333-4333-8333-333333333333"
@@ -63,6 +93,8 @@ beforeEach(() => {
   vi.stubEnv("VERCEL_ENV", "development")
   vi.stubEnv("TELLOYA_RETELL_DEV_API_KEY", "test-key-value")
   mocks.rpc.mockReset()
+  resetAgentTestLookups()
+  installRpc()
   vi.unstubAllGlobals()
 })
 afterEach(() => {
@@ -88,14 +120,14 @@ describe("verify AI receptionist test call command", () => {
 
   it("does not record a pass when the provider cannot be read", async () => {
     vi.stubEnv("TELLOYA_RETELL_DEV_API_KEY", "")
-    mocks.rpc.mockResolvedValue({ status: "success", evidenceOutcome: "REQUIRES_REVIEW", providerStatus: "unavailable", testPassed: false, forwardingVerified: false })
+    installRpc({ verify: { status: "success", evidenceOutcome: "REQUIRES_REVIEW", providerStatus: "unavailable", testPassed: false, forwardingVerified: false } })
     const response = await POST(req())
     expect(response.status).toBe(200)
     const json = await response.json()
     expect(json.evidenceOutcome).toBe("REQUIRES_REVIEW")
     expect(json.message).not.toContain("has passed its conversation test")
     expect(json.forwardingVerified).toBe(false)
-    const payload = mocks.rpc.mock.calls[0][1].p_payload
+    const payload = verifyCall()?.[1].p_payload
     expect(payload.evidence.availability).toBe("unavailable")
     expect(payload.evidence.environment).toBe("dev")
     expect(payload).not.toHaveProperty("transcript")
@@ -106,11 +138,13 @@ describe("verify AI receptionist test call command", () => {
     const response = await POST(req())
     expect(response.status).toBe(503)
     expect(await response.json()).toEqual({ message: "We couldn’t confirm whether the provider call could be read. Try the same action again without changing the assessment." })
-    expect(mocks.rpc).not.toHaveBeenCalled()
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("busy", { status: 503 })))
-    const again = await POST(req())
-    expect(again.status).toBe(503)
-    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(verifyCall()).toBeUndefined()
+    for (const status of [408, 429, 503]) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("busy", { status })))
+      const again = await POST(req())
+      expect(again.status).toBe(503)
+      expect(verifyCall()).toBeUndefined()
+    }
   })
 
   it("reads the provider call and drops recordings and transcripts before recording", async () => {
@@ -128,14 +162,16 @@ describe("verify AI receptionist test call command", () => {
       metadata: { customerId: "cus_secret" },
     }), { status: 200, headers: { "content-type": "application/json" } }))
     vi.stubGlobal("fetch", fetchMock)
-    mocks.rpc.mockResolvedValue({
-      status: "success",
-      evidenceOutcome: "VERIFIED_PASSED",
-      evidenceVersion: 1,
-      providerStatus: "retrieved",
-      provisionState: "AWAITING_CONFIRMATION",
-      testPassed: true,
-      forwardingVerified: false,
+    installRpc({
+      verify: {
+        status: "success",
+        evidenceOutcome: "VERIFIED_PASSED",
+        evidenceVersion: 1,
+        providerStatus: "retrieved",
+        provisionState: "AWAITING_CONFIRMATION",
+        testPassed: true,
+        forwardingVerified: false,
+      },
     })
     const response = await POST(req())
     expect(response.status).toBe(200)
@@ -150,14 +186,17 @@ describe("verify AI receptionist test call command", () => {
     expect(String(called[0])).toBe("https://api.retellai.com/v2/get-call/call_direct_01")
     expect(called[1].method).toBe("GET")
     expect(called[1].headers.authorization).toBe("Bearer test-key-value")
-    const evidence = mocks.rpc.mock.calls[0][1].p_payload.evidence
+    expect(called[1].signal).toBeInstanceOf(AbortSignal)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const evidence = verifyCall()?.[1].p_payload.evidence
     expect(evidence).toMatchObject({
       availability: "retrieved",
       callId: "call_direct_01",
       callType: "web_call",
       callStatus: "ended",
       agentId: "agent-0021",
-      agentVersion: "4",
+      agentVersion: 4,
+      agentVersionQuality: "present",
       environment: "dev",
       providerError: false,
       testScope: "AGENT_DIRECT",
@@ -165,16 +204,17 @@ describe("verify AI receptionist test call command", () => {
     expect(evidence).not.toHaveProperty("transcript")
     expect(evidence).not.toHaveProperty("recording_url")
     expect(evidence).not.toHaveProperty("metadata")
-    expect(mocks.rpc.mock.calls[0][1].p_payload.qa.staffConfirmed).toBe(true)
+    expect(verifyCall()?.[1].p_payload.qa.staffConfirmed).toBe(true)
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_private.commercial_agent_test_trust_call_v1")).toBe(false)
   })
 
   it("records an unknown call without treating the typed reference as a pass", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("missing", { status: 404 })))
-    mocks.rpc.mockResolvedValue({ status: "success", evidenceOutcome: "REQUIRES_REVIEW", providerStatus: "not_found", testPassed: false, forwardingVerified: false })
+    installRpc({ verify: { status: "success", evidenceOutcome: "REQUIRES_REVIEW", providerStatus: "not_found", testPassed: false, forwardingVerified: false } })
     const response = await POST(req())
     expect(response.status).toBe(200)
     expect((await response.json()).message).not.toContain("has passed its conversation test")
-    expect(mocks.rpc.mock.calls[0][1].p_payload.evidence.availability).toBe("not_found")
+    expect(verifyCall()?.[1].p_payload.evidence.availability).toBe("not_found")
   })
 
   it("rejects a missing staff confirmation before calling the provider", async () => {
@@ -193,12 +233,82 @@ describe("verify AI receptionist test call command", () => {
       call_status: "ended",
       agent_id: "agent-0021",
     }), { status: 200 })))
-    mocks.rpc.mockResolvedValue({ status: "success", evidenceOutcome: "VERIFIED_FAILED" })
+    installRpc({ verify: { status: "success", evidenceOutcome: "VERIFIED_FAILED" } })
     const response = await POST(req())
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       message: "The conversation test was recorded as failed. The service was not advanced. Telephone forwarding is not verified, and the receptionist is not live.",
       evidenceOutcome: "VERIFIED_FAILED",
     })
+    expect(verifyCall()?.[1].p_payload.evidence.agentVersionQuality).toBe("missing")
+  })
+
+  it("does not call the provider for an invalid admin cookie", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const response = await POST(new NextRequest(`${origin}/api/commercial/verify-agent-test-call`, {
+      method: "POST",
+      headers: { origin, "content-type": "application/json", "idempotency-key": key, cookie: `${sessionCookie}=not-a-session` },
+      body: JSON.stringify(body),
+    }))
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ message: "Please sign in again." })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("does not call the provider when the admin session is missing", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    installRpc({ session: null })
+    const response = await POST(req())
+    expect(response.status).toBe(401)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(verifyCall()).toBeUndefined()
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_commercial_agent_test_preflight_v1")).toBe(false)
+  })
+
+  it("does not call the provider when the recent sign-in has expired", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    installRpc({ session: freshSession(new Date(Date.now() - 31 * 60 * 1000).toISOString()) })
+    const response = await POST(req())
+    expect(response.status).toBe(403)
+    const json = await response.json()
+    expect(json.message).not.toContain("call_direct_01")
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(verifyCall()).toBeUndefined()
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_commercial_agent_test_preflight_v1")).toBe(false)
+  })
+
+  it("does not call the provider for another business, subscription, or location", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    for (const reason of ["customer", "subscription", "location"]) {
+      installRpc({ preflight: { status: "denied", reason } })
+      const response = await POST(req())
+      expect(response.status).toBe(403)
+      expect(JSON.stringify(await response.json())).not.toContain("call_direct_01")
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(verifyCall()).toBeUndefined()
+  })
+
+  it("stops further provider lookups after the operator limit", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    for (let attempt = 0; attempt < 6; attempt += 1) expect(allowAgentTestLookup(operator)).toBe(true)
+    const response = await POST(req())
+    expect(response.status).toBe(429)
+    expect(await response.json()).toEqual({ message: "Too many provider lookups. Wait a moment and try again." })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(verifyCall()).toBeUndefined()
+  })
+
+  it("keeps a provider timeout retryable and does not record it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new DOMException("The operation was aborted due to timeout", "TimeoutError")))
+    const response = await POST(req())
+    expect(response.status).toBe(503)
+    expect(verifyCall()).toBeUndefined()
   })
 })

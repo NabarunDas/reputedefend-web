@@ -1,6 +1,6 @@
 import "server-only"
 import { NextRequest, NextResponse } from "next/server"
-import { backend, tokenHash, validToken } from "../auth/backend"
+import { backend, sessionFromToken, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
 import { adminCommandOriginError } from "../auth/command-origin"
 import { privateResponseHeaders } from "../access"
@@ -9,7 +9,7 @@ import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 import { commercialProviderLane } from "./provider-lane"
 import { commercialSetupQueueEnabled } from "./setup-queue-flag"
 import { commercialVerifyAgentTestCallEnabled } from "./verify-agent-test-call-flag"
-import { retrieveAgentTestCall, type RetrievedAgentCall } from "./agent-test-call-provider"
+import { allowAgentTestLookup, retrieveAgentTestCall, type RetrievedAgentCall } from "./agent-test-call-provider"
 
 const reply = (message: string, status: number) => NextResponse.json({ message }, { status, headers: privateResponseHeaders })
 
@@ -158,6 +158,34 @@ export async function verifyAgentTestCallCommand(request: NextRequest) {
     if (!command) return reply("Check the test reference and staff assessment before recording them.", 400)
     const lane = commercialProviderLane()
     if (!lane) return reply("The provider lane is not configured for this deployment, so the conversation test cannot be recorded.", 403)
+    const session = await sessionFromToken(token)
+    if (!session?.userId || !session.createdAt) return reply("Please sign in again.", 401)
+    const signedInAt = Date.parse(session.createdAt)
+    if (!Number.isFinite(signedInAt) || signedInAt < Date.now() - 30 * 60 * 1000) return reply(ADMIN_RECENT_SIGN_IN_MESSAGE, 403)
+    const preflight = await backend().rpc<{ status: string; reason?: string }>("admin_commercial_agent_test_preflight_v1", {
+      p_token: tokenHash(token),
+      p_subscription: command.subscriptionId,
+      p_version: command.version,
+      p_customer: command.customerId,
+      p_business: command.businessId,
+      p_location: command.locationId,
+      p_environment: lane,
+      p_onboarding: command.onboardingRequestId,
+      p_onboarding_version: command.onboardingVersion,
+      p_preference_version: command.preferenceVersion,
+      p_configuration_version: command.configurationVersion,
+      p_allocation: command.allocationId,
+      p_allocation_version: command.allocationVersion,
+      p_instruction: command.instructionId,
+      p_instruction_version: command.instructionVersion,
+      p_provision_version: command.provisionVersion,
+    })
+    if (preflight.status === "unauthorized") return reply("Your session has ended. Please sign in again.", 401)
+    if (preflight.status === "reauth_required") return reply(ADMIN_RECENT_SIGN_IN_MESSAGE, 403)
+    if (preflight.status === "conflict") return reply("These test records have changed. Reload the queue before trying again.", 409)
+    if (preflight.status === "denied") return reply(denied(preflight.reason), 403)
+    if (preflight.status !== "eligible") return reply("The conversation test cannot be recorded for this subscription.", 403)
+    if (!allowAgentTestLookup(session.userId)) return reply("Too many provider lookups. Wait a moment and try again.", 429)
     const retrieval = await retrieveAgentTestCall({ callId: command.callId, lane })
     if (retrieval.availability === "uncertain") {
       return reply("We couldn’t confirm whether the provider call could be read. Try the same action again without changing the assessment.", 503)

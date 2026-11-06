@@ -1448,7 +1448,7 @@ function VerifyAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "dev"
       {!place.instructionId ? <Notice tone="warning">Share the forwarding instructions for this location before recording a conversation test.</Notice> : null}
       {passed ? null : <>
         <label>Provider call reference<input value={callId} onChange={event => setCallId(event.target.value)} /></label>
-        <p>The reference is only the lookup key. The server reads the call from the provider. Typing a reference is not proof that the call succeeded.</p>
+        <p>The reference is only the lookup key. The server reads the call from the provider. Typing a reference is not proof that the call succeeded, and it does not prove the call was this location’s controlled test. A pass is recorded only when the workspace already holds a trusted test-session link for that call.</p>
         <fieldset>
           <legend>Human QA</legend>
           {testQa.map(([key, label]) => (

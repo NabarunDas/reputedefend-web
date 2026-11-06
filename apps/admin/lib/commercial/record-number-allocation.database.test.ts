@@ -1506,6 +1506,7 @@ async function evidenceBody(location: string, patch: Record<string, unknown> = {
   return {
     agentId: `agent-${location.slice(-4)}`,
     agentVersion: "rev-0004",
+    agentVersionQuality: "present",
     availability: "retrieved",
     callId: `call${location.slice(-4)}ok`,
     callStatus: "ended",
@@ -1572,6 +1573,9 @@ async function verify(
     [armed.prepared.subscription, location],
   ))[0]
   const evidence: Record<string, unknown> = { ...(await evidenceBody(location, options.evidence)) }
+  if (!options.evidence || !("agentVersionQuality" in options.evidence)) {
+    evidence.agentVersionQuality = evidence.agentVersion == null ? "missing" : "present"
+  }
   const qa: Record<string, unknown> = { ...assessment(options.qa) }
   if (options.dropEvidence) delete evidence[options.dropEvidence]
   if (options.dropQa) delete qa[options.dropQa]
@@ -1601,6 +1605,15 @@ async function verify(
   return Object.assign(result, { body, subscriptionVersion: options.subscriptionVersion ?? current.subscription_version })
 }
 
+async function trust(subscription: string, location: string, callId: string) {
+  const bound = (await rows<{ value: Row }>(
+    `select admin_private.commercial_agent_test_trust_call_v1($1, $2::uuid, $3::uuid, $4) as value`,
+    [adminToken, subscription, location, callId],
+  ))[0].value
+  expect(bound).toMatchObject({ status: "bound" })
+  expect(String(bound.testSessionRef)).toMatch(/^TS-[0-9]{2}-[A-F0-9]{8}$/)
+}
+
 async function shared(location: string, e164: string, options: { ready?: Parameters<typeof ready>[1]; agentRef?: string } = {}) {
   const armed = await ready([location], options.ready)
   expect(await allocate(armed, location, { agentRef: options.agentRef ?? `agent-${location.slice(-4)}`, e164 })).toMatchObject({ status: "success" })
@@ -1619,6 +1632,8 @@ describe("audited AI receptionist test call", () => {
     expect(source).toContain("VERIFIED_PASSED")
     expect(source).toContain("VERIFIED_FAILED")
     expect(source).toContain("REQUIRES_REVIEW")
+    expect(source).toContain("SERVER_BOUND")
+    expect(source).toContain("typed call id")
     expect(source).toContain("AWAITING_CONFIRMATION")
     expect(source).toContain("TEST_REQUIRED")
     expect(source).toContain(passedConversation)
@@ -1635,7 +1650,8 @@ describe("audited AI receptionist test call", () => {
     const armed = await shared(high, "+441632960601")
     const before = await serviceRow(high)
     const request = randomUUID()
-    const passed = await verify(armed, high, { request, evidence: { agentVersion: null } })
+    await trust(armed.prepared.subscription, high, "call0021ok")
+    const passed = await verify(armed, high, { request })
     expect(passed).toMatchObject({
       status: "success",
       evidenceOutcome: "VERIFIED_PASSED",
@@ -1702,14 +1718,14 @@ describe("audited AI receptionist test call", () => {
     expect(await verify(armed, high, { evidence: { availability: "not_found", callId: "call0021miss", agentId: null, callStatus: null, callType: null, startedAt: null, endedAt: null } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
     expect(await verify(armed, high, { evidence: { agentId: "agent-other", callId: "call0021bad" } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
     expect(await verify(armed, high, { evidence: { environment: "production", callId: "call0021env" } })).toMatchObject({ status: "denied", reason: "environment" })
-    expect(await verify(armed, high, { evidence: { callStatus: "ongoing", callId: "call0021run" } })).toMatchObject({ evidenceOutcome: "PENDING_VERIFICATION" })
+    expect(await verify(armed, high, { evidence: { callStatus: "ongoing", callId: "call0021run", endedAt: null } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
     expect(await verify(armed, high, { evidence: { callStatus: "error", callId: "call0021bad2" } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
     expect(await verify(armed, high, { evidence: { availability: "unavailable", callId: "call0021gap", agentId: null, callStatus: null, callType: null, startedAt: null, endedAt: null } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW", providerStatus: "unavailable" })
     expect(await verify(armed, high, { evidence: { callType: "phone_call", callId: "call0021phn" } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
     expect(await verify(armed, high, { evidence: { agentVersion: "rev-9999", callId: "call0021old" } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
     const configured = await rows<{ at: string | Date }>(`select agent_configured_at as at from public.service_provisions where location_id = $1`, [high])
     expect(await verify(armed, high, { evidence: { callId: "call0021early", startedAt: stamp(configured[0].at, -3600000), endedAt: stamp(configured[0].at, -3500000) } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
-    expect(await verify(armed, high, { evidence: { callId: "call0021qa" }, qa: { greeting: false } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
+    expect(await verify(armed, high, { evidence: { callId: "call0021qa" }, qa: { greeting: false } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
     const missing = randomUUID()
     expect(await verify(armed, high, { request: missing, qa: { staffConfirmed: false } })).toMatchObject({ status: "invalid" })
     expect(await rows<{ count: number }>(`select count(*)::int as count from admin_private.commercial_command_receipts where request_id = $1`, [missing])).toEqual([{ count: 0 }])
@@ -1721,6 +1737,7 @@ describe("audited AI receptionist test call", () => {
     const history = await rows<{ outcome: string }>(`select outcome from admin_private.commercial_agent_test_evidence order by version`)
     expect(history.map(row => row.outcome)).toContain("VERIFIED_FAILED")
     expect(history.some(row => row.outcome === "VERIFIED_PASSED")).toBe(false)
+    await trust(armed.prepared.subscription, high, "call0021yes")
     const passed = await verify(armed, high, { evidence: { callId: "call0021yes", agentVersion: "rev-0004" } })
     expect(passed).toMatchObject({ evidenceOutcome: "VERIFIED_PASSED", provisionState: "AWAITING_CONFIRMATION" })
     expect(await rows<{ outcome: string }>(`select outcome from admin_private.commercial_agent_test_evidence where outcome = 'VERIFIED_FAILED'`)).not.toEqual([])
@@ -1735,7 +1752,8 @@ describe("audited AI receptionist test call", () => {
     expect(await allocate(first, dock, { agentRef: "agent-0022", e164: "+441632960623" })).toMatchObject({ status: "success" })
     expect(await instruct(first, high, { status: "SHARED" })).toMatchObject({ status: "success" })
     expect(await instruct(first, dock, { status: "SHARED" })).toMatchObject({ status: "success" })
-    expect(await verify(first, high, { evidence: { callId: "callshared01", agentVersion: null } })).toMatchObject({ evidenceOutcome: "VERIFIED_PASSED" })
+    await trust(first.prepared.subscription, high, "callshared01")
+    expect(await verify(first, high, { evidence: { callId: "callshared01" } })).toMatchObject({ evidenceOutcome: "VERIFIED_PASSED" })
     expect(await verify(first, dock, { evidence: { callId: "callshared01", agentId: "agent-0022", agentVersion: null } })).toMatchObject({ status: "denied", reason: "call" })
     expect((await serviceRow(dock)).state).toBe("TEST_REQUIRED")
     expect((await serviceRow(high)).test_ref).toBe("callshared01")
@@ -1774,7 +1792,8 @@ describe("audited AI receptionist test call", () => {
     expect(await allocate(armed, dock, { agentRef: "agent-0022", e164: "+441632960642" })).toMatchObject({ status: "success" })
     expect(await instruct(armed, high, { status: "SHARED" })).toMatchObject({ status: "success" })
     expect(await instruct(armed, dock, { status: "SHARED" })).toMatchObject({ status: "success" })
-    expect(await verify(armed, high, { evidence: { callId: "callhigh001", agentVersion: null } })).toMatchObject({
+    await trust(armed.prepared.subscription, high, "callhigh001")
+    expect(await verify(armed, high, { evidence: { callId: "callhigh001" } })).toMatchObject({
       evidenceOutcome: "VERIFIED_PASSED",
       nextAction: "Verify AI receptionist test call",
     })
@@ -1789,7 +1808,8 @@ describe("audited AI receptionist test call", () => {
     expect(customer).not.toContain("callhigh001")
     expect(customer).not.toContain("agent-0021")
     expect(customer).not.toContain("testProgress")
-    expect(await verify(armed, dock, { evidence: { callId: "calldock001", agentId: "agent-0022", agentVersion: null } })).toMatchObject({
+    await trust(armed.prepared.subscription, dock, "calldock001")
+    expect(await verify(armed, dock, { evidence: { callId: "calldock001", agentId: "agent-0022" } })).toMatchObject({
       evidenceOutcome: "VERIFIED_PASSED",
       nextAction: "Confirm readiness for the final telephone connection",
     })
@@ -1798,5 +1818,76 @@ describe("audited AI receptionist test call", () => {
     expect((finished.checklist as { key: string; state: string }[]).find(step => step.key === "test")?.state).toBe("complete")
     expect((finished.checklist as { key: string; state: string }[]).find(step => step.key === "activation")?.state).toBe("planned")
     expect(await rows<{ count: number }>(`select count(*)::int as count from public.service_provisions where state = 'LIVE' or live_at is not null`)).toEqual([{ count: 0 }])
+  })
+
+  it("passes only a server-bound, versioned, finished controlled test", async () => {
+    const armed = await shared(high, "+441632960651")
+    const current = await versions(armed.prepared.subscription)
+    const allocation = (await rows<{ id: string; version: number }>(
+      `select id::text as id, version from admin_private.commercial_location_allocations where location_id = $1`,
+      [high],
+    ))[0]
+    const instruction = (await rows<{ id: string; version: number }>(
+      `select id::text as id, version from admin_private.commercial_forwarding_instructions where location_id = $1`,
+      [high],
+    ))[0]
+    expect(await rpc<Row>("admin_commercial_agent_test_preflight_v1", [
+      adminToken,
+      armed.prepared.subscription,
+      current.subscription_version,
+      alex,
+      bakery,
+      high,
+      "dev",
+      current.request_id,
+      current.request_version,
+      1,
+      1,
+      allocation.id,
+      allocation.version,
+      instruction.id,
+      instruction.version,
+      await provisionVersion(armed.prepared.subscription, high),
+    ])).toEqual({ status: "eligible" })
+    expect(await rpc<Row>("admin_commercial_agent_test_preflight_v1", [
+      adminToken,
+      armed.prepared.subscription,
+      current.subscription_version,
+      alex,
+      twin,
+      yard,
+      "dev",
+      current.request_id,
+      current.request_version,
+      1,
+      1,
+      allocation.id,
+      allocation.version,
+      instruction.id,
+      instruction.version,
+      1,
+    ])).toMatchObject({ status: "denied" })
+    expect(await verify(armed, high, { evidence: { callId: "call0021web" } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW", testPassed: false })
+    expect((await serviceRow(high)).state).toBe("TEST_REQUIRED")
+    expect(await verify(armed, high, { evidence: { callId: "call0021nil", agentVersion: null } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
+    expect(await verify(armed, high, { evidence: { callId: "call0021dif", agentVersion: "rev-9999" } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
+    await trust(armed.prepared.subscription, high, "call0021run")
+    expect(await verify(armed, high, { evidence: { callId: "call0021run", callStatus: "ongoing", endedAt: null } })).toMatchObject({ evidenceOutcome: "PENDING_VERIFICATION" })
+    await trust(armed.prepared.subscription, high, "call0021reg")
+    expect(await verify(armed, high, { evidence: { callId: "call0021reg", callStatus: "registered", startedAt: null, endedAt: null } })).toMatchObject({ evidenceOutcome: "PENDING_VERIFICATION" })
+    const same = stamp((await rows<{ at: string | Date }>(`select agent_configured_at as at from public.service_provisions where location_id = $1`, [high]))[0].at, 1000)
+    await trust(armed.prepared.subscription, high, "call0021zero")
+    expect(await verify(armed, high, { evidence: { callId: "call0021zero", startedAt: same, endedAt: same } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
+    await trust(armed.prepared.subscription, high, "call0021notime")
+    expect(await verify(armed, high, { evidence: { callId: "call0021notime", startedAt: null, endedAt: null } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
+    await trust(armed.prepared.subscription, high, "call0021bad")
+    expect(await verify(armed, high, { evidence: { callId: "call0021bad", providerError: true } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED", testPassed: false })
+    await trust(armed.prepared.subscription, high, "call0021qa2")
+    expect(await verify(armed, high, { evidence: { callId: "call0021qa2" }, qa: { greeting: false } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
+    expect((await serviceRow(high)).state).toBe("TEST_REQUIRED")
+    await trust(armed.prepared.subscription, high, "call0021ok2")
+    expect(await verify(armed, high, { evidence: { callId: "call0021ok2" } })).toMatchObject({ evidenceOutcome: "VERIFIED_PASSED", provisionState: "AWAITING_CONFIRMATION", forwardingVerified: false })
+    expect(await rows<{ count: number }>(`select count(*)::int as count from public.telloya_voice_number_bindings`)).toEqual([{ count: 0 }])
+    expect(await rows<{ count: number }>(`select count(*)::int as count from public.service_provisions where state = 'LIVE' or live_at is not null or customer_confirmed_at is not null`)).toEqual([{ count: 0 }])
   })
 })

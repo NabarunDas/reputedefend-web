@@ -2,6 +2,10 @@
 -- Records a controlled direct agent conversation test for one selected location.
 -- A passed conversation is not proof that telephone forwarding or a live inbound route was verified.
 -- It does not place a call, buy a number, write a routing binding, enable forwarding, or move a service to live.
+-- A provider call lookup cannot prove that a call was a controlled staff test.
+-- A typed call id and caller-editable provider metadata are not trusted correlation.
+-- VERIFIED_PASSED requires a server-bound test intent for the same call, agent, version, environment, and location.
+-- This command does not create a provider call and does not bind a typed call id.
 -- 20261106120000 must not be applied to hosted DEV or Production.
 
 
@@ -21,6 +25,8 @@ CREATE TABLE admin_private.commercial_agent_test_evidence (
   instruction_id uuid NOT NULL,
   instruction_version integer NOT NULL CHECK (instruction_version >= 1),
   provider_call_id text NOT NULL CHECK (provider_call_id ~ '^[A-Za-z0-9_-]{8,128}$'),
+  test_intent_id uuid,
+  test_session_ref text,
   test_scope text NOT NULL CHECK (test_scope = 'AGENT_DIRECT'),
   outcome text NOT NULL CHECK (outcome IN ('PENDING_VERIFICATION', 'VERIFIED_PASSED', 'VERIFIED_FAILED', 'REQUIRES_REVIEW')),
   provider_status text NOT NULL CHECK (provider_status IN ('retrieved', 'not_found', 'unavailable', 'incomplete')),
@@ -39,6 +45,10 @@ CREATE TABLE admin_private.commercial_agent_test_evidence (
   CONSTRAINT commercial_agent_test_evidence_verified CHECK (
     (outcome IN ('VERIFIED_PASSED', 'VERIFIED_FAILED') AND verified_at IS NOT NULL AND verifier_id IS NOT NULL)
     OR (outcome IN ('PENDING_VERIFICATION', 'REQUIRES_REVIEW') AND verified_at IS NULL)
+  ),
+  CONSTRAINT commercial_agent_test_evidence_controlled CHECK (
+    outcome IS DISTINCT FROM 'VERIFIED_PASSED'
+    OR (test_intent_id IS NOT NULL AND test_session_ref IS NOT NULL)
   )
 );
 
@@ -116,7 +126,7 @@ BEGIN
   qa := p_payload -> 'qa';
   IF jsonb_typeof(evidence) IS DISTINCT FROM 'object'
     OR admin_private.commercial_json_keys_v1(evidence) IS DISTINCT FROM ARRAY[
-      'agentId', 'agentVersion', 'availability', 'callId', 'callStatus', 'callType',
+      'agentId', 'agentVersion', 'agentVersionQuality', 'availability', 'callId', 'callStatus', 'callType',
       'disconnectionReason', 'endedAt', 'environment', 'providerError', 'startedAt', 'testScope'
     ]
     OR jsonb_typeof(qa) IS DISTINCT FROM 'object'
@@ -152,9 +162,23 @@ BEGIN
   ELSIF (evidence ->> 'agentId') !~ '^[A-Za-z0-9_-]{8,128}$' THEN
     RETURN false;
   END IF;
-  IF jsonb_typeof(evidence -> 'agentVersion') = 'null' THEN
-    NULL;
-  ELSIF (evidence ->> 'agentVersion') !~ '^[A-Za-z0-9._-]{1,128}$' THEN
+  IF evidence ->> 'agentVersionQuality' = 'present' THEN
+    IF jsonb_typeof(evidence -> 'agentVersion') = 'number' THEN
+      IF (evidence #>> '{agentVersion}') !~ '^[0-9]{1,9}$' THEN
+        RETURN false;
+      END IF;
+    ELSIF jsonb_typeof(evidence -> 'agentVersion') = 'string' THEN
+      IF (evidence ->> 'agentVersion') !~ '^[A-Za-z0-9._-]{1,128}$' THEN
+        RETURN false;
+      END IF;
+    ELSE
+      RETURN false;
+    END IF;
+  ELSIF evidence ->> 'agentVersionQuality' IN ('missing', 'malformed') THEN
+    IF jsonb_typeof(evidence -> 'agentVersion') IS DISTINCT FROM 'null' THEN
+      RETURN false;
+    END IF;
+  ELSE
     RETURN false;
   END IF;
   IF jsonb_typeof(evidence -> 'callStatus') = 'null' THEN
@@ -804,6 +828,339 @@ COMMENT ON FUNCTION public.customer_portal_setup_handover_v1(text) IS
 
 
 
+CREATE TABLE admin_private.commercial_agent_test_intents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  subscription_id uuid NOT NULL,
+  customer_id uuid NOT NULL,
+  business_id uuid NOT NULL,
+  entitlement_id uuid NOT NULL,
+  location_id uuid NOT NULL,
+  actor_id uuid NOT NULL,
+  configuration_id uuid NOT NULL,
+  configuration_version integer NOT NULL CHECK (configuration_version >= 1),
+  agent_ref text NOT NULL CHECK (agent_ref ~ '^[A-Za-z0-9_-]{8,128}$'),
+  provider_revision text NOT NULL CHECK (char_length(provider_revision) BETWEEN 1 AND 128),
+  environment text NOT NULL CHECK (environment IN ('dev', 'production')),
+  window_starts_at timestamptz NOT NULL,
+  window_ends_at timestamptz NOT NULL,
+  test_session_ref text NOT NULL UNIQUE CHECK (test_session_ref ~ '^TS-[0-9]{2}-[A-F0-9]{8}$'),
+  provider_call_id text CHECK (provider_call_id IS NULL OR provider_call_id ~ '^[A-Za-z0-9_-]{8,128}$'),
+  correlation text NOT NULL CHECK (correlation IN ('UNBOUND', 'SERVER_BOUND')),
+  bound_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
+  CHECK (window_ends_at > window_starts_at),
+  CHECK (
+    (correlation = 'UNBOUND' AND provider_call_id IS NULL AND bound_at IS NULL)
+    OR (correlation = 'SERVER_BOUND' AND provider_call_id IS NOT NULL AND bound_at IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX commercial_agent_test_intent_call_idx
+  ON admin_private.commercial_agent_test_intents (provider_call_id)
+  WHERE provider_call_id IS NOT NULL;
+
+COMMENT ON TABLE admin_private.commercial_agent_test_intents IS
+  'Location-scoped controlled-test intent. SERVER_BOUND is written only by a server workflow that already knows the provider call id. A typed call id is not trusted correlation. The verification HTTP command does not bind a call and does not create a provider call.';
+
+ALTER TABLE admin_private.commercial_agent_test_intents ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE admin_private.commercial_agent_test_intents FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER commercial_agent_test_intents_append_only
+  BEFORE UPDATE OR DELETE OR TRUNCATE ON admin_private.commercial_agent_test_intents
+  FOR EACH STATEMENT EXECUTE FUNCTION admin_private.reject_commercial_append_only_v1();
+
+CREATE FUNCTION public.admin_commercial_agent_test_preflight_v1(
+  p_token text,
+  p_subscription uuid,
+  p_version integer,
+  p_customer uuid,
+  p_business uuid,
+  p_location uuid,
+  p_environment text,
+  p_onboarding uuid,
+  p_onboarding_version integer,
+  p_preference_version integer,
+  p_configuration_version integer,
+  p_allocation uuid,
+  p_allocation_version integer,
+  p_instruction uuid,
+  p_instruction_version integer,
+  p_provision_version integer
+) RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  s public.admin_sessions;
+  sub public.commercial_subscriptions;
+  req public.onboarding_requests;
+  membership text;
+  chosen_entitlement uuid;
+  provision public.service_provisions;
+  preference_version integer;
+  configuration_version integer;
+  configuration_environment text;
+  allocation_version integer;
+  instruction_version integer;
+BEGIN
+  IF p_token IS NULL OR p_subscription IS NULL OR p_version IS NULL OR p_version < 1
+    OR p_customer IS NULL OR p_business IS NULL OR p_location IS NULL
+    OR p_environment IS NULL OR p_environment NOT IN ('dev', 'production')
+    OR p_onboarding IS NULL OR p_onboarding_version IS NULL OR p_onboarding_version < 1
+    OR p_preference_version IS NULL OR p_preference_version < 1
+    OR p_configuration_version IS NULL OR p_configuration_version < 1
+    OR p_allocation IS NULL OR p_allocation_version IS NULL OR p_allocation_version < 1
+    OR p_instruction IS NULL OR p_instruction_version IS NULL OR p_instruction_version < 1
+    OR p_provision_version IS NULL OR p_provision_version < 1
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  SELECT * INTO s
+  FROM public.admin_sessions session
+  WHERE session.token_hash = p_token
+    AND session.auth_user_id = public.admin_identity_id_v1()
+    AND session.revoked_at IS NULL
+    AND session.expires_at > pg_catalog.now()
+    AND session.last_seen_at > pg_catalog.now() - interval '30 minutes';
+  IF s.id IS NULL THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+  IF s.created_at < pg_catalog.now() - interval '30 minutes' THEN
+    RETURN jsonb_build_object('status', 'reauth_required');
+  END IF;
+  SELECT * INTO sub FROM public.commercial_subscriptions WHERE id = p_subscription;
+  IF sub.id IS NULL OR sub.grant_kind IS DISTINCT FROM 'BILLABLE' OR sub.plan_family IS DISTINCT FROM 'VOICE' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'subscription');
+  END IF;
+  IF sub.customer_id IS DISTINCT FROM p_customer OR sub.business_id IS DISTINCT FROM p_business THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'customer');
+  END IF;
+  IF sub.record_version IS DISTINCT FROM p_version THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'version');
+  END IF;
+  IF sub.state IN ('CANCELED', 'ENDED') OR sub.canceled_at IS NOT NULL OR sub.state IS DISTINCT FROM 'ACTIVE' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'inactive');
+  END IF;
+  IF sub.current_period_end IS NULL OR sub.current_period_end <= pg_catalog.now() THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'expired');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.commercial_payment_evidence evidence
+    WHERE evidence.subscription_id = sub.id
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'payment');
+  END IF;
+  SELECT status INTO membership
+  FROM public.business_memberships
+  WHERE customer_id = sub.customer_id AND business_id = sub.business_id;
+  IF membership IS DISTINCT FROM 'verified' THEN
+    RETURN jsonb_build_object(
+      'status', 'denied',
+      'reason', CASE WHEN membership = 'revoked' THEN 'revoked' ELSE 'membership' END
+    );
+  END IF;
+  SELECT * INTO req
+  FROM public.onboarding_requests request
+  WHERE request.id = p_onboarding
+    AND request.commercial_subscription_id = sub.id
+    AND request.customer_id = sub.customer_id
+    AND request.business_id = sub.business_id;
+  IF req.id IS NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'customer');
+  END IF;
+  IF req.record_version IS DISTINCT FROM p_onboarding_version THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'version');
+  END IF;
+  IF req.state IS DISTINCT FROM 'PROVISIONING' OR NOT EXISTS (
+    SELECT 1 FROM admin_private.onboarding_request_locations selected
+    WHERE selected.onboarding_request_id = req.id
+      AND selected.location_id = p_location
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'location');
+  END IF;
+  SELECT entitlement.id INTO chosen_entitlement
+  FROM public.product_entitlements entitlement
+  JOIN public.service_provisions provision_row
+    ON provision_row.entitlement_id = entitlement.id
+   AND provision_row.location_id = entitlement.location_id
+   AND provision_row.business_id = entitlement.business_id
+  WHERE entitlement.location_id = p_location
+    AND entitlement.business_id = sub.business_id
+    AND entitlement.commercial_subscription_id = sub.id
+    AND entitlement.component_code = 'TELLOYA'
+    AND entitlement.state IN ('PENDING', 'ELIGIBLE');
+  IF chosen_entitlement IS NOT NULL THEN
+    SELECT * INTO provision FROM public.service_provisions WHERE entitlement_id = chosen_entitlement;
+  END IF;
+  IF chosen_entitlement IS NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'setup');
+  END IF;
+  IF provision.state IS DISTINCT FROM 'TEST_REQUIRED'
+    OR provision.forwarding_instructed_at IS NULL
+    OR provision.provider_test_call_ref IS NOT NULL
+    OR provision.agent_test_passed_at IS NOT NULL
+    OR provision.customer_confirmed_at IS NOT NULL
+    OR provision.live_at IS NOT NULL
+  THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'setup');
+  END IF;
+  IF provision.record_version IS DISTINCT FROM p_provision_version THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'version');
+  END IF;
+  SELECT preference.version INTO preference_version
+  FROM admin_private.commercial_location_preferences preference
+  WHERE preference.subscription_id = sub.id
+    AND preference.location_id = p_location
+    AND preference.status = 'CONFIRMED'
+    AND preference.version = (
+      SELECT max(latest.version)
+      FROM admin_private.commercial_location_preferences latest
+      WHERE latest.subscription_id = preference.subscription_id
+        AND latest.location_id = preference.location_id
+    );
+  IF preference_version IS NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'preferences');
+  END IF;
+  IF preference_version IS DISTINCT FROM p_preference_version THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'version');
+  END IF;
+  SELECT config.version, config.environment
+  INTO configuration_version, configuration_environment
+  FROM admin_private.commercial_location_configurations config
+  WHERE config.subscription_id = sub.id
+    AND config.location_id = p_location
+  ORDER BY config.version DESC
+  LIMIT 1;
+  IF configuration_version IS NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'configuration');
+  END IF;
+  IF configuration_version IS DISTINCT FROM p_configuration_version THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'version');
+  END IF;
+  IF configuration_environment IS DISTINCT FROM p_environment THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'environment');
+  END IF;
+  SELECT candidate.version INTO allocation_version
+  FROM admin_private.commercial_location_allocations candidate
+  WHERE candidate.id = p_allocation
+    AND candidate.subscription_id = sub.id
+    AND candidate.location_id = p_location
+    AND candidate.business_id = sub.business_id
+    AND provision.provider_binding_ref = 'alloc:' || candidate.id::text
+    AND candidate.version = (
+      SELECT max(latest.version)
+      FROM admin_private.commercial_location_allocations latest
+      WHERE latest.subscription_id = candidate.subscription_id
+        AND latest.location_id = candidate.location_id
+    );
+  IF allocation_version IS NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'allocation');
+  END IF;
+  IF allocation_version IS DISTINCT FROM p_allocation_version THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'version');
+  END IF;
+  SELECT instruction.version INTO instruction_version
+  FROM admin_private.commercial_forwarding_instructions instruction
+  WHERE instruction.id = p_instruction
+    AND instruction.subscription_id = sub.id
+    AND instruction.location_id = p_location
+    AND instruction.status = 'SHARED'
+    AND instruction.allocation_id = p_allocation
+    AND instruction.version = (
+      SELECT max(latest.version)
+      FROM admin_private.commercial_forwarding_instructions latest
+      WHERE latest.subscription_id = instruction.subscription_id
+        AND latest.location_id = instruction.location_id
+    );
+  IF instruction_version IS NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'setup');
+  END IF;
+  IF instruction_version IS DISTINCT FROM p_instruction_version THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'version');
+  END IF;
+  RETURN jsonb_build_object('status', 'eligible');
+END;
+$$;
+
+COMMENT ON FUNCTION public.admin_commercial_agent_test_preflight_v1(text, uuid, integer, uuid, uuid, uuid, text, uuid, integer, integer, integer, uuid, integer, uuid, integer, integer) IS
+  'Read-only eligibility check before a provider call lookup. It does not place a call, bind a call id, or advance a service. The audited verification command rechecks every condition.';
+
+REVOKE ALL ON FUNCTION public.admin_commercial_agent_test_preflight_v1(text, uuid, integer, uuid, uuid, uuid, text, uuid, integer, integer, integer, uuid, integer, uuid, integer, integer)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_commercial_agent_test_preflight_v1(text, uuid, integer, uuid, uuid, uuid, text, uuid, integer, integer, integer, uuid, integer, uuid, integer, integer)
+  TO service_role;
+
+CREATE FUNCTION admin_private.commercial_agent_test_trust_call_v1(
+  p_token text,
+  p_subscription uuid,
+  p_location uuid,
+  p_call_id text
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  s public.admin_sessions;
+  cfg admin_private.commercial_location_configurations;
+  provision public.service_provisions;
+  session_ref text;
+  intent_id uuid;
+BEGIN
+  IF p_call_id IS NULL OR p_call_id !~ '^[A-Za-z0-9_-]{8,128}$' THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  SELECT * INTO s FROM public.admin_sessions session
+  WHERE session.token_hash = p_token
+    AND session.auth_user_id = public.admin_identity_id_v1()
+    AND session.revoked_at IS NULL
+    AND session.expires_at > pg_catalog.now()
+    AND session.created_at >= pg_catalog.now() - interval '30 minutes';
+  IF s.id IS NULL THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+  SELECT * INTO cfg
+  FROM admin_private.commercial_location_configurations config
+  WHERE config.subscription_id = p_subscription
+    AND config.location_id = p_location
+  ORDER BY config.version DESC
+  LIMIT 1;
+  IF cfg.id IS NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'setup');
+  END IF;
+  SELECT * INTO provision
+  FROM public.service_provisions service
+  WHERE service.location_id = p_location
+    AND service.business_id = cfg.business_id
+    AND service.entitlement_id = cfg.entitlement_id;
+  IF NOT FOUND OR provision.entitlement_id IS NULL OR provision.state IS DISTINCT FROM 'TEST_REQUIRED' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'setup');
+  END IF;
+  session_ref := 'TS-' || to_char(pg_catalog.now(), 'YY') || '-' || upper(substr(md5(gen_random_uuid()::text), 1, 8));
+  INSERT INTO admin_private.commercial_agent_test_intents(
+    subscription_id, customer_id, business_id, entitlement_id, location_id, actor_id,
+    configuration_id, configuration_version, agent_ref, provider_revision, environment,
+    window_starts_at, window_ends_at, test_session_ref, provider_call_id, correlation, bound_at
+  ) VALUES (
+    cfg.subscription_id, cfg.customer_id, cfg.business_id, cfg.entitlement_id, cfg.location_id, s.auth_user_id,
+    cfg.id, cfg.version, cfg.agent_ref, cfg.provider_revision, cfg.environment,
+    pg_catalog.now() - interval '15 minutes', pg_catalog.now() + interval '20 minutes',
+    session_ref, p_call_id, 'SERVER_BOUND', pg_catalog.now()
+  ) RETURNING id INTO intent_id;
+  RETURN jsonb_build_object('status', 'bound', 'testSessionRef', session_ref, 'intentId', intent_id);
+END;
+$$;
+
+COMMENT ON FUNCTION admin_private.commercial_agent_test_trust_call_v1(text, uuid, uuid, text) IS
+  'Records a server-bound controlled-test intent. The Admin verification HTTP command does not call this function. A provider call lookup cannot supply this correlation, and a typed call id is not accepted here from that command.';
+
+REVOKE ALL ON FUNCTION admin_private.commercial_agent_test_trust_call_v1(text, uuid, uuid, text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION admin_private.commercial_agent_test_trust_call_v1(text, uuid, uuid, text)
+  TO service_role;
+
 CREATE FUNCTION public.admin_commercial_verify_agent_test_call_v1(
   p_token text,
   p_request uuid,
@@ -870,6 +1227,10 @@ DECLARE
   ended_at timestamptz;
   qa_passed boolean := false;
   prior_configured timestamptz;
+  intent_id uuid;
+  intent_ref text;
+  version_text text;
+  controlled boolean := false;
   outcome jsonb := NULL;
   handover jsonb;
   forwarding_projection jsonb;
@@ -1291,34 +1652,76 @@ BEGIN
       recorded_outcome := 'VERIFIED_FAILED';
       provider_status := 'retrieved';
       evidence_source := 'PROVIDER_RETRIEVAL';
-    ELSIF jsonb_typeof(p_payload #> '{evidence,agentVersion}') IS DISTINCT FROM 'null'
-      AND (p_payload #>> '{evidence,agentVersion}') IS DISTINCT FROM cfg.provider_revision
+    ELSIF p_payload #>> '{evidence,agentVersionQuality}' IS DISTINCT FROM 'present'
+      OR jsonb_typeof(p_payload #> '{evidence,agentVersion}') NOT IN ('number', 'string')
     THEN
-      recorded_outcome := 'VERIFIED_FAILED';
+      recorded_outcome := 'REQUIRES_REVIEW';
       provider_status := 'retrieved';
       evidence_source := 'PROVIDER_RETRIEVAL';
     ELSE
       provider_status := 'retrieved';
       evidence_source := 'PROVIDER_RETRIEVAL';
-      IF jsonb_typeof(p_payload #> '{evidence,startedAt}') = 'null'
-        OR jsonb_typeof(p_payload #> '{evidence,endedAt}') = 'null'
+      version_text := p_payload #>> '{evidence,agentVersion}';
+      IF version_text IS DISTINCT FROM cfg.provider_revision THEN
+        recorded_outcome := 'VERIFIED_FAILED';
+      ELSIF (p_payload #>> '{evidence,providerError}') IS DISTINCT FROM 'false'
+        OR p_payload #>> '{evidence,callStatus}' = 'error'
+        OR coalesce(p_payload #>> '{evidence,disconnectionReason}', '') ~ '^error'
       THEN
-        recorded_outcome := 'REQUIRES_REVIEW';
+        recorded_outcome := 'VERIFIED_FAILED';
       ELSE
-        started_at := (p_payload #>> '{evidence,startedAt}')::timestamptz;
-        ended_at := (p_payload #>> '{evidence,endedAt}')::timestamptz;
-        IF started_at < provision.agent_configured_at
-          OR ended_at < started_at
+        IF jsonb_typeof(p_payload #> '{evidence,startedAt}') = 'string' THEN
+          started_at := (p_payload #>> '{evidence,startedAt}')::timestamptz;
+        END IF;
+        IF jsonb_typeof(p_payload #> '{evidence,endedAt}') = 'string' THEN
+          ended_at := (p_payload #>> '{evidence,endedAt}')::timestamptz;
+        END IF;
+        SELECT intent.id, intent.test_session_ref
+        INTO intent_id, intent_ref
+        FROM admin_private.commercial_agent_test_intents intent
+        WHERE intent.subscription_id = sub.id
+          AND intent.location_id = chosen_location
+          AND intent.business_id = sub.business_id
+          AND intent.customer_id = sub.customer_id
+          AND intent.entitlement_id = chosen_entitlement
+          AND intent.actor_id = actor
+          AND intent.configuration_id = cfg.id
+          AND intent.configuration_version = cfg.version
+          AND intent.agent_ref = cfg.agent_ref
+          AND intent.provider_revision = cfg.provider_revision
+          AND intent.environment = cfg.environment
+          AND intent.correlation = 'SERVER_BOUND'
+          AND intent.provider_call_id = call_reference
+          AND intent.window_starts_at <= coalesce(started_at, pg_catalog.now())
+          AND intent.window_ends_at >= coalesce(started_at, pg_catalog.now())
+        ORDER BY intent.bound_at DESC
+        LIMIT 1
+        FOR UPDATE;
+        controlled := intent_id IS NOT NULL;
+        IF p_payload #>> '{evidence,callStatus}' IN ('registered', 'ongoing') THEN
+          IF started_at IS NOT NULL AND (
+            started_at < provision.agent_configured_at
+            OR started_at > pg_catalog.now() + interval '2 minutes'
+          ) THEN
+            recorded_outcome := 'REQUIRES_REVIEW';
+            ended_at := NULL;
+          ELSIF NOT controlled THEN
+            recorded_outcome := 'REQUIRES_REVIEW';
+            ended_at := NULL;
+          ELSE
+            recorded_outcome := 'PENDING_VERIFICATION';
+            ended_at := NULL;
+          END IF;
+        ELSIF p_payload #>> '{evidence,callStatus}' IS DISTINCT FROM 'ended'
+          OR started_at IS NULL
+          OR ended_at IS NULL
+          OR started_at < provision.agent_configured_at
+          OR ended_at <= started_at
           OR ended_at > pg_catalog.now() + interval '2 minutes'
         THEN
           recorded_outcome := 'REQUIRES_REVIEW';
-        ELSIF p_payload #>> '{evidence,callStatus}' IN ('ongoing', 'registered') THEN
-          recorded_outcome := 'PENDING_VERIFICATION';
-        ELSIF p_payload #>> '{evidence,callStatus}' IS DISTINCT FROM 'ended'
-          OR (p_payload #>> '{evidence,providerError}') IS DISTINCT FROM 'false'
-          OR coalesce(p_payload #>> '{evidence,disconnectionReason}', '') ~ '^error'
-        THEN
-          recorded_outcome := 'VERIFIED_FAILED';
+        ELSIF NOT controlled THEN
+          recorded_outcome := 'REQUIRES_REVIEW';
         ELSE
           qa_passed := (p_payload #>> '{qa,greeting}') = 'true'
             AND (p_payload #>> '{qa,languageVoice}') = 'true'
@@ -1349,14 +1752,17 @@ BEGIN
       subscription_id, customer_id, business_id, entitlement_id, location_id,
       configuration_id, configuration_version, environment, agent_ref,
       allocation_id, allocation_version, instruction_id, instruction_version,
-      provider_call_id, test_scope, outcome, provider_status, call_status,
+      provider_call_id, test_intent_id, test_session_ref, test_scope, outcome, provider_status, call_status,
       started_at, ended_at, qa, verified_at, verifier_id, evidence_source,
       attestation, request_id, version
     ) VALUES (
       sub.id, sub.customer_id, sub.business_id, chosen_entitlement, chosen_location,
       cfg.id, cfg.version, cfg.environment, cfg.agent_ref,
       alloc.id, alloc.version, shared_instruction.id, shared_instruction.version,
-      call_reference, 'AGENT_DIRECT', recorded_outcome, provider_status,
+      call_reference,
+      CASE WHEN recorded_outcome = 'VERIFIED_PASSED' THEN intent_id ELSE NULL END,
+      CASE WHEN recorded_outcome = 'VERIFIED_PASSED' THEN intent_ref ELSE NULL END,
+      'AGENT_DIRECT', recorded_outcome, provider_status,
       CASE WHEN jsonb_typeof(p_payload #> '{evidence,callStatus}') = 'null' THEN NULL ELSE p_payload #>> '{evidence,callStatus}' END,
       started_at, ended_at,
       jsonb_build_object(
@@ -1468,7 +1874,7 @@ $$;
 
 
 COMMENT ON FUNCTION public.admin_commercial_verify_agent_test_call_v1(text, uuid, uuid, integer, jsonb) IS
-  'Audited Admin record of a controlled direct agent conversation test for one selected location. A passed conversation sets provider_test_outcome and agent_test_passed_at and may move TEST_REQUIRED to AWAITING_CONFIRMATION. It does not verify telephone forwarding, write a routing binding, place a call, or move a service to live.';
+  'Audited Admin record of a controlled direct agent conversation test for one selected location. A pass requires a server-bound test intent, the current agent version, a finished call with a valid duration, and completed staff QA. A provider lookup cannot prove the call was a controlled staff test. A typed call id is not bound here. A passed conversation may move TEST_REQUIRED to AWAITING_CONFIRMATION. It does not verify telephone forwarding, write a routing binding, place a call, or move a service to live.';
 
 REVOKE ALL ON FUNCTION public.admin_commercial_verify_agent_test_call_v1(text, uuid, uuid, integer, jsonb)
   FROM PUBLIC, anon, authenticated;

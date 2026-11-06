@@ -810,6 +810,7 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
     const evidence = {
       agentId: "agent-gate-01",
       agentVersion: "rev-0004",
+      agentVersionQuality: "present",
       availability: "retrieved",
       callId: "callgate0001",
       callStatus: "ended",
@@ -850,6 +851,7 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
       evidence,
       qa,
     }
+    expect(JSON.parse(await psql(`select admin_private.commercial_agent_test_trust_call_v1('${adminToken}', '${prepared.armed.subscription}', '${gateLoc}', 'callgate0001')`))).toMatchObject({ status: "bound" })
     const sql = (request: string) => `select public.admin_commercial_verify_agent_test_call_v1('${adminToken}', '${request}', '${prepared.armed.subscription}', ${fresh.version}, $json$${JSON.stringify(verifyBody)}$json$::jsonb)`
     const [first, second] = await Promise.all([
       call<{ status: string; evidenceOutcome?: string; reason?: string }>(sql(randomUUID())),

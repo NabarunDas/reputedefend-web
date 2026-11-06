@@ -1,9 +1,10 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ukDate } from "@/lib/admin/activity"
 import type { AgentTestLocationProgress, AllocationLocationProgress, ConfigurationLocationProgress, ForwardingLocationProgress, SetupQueueItem } from "@/lib/commercial/setup-queue"
+import { startControlledReceptionistCall } from "@/lib/commercial/controlled-web-call"
 import { Badge, EmptyState, Notice } from "../../ui"
 
 const futureCommands = [
@@ -12,6 +13,7 @@ const futureCommands = [
   "Confirm AI configuration",
   "Record provider and number allocation",
   "Record forwarding instructions",
+  "Start controlled receptionist test",
   "Verify AI receptionist test call",
   "Confirm readiness for the final telephone connection",
   "Approve activation",
@@ -1229,6 +1231,358 @@ const emptyQa = (): Record<TestQaKey, boolean> => ({
   conclusion: false,
 })
 
+function staffCallError(error: Error) {
+  if (error.name === "NotAllowedError" || /notallowed|permission denied|microphone|getUserMedia/i.test(`${error.name} ${error.message}`)) {
+    return "The microphone was not available, so the browser could not join the controlled web call. Another call was not started."
+  }
+  if (/provider charge|reconciliation|Do not start another|already recorded|was not opened|not ready|time limit|telephone route|still open|not yet complete|investigation|already in progress|still reports/i.test(error.message)) return error.message
+  return "The browser could not keep the audio connection. Another call was not started."
+}
+
+const activeAttemptStates = new Set([
+  "INTENT_RECORDED",
+  "CREATION_IN_PROGRESS",
+  "PROVIDER_CREATED",
+  "BOUND",
+  "REQUIRES_RECONCILIATION",
+])
+
+type SavedAttempt = {
+  sessionRef: string
+  attemptState: string
+  requestId: string
+  callId: string | null
+  reason: string | null
+}
+
+function attemptLabel(state: string) {
+  if (state === "BOUND" || state === "PROVIDER_CREATED") return "In progress"
+  if (state === "CREATION_IN_PROGRESS" || state === "INTENT_RECORDED") return "Opening"
+  if (state === "REQUIRES_RECONCILIATION") return "Needs reconciliation"
+  if (state === "COMPLETED") return "Completed"
+  return state
+}
+
+function savedAttempt(value: unknown): SavedAttempt | null {
+  if (!value || typeof value !== "object") return null
+  const row = value as Record<string, unknown>
+  if (row.status !== "found") return null
+  if (typeof row.sessionRef !== "string" || typeof row.attemptState !== "string" || typeof row.requestId !== "string" || !isUuidKey(row.requestId)) return null
+  return {
+    sessionRef: row.sessionRef,
+    attemptState: row.attemptState,
+    requestId: row.requestId,
+    callId: typeof row.callId === "string" ? row.callId : null,
+    reason: typeof row.reason === "string" ? row.reason : null,
+  }
+}
+
+function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "dev" | "production" }) {
+  const router = useRouter()
+  const keyRef = useRef("")
+  const fingerRef = useRef("")
+  const endRef = useRef<(() => void) | null>(null)
+  const releaseRef = useRef<(() => void) | null>(null)
+  const failedRef = useRef(false)
+  const endingRef = useRef(false)
+  const initial = item.testProgress?.locations.find(location => location.status !== "passed")?.locationId ?? item.testProgress?.locations[0]?.locationId ?? ""
+  const [selected, setSelected] = useState(initial)
+  const place = item.testProgress?.locations.find(entry => entry.locationId === selected) ?? null
+  const [message, setMessage] = useState<string | null>(null)
+  const [tone, setTone] = useState<"success" | "warning" | "danger">("warning")
+  const [pending, setPending] = useState(false)
+  const [chargeAccepted, setChargeAccepted] = useState(false)
+  const [locked, setLocked] = useState(false)
+  const [phase, setPhase] = useState<"idle" | "connecting" | "connected" | "ended" | "error">("idle")
+  const [callId, setCallId] = useState<string | null>(null)
+  const [saved, setSaved] = useState<SavedAttempt | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [ending, setEnding] = useState(false)
+  const [providerOpen, setProviderOpen] = useState(false)
+  const passed = place?.status === "passed"
+  useEffect(() => () => { releaseRef.current?.() }, [])
+
+  const requestBody = useCallback(() => {
+    if (!place?.allocationId || !place.instructionId || !place.agentRef || !place.e164 || item.subscriptionId === null || item.subscriptionVersion === null || item.customerId === null || item.onboardingRequestId === null || item.onboardingVersion === null) return null
+    if (place.environment !== lane || passed) return null
+    return {
+      subscriptionId: item.subscriptionId,
+      version: item.subscriptionVersion,
+      customerId: item.customerId,
+      businessId: item.businessId,
+      onboardingRequestId: item.onboardingRequestId,
+      onboardingVersion: item.onboardingVersion,
+      locationId: place.locationId,
+      preferenceVersion: place.preferenceVersion,
+      provisionVersion: place.provisionVersion,
+      configurationVersion: place.configurationVersion,
+      allocationId: place.allocationId,
+      allocationVersion: place.allocationVersion,
+      instructionId: place.instructionId,
+      instructionVersion: place.instructionVersion,
+      confirmedCharge: true as const,
+    }
+  }, [place, item.subscriptionId, item.subscriptionVersion, item.customerId, item.businessId, item.onboardingRequestId, item.onboardingVersion, lane, passed])
+
+  useEffect(() => {
+    const live = requestBody()
+    if (!live) return
+    const controller = new AbortController()
+    let ignore = false
+    void (async () => {
+      try {
+        const { confirmedCharge, ...identity } = live
+        void confirmedCharge
+        const response = await fetch("/api/commercial/review-agent-test-call", {
+          method: "POST",
+          signal: controller.signal,
+          headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+          body: JSON.stringify({ ...identity, action: "read" }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (ignore) return
+        const next = savedAttempt(payload)
+        if (!next) return
+        setSaved(next)
+        if (!isUuidKey(keyRef.current)) {
+          keyRef.current = next.requestId
+          fingerRef.current = JSON.stringify(live)
+        }
+      } catch {
+        // A failed read leaves the form in place and does not open a call.
+      }
+    })()
+    return () => {
+      ignore = true
+      controller.abort()
+    }
+  }, [requestBody])
+
+  async function checkStatus() {
+    const live = requestBody()
+    if (!live || checking) return
+    setChecking(true)
+    try {
+      const { confirmedCharge, ...identity } = live
+      void confirmedCharge
+      const response = await fetch("/api/commercial/review-agent-test-call", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": isUuidKey(keyRef.current) ? keyRef.current : crypto.randomUUID(),
+        },
+        body: JSON.stringify({ ...identity, action: "check" }),
+      })
+      const payload = await response.json().catch(() => null) as { status?: string; message?: string } | null
+      const text = typeof payload?.message === "string" ? payload.message : "We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation."
+      if (payload?.status === "completed") {
+        setSaved(current => current ? { ...current, attemptState: "COMPLETED" } : current)
+        setProviderOpen(false)
+        setLocked(false)
+        setChargeAccepted(false)
+        setPhase("ended")
+        setPending(false)
+        keyRef.current = ""
+        fingerRef.current = ""
+        setMessage(text)
+        setTone("warning")
+        return
+      }
+      if (payload?.status === "ongoing") {
+        setProviderOpen(true)
+        setLocked(true)
+        setPending(false)
+        setMessage(text)
+        setTone("warning")
+        return
+      }
+      setProviderOpen(false)
+      setLocked(true)
+      setPending(false)
+      setMessage(text)
+      setTone("danger")
+    } catch {
+      setLocked(true)
+      setPending(false)
+      setMessage("We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation.")
+      setTone("danger")
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  async function endRecovered() {
+    const live = requestBody()
+    const attempt = saved
+    if (!live || !attempt?.callId || !isUuidKey(attempt.requestId) || endingRef.current) return
+    endingRef.current = true
+    setEnding(true)
+    try {
+      const { confirmedCharge, ...identity } = live
+      void confirmedCharge
+      const response = await fetch("/api/commercial/cancel-agent-test-call", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": attempt.requestId,
+        },
+        body: JSON.stringify({ ...identity, confirmedCharge: true, providerCallId: attempt.callId }),
+      })
+      const payload = await response.json().catch(() => null) as { status?: string; message?: string } | null
+      const text = typeof payload?.message === "string" ? payload.message : "We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation."
+      if (response.ok && payload?.status === "completed") {
+        setSaved(current => current ? { ...current, attemptState: "COMPLETED" } : current)
+        setProviderOpen(false)
+        setLocked(false)
+        setChargeAccepted(false)
+        setPhase("ended")
+        setPending(false)
+        keyRef.current = ""
+        fingerRef.current = ""
+        setMessage(text)
+        setTone("warning")
+        return
+      }
+      setLocked(true)
+      setProviderOpen(true)
+      setPending(false)
+      setMessage(text)
+      setTone("danger")
+    } catch {
+      setLocked(true)
+      setProviderOpen(true)
+      setPending(false)
+      setMessage("We couldn’t confirm whether the provider ended the web call. Do not start another one. This attempt needs reconciliation.")
+      setTone("danger")
+    } finally {
+      endingRef.current = false
+      setEnding(false)
+    }
+  }
+
+  function currentKey(fingerprint: string) {
+    if (fingerRef.current !== fingerprint || !isUuidKey(keyRef.current)) {
+      keyRef.current = crypto.randomUUID()
+      fingerRef.current = fingerprint
+    }
+    return keyRef.current
+  }
+
+  function send() {
+    const live = requestBody()
+    if (!live || passed || !chargeAccepted || locked || pending || ending) return
+    if (phase === "connecting" || phase === "connected" || providerOpen) return
+    if (saved && activeAttemptStates.has(saved.attemptState)) return
+    const fingerprint = JSON.stringify(live)
+    const requestKey = currentKey(fingerprint)
+    setPending(true)
+    setMessage(null)
+    setPhase("connecting")
+    setTone("warning")
+    failedRef.current = false
+    try {
+      const handle = startControlledReceptionistCall({
+        endpoint: "/api/commercial/initiate-agent-test-call",
+        cancelEndpoint: "/api/commercial/cancel-agent-test-call",
+        idempotencyKey: requestKey,
+        body: live,
+        onStatus: next => {
+          if (next === "ended" && failedRef.current) {
+            setPending(false)
+            setLocked(true)
+            return
+          }
+          setPhase(next)
+          if (next === "connected") {
+            setMessage("Connected. You can speak to the receptionist. Telephone forwarding is not verified, and the receptionist is not live.")
+            setTone("success")
+            setPending(false)
+            router.refresh()
+          }
+          if (next === "ended") {
+            setSaved(current => current ? { ...current, attemptState: "COMPLETED" } : current)
+            setProviderOpen(false)
+            setMessage("The controlled web call has ended. Telephone forwarding is not verified, and the receptionist is not live.")
+            setTone("warning")
+            setPending(false)
+            setLocked(false)
+            setChargeAccepted(false)
+            keyRef.current = ""
+            fingerRef.current = ""
+          }
+        },
+        onOutcome: outcome => {
+          if (outcome === "rejected") {
+            keyRef.current = ""
+            fingerRef.current = ""
+            setLocked(false)
+            setChargeAccepted(false)
+            return
+          }
+          setLocked(true)
+        },
+        onCall: call => setCallId(call.callId),
+        onLocalEnd: () => { void checkStatus() },
+        onError: error => {
+          failedRef.current = true
+          setPhase("error")
+          setMessage(staffCallError(error))
+          setTone("danger")
+          setPending(false)
+          setLocked(true)
+        },
+      })
+      endRef.current = handle.end
+      releaseRef.current = handle.release
+    } catch {
+      setPhase("error")
+      setLocked(true)
+      setPending(false)
+      setMessage("The browser could not keep the audio connection. Another call was not started.")
+      setTone("danger")
+    }
+  }
+
+  if (!item.testProgress || item.testProgress.locations.length === 0 || !place) return null
+  const ready = Boolean(requestBody())
+  const liveCall = phase === "connecting" || phase === "connected"
+  const attemptOpen = saved !== null && activeAttemptStates.has(saved.attemptState)
+  const holdLocation = liveCall || providerOpen || attemptOpen
+  const canEndBrowser = liveCall
+  const canEndRecovered = !liveCall && attemptOpen && Boolean(saved?.callId)
+  function endCall() {
+    if (canEndBrowser && endRef.current) {
+      endRef.current()
+      return
+    }
+    if (canEndRecovered) void endRecovered()
+  }
+  return (
+    <form className="commercial-command" onSubmit={event => event.preventDefault()}>
+      <h3>Start controlled receptionist test</h3>
+      <p>{item.customerName} · {item.businessName}. This asks the provider to open a web conversation for the configured receptionist and version. It does not place a telephone call, enable forwarding, or make the receptionist live. A typed call reference is not accepted.</p>
+      <label>Controlled test location<select value={selected} disabled={holdLocation} onChange={event => { if (holdLocation) return; setSelected(event.target.value); setCallId(null); setSaved(null); setProviderOpen(false); setMessage(null); setPhase("idle"); setLocked(false); setChargeAccepted(false); keyRef.current = ""; fingerRef.current = "" }}>{item.testProgress.locations.map(entry => <option key={entry.locationId} value={entry.locationId}>{entry.locationName} · {entry.status}</option>)}</select></label>
+      <dl className="commercial-review">
+        <div><dt>Subscription</dt><dd>{item.reference}</dd></div>
+        <div><dt>Location</dt><dd>{place.locationName}</dd></div>
+        <div><dt>Receptionist</dt><dd>{place.agentRef ?? "Not recorded"}</dd></div>
+        <div><dt>Configuration version</dt><dd>{place.configurationVersion}</dd></div>
+      </dl>
+      {passed ? <Notice tone="success"><span role="status">This location already has a passed conversation test.</span></Notice> : null}
+      {!place.instructionId ? <Notice tone="warning">Share the forwarding instructions for this location before opening a controlled web call.</Notice> : null}
+      {saved && attemptOpen ? <p role="status">{item.businessName}. {place.locationName}. Test session {saved.sessionRef}. Current state {attemptLabel(saved.attemptState)}.</p> : null}
+      {saved && attemptOpen && !saved.callId ? <p role="status">This controlled test needs investigation before another call can start. Another call was not started.</p> : null}
+      {passed ? null : <label><input type="checkbox" checked={chargeAccepted} onChange={event => setChargeAccepted(event.target.checked)} /> I understand this controlled web call may incur a provider usage charge.</label>}
+      {passed ? null : <button type="button" disabled={pending || locked || !ready || !chargeAccepted || liveCall || attemptOpen || providerOpen} onClick={send}>Start controlled test</button>}
+      {canEndBrowser || canEndRecovered ? <button type="button" disabled={ending} onClick={endCall}>End call</button> : null}
+      {(saved?.callId || callId) && !liveCall ? <button type="button" disabled={checking} onClick={() => void checkStatus()}>Check test-call status</button> : null}
+      {phase === "connecting" ? <p role="status">Connecting the browser to the controlled web call.</p> : null}
+      {callId ? <p role="status">Provider call reference {callId}. Telephone forwarding is not verified, and the receptionist is not live.</p> : null}
+      {message ? <Notice tone={tone}><span role="status">{message}</span></Notice> : null}
+    </form>
+  )
+}
+
 function uncertainTestStatus(status: number) {
   return status === 408 || status === 429 || status >= 500
 }
@@ -1485,13 +1839,14 @@ function VerifyAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "dev"
   )
 }
 
-export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, recordNumberAllocationEnabled = false, recordForwardingInstructionsEnabled = false, verifyAgentTestCallEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; recordNumberAllocationEnabled?: boolean; recordForwardingInstructionsEnabled?: boolean; verifyAgentTestCallEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
+export function SetupQueueView({ items, beginSetupEnabled = false, confirmPreferencesEnabled = false, confirmAiConfigurationEnabled = false, recordNumberAllocationEnabled = false, recordForwardingInstructionsEnabled = false, initiateAgentTestCallEnabled = false, verifyAgentTestCallEnabled = false, providerLane = null }: { items: readonly SetupQueueItem[]; beginSetupEnabled?: boolean; confirmPreferencesEnabled?: boolean; confirmAiConfigurationEnabled?: boolean; recordNumberAllocationEnabled?: boolean; recordForwardingInstructionsEnabled?: boolean; initiateAgentTestCallEnabled?: boolean; verifyAgentTestCallEnabled?: boolean; providerLane?: "dev" | "production" | null }) {
   const later = futureCommands.filter(command => {
     if (beginSetupEnabled && command === "Begin setup") return false
     if (confirmPreferencesEnabled && command === "Confirm business preferences") return false
     if (confirmAiConfigurationEnabled && command === "Confirm AI configuration") return false
     if (recordNumberAllocationEnabled && command === "Record provider and number allocation") return false
     if (recordForwardingInstructionsEnabled && command === "Record forwarding instructions") return false
+    if (initiateAgentTestCallEnabled && command === "Start controlled receptionist test") return false
     if (verifyAgentTestCallEnabled && command === "Verify AI receptionist test call") return false
     return true
   })
@@ -1550,6 +1905,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
                   {confirmAiConfigurationEnabled ? <ConfirmAiConfiguration item={item} providerLane={providerLane} /> : null}
                   {recordNumberAllocationEnabled ? <RecordNumberAllocation item={item} providerLane={providerLane} /> : null}
                   {recordForwardingInstructionsEnabled && providerLane ? <RecordForwardingInstructions item={item} lane={providerLane} /> : null}
+                  {initiateAgentTestCallEnabled && providerLane ? <InitiateAgentTestCall item={item} lane={providerLane} /> : null}
                   {verifyAgentTestCallEnabled && providerLane ? <VerifyAgentTestCall item={item} lane={providerLane} /> : null}
                 </td>
               </tr>
@@ -1559,7 +1915,7 @@ export function SetupQueueView({ items, beginSetupEnabled = false, confirmPrefer
       </div>
     )}
     <h2>Later setup commands</h2>
-    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Record provider and number allocation records an assigned telephone number for one location. It does not make that number active, start forwarding, or record a test call. Record forwarding instructions prepares location-specific notes for a later connection. Sharing those notes does not enable forwarding. Verify AI receptionist test call checks a controlled conversation. It does not verify telephone forwarding or show that the receptionist is answering calls.</p>
+    <p>These actions are not available from this page. A later phase can record each one as its own audited command. None of them runs because a subscription is financially active. Confirm business preferences records the customer’s confirmed hours and service behaviour for each selected location. Confirm AI configuration records an operator-attested provider configuration for one location. Record provider and number allocation records an assigned telephone number for one location. It does not make that number active, start forwarding, or record a test call. Record forwarding instructions prepares location-specific notes for a later connection. Sharing those notes does not enable forwarding. Start controlled receptionist test asks the provider to open a web conversation for the configured receptionist. It does not place a telephone call or accept a typed call reference. Verify AI receptionist test call checks a controlled conversation. It does not verify telephone forwarding or show that the receptionist is answering calls.</p>
     <ul>
       {later.map(command => <li key={command}>{command}</li>)}
     </ul>

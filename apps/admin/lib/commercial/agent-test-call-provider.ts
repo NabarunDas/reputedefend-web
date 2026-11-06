@@ -150,3 +150,141 @@ export async function retrieveAgentTestCall(input: {
     return { availability: "uncertain" }
   }
 }
+
+export type ProviderIceServer = {
+  urls: string | string[]
+  username?: string
+  credential?: string
+}
+
+export type CreatedAgentWebCall =
+  | { availability: "uncertain"; callId: string | null }
+  | { availability: "rejected" }
+  | {
+      availability: "created"
+      callId: string
+      accessToken: string
+      transport: "gateway"
+      expiresAt: string
+      iceServers: ProviderIceServer[]
+      echoedAgentId: string | null
+      echoedAgentVersion: number | null
+    }
+
+const createWebCallEndpoint = "https://api.retellai.com/v3/create-web-call"
+
+function iceServers(value: unknown): ProviderIceServer[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 8) return null
+  const servers: ProviderIceServer[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null
+    const record = entry as Record<string, unknown>
+    let urls: string | string[] | null = null
+    if (typeof record.urls === "string" && record.urls.length > 0 && record.urls.length < 512) urls = record.urls
+    if (Array.isArray(record.urls) && record.urls.length > 0 && record.urls.length <= 4 && record.urls.every(item => typeof item === "string" && item.length > 0 && item.length < 512)) {
+      urls = record.urls
+    }
+    if (!urls) return null
+    const server: ProviderIceServer = { urls }
+    if (typeof record.username === "string" && record.username.length > 0 && record.username.length <= 256) server.username = record.username
+    if (typeof record.credential === "string" && record.credential.length > 0 && record.credential.length <= 512) server.credential = record.credential
+    servers.push(server)
+  }
+  return servers
+}
+
+function createdCall(body: Record<string, unknown>): CreatedAgentWebCall {
+  const callId = text(body.call_id)
+  const knownCall = callId && callIdPattern.test(callId) ? callId : null
+  const accessToken = text(body.access_token)
+  const transport = text(body.transport)
+  const expires = body.expires_at
+  const servers = iceServers(body.ice_servers)
+  const echoedAgent = text(body.agent_id)
+  const echoedVersion = agentVersionValue(body.agent_version)
+  if (echoedAgent && !agentPattern.test(echoedAgent)) return { availability: "uncertain", callId: knownCall }
+  if (Number.isNaN(echoedVersion)) return { availability: "uncertain", callId: knownCall }
+  if (!knownCall || !accessToken || accessToken.length < 16 || accessToken.length > 4096) return { availability: "uncertain", callId: knownCall }
+  if (transport !== "gateway" || !servers) return { availability: "uncertain", callId: knownCall }
+  if (typeof expires !== "number" || !Number.isSafeInteger(expires) || expires <= 0) return { availability: "uncertain", callId: knownCall }
+  const expiresAt = new Date(expires).toISOString()
+  if (Number.isNaN(Date.parse(expiresAt))) return { availability: "uncertain", callId: knownCall }
+  return {
+    availability: "created",
+    callId: knownCall,
+    accessToken,
+    transport: "gateway",
+    expiresAt,
+    iceServers: servers,
+    echoedAgentId: echoedAgent,
+    echoedAgentVersion: echoedVersion ?? null,
+  }
+}
+
+function agentVersionValue(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 999_999_999) return value
+  return Number.NaN
+}
+
+export type StoppedAgentWebCall =
+  | { availability: "stopped" }
+  | { availability: "rejected" }
+  | { availability: "uncertain" }
+
+export async function stopAgentWebCall(input: {
+  callId: string
+  lane: AgentTestLane
+  fetchImpl?: typeof fetch
+}): Promise<StoppedAgentWebCall> {
+  if (!callIdPattern.test(input.callId)) return { availability: "rejected" }
+  const apiKey = telloyaVoiceApiKey(input.lane)
+  if (!apiKey) return { availability: "rejected" }
+  try {
+    const response = await (input.fetchImpl ?? fetch)(`https://api.retellai.com/v2/stop-call/${encodeURIComponent(input.callId)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+      redirect: "error",
+      signal: AbortSignal.timeout(lookupTimeoutMs),
+    })
+    if (response.status >= 200 && response.status < 300) return { availability: "stopped" }
+    if (response.status === 408 || response.status === 429 || response.status >= 500) return { availability: "uncertain" }
+    return { availability: "rejected" }
+  } catch {
+    return { availability: "uncertain" }
+  }
+}
+
+export async function createAgentWebCall(input: {
+  agentId: string
+  agentVersion: number
+  lane: AgentTestLane
+  fetchImpl?: typeof fetch
+}): Promise<CreatedAgentWebCall> {
+  if (!agentPattern.test(input.agentId)) return { availability: "rejected" }
+  if (!Number.isSafeInteger(input.agentVersion) || input.agentVersion < 0 || input.agentVersion > 999_999_999) {
+    return { availability: "rejected" }
+  }
+  const apiKey = telloyaVoiceApiKey(input.lane)
+  if (!apiKey) return { availability: "rejected" }
+  try {
+    const response = await (input.fetchImpl ?? fetch)(createWebCallEndpoint, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ agent_id: input.agentId, agent_version: input.agentVersion }),
+      redirect: "error",
+      signal: AbortSignal.timeout(lookupTimeoutMs),
+    })
+    if (response.status === 408 || response.status === 429 || response.status >= 500) return { availability: "uncertain", callId: null }
+    if (response.status !== 200 && response.status !== 201) return { availability: "rejected" }
+    const body = await response.json() as unknown
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { availability: "uncertain", callId: null }
+    return createdCall(body as Record<string, unknown>)
+  } catch {
+    return { availability: "uncertain", callId: null }
+  }
+}

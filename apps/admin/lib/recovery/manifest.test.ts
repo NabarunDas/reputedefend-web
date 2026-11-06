@@ -124,7 +124,9 @@ describe("the migration chain manifest", () => {
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
     // Do not replay 20261103230000. Do not apply 20261103230000 to Production.
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
+    // The repository head is the unapplied initiation migration.
+    // Do not apply 20261106200000 to hosted DEV or Production.
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration("20261103230000_customer_commercial_payment_verification_v1.sql")).toMatchObject({

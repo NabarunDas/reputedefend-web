@@ -1125,17 +1125,66 @@ describe("verify AI receptionist test call", () => {
 })
 
 describe("start controlled receptionist test", () => {
-  it("posts the selected location and does not accept a typed call reference", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      message: "A controlled web call is open for this location. Telephone forwarding is not verified, and the receptionist is not live.",
-      callId: "call_created_01",
-      accessToken: "join-token-value-123456",
-      expiresAt: "2026-11-06T20:00:00.000Z",
-      forwardingVerified: false,
-      testPassed: false,
-    }), { status: 200 }))
-    vi.stubGlobal("fetch", fetchMock)
-    render(<SetupQueueView initiateAgentTestCallEnabled providerLane="dev" items={[{
+  const token = "join-token-value-123456"
+  let media: ReturnType<typeof vi.fn>
+  let fetches: string[]
+
+  function installBrowser() {
+    fetches = []
+    media = vi.fn(async () => ({ getTracks: () => [{ kind: "audio", stop() {}, enabled: true }] }))
+    vi.stubGlobal("Audio", class {
+      autoplay = false
+      srcObject: unknown = null
+      play() { return Promise.resolve() }
+    })
+    vi.stubGlobal("RTCPeerConnection", class {
+      connectionState = "new"
+      iceConnectionState = "new"
+      localDescription: { type: string; sdp: string } | null = null
+      onicecandidate: ((event: { candidate: null }) => void) | null = null
+      ontrack: ((event: { streams: Array<{ getTracks: () => unknown[] }>; track: unknown }) => void) | null = null
+      onconnectionstatechange: (() => void) | null = null
+      oniceconnectionstatechange: (() => void) | null = null
+      addTrack() {}
+      addTransceiver() {}
+      createDataChannel() { return { close() {}, onmessage: null } }
+      async createOffer() { return { type: "offer", sdp: "v=0" } }
+      async setLocalDescription(description: { type: string; sdp: string }) { this.localDescription = description }
+      async setRemoteDescription() {
+        const track = { kind: "audio", stop() {}, enabled: true }
+        this.ontrack?.({ streams: [{ getTracks: () => [track] }], track })
+        this.connectionState = "connected"
+        this.onconnectionstatechange?.()
+      }
+      close() {
+        this.connectionState = "closed"
+        this.onconnectionstatechange?.()
+      }
+    })
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: media } })
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const target = String(url)
+      fetches.push(`${init?.method ?? "GET"} ${target}`)
+      if (target.includes("/v1/webrtc/sessions")) {
+        if (init?.method === "DELETE") return new Response(null, { status: 204 })
+        return new Response(JSON.stringify({ session_id: "session-1", sdp: "v=0" }), { status: 201, headers: { "content-type": "application/json" } })
+      }
+      return new Response(JSON.stringify({
+        message: "A controlled web call is open for this location. Telephone forwarding is not verified, and the receptionist is not live.",
+        callId: "call_created_01",
+        accessToken: token,
+        transport: "gateway",
+        iceServers: [{ urls: "stun:example.invalid", username: "turn-user", credential: "turn-secret" }],
+        expiresAt: "2026-11-06T20:00:00.000Z",
+        maxDurationSeconds: 600,
+        forwardingVerified: false,
+        testPassed: false,
+      }), { status: 200, headers: { "content-type": "application/json" } })
+    }))
+  }
+
+  function renderStart() {
+    return render(<SetupQueueView initiateAgentTestCallEnabled providerLane="dev" items={[{
       ...item,
       operationalStatus: "setup_started",
       nextAction: "Start controlled receptionist test",
@@ -1148,17 +1197,88 @@ describe("start controlled receptionist test", () => {
         locations: [testLocation()],
       },
     }]} />)
+  }
+
+  async function confirmAndStart() {
+    fireEvent.click(screen.getByRole("checkbox", { name: /may incur a provider usage charge/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Start controlled test" }))
+    await screen.findByText(/Connected. You can speak to the receptionist/)
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("connects the browser after confirmation and ends the call without showing provider tokens", async () => {
+    installBrowser()
+    renderStart()
     expect(screen.queryByLabelText("Provider call reference")).toBeNull()
     expect(screen.getByText(/A typed call reference is not accepted/)).toBeTruthy()
+    expect(screen.getByText(/may incur a provider usage charge/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Start controlled test" }))
-    await screen.findByText(/Provider call reference call_created_01/)
-    const sent = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>
+    expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(0)
+    await confirmAndStart()
+    const initiated = fetches.filter(call => call.includes("initiate-agent-test-call"))
+    expect(initiated).toHaveLength(1)
+    const sent = JSON.parse((vi.mocked(fetch).mock.calls.find(call => String(call[0]).includes("initiate-agent-test-call"))?.[1] as RequestInit).body as string) as Record<string, unknown>
     expect(sent.locationId).toBe(item.locations[0].locationId)
+    expect(sent.confirmedCharge).toBe(true)
     expect(sent.callId).toBeUndefined()
     expect(sent.providerCallId).toBeUndefined()
-    expect(screen.getByLabelText("Join token for this session")).toHaveValue("join-token-value-123456")
-    expect(screen.getByText(/It is not stored/)).toBeTruthy()
+    expect(screen.getByText(/Provider call reference call_created_01/)).toBeTruthy()
+    expect(document.body.textContent).not.toContain(token)
+    expect(document.body.textContent).not.toContain("turn-secret")
+    expect(document.body.textContent).not.toContain("Join token")
     expect(document.body.textContent).not.toContain("has passed its conversation test")
-    vi.unstubAllGlobals()
+    fireEvent.click(screen.getByRole("button", { name: "End call" }))
+    await screen.findByText(/The controlled web call has ended/)
+    expect(fetches.some(call => call.startsWith("DELETE "))).toBe(true)
+    expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(1)
+  })
+
+  it("reports a denied microphone and does not start another provider call", async () => {
+    installBrowser()
+    const denied = new Error("Permission denied")
+    denied.name = "NotAllowedError"
+    media.mockRejectedValue(denied)
+    renderStart()
+    fireEvent.click(screen.getByRole("checkbox", { name: /may incur a provider usage charge/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Start controlled test" }))
+    await screen.findByText(/microphone was not available/)
+    expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(1)
+    expect(screen.getByRole("button", { name: "Start controlled test" })).toBeDisabled()
+  })
+
+  it("reports an audio connection failure and does not start another provider call", async () => {
+    installBrowser()
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const target = String(url)
+      fetches.push(`${init?.method ?? "GET"} ${target}`)
+      if (target.includes("/v1/webrtc/sessions")) return new Response("no", { status: 400 })
+      return new Response(JSON.stringify({
+        message: "A controlled web call is open for this location.",
+        callId: "call_created_01",
+        accessToken: token,
+        transport: "gateway",
+        iceServers: [{ urls: "stun:example.invalid" }],
+        expiresAt: "2026-11-06T20:00:00.000Z",
+        maxDurationSeconds: 600,
+      }), { status: 200 })
+    }))
+    renderStart()
+    fireEvent.click(screen.getByRole("checkbox", { name: /may incur a provider usage charge/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Start controlled test" }))
+    await screen.findByText(/could not keep the audio connection/)
+    expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(1)
+    expect(document.body.textContent).not.toContain(token)
+  })
+
+  it("ends the browser connection when the form unmounts", async () => {
+    installBrowser()
+    const view = renderStart()
+    await confirmAndStart()
+    view.unmount()
+    await vi.waitFor(() => expect(fetches.some(call => call.startsWith("DELETE "))).toBe(true))
+    expect(fetches.filter(call => call.includes("initiate-agent-test-call"))).toHaveLength(1)
   })
 })

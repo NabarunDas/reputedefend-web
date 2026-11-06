@@ -23,7 +23,7 @@ function freshSession(createdAt = new Date().toISOString()) {
   }
 }
 
-function installRpc(options: { session?: unknown; preflight?: unknown; prepare?: unknown; bind?: unknown } = {}) {
+function installRpc(options: { session?: unknown; preflight?: unknown; prepare?: unknown; claim?: unknown; record?: unknown; bind?: unknown } = {}) {
   mocks.sessionFromToken.mockResolvedValue(options.session === undefined ? freshSession() : options.session)
   mocks.rpc.mockImplementation(async (name: string) => {
     if (name === "admin_session_v1") return options.session === undefined ? freshSession() : options.session
@@ -37,12 +37,29 @@ function installRpc(options: { session?: unknown; preflight?: unknown; prepare?:
       environment: "dev",
       configurationVersion: 1,
     }
+    if (name === "admin_commercial_claim_agent_test_creation_v1") return options.claim ?? {
+      status: "claimed",
+      attemptState: "CREATION_IN_PROGRESS",
+      agentRef: "agent-0021",
+      agentVersion: 4,
+    }
+    if (name === "admin_commercial_record_agent_test_creation_v1") return options.record ?? {
+      status: "recorded",
+      attemptState: "PROVIDER_CREATED",
+    }
     if (name === "admin_commercial_bind_agent_test_call_v1") return options.bind ?? {
       status: "success",
       callId: "call_created_01",
       sessionRef: "TS-26-ABCDEF01",
       agentRef: "agent-0021",
       agentVersion: 4,
+      accessToken: "join-token-value-123456",
+      transport: "gateway",
+      iceServers: [{ urls: "stun:example.invalid" }],
+      expiresAt: "2026-11-06T20:00:00.000Z",
+      maxDurationSeconds: 600,
+      providerConfirmedAgent: false,
+      providerConfirmedVersion: false,
       provisionState: "TEST_REQUIRED",
       forwardingVerified: false,
       testPassed: false,
@@ -57,6 +74,14 @@ function prepareCall() {
 
 function bindCall() {
   return mocks.rpc.mock.calls.filter(call => call[0] === "admin_commercial_bind_agent_test_call_v1").at(-1)
+}
+
+function claimCall() {
+  return mocks.rpc.mock.calls.filter(call => call[0] === "admin_commercial_claim_agent_test_creation_v1")
+}
+
+function recordCall() {
+  return mocks.rpc.mock.calls.filter(call => call[0] === "admin_commercial_record_agent_test_creation_v1").at(-1)
 }
 
 const origin = "https://admin.profilerelaunch.com"
@@ -76,6 +101,7 @@ const body = {
   allocationVersion: 1,
   instructionId: "a033a000-0000-4000-8000-000000000081",
   instructionVersion: 1,
+  confirmedCharge: true,
 }
 
 function providerResponse(patch: Record<string, unknown> = {}) {
@@ -171,7 +197,19 @@ describe("start controlled receptionist test", () => {
     expect(prepareCall()).toBeUndefined()
   })
 
-  it("creates a v3 web call from the stored agent version and binds only the returned call id", async () => {
+  it("requires an explicit charge confirmation before any database or provider call", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const { confirmedCharge, ...unconfirmed } = body
+    void confirmedCharge
+    const response = await POST(req(unconfirmed))
+    expect(response.status).toBe(400)
+    expect((await response.json()).message).toContain("provider charge")
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it("creates a v3 web call once from the stored agent version and returns connection fields only after binding", async () => {
     const fetchMock = vi.fn().mockResolvedValue(providerResponse())
     vi.stubGlobal("fetch", fetchMock)
     const response = await POST(req())
@@ -183,6 +221,10 @@ describe("start controlled receptionist test", () => {
       agentVersion: 4,
       accessToken: "join-token-value-123456",
       transport: "gateway",
+      iceServers: [{ urls: "stun:example.invalid" }],
+      maxDurationSeconds: 600,
+      providerConfirmedAgent: false,
+      providerConfirmedVersion: false,
       forwardingVerified: false,
       testPassed: false,
     })
@@ -196,20 +238,30 @@ describe("start controlled receptionist test", () => {
     expect(JSON.parse(called[1].body as string)).toEqual({ agent_id: "agent-0021", agent_version: 4 })
     expect(called[1].body).not.toContain("metadata")
     expect(called[1].body).not.toContain("latest")
-    const bound = bindCall()?.[1].p_payload
-    expect(bound).toMatchObject({
+    expect(claimCall()).toHaveLength(1)
+    expect(mocks.rpc.mock.calls.findIndex(call => call[0] === "admin_commercial_claim_agent_test_creation_v1")).toBeLessThan(
+      mocks.rpc.mock.calls.length,
+    )
+    const recorded = recordCall()?.[1].p_payload
+    expect(recorded).toMatchObject({
+      outcome: "created",
       providerCallId: "call_created_01",
-      reportedAgentId: "agent-0021",
-      reportedAgentVersion: 4,
-      callType: "web_call",
+      transport: "gateway",
+      connectionToken: "join-token-value-123456",
+      echoedAgentId: null,
+      echoedAgentVersion: null,
     })
+    const bound = bindCall()?.[1].p_payload
+    expect(bound).toMatchObject({ confirmedCharge: true, locationId: body.locationId })
+    expect(bound).not.toHaveProperty("providerCallId")
     expect(bound).not.toHaveProperty("accessToken")
-    expect(bound).not.toHaveProperty("access_token")
+    expect(bound).not.toHaveProperty("connectionToken")
     expect(JSON.stringify(bound)).not.toContain("join-token-value")
+    expect(prepareCall()?.[1].p_payload).toMatchObject({ confirmedCharge: true })
     expect(prepareCall()?.[1].p_payload).not.toHaveProperty("providerCallId")
   })
 
-  it("returns a recorded call without a second provider request", async () => {
+  it("returns a recorded connection without a second provider request when the browser response was lost", async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal("fetch", fetchMock)
     installRpc({
@@ -219,6 +271,13 @@ describe("start controlled receptionist test", () => {
         sessionRef: "TS-26-ABCDEF01",
         agentRef: "agent-0021",
         agentVersion: 4,
+        accessToken: "join-token-value-123456",
+        transport: "gateway",
+        iceServers: [{ urls: "stun:example.invalid" }],
+        expiresAt: "2026-11-06T20:00:00.000Z",
+        maxDurationSeconds: 600,
+        providerConfirmedAgent: false,
+        providerConfirmedVersion: false,
         forwardingVerified: false,
         testPassed: false,
       },
@@ -227,39 +286,97 @@ describe("start controlled receptionist test", () => {
     expect(response.status).toBe(200)
     const json = await response.json()
     expect(json.callId).toBe("call_created_01")
-    expect(json.accessToken).toBeUndefined()
+    expect(json.accessToken).toBe("join-token-value-123456")
+    expect(json.iceServers).toEqual([{ urls: "stun:example.invalid" }])
     expect(json.message).toContain("already recorded")
     expect(fetchMock).not.toHaveBeenCalled()
     expect(bindCall()).toBeUndefined()
+    expect(claimCall()).toHaveLength(0)
   })
 
-  it("keeps an uncertain provider response unbound", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")))
-    const response = await POST(req())
-    expect(response.status).toBe(503)
+  it("does not create another provider call after an uncertain response for the same idempotency key", async () => {
+    let fetches = 0
+    let phase = "prepared"
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "admin_commercial_agent_test_preflight_v1") return { status: "eligible" }
+      if (name === "admin_commercial_prepare_agent_test_call_v1") {
+        return phase === "prepared"
+          ? { status: "prepared", agentRef: "agent-0021", agentVersion: 4 }
+          : { status: "reconciliation", attemptState: "REQUIRES_RECONCILIATION" }
+      }
+      if (name === "admin_commercial_claim_agent_test_creation_v1") return { status: "claimed", agentRef: "agent-0021", agentVersion: 4 }
+      if (name === "admin_commercial_record_agent_test_creation_v1") {
+        phase = "reconciliation"
+        return { status: "recorded", attemptState: "REQUIRES_RECONCILIATION" }
+      }
+      throw new Error(name)
+    })
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      fetches += 1
+      throw new Error("network")
+    }))
+    const first = await POST(req())
+    expect(first.status).toBe(503)
+    const firstBody = await first.json()
+    expect(firstBody.message).toContain("Do not start another one")
+    expect(firstBody.message).not.toContain("Try the same action again")
+    const second = await POST(req())
+    expect(second.status).toBe(409)
+    expect(fetches).toBe(1)
     expect(bindCall()).toBeUndefined()
     for (const status of [408, 429, 503]) {
-      resetAgentTestLookups()
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("busy", { status })))
+      phase = "prepared"
+      fetches = 0
+      vi.stubGlobal("fetch", vi.fn(async () => {
+        fetches += 1
+        return new Response("busy", { status })
+      }))
       const again = await POST(req())
       expect(again.status).toBe(503)
-      expect(bindCall()).toBeUndefined()
+      phase = "reconciliation"
+      const replay = await POST(req())
+      expect(replay.status).toBe(409)
+      expect(fetches).toBe(1)
     }
   })
 
-  it("does not bind a rejected or non-web provider response", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("no", { status: 422 })))
+  it("records a definitive provider rejection without binding and blocks a second key while another attempt is active", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("no", { status: 422 }))
+    vi.stubGlobal("fetch", fetchMock)
     const rejected = await POST(req())
     expect(rejected.status).toBe(502)
+    expect(recordCall()?.[1].p_payload).toEqual({ outcome: "rejected" })
     expect(bindCall()).toBeUndefined()
+    installRpc({ prepare: { status: "conflict", reason: "active" } })
+    const otherKey = "44444444-4444-4444-8444-444444444444"
+    const second = await POST(new NextRequest(req().url, {
+      method: "POST",
+      headers: {
+        origin,
+        "content-type": "application/json",
+        "idempotency-key": otherKey,
+        cookie: `${sessionCookie}=${"a".repeat(64)}`,
+      },
+      body: JSON.stringify(body),
+    }))
+    expect(second.status).toBe(409)
+    expect((await second.json()).message).toContain("already has a controlled test")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps an incomplete provider payload for reconciliation and does not bind a mismatched echoed agent", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(providerResponse({ transport: "phone" })))
     const wrongTransport = await POST(req())
-    expect(wrongTransport.status).toBe(502)
+    expect(wrongTransport.status).toBe(503)
+    expect(recordCall()?.[1].p_payload).toMatchObject({ outcome: "uncertain", providerCallId: "call_created_01" })
     expect(bindCall()).toBeUndefined()
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(providerResponse({ agent_id: "agent-other" })))
+    installRpc({ bind: { status: "denied", reason: "agent", providerConfirmedAgent: false } })
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(providerResponse({ agent_id: "agent-0099" })))
     const wrongAgent = await POST(req())
-    expect(wrongAgent.status).toBe(502)
-    expect(bindCall()).toBeUndefined()
+    expect(wrongAgent.status).toBe(403)
+    expect((await wrongAgent.json()).message).toContain("Do not start another one")
+    expect(recordCall()?.[1].p_payload).toMatchObject({ outcome: "created", echoedAgentId: "agent-0099" })
+    expect(bindCall()).toBeTruthy()
   })
 
   it("does not call the phone-call endpoint or read a client call id", () => {
@@ -267,8 +384,12 @@ describe("start controlled receptionist test", () => {
     const provider = readFileSync(new URL("./agent-test-call-provider.ts", import.meta.url), "utf8")
     expect(source).not.toContain("create-phone-call")
     expect(source).not.toContain("body.callId")
+    expect(source).not.toContain("allowAgentTestCreate")
+    expect(source).not.toContain("Try the same action again")
     expect(provider).toContain("https://api.retellai.com/v3/create-web-call")
     expect(provider).not.toContain("create-phone-call")
     expect(provider).not.toContain("/v2/create-web-call")
+    expect(provider).not.toContain("allowAgentTestCreate")
+    expect(provider).not.toContain("const creates")
   })
 })

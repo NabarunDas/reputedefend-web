@@ -1,9 +1,10 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ukDate } from "@/lib/admin/activity"
 import type { AgentTestLocationProgress, AllocationLocationProgress, ConfigurationLocationProgress, ForwardingLocationProgress, SetupQueueItem } from "@/lib/commercial/setup-queue"
+import { startControlledReceptionistCall } from "@/lib/commercial/controlled-web-call"
 import { Badge, EmptyState, Notice } from "../../ui"
 
 const futureCommands = [
@@ -1230,22 +1231,32 @@ const emptyQa = (): Record<TestQaKey, boolean> => ({
   conclusion: false,
 })
 
-function uncertainTestStatus(status: number) {
-  return status === 408 || status === 429 || status >= 500
+function staffCallError(error: Error) {
+  if (error.name === "NotAllowedError" || /notallowed|permission denied|microphone|getUserMedia/i.test(`${error.name} ${error.message}`)) {
+    return "The microphone was not available, so the browser could not join the controlled web call. Another call was not started."
+  }
+  if (/provider charge|reconciliation|Do not start another|already recorded|was not opened|not ready/i.test(error.message)) return error.message
+  return "The browser could not keep the audio connection. Another call was not started."
 }
 
 function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "dev" | "production" }) {
   const router = useRouter()
   const keyRef = useRef("")
   const fingerRef = useRef("")
+  const endRef = useRef<(() => void) | null>(null)
+  const failedRef = useRef(false)
   const initial = item.testProgress?.locations.find(location => location.status !== "passed")?.locationId ?? item.testProgress?.locations[0]?.locationId ?? ""
   const [selected, setSelected] = useState(initial)
   const place = item.testProgress?.locations.find(entry => entry.locationId === selected) ?? null
   const [message, setMessage] = useState<string | null>(null)
   const [tone, setTone] = useState<"success" | "warning" | "danger">("warning")
   const [pending, setPending] = useState(false)
-  const [opened, setOpened] = useState<{ callId: string; accessToken: string | null; expiresAt: string | null } | null>(null)
+  const [chargeAccepted, setChargeAccepted] = useState(false)
+  const [locked, setLocked] = useState(false)
+  const [phase, setPhase] = useState<"idle" | "connecting" | "connected" | "ended" | "error">("idle")
+  const [callId, setCallId] = useState<string | null>(null)
   const passed = place?.status === "passed"
+  useEffect(() => () => { endRef.current?.() }, [])
 
   function requestBody() {
     if (!place?.allocationId || !place.instructionId || !place.agentRef || !place.e164 || item.subscriptionId === null || item.subscriptionVersion === null || item.customerId === null || item.onboardingRequestId === null || item.onboardingVersion === null) return null
@@ -1265,6 +1276,7 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
       allocationVersion: place.allocationVersion,
       instructionId: place.instructionId,
       instructionVersion: place.instructionVersion,
+      confirmedCharge: true as const,
     }
   }
 
@@ -1276,50 +1288,78 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
     return keyRef.current
   }
 
-  async function send() {
+  function send() {
     const live = requestBody()
-    if (!live || passed) return
+    if (!live || passed || !chargeAccepted || locked || pending) return
     const fingerprint = JSON.stringify(live)
     const requestKey = currentKey(fingerprint)
     setPending(true)
     setMessage(null)
+    setPhase("connecting")
+    setTone("warning")
+    failedRef.current = false
     try {
-      const response = await fetch("/api/commercial/initiate-agent-test-call", {
-        method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": requestKey },
-        body: fingerprint,
+      const handle = startControlledReceptionistCall({
+        endpoint: "/api/commercial/initiate-agent-test-call",
+        idempotencyKey: requestKey,
+        body: live,
+        onStatus: next => {
+          if (next === "ended" && failedRef.current) {
+            setPending(false)
+            setLocked(true)
+            return
+          }
+          setPhase(next)
+          if (next === "connected") {
+            setMessage("Connected. You can speak to the receptionist. Telephone forwarding is not verified, and the receptionist is not live.")
+            setTone("success")
+            setPending(false)
+            router.refresh()
+          }
+          if (next === "ended") {
+            setMessage("The controlled web call has ended. Telephone forwarding is not verified, and the receptionist is not live.")
+            setTone("warning")
+            setPending(false)
+            setLocked(true)
+          }
+        },
+        onOutcome: outcome => {
+          if (outcome === "rejected") {
+            keyRef.current = ""
+            fingerRef.current = ""
+            setLocked(false)
+            return
+          }
+          setLocked(true)
+        },
+        onCall: call => setCallId(call.callId),
+        onError: error => {
+          failedRef.current = true
+          setPhase("error")
+          setMessage(staffCallError(error))
+          setTone("danger")
+          setPending(false)
+          setLocked(true)
+        },
       })
-      const body = await response.json().catch(() => null) as { message?: string; callId?: string; accessToken?: string; expiresAt?: string } | null
-      if (!response.ok) {
-        if (!uncertainTestStatus(response.status)) {
-          keyRef.current = ""
-          fingerRef.current = ""
-        }
-        setMessage(body?.message ?? "A controlled web call was not opened.")
-        setTone(uncertainTestStatus(response.status) ? "danger" : "warning")
-        return
-      }
-      keyRef.current = ""
-      fingerRef.current = ""
-      setOpened({ callId: body?.callId ?? "", accessToken: body?.accessToken ?? null, expiresAt: body?.expiresAt ?? null })
-      setMessage(body?.message ?? "A controlled web call is open for this location.")
-      setTone("success")
-      router.refresh()
+      endRef.current = handle.end
     } catch {
-      setMessage("A controlled web call was not opened. Check the connection and try the same action again.")
-      setTone("danger")
-    } finally {
+      setPhase("error")
+      setLocked(true)
       setPending(false)
+      setMessage("The browser could not keep the audio connection. Another call was not started.")
+      setTone("danger")
     }
   }
 
   if (!item.testProgress || item.testProgress.locations.length === 0 || !place) return null
   const ready = Boolean(requestBody())
+  const liveCall = phase === "connecting" || phase === "connected"
   return (
     <form className="commercial-command" onSubmit={event => event.preventDefault()}>
       <h3>Start controlled receptionist test</h3>
       <p>{item.customerName} · {item.businessName}. This asks the provider to open a web conversation for the configured receptionist and version. It does not place a telephone call, enable forwarding, or make the receptionist live. A typed call reference is not accepted.</p>
-      <label>Controlled test location<select value={selected} onChange={event => { setSelected(event.target.value); setOpened(null); setMessage(null); keyRef.current = ""; fingerRef.current = "" }}>{item.testProgress.locations.map(entry => <option key={entry.locationId} value={entry.locationId}>{entry.locationName} · {entry.status}</option>)}</select></label>
+      <label>Controlled test location<select value={selected} onChange={event => { setSelected(event.target.value); setCallId(null); setMessage(null); setPhase("idle"); setLocked(false); keyRef.current = ""; fingerRef.current = "" }}>{item.testProgress.locations.map(entry => <option key={entry.locationId} value={entry.locationId}>{entry.locationName} · {entry.status}</option>)}</select></label>
       <dl className="commercial-review">
         <div><dt>Subscription</dt><dd>{item.reference}</dd></div>
         <div><dt>Location</dt><dd>{place.locationName}</dd></div>
@@ -1328,13 +1368,18 @@ function InitiateAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "de
       </dl>
       {passed ? <Notice tone="success"><span role="status">This location already has a passed conversation test.</span></Notice> : null}
       {!place.instructionId ? <Notice tone="warning">Share the forwarding instructions for this location before opening a controlled web call.</Notice> : null}
-      {passed ? null : <button type="button" disabled={pending || !ready} onClick={() => void send()}>Start controlled test</button>}
-      {opened?.callId ? <p role="status">Provider call reference {opened.callId}. Telephone forwarding is not verified, and the receptionist is not live.</p> : null}
-      {opened?.accessToken ? <label>Join token for this session<input readOnly value={opened.accessToken} /></label> : null}
-      {opened?.expiresAt ? <p>The join token expires at {opened.expiresAt}. It is not stored.</p> : null}
+      {passed ? null : <label><input type="checkbox" checked={chargeAccepted} onChange={event => setChargeAccepted(event.target.checked)} /> I understand this controlled web call may incur a provider usage charge.</label>}
+      {passed ? null : <button type="button" disabled={pending || locked || !ready || !chargeAccepted} onClick={send}>Start controlled test</button>}
+      {liveCall ? <button type="button" onClick={() => endRef.current?.()}>End call</button> : null}
+      {phase === "connecting" ? <p role="status">Connecting the browser to the controlled web call.</p> : null}
+      {callId ? <p role="status">Provider call reference {callId}. Telephone forwarding is not verified, and the receptionist is not live.</p> : null}
       {message ? <Notice tone={tone}><span role="status">{message}</span></Notice> : null}
     </form>
   )
+}
+
+function uncertainTestStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500
 }
 
 function VerifyAgentTestCall({ item, lane }: { item: SetupQueueItem; lane: "dev" | "production" }) {

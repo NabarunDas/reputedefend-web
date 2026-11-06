@@ -30,14 +30,11 @@ const agentPattern = /^[A-Za-z0-9_-]{8,128}$/
 const reasonPattern = /^[a-z0-9_]{1,64}$/
 const lookupWindowMs = 60_000
 const lookupLimit = 6
-const createLimit = 3
 const lookupTimeoutMs = 4_000
 const lookups = new Map<string, number[]>()
-const creates = new Map<string, number[]>()
 
 export function resetAgentTestLookups() {
   lookups.clear()
-  creates.clear()
 }
 
 export function allowAgentTestLookup(operatorId: string, now = Date.now()): boolean {
@@ -48,17 +45,6 @@ export function allowAgentTestLookup(operatorId: string, now = Date.now()): bool
   }
   recent.push(now)
   lookups.set(operatorId, recent)
-  return true
-}
-
-export function allowAgentTestCreate(operatorId: string, now = Date.now()): boolean {
-  const recent = (creates.get(operatorId) ?? []).filter(time => now - time < lookupWindowMs)
-  if (recent.length >= createLimit) {
-    creates.set(operatorId, recent)
-    return false
-  }
-  recent.push(now)
-  creates.set(operatorId, recent)
   return true
 }
 
@@ -165,8 +151,14 @@ export async function retrieveAgentTestCall(input: {
   }
 }
 
+export type ProviderIceServer = {
+  urls: string | string[]
+  username?: string
+  credential?: string
+}
+
 export type CreatedAgentWebCall =
-  | { availability: "uncertain" }
+  | { availability: "uncertain"; callId: string | null }
   | { availability: "rejected" }
   | {
       availability: "created"
@@ -174,27 +166,59 @@ export type CreatedAgentWebCall =
       accessToken: string
       transport: "gateway"
       expiresAt: string
+      iceServers: ProviderIceServer[]
+      echoedAgentId: string | null
+      echoedAgentVersion: number | null
     }
 
 const createWebCallEndpoint = "https://api.retellai.com/v3/create-web-call"
 
-function createdCall(body: Record<string, unknown>, agentId: string, agentVersion: number): CreatedAgentWebCall {
+function iceServers(value: unknown): ProviderIceServer[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 8) return null
+  const servers: ProviderIceServer[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null
+    const record = entry as Record<string, unknown>
+    let urls: string | string[] | null = null
+    if (typeof record.urls === "string" && record.urls.length > 0 && record.urls.length < 512) urls = record.urls
+    if (Array.isArray(record.urls) && record.urls.length > 0 && record.urls.length <= 4 && record.urls.every(item => typeof item === "string" && item.length > 0 && item.length < 512)) {
+      urls = record.urls
+    }
+    if (!urls) return null
+    const server: ProviderIceServer = { urls }
+    if (typeof record.username === "string" && record.username.length > 0 && record.username.length <= 256) server.username = record.username
+    if (typeof record.credential === "string" && record.credential.length > 0 && record.credential.length <= 512) server.credential = record.credential
+    servers.push(server)
+  }
+  return servers
+}
+
+function createdCall(body: Record<string, unknown>): CreatedAgentWebCall {
   const callId = text(body.call_id)
+  const knownCall = callId && callIdPattern.test(callId) ? callId : null
   const accessToken = text(body.access_token)
   const transport = text(body.transport)
   const expires = body.expires_at
-  if (!callId || !callIdPattern.test(callId)) return { availability: "rejected" }
-  if (!accessToken || accessToken.length < 16 || accessToken.length > 4096) return { availability: "rejected" }
-  if (transport !== "gateway") return { availability: "rejected" }
-  if (!Array.isArray(body.ice_servers) || body.ice_servers.length < 1) return { availability: "rejected" }
-  if (typeof expires !== "number" || !Number.isSafeInteger(expires) || expires <= 0) return { availability: "rejected" }
+  const servers = iceServers(body.ice_servers)
   const echoedAgent = text(body.agent_id)
-  if (echoedAgent && echoedAgent !== agentId) return { availability: "rejected" }
   const echoedVersion = agentVersionValue(body.agent_version)
-  if (echoedVersion !== undefined && echoedVersion !== agentVersion) return { availability: "rejected" }
+  if (echoedAgent && !agentPattern.test(echoedAgent)) return { availability: "uncertain", callId: knownCall }
+  if (Number.isNaN(echoedVersion)) return { availability: "uncertain", callId: knownCall }
+  if (!knownCall || !accessToken || accessToken.length < 16 || accessToken.length > 4096) return { availability: "uncertain", callId: knownCall }
+  if (transport !== "gateway" || !servers) return { availability: "uncertain", callId: knownCall }
+  if (typeof expires !== "number" || !Number.isSafeInteger(expires) || expires <= 0) return { availability: "uncertain", callId: knownCall }
   const expiresAt = new Date(expires).toISOString()
-  if (Number.isNaN(Date.parse(expiresAt))) return { availability: "rejected" }
-  return { availability: "created", callId, accessToken, transport: "gateway", expiresAt }
+  if (Number.isNaN(Date.parse(expiresAt))) return { availability: "uncertain", callId: knownCall }
+  return {
+    availability: "created",
+    callId: knownCall,
+    accessToken,
+    transport: "gateway",
+    expiresAt,
+    iceServers: servers,
+    echoedAgentId: echoedAgent,
+    echoedAgentVersion: echoedVersion ?? null,
+  }
 }
 
 function agentVersionValue(value: unknown): number | undefined {
@@ -227,12 +251,12 @@ export async function createAgentWebCall(input: {
       redirect: "error",
       signal: AbortSignal.timeout(lookupTimeoutMs),
     })
-    if (response.status === 408 || response.status === 429 || response.status >= 500) return { availability: "uncertain" }
+    if (response.status === 408 || response.status === 429 || response.status >= 500) return { availability: "uncertain", callId: null }
     if (response.status !== 200 && response.status !== 201) return { availability: "rejected" }
     const body = await response.json() as unknown
-    if (!body || typeof body !== "object" || Array.isArray(body)) return { availability: "rejected" }
-    return createdCall(body as Record<string, unknown>, input.agentId, input.agentVersion)
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { availability: "uncertain", callId: null }
+    return createdCall(body as Record<string, unknown>)
   } catch {
-    return { availability: "uncertain" }
+    return { availability: "uncertain", callId: null }
   }
 }

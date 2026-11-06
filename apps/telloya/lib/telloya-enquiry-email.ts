@@ -118,12 +118,12 @@ export function telloyaInternalNotificationText(data: TelloyaEnquiryData, ref: s
   ]
 
   if (data.planTier) {
-    lines.push(`Selected Plan: ${planTierLabel(data.planTier)}`)
+    lines.push(`Selected Plan: ${planTierLabel(data.planTier)}. Customer interest only. This is not an approved offer.`)
   }
 
   if (data.guardInterested) {
     const locations = data.guardLocationCount ? ` (${data.guardLocationCount} locations)` : ""
-    lines.push(`Relaunch Guard: Interested${locations}`)
+    lines.push(`Relaunch Guard: Interested${locations}. This is not a Guard purchase and it is not the Complete bundle.`)
   }
 
   lines.push("")
@@ -172,7 +172,7 @@ export function telloyaInternalNotificationText(data: TelloyaEnquiryData, ref: s
   if (data.overageInterested) {
     const cap = data.overageMonthlyCapGbp ? ` (cap: £${data.overageMonthlyCapGbp}/month)` : ""
     lines.push("")
-    lines.push(`Interested in additional minutes${cap}`)
+    lines.push(`Interested in additional minutes${cap}. This proposed cap does not authorise overage billing.`)
   }
 
   lines.push("")
@@ -205,12 +205,12 @@ export function telloyaInternalNotificationHtml(data: TelloyaEnquiryData, ref: s
   ]
 
   if (data.planTier) {
-    rows.push({ label: "Selected Plan", value: planTierLabel(data.planTier) })
+    rows.push({ label: "Selected Plan", value: `${planTierLabel(data.planTier)}. Customer interest only. This is not an approved offer.` })
   }
 
   if (data.guardInterested) {
     const locations = data.guardLocationCount ? ` (${data.guardLocationCount} locations)` : ""
-    rows.push({ label: "Relaunch Guard", value: `Interested${locations}` })
+    rows.push({ label: "Relaunch Guard", value: `Interested${locations}. This is not a Guard purchase and it is not the Complete bundle.` })
   }
 
   rows.push(
@@ -258,7 +258,7 @@ export function telloyaInternalNotificationHtml(data: TelloyaEnquiryData, ref: s
   // Overage interest
   if (data.overageInterested) {
     const cap = data.overageMonthlyCapGbp ? ` (cap: £${data.overageMonthlyCapGbp}/month)` : ""
-    rows.push({ label: "Additional Minutes Interest", value: `Yes${cap}` })
+    rows.push({ label: "Additional Minutes Interest", value: `Yes${cap}. This proposed cap does not authorise overage billing.` })
   }
 
   if (data.missedCallProblem) {

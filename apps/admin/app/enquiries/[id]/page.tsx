@@ -7,6 +7,7 @@ import { ukDate } from "@/lib/admin/activity"
 import { safeWebUrl } from "@/lib/records/model"
 import { TriageForm, ConversionForm } from "../forms"
 import { OnboardingPanel } from "../onboarding"
+import { TelloyaEnquiryInterest } from "../telloya-interest"
 import { Badge, PageHeader } from "../../ui"
 
 export const metadata = { title: "Enquiry" }
@@ -29,20 +30,12 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
         <dt>Phone</dt><dd>{p.phone || "Not recorded"}</dd>
         <dt>Business</dt><dd>{p.businessName || "Not recorded"}</dd>
         {p.country && <><dt>Country</dt><dd>{p.country}</dd></>}
-        {p.source === "telloya" && (
-          <>
-            {p.product && <><dt>Product interest</dt><dd>{p.product === "telloya" ? "Telloya" : p.product === "complete" ? "Complete (Telloya + Relaunch Guard)" : p.product}</dd></>}
-            {p.trade && <><dt>Trade or service</dt><dd>{p.trade}</dd></>}
-            {p.locations && <><dt>Number of locations</dt><dd>{p.locations}</dd></>}
-            {p.missedCallProblem && <><dt>Missed-call challenge</dt><dd className="preserve-lines">{p.missedCallProblem}</dd></>}
-            {p.phoneSetup && <><dt>Current phone setup</dt><dd>{p.phoneSetup}</dd></>}
-            {p.contactPreference && <><dt>Best time to contact</dt><dd>{p.contactPreference}</dd></>}
-          </>
-        )}
+        {p.source === "telloya" && p.trade && <><dt>Trade or service</dt><dd>{p.trade}</dd></>}
       </dl>
       <p className="preserve-lines">{p.details}</p>
       {([["Website", p.websiteUrl], ["Business Profile", p.businessProfileUrl], ["Review", p.reviewUrl]] as const).map(([label, value]) => { const url = safeWebUrl(value); return url ? <p key={label}><a href={url} target="_blank" rel="noopener noreferrer">Open {label} (new tab)</a></p> : null })}
     </section>
+    <TelloyaEnquiryInterest payload={p} enquiryRef={e.enquiryRef} />
     <section className="panel">
       <h2>Email status</h2>
       <p>Internal notification: {emailStates[e.internalStatus]}<br />Customer acknowledgement: {emailStates[e.ackStatus]}</p>

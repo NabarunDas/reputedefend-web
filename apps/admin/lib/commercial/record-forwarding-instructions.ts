@@ -167,7 +167,7 @@ export async function recordForwardingInstructionsCommand(request: NextRequest) 
     const lane = commercialProviderLane()
     if (!lane) return reply("The provider lane is not configured for this deployment, so forwarding instructions cannot be recorded.", 403)
     if (command.payload.instruction.environment !== lane) return reply("That provider environment does not match this deployment, so forwarding instructions cannot be recorded.", 400)
-    const result = await backend().rpc<{ status: string; reason?: string }>("admin_commercial_record_forwarding_instructions_v1", {
+    const result = await backend().rpc<{ status: string; reason?: string; instructionVersion?: number; sharingStatus?: string; allocationVersion?: number; provisionState?: string; forwardingInstructed?: boolean }>("admin_commercial_record_forwarding_instructions_v1", {
       p_token: tokenHash(token),
       p_request: key,
       p_subscription: command.subscriptionId,
@@ -175,9 +175,20 @@ export async function recordForwardingInstructionsCommand(request: NextRequest) 
       p_payload: { ...command.payload, instruction: { ...command.payload.instruction, environment: lane } },
     })
     switch (result.status) {
-      case "success": return reply(command.payload.instruction.status === "SHARED"
-        ? "The forwarding instructions are shared in the customer portal. Forwarding is not enabled, and the receptionist is not live."
-        : "The forwarding instructions are saved as a draft. They are not visible to the customer, and forwarding is not enabled.", 200)
+      case "success": {
+        const recorded: Record<string, unknown> = {}
+        if (typeof result.instructionVersion === "number") recorded.instructionVersion = result.instructionVersion
+        if (typeof result.allocationVersion === "number") recorded.allocationVersion = result.allocationVersion
+        if (result.sharingStatus === "DRAFT" || result.sharingStatus === "SHARED") recorded.sharingStatus = result.sharingStatus
+        if (typeof result.provisionState === "string") recorded.provisionState = result.provisionState
+        if (typeof result.forwardingInstructed === "boolean") recorded.forwardingInstructed = result.forwardingInstructed
+        return NextResponse.json({
+          message: command.payload.instruction.status === "SHARED"
+            ? "The forwarding instructions are shared in the customer portal. Forwarding is not enabled, and the receptionist is not live."
+            : "The forwarding instructions are saved as a draft. They are not visible to the customer, and forwarding is not enabled.",
+          ...recorded,
+        }, { status: 200, headers: privateResponseHeaders })
+      }
       case "unauthorized": return reply("Your session has ended. Please sign in again.", 401)
       case "reauth_required": return reply(ADMIN_RECENT_SIGN_IN_MESSAGE, 403)
       case "conflict":

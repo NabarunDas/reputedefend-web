@@ -108,6 +108,20 @@ describe("record forwarding instructions command messages", () => {
     expect(response.headers.get("cache-control")).toContain("no-store")
   })
 
+  it("returns the recorded version when the database confirms it", async () => {
+    mocks.rpc.mockResolvedValue({ status: "success", instructionVersion: 2, sharingStatus: "SHARED", allocationVersion: 4, provisionState: "TEST_REQUIRED", forwardingInstructed: true, e164: "+441632960441" })
+    const response = await POST(req())
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      message: "The forwarding instructions are shared in the customer portal. Forwarding is not enabled, and the receptionist is not live.",
+      instructionVersion: 2,
+      sharingStatus: "SHARED",
+      allocationVersion: 4,
+      provisionState: "TEST_REQUIRED",
+      forwardingInstructed: true,
+    })
+  })
+
   it("saves a draft without saying the customer can see it", async () => {
     mocks.rpc.mockResolvedValue({ status: "success" })
     const response = await POST(req({ ...body, instruction: { ...body.instruction, status: "DRAFT" } }))

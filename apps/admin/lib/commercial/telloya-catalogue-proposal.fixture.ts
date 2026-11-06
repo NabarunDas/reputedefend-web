@@ -98,7 +98,7 @@ export async function installTelloyaCatalogueProposal(db: Sql): Promise<void> {
        where not exists (
          select 1 from public.plan_components where plan_version_id = $1 and component_code = 'TELLOYA'
        )`,
-      [plan.id, telloyaLocationPolicy.proposedStandardLocations],
+      [plan.id, telloyaLocationPolicy.standardLocations],
     )
     await db.query(
       `insert into public.commercial_plan_conditions(
@@ -140,4 +140,6 @@ export async function installTelloyaCatalogueProposal(db: Sql): Promise<void> {
      )`,
     [telloyaProposalPlans.custom],
   )
+  // Quantity 1 keeps the unpriced template valid. It is not a Custom quotation.
+  // A quotation names its own location quantity, number quantity, and price.
 }

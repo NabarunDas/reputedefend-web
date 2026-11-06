@@ -106,11 +106,24 @@ function strictAmount(value: string | undefined, min: number, max: number): numb
   return parsed
 }
 
+const OPTIONAL_FIELDS = new Set<string>([
+  "phoneSetup",
+  "missedCallProblem",
+  "voicePreference",
+  "voiceAccent",
+  "primaryLanguage",
+  "speakingStyle",
+  "additionalLanguages",
+  "contactPreference",
+  "websiteUrl",
+  "locations",
+  "overageInterested",
+  "overageMonthlyCapGbp",
+])
+
 const STEP_TITLES = {
-  1: "Choose your plan",
-  2: "About your business",
-  3: "Contact and preferences",
-  4: "Review and submit",
+  1: "Your service",
+  2: "Your business and contact details",
 } as const
 
 export function TelloyaEnquiryForm({ 
@@ -123,7 +136,8 @@ export function TelloyaEnquiryForm({
   initialGuardInterested?: boolean;
 }) {
   const submissionEnabled = capabilities?.submissionEnabled ?? false
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
+  const [step, setStep] = useState<1 | 2>(1)
+  const [optionalOpen, setOptionalOpen] = useState(false)
   const [values, setValues] = useState<EnquiryValues>({ 
     ...INITIAL_VALUES, 
     planTier: initialPlanTier,
@@ -142,6 +156,7 @@ export function TelloyaEnquiryForm({
   const formId = useId()
   const submissionKeyRef = useRef("")
   const lastPayloadRef = useRef("")
+  const submittingRef = useRef(false)
   const [focusKey, setFocusKey] = useState(0)
   const focusWhat = useRef<"heading" | "summary" | "success">("heading")
 
@@ -198,7 +213,7 @@ export function TelloyaEnquiryForm({
     })
   }
 
-  function validateStep(nextStep: 1 | 2 | 3 | 4): EnquiryFieldErrors {
+  function validateStep(nextStep: 1 | 2): EnquiryFieldErrors {
     const stepErrors: EnquiryFieldErrors = {}
 
     if (nextStep >= 1) {
@@ -229,7 +244,16 @@ export function TelloyaEnquiryForm({
         if (locs === undefined) stepErrors.customLocations = "Please enter the number of locations."
         else if (locs === "invalid") stepErrors.customLocations = "Please enter a whole number between 1 and 9,999."
       }
+    }
 
+    if (nextStep >= 2) {
+      if (!values.businessName) stepErrors.businessName = "Please enter your business name."
+      if (!values.country) stepErrors.country = "Please enter your country."
+      if (!values.trade) stepErrors.trade = "Please describe your trade or service."
+      if (!values.fullName) stepErrors.fullName = "Please enter your name."
+      if (!values.email || !/^\S+@\S+\.\S+$/.test(values.email)) stepErrors.email = "Please enter a valid email address."
+      if (!values.phone || !/^[+]?[\d\s().-]{7,}$/.test(values.phone)) stepErrors.phone = "Please enter a valid phone number."
+      if (!values.privacyAccepted) stepErrors.privacyAccepted = "Please confirm you have read the privacy notice."
       if (values.overageInterested) {
         const cap = strictAmount(values.overageMonthlyCapGbp, 1, 100000)
         if (cap === undefined) stepErrors.overageMonthlyCapGbp = "Please enter a monthly spending cap."
@@ -237,28 +261,11 @@ export function TelloyaEnquiryForm({
       }
     }
 
-    if (nextStep >= 2) {
-      if (!values.businessName) stepErrors.businessName = "Please enter your business name."
-      if (!values.country) stepErrors.country = "Please enter your country."
-      if (!values.trade) stepErrors.trade = "Please describe your trade or service."
-    }
-
-    if (nextStep >= 3) {
-      if (!values.fullName) stepErrors.fullName = "Please enter your name."
-      if (!values.email || !/^\S+@\S+\.\S+$/.test(values.email)) stepErrors.email = "Please enter a valid email address."
-      if (!values.phone || !/^[+]?[\d\s().-]{7,}$/.test(values.phone)) stepErrors.phone = "Please enter a valid phone number."
-    }
-
-    if (nextStep >= 4) {
-      if (!values.privacyAccepted) stepErrors.privacyAccepted = "Please confirm you have read the privacy notice."
-    }
-
     return stepErrors
   }
 
   function continueToNext() {
-    // Validate only the current completed step before advancing
-    const stepErrors = validateStep(step)
+    const stepErrors = validateStep(1)
     setErrors(stepErrors)
     if (Object.keys(stepErrors).length) {
       setDeliveryError(false)
@@ -269,16 +276,16 @@ export function TelloyaEnquiryForm({
     setStatus("idle")
     setDeliveryError(false)
     setStatusText("")
-    if (step < 4) setStep((current) => ((current + 1) as 2 | 3 | 4))
+    setStep(2)
     requestFocus("heading")
   }
 
   function goBack() {
-    setStep((current) => (current > 1 ? (current - 1) as 1 | 2 | 3 : 1))
+    setStep(1)
     requestFocus("heading")
   }
 
-  function goToStep(targetStep: 1 | 2 | 3 | 4) {
+  function goToStep(targetStep: 1 | 2) {
     setErrors({})
     setDeliveryError(false)
     setStatusText("")
@@ -288,14 +295,16 @@ export function TelloyaEnquiryForm({
 
   async function submitEnquiry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (step < 4) {
+    if (submittingRef.current) return
+    if (step < 2) {
       continueToNext()
       return
     }
 
-    const allErrors = validateStep(4)
+    const allErrors = validateStep(2)
     if (Object.keys(allErrors).length) {
       setErrors(allErrors)
+      if (allErrors.overageMonthlyCapGbp) setOptionalOpen(true)
       setDeliveryError(false)
       setStatusText("Please correct the highlighted fields before submitting.")
       requestFocus("summary")
@@ -324,6 +333,7 @@ export function TelloyaEnquiryForm({
       || overageMonthlyCapGbp === "invalid"
     ) {
       setErrors(numericErrors)
+      if (numericErrors.overageMonthlyCapGbp) setOptionalOpen(true)
       setDeliveryError(false)
       setStatus("idle")
       setStatusText("Please correct the highlighted fields before submitting.")
@@ -331,6 +341,8 @@ export function TelloyaEnquiryForm({
       return
     }
 
+    submittingRef.current = true
+    let persisted = false
     setStatus("loading")
     setDeliveryError(false)
     setStatusText("Submitting your enquiry.")
@@ -423,6 +435,7 @@ export function TelloyaEnquiryForm({
       if (json.ok) {
         // Require actual TY reference before showing success
         if (json.enquiryRef && /^TY-\d\d-[A-HJ-NP-Z2-9]{6}$/.test(json.enquiryRef)) {
+          persisted = true
           setEnquiryRef(json.enquiryRef)
           setReceiptEmailStatus(json.receiptEmailStatus || "")
           setStatus("success")
@@ -447,6 +460,7 @@ export function TelloyaEnquiryForm({
 
       if (json.errors && Object.keys(json.errors).length) {
         setErrors(json.errors)
+        if (json.errors.overageMonthlyCapGbp) setOptionalOpen(true)
       }
 
       setStatus("idle")
@@ -459,6 +473,8 @@ export function TelloyaEnquiryForm({
       setDeliveryError(true)
       setStatusText("We couldn't submit your enquiry right now. Please try again shortly.")
       requestFocus("summary")
+    } finally {
+      if (!persisted) submittingRef.current = false
     }
   }
 
@@ -499,7 +515,7 @@ export function TelloyaEnquiryForm({
           </div>
         )}
         <p className={styles.successBody}>
-          Your request is safely recorded. Our team will review the details and get in touch soon.
+          Your enquiry was received. Admin will review it and contact you.
         </p>
         <p className={styles.successNote}>
           Please keep this reference handy so we can find your enquiry quickly if you contact us.
@@ -546,9 +562,9 @@ export function TelloyaEnquiryForm({
   return (
     <form className={styles.form} onSubmit={submitEnquiry} noValidate aria-busy={status === "loading"}>
       <div className={styles.progress}>
-        <p className={styles.progressLabel} id={`${formId}-progress`}>Step {step} of 4</p>
-        <div className={styles.progressTrack} role="progressbar" aria-valuemin={1} aria-valuemax={4} aria-valuenow={step} aria-labelledby={`${formId}-progress`}>
-          <span style={{ width: `${(step / 4) * 100}%` }} />
+        <p className={styles.progressLabel} id={`${formId}-progress`}>Step {step} of 2</p>
+        <div className={styles.progressTrack} role="progressbar" aria-valuemin={1} aria-valuemax={2} aria-valuenow={step} aria-labelledby={`${formId}-progress`}>
+          <span style={{ width: `${(step / 2) * 100}%` }} />
         </div>
         <h2 ref={headingRef} tabIndex={-1} className={styles.stepTitle}>{STEP_TITLES[step]}</h2>
       </div>
@@ -561,7 +577,22 @@ export function TelloyaEnquiryForm({
               <p>Please correct the following:</p>
               <ul>
                 {errorEntries.map(([field, message]) => (
-                  <li key={field}><button type="button" onClick={() => document.getElementById(`${formId}-${field}`)?.focus()}>{message}</button></li>
+                  <li key={field}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const focus = () => document.getElementById(`${formId}-${field}`)?.focus()
+                        if (OPTIONAL_FIELDS.has(field)) {
+                          setOptionalOpen(true)
+                          window.setTimeout(focus, 0)
+                          return
+                        }
+                        focus()
+                      }}
+                    >
+                      {message}
+                    </button>
+                  </li>
                 ))}
               </ul>
             </>
@@ -572,7 +603,7 @@ export function TelloyaEnquiryForm({
       <div className={styles.panel}>
         {step === 1 && (
           <>
-            <fieldset className={styles.options}>
+            <fieldset id={`${formId}-planTier`} tabIndex={-1} className={styles.options}>
               <legend className={styles.visuallyHidden}>Choose your Telloya plan</legend>
               {telloyaPlans.map((plan) => {
                 const selected = values.planTier === plan.tier
@@ -606,6 +637,21 @@ export function TelloyaEnquiryForm({
               {errors.planTier && <p className={styles.error}>{errors.planTier}</p>}
             </fieldset>
 
+            {selectedPlan && selectedPlan.monthlyPriceGbp != null && selectedPlan.minutesPerMonth != null && (
+              <div className={styles.planCallout}>
+                <p className={styles.sectionNote}>
+                  {selectedPlan.name} is {formatGbpPrice(selectedPlan.monthlyPriceGbp)} per month and includes {formatMinutes(selectedPlan.minutesPerMonth)}. This price is indicative and is not a final approved offer.
+                </p>
+              </div>
+            )}
+            {values.planTier === "custom" && (
+              <div className={styles.planCallout}>
+                <p className={styles.sectionNote}>
+                  Custom is quoted individually. The details below are the minimum needed for a quotation. They are not a final approved offer.
+                </p>
+              </div>
+            )}
+
             {values.planTier && values.planTier !== "custom" && (
               <div className={styles.fields} style={{ marginTop: "2rem" }}>
                 <label className={styles.check} htmlFor={`${formId}-guardInterested`}>
@@ -633,7 +679,7 @@ export function TelloyaEnquiryForm({
                 )}
                 {indicativeMonthlyTotal && selectedPlan?.monthlyPriceGbp != null && (
                   <p className={styles.sectionNote}>
-                    Indicative monthly total: {formatGbpPrice(indicativeMonthlyTotal)} ({selectedPlan.name} {formatGbpPrice(selectedPlan.monthlyPriceGbp)} + Guard {formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {Number(values.guardLocationCount)}). This estimate does not authorise billing.
+                    Indicative monthly total: {formatGbpPrice(indicativeMonthlyTotal)} ({selectedPlan.name} {formatGbpPrice(selectedPlan.monthlyPriceGbp)} + Guard {formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {Number(values.guardLocationCount)}). This estimate is not a final approved offer and does not authorise billing.
                   </p>
                 )}
               </div>
@@ -720,7 +766,7 @@ export function TelloyaEnquiryForm({
                   </span>
                 </label>
                 {values.guardInterested && (
-                  <Field id={`${formId}-guardLocationCount-custom`} label="How many locations need Guard protection?" error={errors.guardLocationCount}>
+                  <Field id={`${formId}-guardLocationCount`} label="How many locations need Guard protection?" error={errors.guardLocationCount}>
                     <input
                       name="guardLocationCount"
                       type="number"
@@ -731,6 +777,11 @@ export function TelloyaEnquiryForm({
                     />
                   </Field>
                 )}
+                {values.guardInterested && typeof guardLocations === "number" && (
+                  <p className={styles.sectionNote}>
+                    Indicative Guard amount: {formatGbpPrice(Math.round(relaunchGuardAddon.pricePerLocationGbp * guardLocations * 100) / 100)} ({formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {guardLocations} locations). This is separate from the custom quotation, is not a final approved offer, and does not authorise billing.
+                  </p>
+                )}
               </div>
             )}
           </>
@@ -738,29 +789,46 @@ export function TelloyaEnquiryForm({
 
         {step === 2 && (
           <div className={styles.fields}>
+            <ReviewBlock title="Your service" onEdit={() => goToStep(1)}>
+              <ReviewItem label="Plan" value={selectedPlan?.name || "Not selected"} />
+              {selectedPlan?.monthlyPriceGbp != null && (
+                <ReviewItem label="Price" value={`${formatGbpPrice(selectedPlan.monthlyPriceGbp)} per month, indicative`} />
+              )}
+              {selectedPlan?.minutesPerMonth != null && (
+                <ReviewItem label="Included minutes" value={formatMinutes(selectedPlan.minutesPerMonth)} />
+              )}
+              {values.guardInterested && (
+                <ReviewItem label="Relaunch Guard" value={`Yes (${values.guardLocationCount || 0} locations)`} />
+              )}
+              {indicativeMonthlyTotal != null && (
+                <ReviewItem label="Indicative monthly total" value={`${formatGbpPrice(indicativeMonthlyTotal)} estimate, not a charge`} />
+              )}
+              {values.planTier === "custom" && (
+                <>
+                  <ReviewItem label="Monthly minutes" value={values.customMonthlyMinutes} />
+                  <ReviewItem label="Monthly calls" value={values.customMonthlyCalls} />
+                  <ReviewItem label="Phone numbers" value={values.customPhoneNumbers} />
+                  <ReviewItem label="Locations" value={values.customLocations} />
+                </>
+              )}
+            </ReviewBlock>
+
+            <p className={styles.sectionNote}>
+              Submitting this enquiry does not take payment, activate the service, or authorise a recurring charge.
+            </p>
+
             <Field id={`${formId}-businessName`} label="Business name" error={errors.businessName}>
-              <input name="businessName" value={values.businessName} onChange={(e) => update("businessName", e.target.value)} maxLength={160} required />
+              <input name="businessName" value={values.businessName} onChange={(e) => update("businessName", e.target.value)} maxLength={160} autoComplete="organization" required />
             </Field>
             <div className={styles.twoCol}>
               <Field id={`${formId}-country`} label="Country" error={errors.country}>
-                <input name="country" value={values.country} onChange={(e) => update("country", e.target.value)} maxLength={80} required />
+                <input name="country" value={values.country} onChange={(e) => update("country", e.target.value)} maxLength={80} autoComplete="country-name" required />
               </Field>
-              <Field id={`${formId}-trade`} label="Trade or service" error={errors.trade}>
+              <Field id={`${formId}-trade`} label="Business type or trade" error={errors.trade}>
                 <input name="trade" value={values.trade} onChange={(e) => update("trade", e.target.value)} maxLength={100} required />
               </Field>
             </div>
-            <Field id={`${formId}-locations`} label="Number of locations" optional error={errors.locations}>
-              <input name="locations" value={values.locations} onChange={(e) => update("locations", e.target.value)} maxLength={50} />
-            </Field>
-            <Field id={`${formId}-websiteUrl`} label="Business website URL" optional error={errors.websiteUrl}>
-              <input name="websiteUrl" type="url" value={values.websiteUrl} onChange={(e) => update("websiteUrl", e.target.value)} maxLength={1000} placeholder="https://www.example.com" />
-            </Field>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className={styles.fields}>
-            <Field id={`${formId}-fullName`} label="Your name" error={errors.fullName}>
+            <Field id={`${formId}-fullName`} label="Contact name" error={errors.fullName}>
               <input name="fullName" value={values.fullName} onChange={(e) => update("fullName", e.target.value)} maxLength={100} autoComplete="name" required />
             </Field>
             <div className={styles.twoCol}>
@@ -771,18 +839,24 @@ export function TelloyaEnquiryForm({
                 <input name="phone" type="tel" value={values.phone} onChange={(e) => update("phone", e.target.value)} maxLength={40} autoComplete="tel" inputMode="tel" required />
               </Field>
             </div>
-            <Field id={`${formId}-missedCallProblem`} label="Tell us about your missed-call challenge" optional error={errors.missedCallProblem}>
-              <textarea name="missedCallProblem" value={values.missedCallProblem} onChange={(e) => update("missedCallProblem", e.target.value)} maxLength={500} rows={4} />
-            </Field>
+            <button
+              type="button"
+              className={styles.optionalToggle}
+              aria-expanded={optionalOpen}
+              aria-controls={`${formId}-optional`}
+              onClick={() => setOptionalOpen((open) => !open)}
+            >
+              {optionalOpen ? "Hide optional details" : "Optional details"}
+            </button>
+            {optionalOpen && (
+            <div id={`${formId}-optional`} className={styles.optionalPanel}>
             <Field id={`${formId}-phoneSetup`} label="Your current phone setup" optional error={errors.phoneSetup} hint="e.g., mobile, landline, VoIP provider">
               <input name="phoneSetup" value={values.phoneSetup} onChange={(e) => update("phoneSetup", e.target.value)} maxLength={200} />
             </Field>
-            <Field id={`${formId}-contactPreference`} label="Best time to contact you" optional error={errors.contactPreference}>
-              <input name="contactPreference" value={values.contactPreference} onChange={(e) => update("contactPreference", e.target.value)} maxLength={100} placeholder="e.g., Weekday mornings" />
+            <Field id={`${formId}-missedCallProblem`} label="Tell us about your missed-call challenge" optional error={errors.missedCallProblem}>
+              <textarea name="missedCallProblem" value={values.missedCallProblem} onChange={(e) => update("missedCallProblem", e.target.value)} maxLength={500} rows={4} />
             </Field>
-
-            <div style={{ marginTop: "2rem", paddingTop: "2rem", borderTop: "1px solid #e5e7eb" }}>
-              <p className={styles.sectionNote} style={{ marginBottom: "1.5rem" }}>Voice and language preferences (optional, subject to provider compatibility)</p>
+            <p className={styles.sectionNote}>Preferred voice, accent and language. These can be confirmed during Admin onboarding.</p>
               <div className={styles.twoCol}>
                 <Field id={`${formId}-voicePreference`} label="Voice preference" optional error={errors.voicePreference}>
                   <select
@@ -839,10 +913,16 @@ export function TelloyaEnquiryForm({
                   placeholder="e.g., Spanish, French"
                 />
               </Field>
-            </div>
-
-            <div style={{ marginTop: "2rem", paddingTop: "2rem", borderTop: "1px solid #e5e7eb" }}>
-              <p className={styles.sectionNote} style={{ marginBottom: "1.5rem" }}>Additional minutes (optional)</p>
+            <Field id={`${formId}-contactPreference`} label="Best time to contact you" optional error={errors.contactPreference}>
+              <input name="contactPreference" value={values.contactPreference} onChange={(e) => update("contactPreference", e.target.value)} maxLength={100} placeholder="e.g., Weekday mornings" />
+            </Field>
+            <Field id={`${formId}-websiteUrl`} label="Business website URL" optional error={errors.websiteUrl}>
+              <input name="websiteUrl" type="url" value={values.websiteUrl} onChange={(e) => update("websiteUrl", e.target.value)} maxLength={1000} placeholder="https://www.example.com" />
+            </Field>
+            <Field id={`${formId}-locations`} label="Number of locations" optional error={errors.locations}>
+              <input name="locations" value={values.locations} onChange={(e) => update("locations", e.target.value)} maxLength={50} />
+            </Field>
+            <div>
               <label className={styles.check} htmlFor={`${formId}-overageInterested`}>
                 <input
                   id={`${formId}-overageInterested`}
@@ -869,59 +949,9 @@ export function TelloyaEnquiryForm({
                 </Field>
               )}
             </div>
-          </div>
-        )}
+            </div>
+            )}
 
-        {step === 4 && (
-          <div className={styles.reviewIntro}>
-            <p className={styles.reviewIntro}>Check the details below before submitting your enquiry. You can go back and change anything that doesn&apos;t look right.</p>
-            <p className={styles.sectionNote} style={{ marginTop: "0.75rem", marginBottom: "1.5rem" }}>Note: Submitting this enquiry does not authorize any charges or activate service. We will discuss pricing and next steps when we contact you.</p>
-            <ReviewBlock title="Plan selection" onEdit={() => goToStep(1)}>
-              <ReviewItem label="Plan" value={values.planTier ? telloyaPlans.find(p => p.tier === values.planTier)?.name || values.planTier : "Not selected"} />
-              {values.guardInterested && (
-                <ReviewItem label="Relaunch Guard" value={`Yes (${values.guardLocationCount || 0} locations)`} />
-              )}
-              {indicativeMonthlyTotal && (
-                <ReviewItem label="Indicative monthly total" value={`${formatGbpPrice(indicativeMonthlyTotal)} estimate, not a charge`} />
-              )}
-              {values.planTier === "custom" && (
-                <>
-                  <ReviewItem label="Monthly minutes" value={values.customMonthlyMinutes} />
-                  <ReviewItem label="Monthly calls" value={values.customMonthlyCalls} />
-                  <ReviewItem label="Phone numbers" value={values.customPhoneNumbers} />
-                  <ReviewItem label="Locations" value={values.customLocations} />
-                  {values.customLanguages && <ReviewItem label="Languages" value={values.customLanguages} />}
-                  {values.customRequirements && <ReviewItem label="Additional requirements" value={values.customRequirements} wide />}
-                </>
-              )}
-            </ReviewBlock>
-            <ReviewBlock title="Your business" onEdit={() => goToStep(2)}>
-              <ReviewItem label="Business name" value={values.businessName} />
-              <ReviewItem label="Country" value={values.country} />
-              <ReviewItem label="Trade" value={values.trade} />
-              <ReviewItem label="Locations" value={values.locations} />
-              <ReviewItem label="Website" value={values.websiteUrl} />
-            </ReviewBlock>
-            <ReviewBlock title="Contact details" onEdit={() => goToStep(3)}>
-              <ReviewItem label="Name" value={values.fullName} />
-              <ReviewItem label="Email" value={values.email} />
-              <ReviewItem label="Phone" value={values.phone} />
-              <ReviewItem label="Missed-call challenge" value={values.missedCallProblem} wide />
-              <ReviewItem label="Phone setup" value={values.phoneSetup} />
-              <ReviewItem label="Contact preference" value={values.contactPreference} />
-              {(values.voicePreference || values.voiceAccent || values.primaryLanguage || values.speakingStyle || values.additionalLanguages) && (
-                <>
-                  {values.voicePreference && <ReviewItem label="Voice preference" value={values.voicePreference} />}
-                  {values.voiceAccent && <ReviewItem label="Accent" value={values.voiceAccent} />}
-                  {values.primaryLanguage && <ReviewItem label="Primary language" value={values.primaryLanguage} />}
-                  {values.speakingStyle && <ReviewItem label="Speaking style" value={values.speakingStyle} />}
-                  {values.additionalLanguages && <ReviewItem label="Additional languages" value={values.additionalLanguages} />}
-                </>
-              )}
-              {values.overageInterested && (
-                <ReviewItem label="Additional minutes interest" value={values.overageMonthlyCapGbp ? `Yes (proposed cap: £${values.overageMonthlyCapGbp}/month)` : "Yes"} />
-              )}
-            </ReviewBlock>
             <label className={styles.check} htmlFor={`${formId}-privacyAccepted`}>
               <input
                 id={`${formId}-privacyAccepted`}
@@ -946,7 +976,7 @@ export function TelloyaEnquiryForm({
             <ArrowLeft size={16} aria-hidden="true" /> Back
           </button>
         ) : <span />}
-        {step < 4 ? (
+        {step < 2 ? (
           <button type="button" className={styles.next} onClick={continueToNext}>
             Continue <ArrowRight size={16} aria-hidden="true" />
           </button>
@@ -957,8 +987,8 @@ export function TelloyaEnquiryForm({
         )}
       </div>
 
-      {step === 4 && (
-        <p className={styles.submitNote}>We will contact you to discuss your requirements. No payment is taken when you submit this enquiry.</p>
+      {step === 2 && (
+        <p className={styles.submitNote}>We will contact you to discuss your requirements. Submitting this enquiry does not take payment, activate the service, or authorise a recurring charge.</p>
       )}
 
       <p className={styles.visuallyHidden} aria-live="polite">{statusText}</p>
@@ -1000,7 +1030,7 @@ function ReviewBlock({ title, onEdit, children }: { title: string; onEdit: () =>
     <section className={styles.reviewBlock}>
       <div className={styles.reviewHead}>
         <h3>{title}</h3>
-        <button type="button" onClick={onEdit}>Edit</button>
+        <button type="button" onClick={onEdit} aria-label={`Edit ${title}`}>Edit</button>
       </div>
       <dl>{children}</dl>
     </section>

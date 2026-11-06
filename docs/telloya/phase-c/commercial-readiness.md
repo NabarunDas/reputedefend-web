@@ -1,6 +1,6 @@
 # Telloya Phase C commercial readiness
 
-Status: the seven commercial migrations below were applied once to Supabase DEV project `profilerelaunch-dev`. This repository records that ledger. It does not apply SQL, seed catalogue rows, approve agreements, or change Production.
+Status: the seven commercial migrations below were applied once to Supabase DEV project `profilerelaunch-dev`. This repository records that ledger. It does not apply SQL, seed catalogue rows, approve agreements, or change Production. The catalogue proposal for owner review is `docs/telloya/phase-c/catalogue-proposal.md`. The `TELLOYA-TEST-` fixture in this rehearsal is not that proposal and is not customer terms.
 
 Verified DEV head: `20261106003939_admin_commercial_record_forwarding_instructions_v1`. The verified ledger has 112 entries. The previous ledger had 105 entries and ended at `20261105120000_telloya_voice_persistence_v1`. The repository has 116 migration files. Three foundation files are present in the repository and in the live schema, and absent from the live ledger: `20260915120000_core_data_foundation_v1`, `20260915193000_case_intake_transaction_v1`, and `20260916000000_relaunch_guard_data_foundation_v1` (issue #190). Do not replay them and do not invent ledger rows for them. The live ledger is 112 because those three files stay omitted and `20261106120000` is not applied: 116 repository files minus that gap of four.
 
@@ -75,7 +75,7 @@ Journey covered in the same test:
 
 ## 4. Owner decisions still required
 
-- How many Telloya locations each tier includes. The schema stores that as `plan_components.quantity_limit`. One current approved version is allowed for each tier and cap. The rehearsal caps are not a decision that a plan includes one location, two locations, or an unlimited number. Do not approve an unlimited cap by leaving the component off a plan: an approved Telloya plan requires the component.
+- The location and number policy is approved in `docs/telloya/phase-c/catalogue-proposal.md`: one operating location and one receptionist number on Basic, Growth and Pro. The cap-2 Growth row in this rehearsal is not that plan. The database still allows a standard tier to be approved with another cap. That gap, and the number-correction gap, are proposed in `docs/telloya/phase-c/proposed-location-number-constraint.sql` and are not applied. Do not approve an unlimited cap by leaving the component off a plan: an approved Telloya plan requires the component.
 - The legal agreement text. The fixture text must not be copied into hosted DEV.
 - Tax behaviour. The rehearsal uses `NOT_APPLICABLE` so a price can be accepted. That is not a tax decision.
 - Whether any Custom quotation is offered, and at what amount. £150 is a test figure.
@@ -89,13 +89,13 @@ The seven files are already applied. Do not apply them again.
 1. Read the DEV migration ledger. Stop unless the newest version is `20261106003939` and the count is 112. Stop if Production is not still `20261014170000`.
 2. Compare each of the seven stored statements with the SHA-256 above. Stop if a stored statement differs. Do not edit the SQL and do not replay it.
 3. A file newer than `20261106003939` is pending. Do not mark it applied, and do not apply it, until its own ledger entry is verified. PR #435’s `20261106120000_admin_commercial_verify_agent_test_call_v1.sql` is in that class.
-4. Do not insert `product_catalogue`, `plan_versions`, `plan_components`, `commercial_plan_conditions`, or `commercial_agreement_versions` until the location caps, agreement text, tax behaviour, and Custom amount are approved.
+4. Do not insert `product_catalogue`, `plan_versions`, `plan_components`, `commercial_plan_conditions`, or `commercial_agreement_versions` until the agreement text, tax behaviour, and Custom amount are approved. The location and number policy is approved in the catalogue proposal. That approval is not a hosted seed.
 5. Leave `TELLOYA_ENQUIRY_ENABLED`, `TELLOYA_LAUNCHED`, `ADMIN_COMMERCIAL_SETUP_QUEUE_ENABLED`, `ADMIN_COMMERCIAL_BEGIN_SETUP_ENABLED`, `ADMIN_COMMERCIAL_CONFIRM_PREFERENCES_ENABLED`, `ADMIN_COMMERCIAL_CONFIRM_AI_CONFIGURATION_ENABLED`, `ADMIN_COMMERCIAL_RECORD_NUMBER_ALLOCATION_ENABLED`, `ADMIN_COMMERCIAL_RECORD_FORWARDING_INSTRUCTIONS_ENABLED`, and `CUSTOMER_COMMERCIAL_SETUP_HANDOVER_READ_ENABLED` false.
 6. Do not create Stripe products, prices, customers, or payment objects. Do not call Retell or change telephone routing.
 
 ## 6. Blockers to a real DEV end-to-end test
 
-- No approved hosted plan, agreement, or location cap exists. The test agreement is not that approval.
+- No approved hosted plan or agreement exists. The location and number policy is approved in the catalogue proposal and is not a hosted seed. The test agreement is not customer terms.
 - Tax treatment and any Custom price are undecided.
 - Stripe prices for a combined Telloya and Guard total do not exist, and this record must not create them.
 - Public enquiries stay off.

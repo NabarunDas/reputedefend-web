@@ -244,7 +244,7 @@ beforeAll(async () => {
 afterAll(async () => { await db.close() })
 
 describe("Telloya commercial readiness rehearsal", () => {
-  it("installs the rehearsal catalogue once and does not approve a location cap or a legal agreement", async () => {
+  it("installs the rehearsal catalogue once and keeps the cap-2 Growth row as a rehearsal", async () => {
     const before = await rows<{ plans: number; agreements: number; caps: number; products: string }>(
       `select
         (select count(*)::int from public.plan_versions where terms_ref like 'TELLOYA-TEST-%') as plans,
@@ -280,7 +280,9 @@ describe("Telloya commercial readiness rehearsal", () => {
     )
     expect(stored.every(row => row.body_text.startsWith(telloyaCatalogueFixtureMarker))).toBe(true)
     expect(stored.map(row => row.quantity_limit).sort()).toEqual([1, 1, 1, 1, 2])
-    expect(telloyaLocationCapDecision.status).toBe("OWNER DECISION REQUIRED")
+    expect(telloyaLocationCapDecision.status).toBe("REHEARSAL ONLY")
+    expect(telloyaLocationCapDecision.approvedStandardLocations).toBe(1)
+    expect(telloyaLocationCapDecision.approvedStandardNumbers).toBe(1)
     expect((await rows<{ n: number }>("select count(*)::int as n from public.plan_versions where product_code = 'COMPLETE'"))[0].n).toBe(0)
     const installed = await rows<{ proname: string }>(
       `select proname from pg_proc

@@ -3,18 +3,21 @@
  *
  * Do not insert this fixture into hosted DEV. Do not insert it into Production.
  * The agreement text is a test marker. It is not a legal agreement and it is
- * not approved for a customer. Location caps below are rehearsal values, not
- * an owner decision that a plan includes one location, two locations, or an
- * unlimited number of locations.
+ * not approved for a customer. The owner has approved one location and one
+ * receptionist number for Basic, Growth and Pro. The cap-2 Growth row below
+ * is a schema rehearsal of a different quantity_limit. It is not an approved
+ * Growth plan.
  */
 
 export const telloyaCatalogueFixtureMarker = "TEST ONLY. This is not a legal agreement and it is not approved for a customer."
 
 export const telloyaLocationCapDecision = {
-  status: "OWNER DECISION REQUIRED" as const,
+  status: "REHEARSAL ONLY" as const,
+  approvedStandardLocations: 1,
+  approvedStandardNumbers: 1,
   rehearsalCaps: { BASIC: [1], GROWTH: [1, 2], PRO: [1], CUSTOM: [1] },
   statement:
-    "The published prices do not say how many Telloya locations a tier includes. A cap is the plan component quantity_limit. These rehearsal rows use one location, and a second Growth row uses two. They do not approve an unlimited location count.",
+    "The owner approved one Telloya operating location and one receptionist number for Basic, Growth and Pro. These rehearsal rows include a Growth plan with quantity_limit 2 so the engine can be exercised. That row is not an approved Growth plan. Approving a standard tier with any other cap is the gap standard-tier-cap-not-checked-at-approval.",
 }
 
 export const telloyaPublishedPrices = {

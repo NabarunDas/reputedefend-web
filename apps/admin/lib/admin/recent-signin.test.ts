@@ -42,20 +42,14 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
       containsDataChange: false,
       safeToReplay: false,
     })
-    // Telloya voice persistence 20261105120000 is the DEV ledger head.
-    // Begin setup, preferences, AI configuration, the tier catalogue, the Guard add-on, and number allocation stay pending.
+    // Forwarding instructions 20261106003939 are the DEV ledger head.
+    // Begin setup, preferences, AI configuration, the tier catalogue, the Guard add-on, and number allocation are applied earlier.
+    // Do not replay 20261106003939. Do not apply 20261106003939 to Production.
+    // Do not replay 20261105130000. Do not apply 20261105130000 to Production.
     // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
-    // Do not apply 20261105130000 to hosted DEV or Production.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply it to Production.
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261105130000_admin_commercial_begin_setup_v1.sql",
-      "20261105144256_admin_commercial_confirm_preferences_v1.sql",
-      "20261105172055_admin_commercial_confirm_ai_configuration_v1.sql",
-      "20261105180000_telloya_tier_catalogue_v1.sql",
-      "20261105190000_telloya_guard_addon_v1.sql",
-      "20261105200000_admin_commercial_record_number_allocation_v1.sql",
-      "20261106003939_admin_commercial_record_forwarding_instructions_v1.sql",
       "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
     ])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))

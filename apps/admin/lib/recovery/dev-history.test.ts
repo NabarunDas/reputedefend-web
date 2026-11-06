@@ -95,13 +95,6 @@ function normalized(sql: string): string {
 describe("DEV-HISTORY-01 recovered statements", () => {
   it("locks the seven applied statements and recognises DEV-applied Step 10B", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261105130000_admin_commercial_begin_setup_v1.sql",
-      "20261105144256_admin_commercial_confirm_preferences_v1.sql",
-      "20261105172055_admin_commercial_confirm_ai_configuration_v1.sql",
-      "20261105180000_telloya_tier_catalogue_v1.sql",
-      "20261105190000_telloya_guard_addon_v1.sql",
-      "20261105200000_admin_commercial_record_number_allocation_v1.sql",
-      "20261106003939_admin_commercial_record_forwarding_instructions_v1.sql",
       "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
     ])
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)

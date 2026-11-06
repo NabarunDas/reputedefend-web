@@ -59,9 +59,10 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The repository head is the unapplied 20261106140000 telloya_standard_location_cap_v1.
-    // 20261106120000 admin_commercial_verify_agent_test_call_v1 is the other unapplied file.
-    // The DEV applied head remains 20261106003939 admin_commercial_record_forwarding_instructions_v1.
+    // The repository head is the applied 20261106140000 telloya_standard_location_cap_v1.
+    // 20261106120000 admin_commercial_verify_agent_test_call_v1 is applied immediately before it.
+    // Do not replay either file. Do not apply either file to Production.
+    // The previous DEV applied head is 20261106003939 admin_commercial_record_forwarding_instructions_v1.
     // 20261105200000, 20261105190000, 20261105180000, 20261105172055, 20261105144256 and 20261105130000 are applied earlier in the chain. None is safe to replay.
     // The previous DEV ledger head is the applied 20261105120000 telloya_voice_persistence_v1.
     // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
@@ -88,11 +89,11 @@ describe("upgrading a database that is already running", () => {
     // request 20261030200000 is applied on DEV and must not be replayed. This
     // disposable rebuild is not a live apply. Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261106140000_telloya_standard_location_cap_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")
-    expect(pending.at(-2)?.appliedToDev).toBe(false)
+    expect(pending.at(-2)?.appliedToDev).toBe(true)
     expect(pending.at(-2)?.containsDataChange).toBe(false)
     expect(pending.at(-2)?.safeToReplay).toBe(false)
     expect(pending.at(-3)?.filename).toBe("20261106003939_admin_commercial_record_forwarding_instructions_v1.sql")

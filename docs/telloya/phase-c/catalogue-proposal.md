@@ -4,10 +4,10 @@ Status: the operating-location and receptionist-number policy in this document i
 
 Foundation verified from the repository after PR #438 merged to `develop` at `990e0217`:
 
-- Supabase DEV project `profilerelaunch-dev` ledger: 112 applied migrations, head `20261106003939`.
+- Supabase DEV project `profilerelaunch-dev` ledger: 114 applied migrations, head `20261106140000`. The previous ledger had 112 entries and ended at `20261106003939`.
 - The seven commercial migrations through forwarding instructions are applied and must not be replayed.
 - Repository migrations do not insert `product_catalogue`, `plan_versions`, `commercial_agreement_versions`, or `commercial_subscriptions`. A later onboarding command can insert a `DRAFT` product row for its own request. This phase does not run that command against DEV.
-- The test-call migration `20261106120000_admin_commercial_verify_agent_test_call_v1.sql` is in the repository and is not marked applied. It is not part of this catalogue proposal. Do not apply it to DEV or Production.
+- The test-call migration `20261106120000_admin_commercial_verify_agent_test_call_v1.sql` is applied on DEV and must not be replayed. It is not part of this catalogue proposal. Do not apply it to Production.
 
 The existing commercial command, offer acceptance, and checkout preparation stay the billing path. This proposal does not add a second catalogue or a second payment command.
 
@@ -72,11 +72,11 @@ With the approved cap of 1 stored on the standard plans, one paid standard subsc
 
 The one-location check is `supabase/migrations/20261106140000_telloya_standard_location_cap_v1.sql`. It replaces `admin_private.prevent_plan_overlap_v1` in full and adds one check: an approved `BASIC`, `GROWTH`, or `PRO` plan, including a Complete bundle on those tiers, must have `TELLOYA` `quantity_limit` 1. Missing, zero, two, and any other quantity are rejected. `CUSTOM` is not limited to one location. The quotation's quantity is the approved cap, and the offer command still requires the onboarding locations to match it. The financial immutability check, the component counts, the terms check, the overlap lock, and the overlap rejection stay. The file does not delete a number-owner row and does not call a provider.
 
-The file is not applied to DEV. `appliedToDev` is false. Do not apply `20261106140000` to DEV or Production from this change. Until a human applies it and records the ledger entry, hosted DEV can still approve a standard plan with another cap. The local rehearsal applies the file. `TELLOYA-TEST-GROWTH-CAP-2` stays `DRAFT` there, and approving it raises `standard Telloya plan includes exactly one location`. There is no exemption for a test plan name.
+The file is applied on DEV. `appliedToDev` is true. `containsDataChange` is false. `safeToReplay` is false. Do not replay `20261106140000`. Do not apply it to Production. Hosted DEV rejects a standard plan whose Telloya quantity is not 1. The local rehearsal applies the same file. `TELLOYA-TEST-GROWTH-CAP-2` stays `DRAFT` there, and approving it raises `standard Telloya plan includes exactly one location`. There is no exemption for a test plan name.
 
 `docs/telloya/phase-c/proposed-location-number-constraint.sql` is the earlier proposal. It is not a migration and must not be applied. It no longer recommends deleting `commercial_provider_number_owners` rows.
 
-1. `standard-tier-cap-not-checked-at-approval`. The check exists in the unapplied migration above. Hosted DEV does not have it yet.
+1. `standard-tier-cap-applied-on-dev`. The check is applied on DEV in `20261106140000`. Do not replay that file. Do not apply it to Production.
 2. `number-correction-keeps-previous-reservation`. A correction moves `service_provisions.provider_binding_ref` to the new allocation and leaves the previous E.164 reserved. That reservation is deliberate. Another business cannot take the reserved number. Releasing it is a later process, described in `docs/telloya/phase-c/number-lifecycle.md`. This phase does not implement that process and does not release a number at the provider.
 
 ## 5. Draft agreement
@@ -108,13 +108,13 @@ No Stripe product, price, customer, or subscription is created.
 
 Do not seed hosted DEV from this approval. The location and number policy can be stored on the draft rows, and hosted seeding stays closed until the agreement text, the tax behaviour, and any Custom price are approved in writing.
 
-1. Read the DEV ledger. Stop unless the head is `20261106003939` and the count is 112. Stop if Production is not still `20261014170000`.
+1. Read the DEV ledger. Stop unless the head is `20261106140000` and the count is 114. Stop if Production is not still `20261014170000`.
 2. Confirm there is still no approved Telloya plan, agreement, or commercial subscription.
 3. Insert this proposal as `DRAFT` only, using `TELLOYA-DRAFT-2026-11-1` and versions 9301–9304. Do not insert the `TELLOYA-TEST-` fixture.
 4. Stop. A different change, by a named reviewer, approves the agreement, the conditions, and the plans. Do not approve them in the insert.
 5. Before approval, set the tax behaviour to the accountant’s decision and change the offer command if that decision is not `NOT_APPLICABLE`. The `EXCLUSIVE` placeholder must not be approved as the tax policy.
 6. Leave enquiry, setup, forwarding, and Retell flags false. Do not create Stripe objects in the seeding change.
-7. Do not apply `20261106140000_telloya_standard_location_cap_v1.sql`, do not apply PR #435’s migration, and do not apply `proposed-location-number-constraint.sql`, as part of seeding.
+7. Do not replay `20261106120000_admin_commercial_verify_agent_test_call_v1.sql` or `20261106140000_telloya_standard_location_cap_v1.sql`, and do not apply `proposed-location-number-constraint.sql`, as part of seeding. Do not apply either migration to Production.
 
 ## 8. Open decisions
 
@@ -124,11 +124,11 @@ Do not seed hosted DEV from this approval. The location and number policy can be
 - Decide whether a local-currency checkout display is required.
 - Decide how a later Guard quantity change and cancellation are operated.
 - Approve any hosted insert. Until then the rows stay in the repository as a proposal.
-- Decide when a named person applies `20261106140000` to DEV and records the ledger entry. The business rule is already approved. This change does not apply the file.
+- `20261106140000` is already applied on DEV. Do not replay it. Do not apply it to Production. This change does not seed a hosted catalogue.
 - Decide the provider evidence that can retire a reserved receptionist number. The states are in `docs/telloya/phase-c/number-lifecycle.md`. No provider release is implemented.
 
 ## 9. What the local tests check
 
-`telloya-catalogue-proposal.test.ts` locks the prices, the approved location and number policy, the unapplied cap migration, the number-lifecycle note, the tax placeholder, and the draft agreement text.
+`telloya-catalogue-proposal.test.ts` locks the prices, the approved location and number policy, the applied cap migration, the number-lifecycle note, the tax placeholder, and the draft agreement text.
 
 `telloya-catalogue-proposal.database.test.ts` installs the proposal twice in PGlite and leaves the rows `DRAFT`. A later test in that file approves the standard plans only inside that database. It checks one Growth location and one authoritative receptionist number, refusal of a second location and of a second unversioned number, a Custom quotation for two locations and two numbers at the unapproved £250 rehearsal figure, a Guard-only location with no receptionist entitlement, refusal to reassign a reserved number, refusal of a second occupying subscription, and the existing payment and begin-setup safeguards. Approving a standard plan with cap 2 is rejected. A standard plan with no Telloya location component is rejected. A zero quantity cannot be stored.

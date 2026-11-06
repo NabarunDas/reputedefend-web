@@ -44,7 +44,6 @@ describe("Telloya catalogue proposal", () => {
       "unlimited-locations",
     ])
     expect(telloyaLocationPolicy.missingConstraints.map(item => item.id)).toEqual([
-      "standard-tier-cap-not-checked-at-approval",
       "number-correction-keeps-previous-reservation",
     ])
     expect(telloyaTaxDecision.status).toBe("OWNER DECISION REQUIRED")
@@ -82,11 +81,11 @@ describe("Telloya catalogue proposal", () => {
     expect(agreementDoc).toContain(telloyaDraftAgreement.body)
     expect(agreementDoc).toContain("not approved for a customer")
     expect(proposalDoc).toContain("20261106003939")
-    expect(proposalDoc).toContain("112")
+    expect(proposalDoc).toContain("114")
     expect(proposalDoc).toContain("OWNER DECISION REQUIRED")
     expect(proposalDoc).toContain("Do not insert the `TELLOYA-TEST-` fixture")
     expect(proposalDoc).toContain("**Approved.**")
-    expect(proposalDoc).toContain("standard-tier-cap-not-checked-at-approval")
+    expect(proposalDoc).toContain("standard-tier-cap-applied-on-dev")
     expect(proposalDoc).toContain("number-correction-keeps-previous-reservation")
     expect(proposalDoc).toContain(telloyaUnapprovedCustomRehearsal.statement)
     expect(proposedSql).toContain("must not be applied")
@@ -102,10 +101,6 @@ describe("Telloya catalogue proposal", () => {
     expect(migrations).toContain("20261106140000_telloya_standard_location_cap_v1.sql")
     expect(migrations).not.toContain("proposed-location-number-constraint.sql")
     expect(migrations).toContain("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
-      "20261106140000_telloya_standard_location_cap_v1.sql",
-    ])
-    expect(pendingMigrations().every(entry => entry.appliedToDev === false && entry.containsDataChange === false && entry.safeToReplay === false)).toBe(true)
+    expect(pendingMigrations()).toEqual([])
   })
 })

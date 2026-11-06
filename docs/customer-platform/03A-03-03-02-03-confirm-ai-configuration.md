@@ -1,6 +1,6 @@
 # 03A-03-03-02-03 — Audited confirm AI configuration
 
-`20261105172055_admin_commercial_confirm_ai_configuration_v1.sql` was applied once to hosted DEV. The verified DEV ledger contains 112 entries and ends at `20261106003939`. Begin setup `20261105130000` and confirm preferences `20261105144256` are applied earlier. Do not replay `20261105172055`. Do not apply `20261105172055` to Production.
+`20261105172055_admin_commercial_confirm_ai_configuration_v1.sql` was applied once to hosted DEV. The verified DEV ledger contains 114 entries and ends at `20261106140000`. Begin setup `20261105130000` and confirm preferences `20261105144256` are applied earlier. Do not replay `20261105172055`. Do not apply `20261105172055` to Production.
 
 ## What this command stores
 

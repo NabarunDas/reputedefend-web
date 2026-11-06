@@ -19,12 +19,12 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261106003939_admin_commercial_record_forwarding_instructions_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261106140000_telloya_standard_location_cap_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     expect(migrationHead.filename).toBe("20261106140000_telloya_standard_location_cap_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
@@ -39,12 +39,25 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
-      "20261106140000_telloya_standard_location_cap_v1.sql",
-    ])
+    expect(pendingMigrations()).toEqual([])
     expect(chainAfter(appliedMigrationHead.version)).toEqual(pendingMigrations())
-    expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
+    expect(findMigration("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")).toMatchObject({
+      appliedToDev: true,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
+    expect(findMigration("20261106140000_telloya_standard_location_cap_v1.sql")).toMatchObject({
+      appliedToDev: true,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
+    const ledgerGap = [
+      "20260915120000_core_data_foundation_v1.sql",
+      "20260915193000_case_intake_transaction_v1.sql",
+      "20260916000000_relaunch_guard_data_foundation_v1.sql",
+    ]
+    expect(ledgerGap.every(filename => findMigration(filename)?.appliedToDev === true)).toBe(true)
+    expect(migrationChain.filter(entry => entry.appliedToDev).length - ledgerGap.length).toBe(114)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
     expect(findMigration("20261028120000_guided_postpayment_handover_v1.sql")?.appliedToDev).toBe(true)
@@ -99,15 +112,17 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
-    // Forwarding instructions are the DEV ledger head. They were applied once.
+    // The location cap is the DEV ledger head. It was applied once.
+    // Do not replay 20261106140000. Do not apply 20261106140000 to Production.
+    // The test-call file is applied immediately before it.
+    // Do not replay 20261106120000. Do not apply 20261106120000 to Production.
+    // Forwarding instructions were applied once.
     // Do not replay 20261106003939. Do not apply 20261106003939 to Production.
-    // The seven commercial files are applied and are not safe to replay.
-    // The repository head is the unapplied test-call migration.
     // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
     // Do not replay 20261103230000. Do not apply 20261103230000 to Production.
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration("20261103230000_customer_commercial_payment_verification_v1.sql")).toMatchObject({

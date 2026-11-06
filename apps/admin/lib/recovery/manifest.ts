@@ -1530,8 +1530,8 @@ export const migrationChain: readonly MigrationEntry[] = [
   {
     // Telloya voice persistence. Applied once to profilerelaunch-dev
     // (rmzozuiamjcclvtgutgd). It was the DEV head when the ledger contained
-    // 105 entries and ended at 20261105120000. The current ledger contains
-    // 112 entries and ends at 20261106003939. The previous ledger contained
+    // 105 entries and ended at 20261105120000. The ledger later contained 112 entries and ended at 20261106003939.
+    // It now contains 114 entries and ends at 20261106140000. The previous ledger contained
     // 104 entries and ended at 20261104220000. The repository file is unchanged.
     // It is 29,033 characters.
     // MD5 e786c89df769c12f71d8815011a5c1b5.
@@ -1553,7 +1553,8 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Audited Admin begin setup. Applied once to DEV. The verified DEV ledger
-    // contains 112 entries and ends at 20261106003939.
+    // later contained 112 entries and ended at 20261106003939. It now
+    // contains 114 entries and ends at 20261106140000.
     // Do not replay 20261105130000. Do not apply 20261105130000 to Production.
     // One service-role command creates PENDING TELLOYA entitlements and
     // PROFILE_REQUIRED provisions for a verified paid subscription.
@@ -1575,8 +1576,8 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Audited confirmation of customer business preferences. Applied once to
-    // DEV. The verified DEV ledger contains 112 entries and ends at
-    // 20261106003939. Begin setup 20261105130000 is applied earlier.
+    // DEV. The verified DEV ledger later contained 112 entries and ended at
+    // 20261106003939. It now contains 114 entries and ends at 20261106140000. Begin setup 20261105130000 is applied earlier.
     // Do not replay 20261105144256. Do not apply 20261105144256 to Production.
     // One service-role command stores an append-only confirmed preference for
     // one selected location. It does not call a provider, allocate a number,
@@ -1596,7 +1597,7 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Audited operator-attested AI configuration. Applied once to DEV.
-    // The verified DEV ledger contains 112 entries and ends at 20261106003939.
+    // The verified DEV ledger later contained 112 entries and ended at 20261106003939. It now contains 114 entries and ends at 20261106140000.
     // Begin setup 20261105130000 and confirm preferences 20261105144256 are
     // applied earlier.
     // Do not replay 20261105172055. Do not apply 20261105172055 to Production.
@@ -1623,8 +1624,8 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Telloya tier identity on the existing commercial catalogue. Applied once
-    // to DEV. The verified DEV ledger contains 112 entries and ends at
-    // 20261106003939. Begin setup 20261105130000, confirm preferences
+    // to DEV. The verified DEV ledger later contained 112 entries and ended at
+    // 20261106003939. It now contains 114 entries and ends at 20261106140000. Begin setup 20261105130000, confirm preferences
     // 20261105144256, and confirm AI configuration 20261105172055 are applied
     // earlier in the chain.
     // Do not replay 20261105180000. Do not apply 20261105180000 to Production.
@@ -1643,7 +1644,7 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Optional Relaunch Guard on a Telloya offer. Applied once to DEV.
-    // The verified DEV ledger contains 112 entries and ends at 20261106003939.
+    // The verified DEV ledger later contained 112 entries and ended at 20261106003939. It now contains 114 entries and ends at 20261106140000.
     // Begin setup 20261105130000, confirm preferences 20261105144256, confirm
     // AI configuration 20261105172055, and the tier catalogue 20261105180000
     // are applied earlier in the chain.
@@ -1662,7 +1663,7 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Audited operator-attested telephone allocation. Applied once to DEV.
-    // The verified DEV ledger contains 112 entries and ends at 20261106003939.
+    // The verified DEV ledger later contained 112 entries and ended at 20261106003939. It now contains 114 entries and ends at 20261106140000.
     // Begin setup 20261105130000, confirm preferences 20261105144256, confirm
     // AI configuration 20261105172055, the tier catalogue 20261105180000, and
     // the Guard offer 20261105190000 are applied earlier.
@@ -1694,10 +1695,11 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Audited record provider and number allocation", probe: "public.admin_commercial_record_number_allocation_v1" },
   },
   {
-    // Audited forwarding instructions. Applied once to DEV. This is the
-    // verified DEV ledger head. The ledger contains 112 entries and ends at
-    // 20261106003939. Begin setup, preferences, AI configuration, the tier
-    // catalogue, the Guard offer, and number allocation are applied earlier.
+    // Audited forwarding instructions. Applied once to DEV. The ledger later
+    // moved to 20261106140000. When this file was the head it contained 112
+    // entries and ended at 20261106003939. Begin setup, preferences, AI
+    // configuration, the tier catalogue, the Guard offer, and number
+    // allocation are applied earlier.
     // Do not replay 20261106003939. Do not apply 20261106003939 to Production.
     // DRAFT stays internal. SHARED sets forwarding_instructed_at and may move
     // FORWARDING_REQUIRED to TEST_REQUIRED. It does not enable forwarding,
@@ -1714,9 +1716,8 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Audited record forwarding instructions", probe: "public.admin_commercial_record_forwarding_instructions_v1" },
   },
   {
-    // Audited direct agent conversation test. Not applied to DEV.
-    // The verified DEV ledger contains 112 entries and ends at 20261106003939.
-    // Do not apply 20261106120000 to DEV. Do not apply 20261106120000 to Production.
+    // Audited direct agent conversation test. Applied once to DEV.
+    // Do not replay 20261106120000. Do not apply 20261106120000 to Production.
     // A passed conversation may move TEST_REQUIRED to AWAITING_CONFIRMATION.
     // It does not verify telephone forwarding, write a routing binding, or move a service to live.
     // Writes are inside the command. containsDataChange stays false.
@@ -1725,25 +1726,27 @@ export const migrationChain: readonly MigrationEntry[] = [
     filename: "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
     step: "Audited AI receptionist test call",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Audited AI receptionist test call", probe: "public.admin_commercial_verify_agent_test_call_v1" },
   },
   {
-    // Standard Telloya location cap. Not applied to DEV. Do not apply
-    // 20261106140000 to DEV. Do not apply 20261106140000 to Production.
-    // The DEV ledger head remains 20261106003939. This file replaces
-    // prevent_plan_overlap_v1 and adds the one-location check for BASIC,
-    // GROWTH and PRO, including a Complete bundle on those tiers. It does
-    // not delete number-owner rows, buy a number, or enable forwarding.
-    // containsDataChange stays false. safeToReplay stays false.
-    // 20261106120000 stays ahead of this file and is also unapplied.
+    // Standard Telloya location cap. Applied once to DEV. This is the
+    // verified DEV ledger head. The ledger contains 114 entries and ends at
+    // 20261106140000. The previous ledger contained 112 entries and ended at
+    // 20261106003939. Do not replay 20261106140000. Do not apply
+    // 20261106140000 to Production. This file replaces prevent_plan_overlap_v1
+    // and adds the one-location check for BASIC, GROWTH and PRO, including a
+    // Complete bundle on those tiers. It does not delete number-owner rows,
+    // buy a number, or enable forwarding. containsDataChange stays false.
+    // safeToReplay stays false. 20261106120000 is applied immediately before
+    // this file and must not be replayed.
     version: "20261106140000",
     filename: "20261106140000_telloya_standard_location_cap_v1.sql",
     step: "Telloya standard location cap",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Telloya standard location cap", probe: "admin_private.prevent_plan_overlap_v1" },
@@ -1759,7 +1762,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261106003939`. The live DEV ledger contains 112 entries. The seven
+ * `20261106140000`. The live DEV ledger contains 114 entries. The previous
+ * ledger contained 112 entries and ended at `20261106003939`.
+ * `20261106120000` and `20261106140000` were applied once and must not be
+ * replayed. Do not apply either file to Production. The seven
  * commercial migrations through admin_commercial_record_forwarding_instructions_v1
  * were applied once to DEV project rmzozuiamjcclvtgutgd. The previous ledger
  * contained 105 entries and ended at `20261105120000`. Telloya
@@ -1890,9 +1896,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` contains `20261106120000` and then `20261106140000`.
- * Neither file is applied to DEV. Do not apply `20261106120000` to DEV.
- * Do not apply `20261106140000` to DEV. Do not apply either file to Production.
+ * `pendingMigrations()` is empty. `20261106120000` and `20261106140000` are
+ * already applied on DEV and must not be replayed. Do not apply
+ * `20261106120000` or `20261106140000` to Production.
  * `20261105120000` is already applied on DEV and must not be replayed.
  * Do not replay `20261105120000`. Do not apply `20261105120000` to Production.
  * `20261104220000` is already applied on DEV and must not be

@@ -1,6 +1,6 @@
 # 03A-03-03-02-01 — Audited Admin Begin Setup
 
-`20261105130000_admin_commercial_begin_setup_v1.sql` was applied once to DEV. `20261105120000_telloya_voice_persistence_v1.sql` was applied once to DEV. The verified DEV ledger contains 114 entries and ends at `20261106140000`. `pendingMigrations()` contains `20261106200000_admin_commercial_initiate_agent_test_call_v1.sql`. It stays local. `20261106120000` and `20261106140000` are applied and must not be replayed. Do not apply either applied file to Production. Do not apply `20261106200000` to DEV or Production. Do not replay `20261105120000` or `20261105130000`. Production remains at `20261014170000`.
+`20261105130000_admin_commercial_begin_setup_v1.sql` was applied once to DEV. `20261105120000_telloya_voice_persistence_v1.sql` was applied once to DEV. The verified DEV ledger contains 115 entries and ends at `20261106200000`. `pendingMigrations()` is empty. `20261106200000` was applied once to DEV. Do not replay it. Do not apply it to Production. `20261106120000` and `20261106140000` are applied and must not be replayed. Do not apply either applied file to Production. Do not replay `20261105120000` or `20261105130000`. Production remains at `20261014170000`.
 
 ## Command
 

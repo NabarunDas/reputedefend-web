@@ -269,14 +269,14 @@ afterAll(async () => { await db.close() })
 
 describe("Telloya and optional Relaunch Guard offers", () => {
   let growthOne = ""
-  let growthTwo = ""
+  let quotedTwo = ""
 
   it("shows only an offerable version as selectable and rechecks that choice", async () => {
     growthOne = await approvePlan({ tier: "GROWTH", version: 1, amount: 7900, minutes: 300, telloya: 1 })
-    growthTwo = await approvePlan({ tier: "GROWTH", version: 2, amount: 7900, minutes: 300, telloya: 2 })
-    await approvePlan({ tier: "GROWTH", version: 4, amount: 7900, minutes: 300, telloya: 4, base: 1000 })
-    await approvePlan({ tier: "GROWTH", version: 5, amount: 7900, minutes: 300, telloya: 5, agreed: false })
-    await approvePlan({ tier: "CUSTOM", version: 8, amount: 15000, minutes: null, telloya: 2, conditions: false, guardUnit: null })
+    quotedTwo = await approvePlan({ tier: "CUSTOM", version: 2, amount: 7900, minutes: null, telloya: 2 })
+    await approvePlan({ tier: "CUSTOM", version: 4, amount: 7900, minutes: null, telloya: 4, base: 1000 })
+    await approvePlan({ tier: "CUSTOM", version: 5, amount: 7900, minutes: null, telloya: 5, agreed: false })
+    await approvePlan({ tier: "CUSTOM", version: 8, amount: 15000, minutes: null, telloya: 6, conditions: false, guardUnit: null })
     await db.exec("set local session_replication_role = replica")
     const mismatched = randomUUID()
     await db.query(
@@ -310,11 +310,11 @@ describe("Telloya and optional Relaunch Guard offers", () => {
     expect(view.requestedGuardInterest).toBe(true)
     expect(view.requestedGuardLocationCount).toBe(2)
     const plans = view.approvedPlans as PlanChoice[]
-    expect(plans.find(plan => plan.telloyaQuantity === 2 && plan.tierCode === "GROWTH")).toMatchObject({ offerable: true, unavailableReason: null, amountMinor: 7900 })
+    expect(plans.find(plan => plan.telloyaQuantity === 2 && plan.amountMinor === 7900)).toMatchObject({ offerable: true, unavailableReason: null, tierCode: "CUSTOM", amountMinor: 7900 })
     expect(plans.find(plan => plan.telloyaQuantity === 1)).toMatchObject({ offerable: false, unavailableReason: "locations" })
     expect(plans.find(plan => plan.telloyaQuantity === 4)).toMatchObject({ offerable: false, unavailableReason: "price" })
     expect(plans.find(plan => plan.telloyaQuantity === 5)).toMatchObject({ offerable: false, unavailableReason: "agreement" })
-    expect(plans.find(plan => plan.tierCode === "CUSTOM")).toMatchObject({ offerable: false, unavailableReason: "quotation" })
+    expect(plans.find(plan => plan.amountMinor === 15000)).toMatchObject({ offerable: false, unavailableReason: "quotation", tierCode: "CUSTOM" })
     expect(plans.find(plan => plan.tierCode === "BASIC")).toMatchObject({ offerable: false, unavailableReason: "tier" })
     expect(await command("prepare_offer", { enquiryId: opened.enquiryId, reason }, opened.version)).toMatchObject({ status: "tier_required" })
     expect(await command("prepare_offer", { enquiryId: opened.enquiryId, planVersionId: growthOne, reason }, opened.version)).toMatchObject({ status: "terms_unconfigured", reason: "locations" })
@@ -322,30 +322,20 @@ describe("Telloya and optional Relaunch Guard offers", () => {
     expect(payload[0].plan_tier).toBe("basic")
     expect((await rows<{ n: number }>("select count(*)::int as n from public.commercial_subscriptions"))[0].n).toBe(0)
 
+    await db.exec("SAVEPOINT standard_cap")
+    await expect(approvePlan({ tier: "GROWTH", version: 7, amount: 7900, minutes: 300, telloya: 2 })).rejects.toThrow(/standard Telloya plan includes exactly one location/)
+    await db.exec("ROLLBACK TO SAVEPOINT standard_cap")
     await db.exec("SAVEPOINT same_cap")
-    await expect(db.query(
-      `insert into public.plan_versions(
-        id, product_code, version_number, tier_code, status, effective_from, billing_cadence, currency,
-        amount_minor, tax_behaviour, terms_ref
-      ) values ($1, 'TELLOYA', 7, 'GROWTH', 'DRAFT', now() - interval '1 day', 'MONTH', 'GBP', 7900, 'NOT_APPLICABLE', 'TELLOYA-GROWTH-7')`,
-      [randomUUID()],
-    ).then(() => db.query(
-      `insert into public.plan_components(plan_version_id, component_code, quantity_limit, scope)
-       select id, 'TELLOYA', 2, 'LOCATION' from public.plan_versions where version_number = 7 and tier_code = 'GROWTH'`,
-    )).then(() => db.query(
-      `update public.plan_versions set status = 'APPROVED', approved_by = $1, approved_at = now()
-       where version_number = 7 and tier_code = 'GROWTH'`,
-      [admin],
-    ))).rejects.toThrow(/overlapping approved plan versions are not allowed/)
+    await expect(approvePlan({ tier: "CUSTOM", version: 7, amount: 7900, minutes: null, telloya: 2 })).rejects.toThrow(/overlapping approved plan versions are not allowed/)
     await db.exec("ROLLBACK TO SAVEPOINT same_cap")
 
-    const growthThree = await approvePlan({ tier: "GROWTH", version: 3, amount: 7900, minutes: 300, telloya: 3 })
+    const quotedThree = await approvePlan({ tier: "CUSTOM", version: 3, amount: 7900, minutes: null, telloya: 3 })
     const three = await ready("three.guard@example.com", 3, "growth")
     const threeView = await rpc<Result>("admin_commercial_onboarding_v1", [token, three.enquiryId])
     const threePlans = threeView.approvedPlans as PlanChoice[]
-    expect(threePlans.find(plan => plan.telloyaQuantity === 3)).toMatchObject({ offerable: true, tierCode: "GROWTH", amountMinor: 7900 })
-    expect(threePlans.filter(plan => plan.tierCode === "GROWTH" && plan.telloyaQuantity !== 3).every(plan => plan.offerable === false)).toBe(true)
-    const flat = await command("prepare_offer", { enquiryId: three.enquiryId, planVersionId: growthThree, guardLocationIds: [], reason }, three.version)
+    expect(threePlans.find(plan => plan.telloyaQuantity === 3)).toMatchObject({ offerable: true, tierCode: "CUSTOM", amountMinor: 7900 })
+    expect(threePlans.filter(plan => plan.tierCode === "CUSTOM" && plan.telloyaQuantity !== 3).every(plan => plan.offerable === false)).toBe(true)
+    const flat = await command("prepare_offer", { enquiryId: three.enquiryId, planVersionId: quotedThree, guardLocationIds: [], reason }, three.version)
     expect(flat.status).toBe("success")
     expect((await offerRef(three.enquiryId)).amount_minor).toBe(7900)
   })
@@ -463,7 +453,7 @@ describe("Telloya and optional Relaunch Guard offers", () => {
     const both = await ready("mixed.guard@example.com", 2, "growth")
     const oneGuard = await command("prepare_offer", {
       enquiryId: both.enquiryId,
-      planVersionId: growthTwo,
+      planVersionId: quotedTwo,
       guardLocationIds: [both.locationIds[0]],
       reason,
     }, both.version)
@@ -500,7 +490,7 @@ describe("Telloya and optional Relaunch Guard offers", () => {
     const pair = await ready("pair.guard@example.com", 2, "growth")
     const bothGuards = await command("prepare_offer", {
       enquiryId: pair.enquiryId,
-      planVersionId: growthTwo,
+      planVersionId: quotedTwo,
       guardLocationIds: pair.locationIds,
       reason,
     }, pair.version)

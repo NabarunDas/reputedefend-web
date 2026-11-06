@@ -4,9 +4,8 @@
  * Do not insert this fixture into hosted DEV. Do not insert it into Production.
  * The agreement text is a test marker. It is not a legal agreement and it is
  * not approved for a customer. The owner has approved one location and one
- * receptionist number for Basic, Growth and Pro. The cap-2 Growth row below
- * is a schema rehearsal of a different quantity_limit. It is not an approved
- * Growth plan.
+ * receptionist number for Basic, Growth and Pro. The cap-2 Growth row stays
+ * unapproved. The cap-2 Custom row is a separate quotation rehearsal.
  */
 
 export const telloyaCatalogueFixtureMarker = "TEST ONLY. This is not a legal agreement and it is not approved for a customer."
@@ -15,9 +14,9 @@ export const telloyaLocationCapDecision = {
   status: "REHEARSAL ONLY" as const,
   approvedStandardLocations: 1,
   approvedStandardNumbers: 1,
-  rehearsalCaps: { BASIC: [1], GROWTH: [1, 2], PRO: [1], CUSTOM: [1] },
+  rehearsalCaps: { BASIC: [1], GROWTH: [1, 2], PRO: [1], CUSTOM: [1, 2] },
   statement:
-    "The owner approved one Telloya operating location and one receptionist number for Basic, Growth and Pro. These rehearsal rows include a Growth plan with quantity_limit 2 so the engine can be exercised. That row is not an approved Growth plan. Approving a standard tier with any other cap is the gap standard-tier-cap-not-checked-at-approval.",
+    "The owner approved one Telloya operating location and one receptionist number for Basic, Growth and Pro. The Growth quantity_limit 2 row stays DRAFT. Approving it is rejected. The Custom quantity_limit 2 row is a separate quotation rehearsal and is not a standard plan.",
 }
 
 export const telloyaPublishedPrices = {
@@ -28,6 +27,8 @@ export const telloyaPublishedPrices = {
   overagePerMinuteMinor: 25,
   /** A quotation used only so a matching cap can be accepted in a test. */
   testCustomQuotationMinor: 15000,
+  /** A two-location quotation used only in the local rehearsal. Not a customer price. */
+  testCustomTwoLocationMinor: 25000,
 }
 
 export const telloyaCataloguePlans = {
@@ -36,6 +37,7 @@ export const telloyaCataloguePlans = {
   growthCap2: "c01c0000-0000-4000-8000-000000000003",
   proCap1: "c01c0000-0000-4000-8000-000000000004",
   customCap1: "c01c0000-0000-4000-8000-000000000005",
+  customCap2: "c01c0000-0000-4000-8000-000000000006",
 } as const
 
 const agreementBody = `${telloyaCatalogueFixtureMarker} It names the selected locations and the amount shown on the offer only.`
@@ -48,6 +50,7 @@ const plans = [
   { id: telloyaCataloguePlans.growthCap2, agreementId: "c01c0000-0000-4000-8000-000000001003", conditionId: "c01c0000-0000-4000-8000-000000002003", version: 9103, tier: "GROWTH", label: "Growth", amount: 7900, minutes: 300, cap: 2, guard: 999, overage: 25, ref: "TELLOYA-TEST-GROWTH-CAP-2" },
   { id: telloyaCataloguePlans.proCap1, agreementId: "c01c0000-0000-4000-8000-000000001004", conditionId: "c01c0000-0000-4000-8000-000000002004", version: 9104, tier: "PRO", label: "Pro", amount: 12000, minutes: 500, cap: 1, guard: 999, overage: 25, ref: "TELLOYA-TEST-PRO-CAP-1" },
   { id: telloyaCataloguePlans.customCap1, agreementId: "c01c0000-0000-4000-8000-000000001005", conditionId: "c01c0000-0000-4000-8000-000000002005", version: 9105, tier: "CUSTOM", label: "Custom", amount: 15000, minutes: null, cap: 1, guard: null, overage: null, ref: "TELLOYA-TEST-CUSTOM-CAP-1" },
+  { id: telloyaCataloguePlans.customCap2, agreementId: "c01c0000-0000-4000-8000-000000001006", conditionId: "c01c0000-0000-4000-8000-000000002006", version: 9106, tier: "CUSTOM", label: "Custom", amount: telloyaPublishedPrices.testCustomTwoLocationMinor, minutes: null, cap: 2, guard: null, overage: null, ref: "TELLOYA-TEST-CUSTOM-CAP-2" },
 ] as const
 
 type Sql = {
@@ -107,11 +110,14 @@ export async function installTelloyaCatalogueFixture(db: Sql, actorId: string): 
       )`,
       [plan.conditionId, plan.id, plan.tier, plan.label, plan.minutes, plan.amount, plan.guard, plan.overage, actorId],
     )
-    await db.query(
-      `update public.plan_versions
-       set status = 'APPROVED', approved_by = $2, approved_at = now()
-       where id = $1 and status = 'DRAFT'`,
-      [plan.id, actorId],
-    )
+    const standardTier = plan.tier === "BASIC" || plan.tier === "GROWTH" || plan.tier === "PRO"
+    if (!standardTier || plan.cap === 1) {
+      await db.query(
+        `update public.plan_versions
+         set status = 'APPROVED', approved_by = $2, approved_at = now()
+         where id = $1 and status = 'DRAFT'`,
+        [plan.id, actorId],
+      )
+    }
   }
 }

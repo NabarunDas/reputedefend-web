@@ -14,6 +14,8 @@ import {
 const agreementDoc = readFileSync(new URL("../../../../docs/telloya/phase-c/draft-customer-agreement.md", import.meta.url), "utf8")
 const proposalDoc = readFileSync(new URL("../../../../docs/telloya/phase-c/catalogue-proposal.md", import.meta.url), "utf8")
 const proposedSql = readFileSync(new URL("../../../../docs/telloya/phase-c/proposed-location-number-constraint.sql", import.meta.url), "utf8")
+const lifecycleDoc = readFileSync(new URL("../../../../docs/telloya/phase-c/number-lifecycle.md", import.meta.url), "utf8")
+const capMigration = readFileSync(new URL("../../../../supabase/migrations/20261106140000_telloya_standard_location_cap_v1.sql", import.meta.url), "utf8")
 const migrations = readdirSync(new URL("../../../../supabase/migrations/", import.meta.url))
 
 describe("Telloya catalogue proposal", () => {
@@ -88,12 +90,22 @@ describe("Telloya catalogue proposal", () => {
     expect(proposalDoc).toContain("number-correction-keeps-previous-reservation")
     expect(proposalDoc).toContain(telloyaUnapprovedCustomRehearsal.statement)
     expect(proposedSql).toContain("must not be applied")
-    expect(proposedSql).toContain("standard Telloya plan includes exactly one location")
-    expect(proposedSql).toContain("one receptionist number per entitled location")
-    expect(proposedSql).toContain("number-correction-keeps-previous-reservation")
+    expect(proposedSql).not.toContain("DELETE FROM admin_private.commercial_provider_number_owners")
+    expect(lifecycleDoc).toContain("PROVIDER_CONFIRMED")
+    expect(lifecycleDoc).toContain("Operator attestation is not provider confirmation")
+    expect(capMigration).toContain("standard Telloya plan includes exactly one location")
+    expect(capMigration).toContain("approved plan financial fields are immutable")
+    expect(capMigration).toContain("approved Telloya plan requires one Telloya location component")
+    expect(capMigration).toContain("overlapping approved plan versions are not allowed")
+    expect(capMigration).toContain("Do not apply 20261106140000 to DEV")
+    expect(capMigration).not.toContain("DELETE FROM admin_private.commercial_provider_number_owners")
+    expect(migrations).toContain("20261106140000_telloya_standard_location_cap_v1.sql")
     expect(migrations).not.toContain("proposed-location-number-constraint.sql")
+    expect(migrations).toContain("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
+      "20261106140000_telloya_standard_location_cap_v1.sql",
     ])
+    expect(pendingMigrations().every(entry => entry.appliedToDev === false && entry.containsDataChange === false && entry.safeToReplay === false)).toBe(true)
   })
 })

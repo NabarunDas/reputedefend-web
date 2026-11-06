@@ -267,7 +267,7 @@ describe("Telloya commercial readiness rehearsal", () => {
       [Object.values(telloyaCataloguePlans)],
     )
     expect(after).toEqual(before)
-    expect(after[0]).toEqual({ plans: 5, agreements: 5, caps: 5, products: "DRAFT,DRAFT" })
+    expect(after[0]).toEqual({ plans: 6, agreements: 6, caps: 6, products: "DRAFT,DRAFT" })
     expect((await rows<{ record_version: number }>("select record_version from public.plan_versions where id = $1", [telloyaCataloguePlans.growthCap1]))[0]).toEqual(versions[0])
     const stored = await rows<{ body_text: string; quantity_limit: number }>(
       `select agreement.body_text, component.quantity_limit
@@ -279,7 +279,23 @@ describe("Telloya commercial readiness rehearsal", () => {
       [Object.values(telloyaCataloguePlans)],
     )
     expect(stored.every(row => row.body_text.startsWith(telloyaCatalogueFixtureMarker))).toBe(true)
-    expect(stored.map(row => row.quantity_limit).sort()).toEqual([1, 1, 1, 1, 2])
+    expect(stored.map(row => row.quantity_limit).sort()).toEqual([1, 1, 1, 1, 2, 2])
+    const statuses = await rows<{ id: string; status: string }>(
+      `select id::text as id, status from public.plan_versions where id = any($1::uuid[])`,
+      [Object.values(telloyaCataloguePlans)],
+    )
+    expect(statuses.find(row => row.id === telloyaCataloguePlans.growthCap2)?.status).toBe("DRAFT")
+    expect(statuses.filter(row => row.id !== telloyaCataloguePlans.growthCap2).every(row => row.status === "APPROVED")).toBe(true)
+    await expect(db.query(
+      `update public.plan_versions
+       set status = 'APPROVED', approved_by = $2, approved_at = now()
+       where id = $1`,
+      [telloyaCataloguePlans.growthCap2, admin],
+    )).rejects.toThrow(/standard Telloya plan includes exactly one location/)
+    expect((await rows<{ status: string }>(
+      "select status from public.plan_versions where id = $1",
+      [telloyaCataloguePlans.growthCap2],
+    ))[0].status).toBe("DRAFT")
     expect(telloyaLocationCapDecision.status).toBe("REHEARSAL ONLY")
     expect(telloyaLocationCapDecision.approvedStandardLocations).toBe(1)
     expect(telloyaLocationCapDecision.approvedStandardNumbers).toBe(1)
@@ -353,9 +369,18 @@ describe("Telloya commercial readiness rehearsal", () => {
     expect((pending?.guard as Result).monitoringActive).toBe(false)
     expect(await activation(oneRow.id)).toMatchObject({ entitlements: 0, live: 0, provisions: 0, allocations: 0, evidence: 0, guard_coverages: 0 })
 
-    const two = await ready("growth.two@example.test", 2, "growth")
+    const two = await ready("growth.two@example.test", 1, "growth")
+    const secondGuard = (await db.query<{ id: string }>(
+      `insert into public.locations(business_id, location_name, country)
+       values ((select business_id from public.onboarding_requests where enquiry_id = $1), 'Guard only yard', 'United Kingdom')
+       returning id`,
+      [two.enquiryId],
+    )).rows[0].id
     const twoOffer = await command("prepare_offer", {
-      enquiryId: two.enquiryId, planVersionId: telloyaCataloguePlans.growthCap2, guardLocationIds: two.locationIds, reason,
+      enquiryId: two.enquiryId,
+      planVersionId: telloyaCataloguePlans.growthCap1,
+      guardLocationIds: [two.locationIds[0], secondGuard],
+      reason,
     }, two.version)
     expect(twoOffer.status).toBe("success")
     const twoRow = await offerRow(two.enquiryId)
@@ -544,7 +569,8 @@ describe("Telloya commercial readiness rehearsal", () => {
     expect(matchedPlans.find(plan => plan.id === telloyaCataloguePlans.customCap1)).toMatchObject({
       offerable: true, unavailableReason: null, amountMinor: telloyaPublishedPrices.testCustomQuotationMinor, telloyaQuantity: 1,
     })
-    expect(matchedPlans.find(plan => plan.id === telloyaCataloguePlans.growthCap2)).toMatchObject({ offerable: false, unavailableReason: "locations" })
+    expect(matchedPlans.find(plan => plan.id === telloyaCataloguePlans.customCap2)).toMatchObject({ offerable: false, unavailableReason: "locations" })
+    expect(matchedPlans.find(plan => plan.id === telloyaCataloguePlans.growthCap2)).toBeUndefined()
     const quoted = await command("prepare_offer", {
       enquiryId: matched.enquiryId, planVersionId: telloyaCataloguePlans.customCap1, guardLocationIds: [], reason,
     }, matched.version)
@@ -556,7 +582,12 @@ describe("Telloya commercial readiness rehearsal", () => {
     const missedPlans = missedView.approvedPlans as PlanChoice[]
     expect(missedPlans.find(plan => plan.id === telloyaCataloguePlans.customCap1)).toMatchObject({ offerable: false, unavailableReason: "locations" })
     expect(missedPlans.find(plan => plan.id === telloyaCataloguePlans.growthCap1)).toMatchObject({ offerable: false, unavailableReason: "locations" })
-    expect(missedPlans.find(plan => plan.id === telloyaCataloguePlans.growthCap2)).toMatchObject({ offerable: true, amountMinor: 7900 })
+    expect(missedPlans.find(plan => plan.id === telloyaCataloguePlans.customCap2)).toMatchObject({
+      offerable: true,
+      amountMinor: telloyaPublishedPrices.testCustomTwoLocationMinor,
+      telloyaQuantity: 2,
+    })
+    expect(missedPlans.find(plan => plan.id === telloyaCataloguePlans.growthCap2)).toBeUndefined()
     expect(await command("prepare_offer", {
       enquiryId: missed.enquiryId, planVersionId: telloyaCataloguePlans.growthCap1, guardLocationIds: [], reason,
     }, missed.version)).toMatchObject({ status: "terms_unconfigured", reason: "locations" })
@@ -572,7 +603,11 @@ describe("Telloya commercial readiness rehearsal", () => {
       [foreignBusiness],
     )).rows[0].id
     expect(await command("prepare_offer", {
-      enquiryId: missed.enquiryId, planVersionId: telloyaCataloguePlans.growthCap2, guardLocationIds: [foreign], reason,
+      enquiryId: missed.enquiryId, planVersionId: telloyaCataloguePlans.customCap2, guardLocationIds: [foreign], reason,
     }, missed.version)).toMatchObject({ status: "terms_unconfigured", reason: "guard" })
+    expect((await command("prepare_offer", {
+      enquiryId: missed.enquiryId, planVersionId: telloyaCataloguePlans.customCap2, guardLocationIds: [], reason,
+    }, missed.version)).status).toBe("success")
+    expect((await offerRow(missed.enquiryId)).amount_minor).toBe(telloyaPublishedPrices.testCustomTwoLocationMinor)
   })
 })

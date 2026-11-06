@@ -35,6 +35,7 @@ describe("the migration history validator", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
     expect(pending.map(entry => entry.filename)).toEqual([
       "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
+      "20261106140000_telloya_standard_location_cap_v1.sql",
     ])
     expect(pending.every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(healthyRemote.slice(-8).map(entry => entry.version)).toEqual([

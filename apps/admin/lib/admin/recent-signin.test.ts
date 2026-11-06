@@ -51,6 +51,7 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
     // Do not replay 20261104190000. Do not apply it to Production.
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
+      "20261106140000_telloya_standard_location_cap_v1.sql",
     ])
     const created = sql.split("\n").filter(line => line.startsWith("CREATE OR REPLACE FUNCTION ") || line.startsWith("CREATE FUNCTION "))
     expect(created.map(line => line.replace(/^CREATE OR REPLACE FUNCTION |^CREATE FUNCTION /, "").split("(")[0])).toEqual([...replaced])

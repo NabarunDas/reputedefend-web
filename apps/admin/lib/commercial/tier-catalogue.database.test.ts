@@ -270,11 +270,17 @@ describe("tier-aware commercial catalogue", () => {
   })
 
   it("offers Basic, Growth, Pro and Custom together and pins the selected version", async () => {
-    const basic = await approvePlan({ product: "TELLOYA", tier: "BASIC", version: 1, amount: 4900, minutes: 120, telloya: 2, guardUnit: 999 })
-    const growth = await approvePlan({ product: "TELLOYA", tier: "GROWTH", version: 2, amount: 7900, minutes: 300, telloya: 2, guardUnit: 999 })
-    const pro = await approvePlan({ product: "TELLOYA", tier: "PRO", version: 3, amount: 12000, minutes: 500, telloya: 2, guardUnit: 999 })
+    await db.exec("SAVEPOINT standard_cap")
+    await expect(approvePlan({ product: "TELLOYA", tier: "BASIC", version: 11, amount: 4900, minutes: 120, telloya: 2, guardUnit: 999 })).rejects.toThrow(/standard Telloya plan includes exactly one location/)
+    await db.exec("ROLLBACK TO SAVEPOINT standard_cap")
+    const basic = await approvePlan({ product: "TELLOYA", tier: "BASIC", version: 1, amount: 4900, minutes: 120, telloya: 1, guardUnit: 999 })
+    const growth = await approvePlan({ product: "TELLOYA", tier: "GROWTH", version: 2, amount: 7900, minutes: 300, telloya: 1, guardUnit: 999 })
+    const pro = await approvePlan({ product: "TELLOYA", tier: "PRO", version: 3, amount: 12000, minutes: 500, telloya: 1, guardUnit: 999 })
     const custom = await approvePlan({ product: "TELLOYA", tier: "CUSTOM", version: 4, amount: 15000, minutes: null, telloya: 2, guardUnit: null, overage: null })
-    const complete = await approvePlan({ product: "COMPLETE", tier: "GROWTH", version: 1, amount: 19900, minutes: 300, telloya: 2, guard: 1, guardUnit: 999 })
+    await db.exec("SAVEPOINT complete_cap")
+    await expect(approvePlan({ product: "COMPLETE", tier: "GROWTH", version: 12, amount: 19900, minutes: 300, telloya: 2, guard: 1, guardUnit: 999 })).rejects.toThrow(/standard Telloya plan includes exactly one location/)
+    await db.exec("ROLLBACK TO SAVEPOINT complete_cap")
+    const complete = await approvePlan({ product: "COMPLETE", tier: "GROWTH", version: 1, amount: 19900, minutes: 300, telloya: 1, guard: 1, guardUnit: 999 })
     const approved = await rows<{ tier_code: string; product_code: string }>(
       "select product_code, tier_code from public.plan_versions where status = 'APPROVED' order by product_code, tier_code",
     )
@@ -286,19 +292,19 @@ describe("tier-aware commercial catalogue", () => {
       { product_code: "TELLOYA", tier_code: "PRO" },
     ])
 
-    const alexEnquiry = await readyEnquiry("alex.tier@example.com", "growth", "TELLOYA", 2)
+    const alexEnquiry = await readyEnquiry("alex.tier@example.com", "growth", "TELLOYA", 1)
     const before = (await rows<{ n: number }>("select count(*)::int as n from public.commercial_subscriptions"))[0].n
     const view = await rpc<Result>("admin_commercial_onboarding_v1", [token, alexEnquiry.id])
     expect(view.requestedTier).toBe("growth")
     expect(before).toBe(0)
     const plans = view.approvedPlans as PlanRow[]
     expect(plans.map(plan => plan.tierCode)).toEqual(["BASIC", "GROWTH", "PRO", "CUSTOM"])
-    expect(plans.find(plan => plan.tierCode === "BASIC")).toMatchObject({ amountMinor: 4900, includedMinutes: 120, guardAddonUnitMinor: 999, offerable: true, unavailableReason: null, matchesApprovedSchedule: true, selectedLocations: 2 })
-    expect(plans.find(plan => plan.tierCode === "GROWTH")).toMatchObject({ amountMinor: 7900, includedMinutes: 300, offerable: true, matchesApprovedSchedule: true })
+    expect(plans.find(plan => plan.tierCode === "BASIC")).toMatchObject({ amountMinor: 4900, includedMinutes: 120, guardAddonUnitMinor: 999, offerable: true, unavailableReason: null, matchesApprovedSchedule: true, selectedLocations: 1, telloyaQuantity: 1 })
+    expect(plans.find(plan => plan.tierCode === "GROWTH")).toMatchObject({ amountMinor: 7900, includedMinutes: 300, offerable: true, matchesApprovedSchedule: true, telloyaQuantity: 1 })
     expect(view.requestedGuardInterest).toBe(true)
     expect(view.requestedGuardLocationCount).toBe(2)
-    expect(plans.find(plan => plan.tierCode === "PRO")).toMatchObject({ amountMinor: 12000, includedMinutes: 500, matchesApprovedSchedule: true })
-    expect(plans.find(plan => plan.tierCode === "CUSTOM")).toMatchObject({ amountMinor: 15000, includedMinutes: null, matchesApprovedSchedule: true, guardAddonUnitMinor: null, offerable: true })
+    expect(plans.find(plan => plan.tierCode === "PRO")).toMatchObject({ amountMinor: 12000, includedMinutes: 500, matchesApprovedSchedule: true, telloyaQuantity: 1 })
+    expect(plans.find(plan => plan.tierCode === "CUSTOM")).toMatchObject({ amountMinor: 15000, includedMinutes: null, matchesApprovedSchedule: true, guardAddonUnitMinor: null, offerable: false, unavailableReason: "locations", telloyaQuantity: 2 })
 
     expect(await command("prepare_offer", { enquiryId: alexEnquiry.id, reason }, alexEnquiry.version)).toMatchObject({ status: "tier_required" })
     expect(await command("prepare_offer", { enquiryId: alexEnquiry.id, planVersionId: complete, reason }, alexEnquiry.version)).toMatchObject({ status: "terms_unconfigured" })
@@ -315,12 +321,12 @@ describe("tier-aware commercial catalogue", () => {
     expect(alexSub).toMatchObject({ customer_id: alex, amount_minor: 4900, plan_version_id: basic, state: "OFFERED" })
     expect((await rows<{ component_code: string; quantity: number }>(
       "select component_code, quantity from public.commercial_subscription_items order by component_code",
-    ))).toEqual([{ component_code: "TELLOYA", quantity: 2 }])
+    ))).toEqual([{ component_code: "TELLOYA", quantity: 1 }])
     await db.exec("SAVEPOINT immutable_price")
     await expect(db.query("update public.plan_versions set amount_minor = 5000 where id = $1", [basic])).rejects.toThrow(/immutable/)
     await db.exec("ROLLBACK TO SAVEPOINT immutable_price")
 
-    const samEnquiry = await readyEnquiry("sam.tier@example.com", "basic", "TELLOYA", 2)
+    const samEnquiry = await readyEnquiry("sam.tier@example.com", "basic", "TELLOYA", 1)
     const samOffer = await command("prepare_offer", { enquiryId: samEnquiry.id, planVersionId: growth, reason }, samEnquiry.version)
     expect(samOffer.status).toBe("success")
     const subs = await rows<{ customer_id: string; amount_minor: number; plan_version_id: string; public_ref: string }>(
@@ -329,6 +335,30 @@ describe("tier-aware commercial catalogue", () => {
     expect(subs.map(row => row.customer_id)).toEqual([alex, sam])
     expect(subs.map(row => row.plan_version_id)).toEqual([basic, growth])
     expect(subs.map(row => row.amount_minor)).toEqual([4900, 7900])
+
+    const quotedCustomer = randomUUID()
+    await db.query(
+      `insert into public.customers(id, full_name, email) values ($1, 'Quoted Owner', 'quoted.tier@example.com')`,
+      [quotedCustomer],
+    )
+    await db.query(
+      `insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence)
+       values ($1, 'email', 'quoted.tier@example.com', $2, $3)`,
+      [quotedCustomer, admin, reason],
+    )
+    const quotedEnquiry = await readyEnquiry("quoted.tier@example.com", "custom", "TELLOYA", 2)
+    const quotedPlans = (await rpc<Result>("admin_commercial_onboarding_v1", [token, quotedEnquiry.id])).approvedPlans as PlanRow[]
+    expect(quotedPlans.find(plan => plan.tierCode === "BASIC")).toMatchObject({ offerable: false, unavailableReason: "locations" })
+    expect(quotedPlans.find(plan => plan.tierCode === "GROWTH")).toMatchObject({ offerable: false, unavailableReason: "locations" })
+    expect(quotedPlans.find(plan => plan.tierCode === "PRO")).toMatchObject({ offerable: false, unavailableReason: "locations" })
+    expect(quotedPlans.find(plan => plan.tierCode === "CUSTOM")).toMatchObject({ offerable: true, amountMinor: 15000, telloyaQuantity: 2 })
+    expect((await command("prepare_offer", { enquiryId: quotedEnquiry.id, planVersionId: custom, reason }, quotedEnquiry.version)).status).toBe("success")
+    expect((await rows<{ amount_minor: number }>(
+      `select amount_minor from public.commercial_subscriptions sub
+       join public.onboarding_requests request on request.commercial_subscription_id = sub.id
+       where request.enquiry_id = $1`,
+      [quotedEnquiry.id],
+    ))[0].amount_minor).toBe(15000)
 
     const alexSession = await portalSession("alex.tier@example.com", alexAuth)
     const samSession = await portalSession("sam.tier@example.com", samAuth)
@@ -377,7 +407,7 @@ describe("tier-aware commercial catalogue", () => {
     expect((await rows<{ n: number }>("select count(*)::int as n from public.commercial_offer_acceptances"))[0].n).toBe(0)
     expect((await rows<{ state: string }>("select state from public.commercial_subscriptions where customer_id = $1", [alex]))[0].state).toBe("OFFERED")
 
-    const completeEnquiry = await readyEnquiry("alex.tier@example.com", "growth", "COMPLETE", 2)
+    const completeEnquiry = await readyEnquiry("alex.tier@example.com", "growth", "COMPLETE", 1)
     const completeOffer = await command("prepare_offer", { enquiryId: completeEnquiry.id, planVersionId: complete, reason }, completeEnquiry.version)
     expect(completeOffer.status).toBe("success")
     const guard = await rows<{ component_code: string; quantity: number }>(
@@ -390,7 +420,7 @@ describe("tier-aware commercial catalogue", () => {
     )
     expect(guard).toEqual([
       { component_code: "GUARD", quantity: 1 },
-      { component_code: "TELLOYA", quantity: 2 },
+      { component_code: "TELLOYA", quantity: 1 },
     ])
     const completeAmount = await rows<{ amount_minor: number }>(
       "select amount_minor from public.commercial_subscriptions where plan_version_id = $1",

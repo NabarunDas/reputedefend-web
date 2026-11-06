@@ -71,12 +71,12 @@ export const telloyaLocationPolicy = {
     {
       id: "standard-tier-cap-not-checked-at-approval",
       summary:
-        "Approving BASIC, GROWTH, or PRO does not require the TELLOYA plan component quantity_limit to be 1. Offer and begin-setup enforce whatever cap is stored. An approved standard plan with a higher cap would grant that many receptionist locations and numbers.",
+        "The one-location check for BASIC, GROWTH and PRO is in the unapplied migration 20261106140000. Hosted DEV does not have it yet. Until that file is applied, an approved standard plan can still store another cap.",
     },
     {
       id: "number-correction-keeps-previous-reservation",
       summary:
-        "A number correction records a new E.164 and leaves the previous E.164 in commercial_provider_number_owners. The provision points at the latest allocation, and another business cannot take the reserved number. The subscription still owns both numbers.",
+        "A number correction moves the authoritative provider_binding_ref to the new allocation and leaves the previous E.164 reserved. That reservation is deliberate. Another business cannot take it. Releasing it needs a later audited retirement with provider evidence. This phase does not delete the owner row.",
     },
   ],
 } as const

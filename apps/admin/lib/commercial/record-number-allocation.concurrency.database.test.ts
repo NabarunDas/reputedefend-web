@@ -809,7 +809,7 @@ describe.skipIf(!pgBin)("simultaneous telephone number allocation", () => {
     const endedAt = await psql(`select to_json(agent_configured_at + interval '2 second') #>> '{}' from public.service_provisions where location_id = '${gateLoc}'`)
     const evidence = {
       agentId: "agent-gate-01",
-      agentVersion: "rev-0004",
+      agentVersion: 4,
       agentVersionQuality: "present",
       availability: "retrieved",
       callId: "callgate0001",

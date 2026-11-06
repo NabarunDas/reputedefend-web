@@ -208,6 +208,34 @@ describe("verify AI receptionist test call command", () => {
     expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_private.commercial_agent_test_trust_call_v1")).toBe(false)
   })
 
+  it("uses the integer agent version and ignores a string or caller metadata", async () => {
+    const responseFor = (agentVersion: unknown, includeVersion = true) => new Response(JSON.stringify({
+      call_id: "call_direct_01",
+      call_type: "web_call",
+      call_status: "ended",
+      agent_id: "agent-0021",
+      ...(includeVersion ? { agent_version: agentVersion } : {}),
+      metadata: { agent_version: 9, providerRevision: "rev-0009" },
+    }), { status: 200 })
+    const fetchMock = vi.fn().mockResolvedValue(responseFor(4))
+    vi.stubGlobal("fetch", fetchMock)
+    installRpc()
+    const latestEvidence = () => {
+      const calls = mocks.rpc.mock.calls.filter(call => call[0] === "admin_commercial_verify_agent_test_call_v1")
+      return calls.at(-1)?.[1].p_payload.evidence
+    }
+    await POST(req())
+    expect(latestEvidence()).toMatchObject({ agentVersion: 4, agentVersionQuality: "present" })
+    for (const agentVersion of ["4", "rev-0004", 4.5, true]) {
+      fetchMock.mockResolvedValueOnce(responseFor(agentVersion))
+      await POST(req())
+      expect(latestEvidence()).toMatchObject({ agentVersion: null, agentVersionQuality: "malformed" })
+    }
+    fetchMock.mockResolvedValueOnce(responseFor(undefined, false))
+    await POST(req())
+    expect(latestEvidence()).toMatchObject({ agentVersion: null, agentVersionQuality: "missing" })
+  })
+
   it("records an unknown call without treating the typed reference as a pass", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("missing", { status: 404 })))
     installRpc({ verify: { status: "success", evidenceOutcome: "REQUIRES_REVIEW", providerStatus: "not_found", testPassed: false, forwardingVerified: false } })

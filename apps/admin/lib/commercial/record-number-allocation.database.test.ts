@@ -1505,7 +1505,7 @@ async function evidenceBody(location: string, patch: Record<string, unknown> = {
   )
   return {
     agentId: `agent-${location.slice(-4)}`,
-    agentVersion: "rev-0004",
+    agentVersion: 4,
     agentVersionQuality: "present",
     availability: "retrieved",
     callId: `call${location.slice(-4)}ok`,
@@ -1708,6 +1708,8 @@ describe("audited AI receptionist test call", () => {
     expect(source).toContain("REQUIRES_REVIEW")
     expect(source).toContain("pre-authorised")
     expect(source).toContain("commercial_agent_test_bindings")
+    expect(source).toContain("commercial_agent_test_revision_number_v1")
+    expect(source).toContain("rev-[0-9]{4}")
     expect(source).toContain("typed call id")
     expect(source).not.toContain("commercial_agent_test_trust_call_v1")
     expect(source).not.toContain("p_call_id")
@@ -1725,6 +1727,47 @@ describe("audited AI receptionist test call", () => {
     expect(source).not.toMatch(/\bretell\b|\bResend\b|ADMIN_COMMERCIAL_VERIFY_AGENT_TEST_CALL_ENABLED|voice_id/i)
     expect(source).toContain("REVOKE ALL ON FUNCTION public.admin_commercial_verify_agent_test_call_v1(text, uuid, uuid, integer, jsonb)")
     expect(source).toContain("GRANT EXECUTE ON FUNCTION public.admin_commercial_verify_agent_test_call_v1(text, uuid, uuid, integer, jsonb)")
+  })
+
+  it("maps rev-0004 to provider version 4 and leaves an unrecognised revision unpassed", async () => {
+    expect(await rows<{ revision: string; version: number | null }>(
+      `select revision, admin_private.commercial_agent_test_revision_number_v1(revision) as version
+       from (values
+         ('rev-0004'), ('rev-0005'), ('rev-0000'), ('rev-4'), ('rev-00004'),
+         ('4'), ('0004'), ('REV-0004'), ('rev-0004 '), ('rev-00a4'), ('note-0004')
+       ) as sample(revision)`,
+    )).toEqual([
+      { revision: "rev-0004", version: 4 },
+      { revision: "rev-0005", version: 5 },
+      { revision: "rev-0000", version: 0 },
+      { revision: "rev-4", version: null },
+      { revision: "rev-00004", version: null },
+      { revision: "4", version: null },
+      { revision: "0004", version: null },
+      { revision: "REV-0004", version: null },
+      { revision: "rev-0004 ", version: null },
+      { revision: "rev-00a4", version: null },
+      { revision: "note-0004", version: null },
+    ])
+    expect(await rows<{ version: number | null }>(
+      `select admin_private.commercial_agent_test_revision_number_v1(null) as version`,
+    )).toEqual([{ version: null }])
+    expect(await rows<{ allowed: boolean }>(
+      `select has_function_privilege('service_role', 'admin_private.commercial_agent_test_revision_number_v1(text)', 'execute') as allowed`,
+    )).toEqual([{ allowed: false }])
+    const armed = await pay({ locations: [high] })
+    expect(await begin(armed)).toMatchObject({ status: "success" })
+    expect(await confirm(armed, high)).toMatchObject({ status: "success" })
+    expect(await configure(armed, high, { revision: "note-0004", agentRef: "agent-0021" })).toMatchObject({ status: "success" })
+    expect(await allocate(armed, high, { revision: "note-0004", agentRef: "agent-0021", e164: "+441632960681" })).toMatchObject({ status: "success" })
+    expect(await instruct(armed, high, { status: "SHARED" })).toMatchObject({ status: "success", provisionState: "TEST_REQUIRED" })
+    await simulateProviderCreatedTest(armed.prepared.subscription, high, "call0021badrev")
+    expect(await verify(armed, high, { evidence: { callId: "call0021badrev", agentVersion: 4 } })).toMatchObject({
+      evidenceOutcome: "REQUIRES_REVIEW",
+      testPassed: false,
+      provisionState: "TEST_REQUIRED",
+    })
+    expect((await serviceRow(high)).state).toBe("TEST_REQUIRED")
   })
 
   it("records a verified direct agent test and replays the same request", async () => {
@@ -1803,7 +1846,9 @@ describe("audited AI receptionist test call", () => {
     expect(await verify(armed, high, { evidence: { callStatus: "error", callId: "call0021bad2" } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
     expect(await verify(armed, high, { evidence: { availability: "unavailable", callId: "call0021gap", agentId: null, callStatus: null, callType: null, startedAt: null, endedAt: null } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW", providerStatus: "unavailable" })
     expect(await verify(armed, high, { evidence: { callType: "phone_call", callId: "call0021phn" } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
-    expect(await verify(armed, high, { evidence: { agentVersion: "rev-9999", callId: "call0021old" } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
+    expect(await verify(armed, high, { evidence: { agentVersion: 5, callId: "call0021old" } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
+    expect(await verify(armed, high, { evidence: { agentVersion: "rev-0004", callId: "call0021txt" } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
+    expect(await verify(armed, high, { evidence: { agentVersion: "4", callId: "call0021str" } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
     const configured = await rows<{ at: string | Date }>(`select agent_configured_at as at from public.service_provisions where location_id = $1`, [high])
     expect(await verify(armed, high, { evidence: { callId: "call0021early", startedAt: stamp(configured[0].at, -3600000), endedAt: stamp(configured[0].at, -3500000) } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
     expect(await verify(armed, high, { evidence: { callId: "call0021qa" }, qa: { greeting: false } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
@@ -1819,7 +1864,7 @@ describe("audited AI receptionist test call", () => {
     expect(history.map(row => row.outcome)).toContain("VERIFIED_FAILED")
     expect(history.some(row => row.outcome === "VERIFIED_PASSED")).toBe(false)
     await simulateProviderCreatedTest(armed.prepared.subscription, high, "call0021yes")
-    const passed = await verify(armed, high, { evidence: { callId: "call0021yes", agentVersion: "rev-0004" } })
+    const passed = await verify(armed, high, { evidence: { callId: "call0021yes", agentVersion: 4 } })
     expect(passed).toMatchObject({ evidenceOutcome: "VERIFIED_PASSED", provisionState: "AWAITING_CONFIRMATION" })
     expect(await rows<{ outcome: string }>(`select outcome from admin_private.commercial_agent_test_evidence where outcome = 'VERIFIED_FAILED'`)).not.toEqual([])
     await db.exec("SAVEPOINT test_append")
@@ -1952,7 +1997,11 @@ describe("audited AI receptionist test call", () => {
     expect((await serviceRow(high)).state).toBe("TEST_REQUIRED")
     expect(JSON.stringify(await rpc<Row>("customer_portal_setup_handover_v1", [session]))).not.toContain(passedConversation)
     expect(await verify(armed, high, { evidence: { callId: "call0021nil", agentVersion: null } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW" })
-    expect(await verify(armed, high, { evidence: { callId: "call0021dif", agentVersion: "rev-9999" } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
+    expect(await verify(armed, high, { evidence: { callId: "call0021dif", agentVersion: 5 } })).toMatchObject({ evidenceOutcome: "VERIFIED_FAILED" })
+    await simulateProviderCreatedTest(armed.prepared.subscription, high, "call0021txt")
+    expect(await verify(armed, high, { evidence: { callId: "call0021txt", agentVersion: "rev-0004" } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW", testPassed: false })
+    await simulateProviderCreatedTest(armed.prepared.subscription, high, "call0021str")
+    expect(await verify(armed, high, { evidence: { callId: "call0021str", agentVersion: "4" } })).toMatchObject({ evidenceOutcome: "REQUIRES_REVIEW", testPassed: false })
     await simulateProviderCreatedTest(armed.prepared.subscription, high, "call0021run")
     expect(await verify(armed, high, { evidence: { callId: "call0021run", callStatus: "ongoing", endedAt: null } })).toMatchObject({ evidenceOutcome: "PENDING_VERIFICATION" })
     await simulateProviderCreatedTest(armed.prepared.subscription, high, "call0021reg")

@@ -9,6 +9,10 @@
 -- This migration does not create a function that accepts a call id and marks it trusted.
 -- VERIFIED_PASSED requires the pre-authorised intent and its matching binding.
 -- This command does not create a provider call and does not bind a typed call id.
+-- A stored provider revision matches only through commercial_agent_test_revision_number_v1.
+-- The accepted form is rev- and exactly four digits. rev-0004 is agent version 4.
+-- The comparison uses the integer agent version from the provider call.
+-- A string, missing value, or unrecognised revision cannot pass.
 -- 20261106120000 must not be applied to hosted DEV or Production.
 
 
@@ -229,6 +233,30 @@ BEGIN
   RETURN true;
 END;
 $$;
+
+-- Maps a stored provider revision to the provider's numeric agent version.
+-- The only accepted form is rev- followed by exactly four digits: rev-0004 is version 4.
+-- Leading zeros are part of the stored form and do not change the integer.
+-- Any other text, including a bare number or a shorter rev- value, is unrecognised.
+CREATE FUNCTION admin_private.commercial_agent_test_revision_number_v1(p_revision text)
+RETURNS integer
+LANGUAGE sql
+IMMUTABLE
+STRICT
+SET search_path = ''
+AS $$
+  SELECT CASE
+    WHEN p_revision ~ '^rev-[0-9]{4}$'
+      THEN pg_catalog.substring(p_revision, 5)::integer
+    ELSE NULL
+  END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_private.commercial_agent_test_revision_number_v1(text)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+COMMENT ON FUNCTION admin_private.commercial_agent_test_revision_number_v1(text) IS
+  'Maps a stored provider revision to its agent version. The only accepted form is rev- and exactly four digits, such as rev-0004 for version 4. Any other text is unrecognised.';
 
 CREATE FUNCTION admin_private.commercial_agent_test_projection_v1(p_subscription uuid)
 RETURNS jsonb
@@ -1209,7 +1237,8 @@ DECLARE
   intent_id uuid;
   binding_id uuid;
   intent_ref text;
-  version_text text;
+  stored_version integer;
+  provider_version integer;
   controlled boolean := false;
   outcome jsonb := NULL;
   handover jsonb;
@@ -1641,8 +1670,18 @@ BEGIN
     ELSE
       provider_status := 'retrieved';
       evidence_source := 'PROVIDER_RETRIEVAL';
-      version_text := p_payload #>> '{evidence,agentVersion}';
-      IF version_text IS DISTINCT FROM cfg.provider_revision THEN
+      stored_version := admin_private.commercial_agent_test_revision_number_v1(cfg.provider_revision);
+      IF jsonb_typeof(p_payload #> '{evidence,agentVersion}') IS DISTINCT FROM 'number'
+        OR (p_payload #>> '{evidence,agentVersion}') !~ '^[0-9]{1,9}$'
+        OR stored_version IS NULL
+      THEN
+        recorded_outcome := 'REQUIRES_REVIEW';
+      ELSE
+        provider_version := (p_payload #>> '{evidence,agentVersion}')::integer;
+      END IF;
+      IF recorded_outcome IS NOT NULL THEN
+        NULL;
+      ELSIF provider_version IS DISTINCT FROM stored_version THEN
         recorded_outcome := 'VERIFIED_FAILED';
       ELSIF (p_payload #>> '{evidence,providerError}') IS DISTINCT FROM 'false'
         OR p_payload #>> '{evidence,callStatus}' = 'error'

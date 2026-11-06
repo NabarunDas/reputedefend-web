@@ -4,7 +4,7 @@ export type AgentTestLane = "dev" | "production"
 
 export type RetrievedAgentCall = {
   agentId: string | null
-  agentVersion: number | string | null
+  agentVersion: number | null
   agentVersionQuality: "present" | "missing" | "malformed"
   availability: "retrieved" | "not_found" | "unavailable" | "incomplete"
   callId: string
@@ -27,7 +27,6 @@ export type AgentTestRetrieval =
 
 const callIdPattern = /^[A-Za-z0-9_-]{8,128}$/
 const agentPattern = /^[A-Za-z0-9_-]{8,128}$/
-const versionPattern = /^[A-Za-z0-9._-]{1,128}$/
 const reasonPattern = /^[a-z0-9_]{1,64}$/
 const lookupWindowMs = 60_000
 const lookupLimit = 6
@@ -88,13 +87,11 @@ function instant(value: unknown): string | null {
   return date.toISOString()
 }
 
-function agentVersion(value: unknown): { quality: RetrievedAgentCall["agentVersionQuality"]; version: number | string | null } {
+function agentVersion(value: unknown): { quality: RetrievedAgentCall["agentVersionQuality"]; version: number | null } {
   if (value === undefined || value === null) return { quality: "missing", version: null }
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 999_999_999) {
     return { quality: "present", version: value }
   }
-  const version = text(value)
-  if (version && versionPattern.test(version)) return { quality: "present", version }
   return { quality: "malformed", version: null }
 }
 

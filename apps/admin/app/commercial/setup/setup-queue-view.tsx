@@ -487,7 +487,7 @@ function ConfirmAiConfiguration({ item, providerLane }: { item: SetupQueueItem; 
   function evidenceError() {
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(agentRef.trim())) return "Enter the provider agent reference recorded for this location."
     const trimmedRevision = revision.trim()
-    if (trimmedRevision.length < 4 || trimmedRevision.length > 128 || trimmedRevision !== revision.trim()) return "Enter the provider configuration revision or fingerprint."
+    if (!/^rev-[0-9]{4}$/.test(trimmedRevision)) return "Enter the provider revision as rev- followed by exactly four digits, for example rev-0004."
     if (chosenVoice.trim().length < 1 || chosenVoice.trim().length > 80) return "Enter the provider voice identifier that was actually selected. A customer preference is not a provider voice."
     if (chosenLanguage.trim().length < 1 || chosenLanguage.trim().length > 40) return "Enter the provider language identifier that was actually selected."
     const trimmedAttestation = attestation.trim()
@@ -593,6 +593,7 @@ function ConfirmAiConfiguration({ item, providerLane }: { item: SetupQueueItem; 
       <p>Provider lane: {lane === "dev" ? "DEV" : "Production"}. This deployment chooses the lane. The form cannot switch it.</p>
       <p>Record the voice and language identifiers that were actually chosen in the provider environment. A customer preference does not prove the provider supports it.</p>
       <label>Provider agent reference <input value={agentRef} onChange={event => setAgentRef(event.target.value)} /></label>
+      <p>Accepted revision form: rev- and exactly four digits, for example rev-0004. That records provider agent version 4. The conversation test compares it with the integer agent version returned for the provider call.</p>
       <label>Configuration revision <input value={revision} onChange={event => setRevision(event.target.value)} /></label>
       <label>Chosen provider voice <input value={chosenVoice} onChange={event => setChosenVoice(event.target.value)} /></label>
       <label>Chosen provider language <input value={chosenLanguage} onChange={event => setChosenLanguage(event.target.value)} /></label>

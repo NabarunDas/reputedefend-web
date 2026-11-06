@@ -1713,6 +1713,23 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Audited record forwarding instructions", probe: "public.admin_commercial_record_forwarding_instructions_v1" },
   },
+  {
+    // Audited direct agent conversation test. Not applied to DEV.
+    // The verified DEV ledger contains 112 entries and ends at 20261106003939.
+    // Do not apply 20261106120000 to DEV. Do not apply 20261106120000 to Production.
+    // A passed conversation may move TEST_REQUIRED to AWAITING_CONFIRMATION.
+    // It does not verify telephone forwarding, write a routing binding, or move a service to live.
+    // Writes are inside the command. containsDataChange stays false.
+    // safeToReplay stays false.
+    version: "20261106120000",
+    filename: "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
+    step: "Audited AI receptionist test call",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Audited AI receptionist test call", probe: "public.admin_commercial_verify_agent_test_call_v1" },
+  },
 ]
 
 /**
@@ -1851,12 +1868,13 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * remains applied and must not be replayed. Develop mail dispatch
  * `20261029000000` remains applied and must not be replayed. Context function
  * volatility `20261028223000` and draft document role `20261028200000` remain
- * applied and must not be replayed. `pendingMigrations()` is empty.
- * `20261105130000`, `20261105144256`, `20261105172055`, `20261105180000`,
- * `20261105190000`, `20261105200000` and `20261106003939` are already applied
- * on DEV and must not be replayed. Do not replay them. Do not apply them to
- * Production. A later repository file stays unapplied until its own ledger
- * entry is verified. `20261105120000` is already applied on DEV and must not be replayed.
+ * applied and must not be replayed. `20261105130000`, `20261105144256`,
+ * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
+ * and `20261106003939` are already applied on DEV and must not be replayed.
+ * Do not replay them. Do not apply them to Production.
+ * `pendingMigrations()` contains only `20261106120000`. It stays local and
+ * must not be applied to hosted DEV or Production.
+ * `20261105120000` is already applied on DEV and must not be replayed.
  * Do not replay `20261105120000`. Do not apply `20261105120000` to Production.
  * `20261104220000` is already applied on DEV and must not be
  * replayed. Do not replay `20261104220000`. Do not apply `20261104220000`

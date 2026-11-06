@@ -92,6 +92,8 @@ describe("Telloya catalogue proposal", () => {
     expect(proposedSql).toContain("one receptionist number per entitled location")
     expect(proposedSql).toContain("number-correction-keeps-previous-reservation")
     expect(migrations).not.toContain("proposed-location-number-constraint.sql")
-    expect(pendingMigrations()).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
+    ])
   })
 })

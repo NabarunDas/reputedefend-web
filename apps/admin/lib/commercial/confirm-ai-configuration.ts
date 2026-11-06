@@ -61,11 +61,11 @@ function payload(value: unknown): { subscriptionId: string; version: number; pay
   if (provider.environment !== "dev" && provider.environment !== "production") return null
   if (provider.staffConfirmed !== true) return null
   const agentRef = text(provider.agentRef, 8, 128)
-  const revision = text(provider.revision, 4, 128)
+  const revision = text(provider.revision, 8, 8)
   const chosenVoice = text(provider.chosenVoice, 1, 80)
   const chosenLanguage = text(provider.chosenLanguage, 1, 40)
   const attestation = text(provider.attestation, 20, 500)
-  if (!agentRef || !/^[A-Za-z0-9_-]{8,128}$/.test(agentRef) || !revision || !chosenVoice || !chosenLanguage || !attestation) return null
+  if (!agentRef || !/^[A-Za-z0-9_-]{8,128}$/.test(agentRef) || !revision || !/^rev-[0-9]{4}$/.test(revision) || !chosenVoice || !chosenLanguage || !attestation) return null
   return {
     subscriptionId: body.subscriptionId,
     version: body.version,

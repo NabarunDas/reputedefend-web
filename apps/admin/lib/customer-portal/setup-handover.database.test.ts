@@ -512,7 +512,7 @@ describe("commercial post-payment handover", () => {
       { key: "preferences", label: "Business and service preferences", state: "planned" },
       { key: "agent", label: "AI receptionist configuration", state: "planned" },
       { key: "number", label: "Telephone number and forwarding", state: "planned" },
-      { key: "test", label: "Test call and verification", state: "planned" },
+      { key: "test", label: "AI receptionist test call", state: "planned" },
       { key: "activation", label: "Service activation", state: "planned" },
     ])
     expect(typeof admin?.items[0].paymentConfirmedAt).toBe("string")

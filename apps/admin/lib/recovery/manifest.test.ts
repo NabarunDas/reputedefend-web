@@ -23,8 +23,8 @@ describe("the migration chain manifest", () => {
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261106003939_admin_commercial_record_forwarding_instructions_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
@@ -39,8 +39,10 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations()).toEqual([])
-    expect(chainAfter(appliedMigrationHead.version)).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261106120000_admin_commercial_verify_agent_test_call_v1.sql",
+    ])
+    expect(chainAfter(appliedMigrationHead.version)).toEqual(pendingMigrations())
     expect(pendingMigrations().every(entry => !entry.appliedToDev && !entry.containsDataChange && !entry.safeToReplay)).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
@@ -99,11 +101,12 @@ describe("the migration chain manifest", () => {
     // Forwarding instructions are the DEV ledger head. They were applied once.
     // Do not replay 20261106003939. Do not apply 20261106003939 to Production.
     // The seven commercial files are applied and are not safe to replay.
+    // The repository head is the unapplied test-call migration.
     // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply 20261104190000 to Production.
     // Do not replay 20261103230000. Do not apply 20261103230000 to Production.
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration("20261103230000_customer_commercial_payment_verification_v1.sql")).toMatchObject({

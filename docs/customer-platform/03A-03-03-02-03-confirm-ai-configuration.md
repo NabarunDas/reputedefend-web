@@ -1,10 +1,12 @@
 # 03A-03-03-02-03 — Audited confirm AI configuration
 
-Repository only. `20261105172055_admin_commercial_confirm_ai_configuration_v1.sql` is not applied to hosted DEV or Production. The verified DEV ledger still contains 105 entries and ends at `20261105120000_telloya_voice_persistence_v1`. Begin setup `20261105130000` and confirm preferences `20261105144256` are also unapplied and earlier in the chain. Do not apply `20261105172055` to DEV. Do not apply `20261105172055` to Production.
+`20261105172055_admin_commercial_confirm_ai_configuration_v1.sql` was applied once to hosted DEV. The verified DEV ledger contains 112 entries and ends at `20261106003939`. Begin setup `20261105130000` and confirm preferences `20261105144256` are applied earlier. Do not replay `20261105172055`. Do not apply `20261105172055` to Production.
 
 ## What this command stores
 
 `public.admin_commercial_confirm_ai_configuration_v1(text, uuid, uuid, integer, jsonb)` records one operator-attested provider configuration for one selected Telloya location. It runs only after Begin Setup and after every selected location has a latest `CONFIRMED` preference. It is service-role only. The Admin route also requires `ADMIN_COMMERCIAL_SETUP_QUEUE_ENABLED` and `ADMIN_COMMERCIAL_CONFIRM_AI_CONFIGURATION_ENABLED`. Both default off. The database does not read either flag.
+
+The accepted provider revision for a future Admin configuration is `rev-` followed by exactly four digits. `rev-0004` is provider agent version 4. Leading zeros belong to the stored form and do not change the integer. A bare number, a shorter `rev-` value, a longer digit run, or any other text is unrecognised. The conversation test compares that integer with the integer agent version on the provider call. It does not compare the stored text with a typed value or with caller-editable metadata. An unrecognised stored revision cannot pass. The applied configuration command still stores the text that was recorded. This format is enforced by the Admin form and route. It is not a change to `20261105172055`.
 
 The row is tied to the customer, business, commercial subscription, onboarding request, exact location, Telloya entitlement, service provision, and the latest confirmed preference id and version. It copies that preference’s greeting, hours, callback rules, and language preferences, and it stores the provider identifier `telloya_voice`, the explicit `dev` or `production` environment, the provider agent reference, the staff-recorded revision, a server-generated configuration fingerprint, the chosen provider voice and language identifiers, the verification basis `OPERATOR_ATTESTED`, the staff attestation, the staff actor, and the server timestamp.
 

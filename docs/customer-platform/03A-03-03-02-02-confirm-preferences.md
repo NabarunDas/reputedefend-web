@@ -1,6 +1,6 @@
 # 03A-03-03-02-02 — Audited confirm business preferences
 
-Repository only. `20261105144256_admin_commercial_confirm_preferences_v1.sql` is not applied to hosted DEV or Production. The verified DEV ledger still contains 105 entries and ends at `20261105120000_telloya_voice_persistence_v1`. Begin setup `20261105130000` is also unapplied and earlier in the chain. Do not apply `20261105144256` to DEV. Do not apply `20261105144256` to Production.
+`20261105144256_admin_commercial_confirm_preferences_v1.sql` was applied once to hosted DEV. The verified DEV ledger contains 112 entries and ends at `20261106003939`. Begin setup `20261105130000` is applied earlier. Do not replay `20261105144256`. Do not apply `20261105144256` to Production.
 
 ## What this command stores
 

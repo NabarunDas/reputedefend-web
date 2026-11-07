@@ -15,6 +15,9 @@
 -- The admission row supplies the customer, business, location, subscription,
 -- period, and accepted terms. Caller-supplied tenant identifiers are compared
 -- and then discarded. They are never the billing identity.
+-- An existing usage event is compared with that admission before any bind or
+-- reservation write. A reservation is reused only when every immutable
+-- commercial field matches and its state is open or consumed.
 
 BEGIN;
 
@@ -284,6 +287,61 @@ BEGIN
     );
   END IF;
 
+  SELECT acceptance.plan_version_id INTO v_plan
+  FROM public.commercial_offer_acceptances AS acceptance
+  WHERE acceptance.subscription_id = v_row.subscription_id;
+  IF v_plan IS NULL THEN
+    RETURN admin_private.commercial_usage_ingest_diagnostic_v1(
+      v_environment, v_event_type, v_call_ref, v_hash, 'acceptance_absent'
+    );
+  END IF;
+
+  SELECT * INTO v_existing
+  FROM admin_private.commercial_usage_events
+  WHERE environment = v_environment AND provider_call_ref = v_call_ref;
+  IF FOUND THEN
+    v_event_id := v_existing.id;
+  END IF;
+  IF v_existing.id IS NOT NULL AND (
+    v_existing.environment IS DISTINCT FROM v_environment
+    OR v_existing.provider_call_ref IS DISTINCT FROM v_call_ref
+    OR v_existing.call_scope IS DISTINCT FROM 'customer_phone'
+    OR v_existing.subscription_id IS DISTINCT FROM v_row.subscription_id
+    OR v_existing.business_id IS DISTINCT FROM v_row.business_id
+    OR v_existing.location_id IS DISTINCT FROM v_row.location_id
+    OR v_existing.period_start IS DISTINCT FROM v_row.period_start
+    OR v_existing.period_end IS DISTINCT FROM v_row.period_end
+    OR v_existing.plan_version_id IS DISTINCT FROM v_plan
+    OR v_existing.included_minutes_snapshot IS DISTINCT FROM v_row.included_minutes_snapshot
+    OR v_existing.minutes_rollover_snapshot IS DISTINCT FROM v_row.minutes_rollover_snapshot
+    OR v_existing.overage_opt_in_snapshot IS DISTINCT FROM v_row.overage_opt_in_snapshot
+    OR v_existing.overage_rate_minor_snapshot IS DISTINCT FROM v_row.overage_rate_minor_snapshot
+    OR v_existing.overage_cap_minor_snapshot IS DISTINCT FROM v_row.overage_cap_minor_snapshot
+    OR v_existing.overage_consent_at IS DISTINCT FROM v_row.overage_consent_at
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.commercial_subscriptions AS subscription
+      WHERE subscription.id = v_existing.subscription_id
+        AND subscription.customer_id = v_row.customer_id
+        AND subscription.business_id = v_row.business_id
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM admin_private.commercial_usage_receipts AS receipt
+      WHERE receipt.provider_call_ref = v_call_ref
+        AND (
+          receipt.environment IS DISTINCT FROM v_environment
+          OR v_existing.call_scope IS DISTINCT FROM 'customer_phone'
+          OR v_existing.subscription_id IS DISTINCT FROM v_row.subscription_id
+          OR v_existing.period_start IS DISTINCT FROM v_row.period_start
+        )
+    )
+  ) THEN
+    RETURN admin_private.commercial_usage_ingest_diagnostic_v1(
+      v_environment, v_event_type, v_call_ref, v_hash, 'usage_event_conflict'
+    );
+  END IF;
+
   v_reservation_id := v_row.reservation_id;
   IF v_reservation_id IS NOT NULL THEN
     SELECT * INTO v_reservation
@@ -295,32 +353,8 @@ BEGIN
     WHERE environment = v_environment AND provider_call_ref = v_call_ref;
     v_reservation_id := v_reservation.id;
   END IF;
-  IF v_reservation.id IS NOT NULL AND (
-    v_reservation.environment IS DISTINCT FROM v_environment
-    OR v_reservation.provider_call_ref IS DISTINCT FROM v_call_ref
-    OR v_reservation.subscription_id IS DISTINCT FROM v_row.subscription_id
-    OR v_reservation.business_id IS DISTINCT FROM v_row.business_id
-    OR v_reservation.location_id IS DISTINCT FROM v_row.location_id
-    OR v_reservation.period_start IS DISTINCT FROM v_row.period_start
-    OR v_reservation.period_end IS DISTINCT FROM v_row.period_end
-    OR v_reservation.reserved_seconds IS DISTINCT FROM 60
-    OR v_reservation.included_minutes_snapshot IS DISTINCT FROM v_row.included_minutes_snapshot
-    OR v_reservation.overage_opt_in_snapshot IS DISTINCT FROM v_row.overage_opt_in_snapshot
-  ) THEN
-    RETURN admin_private.commercial_usage_ingest_diagnostic_v1(
-      v_environment, v_event_type, v_call_ref, v_hash, 'call_conflict'
-    );
-  END IF;
 
-  IF v_reservation.id IS NULL THEN
-    SELECT acceptance.plan_version_id INTO v_plan
-    FROM public.commercial_offer_acceptances AS acceptance
-    WHERE acceptance.subscription_id = v_row.subscription_id;
-    IF v_plan IS NULL THEN
-      RETURN admin_private.commercial_usage_ingest_diagnostic_v1(
-        v_environment, v_event_type, v_call_ref, v_hash, 'acceptance_absent'
-      );
-    END IF;
+  IF v_reservation.id IS NULL AND v_existing.id IS NULL THEN
     BEGIN
       INSERT INTO admin_private.commercial_usage_reservations(
         environment, provider_call_ref, subscription_id, location_id, business_id,
@@ -330,7 +364,7 @@ BEGIN
       ) VALUES (
         v_environment, v_call_ref, v_row.subscription_id, v_row.location_id, v_row.business_id,
         v_row.period_start, v_row.period_end, 60, 'open', v_plan,
-        v_row.included_minutes_snapshot, false, v_row.overage_opt_in_snapshot,
+        v_row.included_minutes_snapshot, v_row.minutes_rollover_snapshot, v_row.overage_opt_in_snapshot,
         v_row.overage_rate_minor_snapshot, v_row.overage_cap_minor_snapshot, v_row.overage_consent_at
       )
       RETURNING id INTO v_reservation_id;
@@ -339,20 +373,46 @@ BEGIN
         SELECT * INTO v_reservation
         FROM admin_private.commercial_usage_reservations
         WHERE environment = v_environment AND provider_call_ref = v_call_ref;
-        IF NOT FOUND
-          OR v_reservation.subscription_id IS DISTINCT FROM v_row.subscription_id
-          OR v_reservation.period_start IS DISTINCT FROM v_row.period_start
-          OR v_reservation.period_end IS DISTINCT FROM v_row.period_end
-        THEN
+        IF NOT FOUND THEN
           RETURN admin_private.commercial_usage_ingest_diagnostic_v1(
             v_environment, v_event_type, v_call_ref, v_hash, 'call_conflict'
           );
         END IF;
         v_reservation_id := v_reservation.id;
     END;
-    SELECT * INTO v_reservation
-    FROM admin_private.commercial_usage_reservations
-    WHERE id = v_reservation_id;
+    IF v_reservation_id IS NOT NULL THEN
+      SELECT * INTO v_reservation
+      FROM admin_private.commercial_usage_reservations
+      WHERE id = v_reservation_id;
+    END IF;
+    IF v_reservation.id IS NULL THEN
+      RETURN admin_private.commercial_usage_ingest_diagnostic_v1(
+        v_environment, v_event_type, v_call_ref, v_hash, 'call_conflict'
+      );
+    END IF;
+  END IF;
+  IF v_reservation.id IS NOT NULL AND (
+    v_reservation.state NOT IN ('open', 'consumed')
+    OR v_reservation.environment IS DISTINCT FROM v_environment
+    OR v_reservation.provider_call_ref IS DISTINCT FROM v_call_ref
+    OR v_reservation.subscription_id IS DISTINCT FROM v_row.subscription_id
+    OR v_reservation.business_id IS DISTINCT FROM v_row.business_id
+    OR v_reservation.location_id IS DISTINCT FROM v_row.location_id
+    OR v_reservation.period_start IS DISTINCT FROM v_row.period_start
+    OR v_reservation.period_end IS DISTINCT FROM v_row.period_end
+    OR v_reservation.reserved_seconds IS DISTINCT FROM 60
+    OR v_reservation.plan_version_id IS DISTINCT FROM v_plan
+    OR v_reservation.included_minutes_snapshot IS DISTINCT FROM v_row.included_minutes_snapshot
+    OR v_reservation.minutes_rollover_snapshot IS DISTINCT FROM v_row.minutes_rollover_snapshot
+    OR v_reservation.overage_opt_in_snapshot IS DISTINCT FROM v_row.overage_opt_in_snapshot
+    OR v_reservation.overage_rate_minor_snapshot IS DISTINCT FROM v_row.overage_rate_minor_snapshot
+    OR v_reservation.overage_cap_minor_snapshot IS DISTINCT FROM v_row.overage_cap_minor_snapshot
+    OR v_reservation.overage_consent_at IS DISTINCT FROM v_row.overage_consent_at
+  ) THEN
+    RETURN admin_private.commercial_usage_ingest_diagnostic_v1(
+      v_environment, v_event_type, v_call_ref, v_hash,
+      CASE WHEN v_reservation.state = 'released' THEN 'reservation_released' ELSE 'call_conflict' END
+    );
   END IF;
 
   IF v_row.state = 'reserved' THEN

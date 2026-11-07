@@ -723,6 +723,105 @@ describe("inbound admission reservation", () => {
     expect((await rows<{ n: number }>("select count(*)::int as n from admin_private.commercial_usage_events where provider_call_ref = 'call_renewed_ingest'"))[0]?.n).toBe(1)
   })
 
+  it("refuses to bind an admission to a usage event or reservation it does not own", async () => {
+    const otherPlan = "33333333-3333-4333-8333-333333333332"
+    await db.exec(`
+      insert into public.plan_versions(
+        id, product_code, version_number, status, effective_from, billing_cadence, currency,
+        amount_minor, tax_behaviour, terms_ref
+      ) values (
+        '${otherPlan}', 'TELLOYA', 2, 'DRAFT', '2026-10-01 00:00:00+00', 'MONTH', 'GBP',
+        4900, 'NOT_APPLICABLE', 'TELLOYA-USAGE-LEDGER'
+      );
+      insert into admin_private.commercial_usage_events(
+        environment, provider_call_ref, call_scope, subscription_id, business_id, location_id,
+        period_start, period_end, duration_seconds, duration_quality, body_sha256, plan_version_id,
+        included_minutes_snapshot, minutes_rollover_snapshot, overage_opt_in_snapshot,
+        overage_rate_minor_snapshot, overage_cap_minor_snapshot, overage_consent_at
+      ) values (
+        'dev', 'call_other_tenant_event', 'customer_phone', '${seat("B")[3]}', '${seat("B")[1]}', '${seat("B")[2]}',
+        '${PERIOD_START}', '${PERIOD_END}', 15, 'confirmed', '${HASH_B}', '${PLAN}',
+        120, false, true, 25, 25, '${CONSENT_AT}'
+      ), (
+        'dev', 'call_other_period_event', 'customer_phone', '${seat("A")[3]}', '${seat("A")[1]}', '${seat("A")[2]}',
+        '${PERIOD_END}', '${NEXT_END}', 15, 'confirmed', '${HASH_A}', '${PLAN}',
+        120, false, false, 25, null, null
+      );
+      insert into admin_private.commercial_usage_reservations(
+        environment, provider_call_ref, subscription_id, location_id, business_id,
+        period_start, period_end, reserved_seconds, state, plan_version_id,
+        included_minutes_snapshot, minutes_rollover_snapshot, overage_opt_in_snapshot,
+        overage_rate_minor_snapshot, overage_cap_minor_snapshot, overage_consent_at
+      ) values (
+        'dev', 'call_bad_terms', '${seat("A")[3]}', '${seat("A")[2]}', '${seat("A")[1]}',
+        '${PERIOD_START}', '${PERIOD_END}', 60, 'open', '${otherPlan}',
+        120, false, true, 99, 10, '${CONSENT_AT}'
+      );
+    `)
+    const tenantHold = await reserve(command("A", { bodyLabel: "other-tenant-event" }))
+    const periodHold = await reserve(command("A", { bodyLabel: "other-period-event" }))
+    const termsHold = await reserve(command("A", { bodyLabel: "bad-terms" }))
+    expect(tenantHold.status).toBe("admitted")
+    expect(periodHold.status).toBe("admitted")
+    expect(termsHold.status).toBe("admitted")
+    expect(await ingest(ingestCommand("A", "call_started", "call_other_tenant_event", tenantHold.admissionRef ?? null))).toMatchObject({
+      status: "denied",
+      reason: "usage_event_conflict",
+      billable: false,
+    })
+    expect(await ingest(ingestCommand("A", "call_ended", "call_other_period_event", periodHold.admissionRef ?? null))).toMatchObject({
+      status: "denied",
+      reason: "usage_event_conflict",
+      billable: false,
+    })
+    expect(await ingest(ingestCommand("A", "call_started", "call_bad_terms", termsHold.admissionRef ?? null))).toMatchObject({
+      status: "denied",
+      reason: "call_conflict",
+      billable: false,
+    })
+    const owned = (await rows<{ call_ref: string; subscription_id: string; seconds: number; period_start: string }>(
+      `select provider_call_ref as call_ref, subscription_id::text, duration_seconds as seconds, period_start::text
+       from admin_private.commercial_usage_events
+       where provider_call_ref in ('call_other_tenant_event', 'call_other_period_event')
+       order by provider_call_ref`,
+    ))
+    expect(owned).toEqual([
+      { call_ref: "call_other_period_event", subscription_id: seat("A")[3], seconds: 15, period_start: expect.stringContaining("2026-12-01") },
+      { call_ref: "call_other_tenant_event", subscription_id: seat("B")[3], seconds: 15, period_start: expect.stringContaining("2026-11-01") },
+    ])
+    expect(await reservations("call_other_tenant_event") + await reservations("call_other_period_event")).toBe(0)
+    expect(await reservations("call_bad_terms")).toBe(1)
+    expect((await rows<{ state: string; plan_version_id: string; rate: number }>(
+      "select state, plan_version_id::text, overage_rate_minor_snapshot as rate from admin_private.commercial_usage_reservations where provider_call_ref = 'call_bad_terms'",
+    ))[0]).toMatchObject({ state: "open", plan_version_id: otherPlan, rate: 99 })
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from admin_private.commercial_usage_admissions where admission_ref in ($1, $2, $3) and state = 'bound'",
+      [tenantHold.admissionRef, periodHold.admissionRef, termsHold.admissionRef],
+    ))[0]?.n).toBe(0)
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from admin_private.commercial_usage_receipts where provider_call_ref in ('call_other_tenant_event', 'call_other_period_event', 'call_bad_terms')",
+    ))[0]?.n).toBe(0)
+
+    const released = await reserve(command("A", { providerCallRef: "call_released_hold", bodyLabel: "released-hold" }))
+    expect(released.status).toBe("admitted")
+    await db.exec("update admin_private.commercial_usage_reservations set state = 'released' where provider_call_ref = 'call_released_hold'")
+    expect(await ingest(ingestCommand("A", "call_ended", "call_released_hold", released.admissionRef ?? null))).toMatchObject({
+      status: "denied",
+      reason: "reservation_released",
+      billable: false,
+    })
+    expect((await rows<{ state: string }>(
+      "select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_released_hold'",
+    ))[0]?.state).toBe("released")
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from admin_private.commercial_usage_events where provider_call_ref = 'call_released_hold'",
+    ))[0]?.n).toBe(0)
+    expect((await rows<{ state: string }>(
+      "select state from admin_private.commercial_usage_admissions where admission_ref = $1",
+      [released.admissionRef],
+    ))[0]?.state).toBe("reserved")
+  })
+
   it("lets only the server role execute the public reservation command", async () => {
     const privileges = (await rows<{
       service_public: boolean

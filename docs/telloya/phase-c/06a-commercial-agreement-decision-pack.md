@@ -1,10 +1,10 @@
 # Phase C-06A — Commercial agreement and tax decision pack
 
-Status: **decision preparation**. Nothing in this document approves an agreement, a tax treatment, a refund rule, or a hosted catalogue row. The owner and, where marked, legal review must accept each proposed clause before it can be shown to a customer or copied into DEV.
+Status: **decision preparation**. On 7 November 2026 the owner approved the commercial rules now recorded in `telloyaOwnerApprovedPolicy`. That approval does not legally approve the Telloya Service Agreement, a tax treatment, or a hosted catalogue row. Clauses marked LEGAL_REVIEW_REQUIRED or PROVIDER_VERIFICATION_REQUIRED are still open.
 
 `develop` includes merged PR #444. The repository and confirmed DEV ledger head remain `20261106200000`. `pendingMigrations()` is empty. This pack does not insert catalogue, agreement, subscription, or payment rows. It does not enable enquiries, Stripe settlement, or Retell. It does not change Vercel, Supabase, Production, or the published company privacy notice and terms.
 
-The short repository draft stays `TELLOYA-DRAFT-2026-11-1` in `telloyaDraftAgreement`. This pack does not edit that text. The fuller wording below is a separate proposal, labelled `TELLOYA-PROPOSED-2026-11-1`. That label is a document name only. It is not a hosted version ref until a later approved seed creates it.
+The short repository draft stays `TELLOYA-DRAFT-2026-11-1` in `telloyaDraftAgreement`. Later policy work marks the owner-approved commercial sentences inside that draft. The fuller wording below is a separate proposal, labelled `TELLOYA-PROPOSED-2026-11-1`. That label is a document name only. It is not a hosted version ref until a later approved seed creates it.
 
 ## 1. What is already approved
 
@@ -34,9 +34,9 @@ The applied commands already enforce the location cap, one occupying voice subsc
 | Customer agreement | `TELLOYA-DRAFT-2026-11-1` is a draft. Legal review is still required. |
 | Tax | `telloyaTaxDecision.productionTaxBehaviour` is null. Status: `OWNER DECISION REQUIRED`. |
 | Local draft tax placeholder | `EXCLUSIVE`. The offer command refuses every behaviour other than `NOT_APPLICABLE`, so that placeholder cannot be offered. |
-| Unused minutes | The draft proposes expiry. `minutes_rollover` is a stored boolean. No minute meter exists. |
-| Cancellation and refunds | The draft proposes period-end cancellation and no automatic refund of the current month. No customer cancellation command is enabled. |
-| Renewal | A later Stripe subscription invoice. No renewal job is started. |
+| Unused minutes | OWNER_APPROVED on 7 November 2026: unused minutes expire and `minutes_rollover` stays false. No minute meter charges a customer from this change. |
+| Cancellation and refunds | OWNER_APPROVED on 7 November 2026: cancellation at the end of the paid period, with no automatic pro-rata refund, subject to applicable law and service-failure remedies. LEGAL_REVIEW_REQUIRED for the contract wording. No customer cancellation command is enabled. |
+| Renewal | OWNER_APPROVED on 7 November 2026: monthly renewal at the accepted amount until cancellation. No renewal job is started. |
 | Custom price | Open. £250 in tests is a rehearsal figure, not a customer price. |
 | Hosted seed | Closed until agreement text, tax behaviour, and any Custom price are approved in writing. |
 | Recording and retention | Telloya privacy and recording drafts in `docs/telloya/05d-01/` are unpublished. The company privacy notice does not describe call audio. |

@@ -1774,6 +1774,23 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Controlled AI receptionist web-call initiation", probe: "public.admin_commercial_prepare_agent_test_call_v1" },
   },
+  {
+    // Subscription usage ledger. Source only. It is not applied to hosted DEV
+    // or Production. The verified DEV ledger still contains 115 entries and
+    // ends at 20261106200000. Do not apply 20261107110000 to hosted DEV.
+    // Do not apply 20261107110000 to Production. Do not replay 20261106200000.
+    // Schema and functions only. containsDataChange stays false.
+    // No subscription, payment, catalogue row, or Stripe charge is created.
+    // safeToReplay stays false.
+    version: "20261107110000",
+    filename: "20261107110000_telloya_subscription_usage_ledger_v1.sql",
+    step: "Telloya subscription usage ledger",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya subscription usage ledger", probe: "admin_private.commercial_usage_events" },
+  },
 ]
 
 /**
@@ -1920,7 +1937,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` is empty. `20261106200000` was applied once to DEV.
+ * `pendingMigrations()` contains only `20261107110000`. Do not apply it to hosted DEV or Production.
+ * `20261106200000` was applied once to DEV.
  * Do not replay `20261106200000`. Do not apply `20261106200000` to Production.
  * `20261106120000` and `20261106140000` are already applied on DEV and must not
  * be replayed. Do not apply `20261106120000` or `20261106140000` to Production.

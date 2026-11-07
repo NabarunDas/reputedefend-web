@@ -6,6 +6,7 @@ import {
   telloyaDraftAgreement,
   telloyaDraftMarker,
   telloyaLocationPolicy,
+  telloyaOwnerApprovedPolicy,
   telloyaProposedMonthlyMinor,
   telloyaTaxDecision,
   telloyaUnapprovedCustomRehearsal,
@@ -71,6 +72,17 @@ describe("Telloya catalogue proposal", () => {
     expect(telloyaDraftAgreement.body.startsWith(telloyaDraftMarker)).toBe(true)
     expect(telloyaDraftAgreement.body).not.toContain("TEST ONLY")
     expect(telloyaDraftAgreement.body).toContain("do not roll over")
+    expect(telloyaDraftAgreement.body).toContain("OWNER_APPROVED on 7 November 2026")
+    expect(telloyaDraftAgreement.body).toContain("LEGAL_REVIEW_REQUIRED")
+    expect(telloyaDraftAgreement.body).toContain("not make this Telloya Service Agreement legally approved")
+    expect(telloyaOwnerApprovedPolicy).toMatchObject({
+      status: "OWNER_APPROVED",
+      approvedOn: "2026-11-07",
+      minutesRollover: false,
+      overageRateMinor: 25,
+      agreementStatus: "LEGAL_REVIEW_REQUIRED",
+      partialMinuteBilling: { status: "REVIEW_BEFORE_CHARGE" },
+    })
     expect(telloyaDraftAgreement.body).toContain("£0.25 per minute")
     expect(telloyaDraftAgreement.body).toContain("£9.99")
     expect(telloyaDraftAgreement.confirmations.map(item => item.key)).toEqual([
@@ -101,7 +113,7 @@ describe("Telloya catalogue proposal", () => {
     expect(migrations).toContain("20261106140000_telloya_standard_location_cap_v1.sql")
     expect(migrations).not.toContain("proposed-location-number-constraint.sql")
     expect(migrations).toContain("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")
-    expect(pendingMigrations()).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261107110000_telloya_subscription_usage_ledger_v1.sql"])
     expect(findMigration("20261106200000_admin_commercial_initiate_agent_test_call_v1.sql")).toMatchObject({
       appliedToDev: true,
       containsDataChange: false,

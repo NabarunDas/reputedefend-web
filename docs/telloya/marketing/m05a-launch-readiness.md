@@ -146,7 +146,7 @@ These are commercial rules recorded on 7 November 2026, plus the location policy
 
 ### Approved in code and not operationally enforced
 
-The rules above are stored as policy constants and marketing copy. No hosted catalogue row was seeded by this phase. No minute meter charges a customer. No cancellation command, renewal job, overage invoice, or call-stop is enabled. `20261107110000_telloya_subscription_usage_ledger_v1.sql` stays source-only and must not be applied.
+The rules above are stored as policy constants and marketing copy. No hosted catalogue row was seeded by this phase. No minute meter charges a customer. No cancellation command, renewal job, overage invoice, or call-stop is enabled. **Hosted DEV reconciliation, verified 7 November 2026:** the Supabase DEV migration ledger contains 116 entries, including `20261107110000_telloya_subscription_usage_ledger_v1.sql` as already applied. This is a DEV schema fact, not evidence that customer usage metering or charging is active. Do not replay, reverse, or apply this migration again; do not treat it as applied in Production. The separate C-06B-02 repository-manifest reconciliation remains under review in PR #451 and is not authorised by this marketing document.
 
 ### Awaiting accountant or legal review
 

@@ -59,9 +59,9 @@ describe("upgrading a database that is already running", () => {
   it("applies only the migrations the running database had not received, in order", async () => {
     const pending = chainAfter(checkpoint)
     expect(pending[0].version).toBe("20260929210000")
-    // The repository head is the unapplied 20261107120000 telloya_inbound_admission_reservation_v1.
-    // Do not apply 20261107120000 to hosted DEV. Do not apply 20261107120000 to Production.
-    // The applied DEV head is 20261107110000 telloya_subscription_usage_ledger_v1.
+    // The repository head is the DEV-applied 20261107120000 telloya_inbound_admission_reservation_v1.
+    // Do not replay 20261107120000. Do not apply 20261107120000 to Production.
+    // The previous applied DEV head is 20261107110000 telloya_subscription_usage_ledger_v1.
     // Do not replay 20261107110000. Do not apply 20261107110000 to Production.
     // 20261106200000 remains applied. Do not replay 20261106200000. Do not apply 20261106200000 to Production.
     // 20261106140000 telloya_standard_location_cap_v1 is applied immediately before it.
@@ -94,7 +94,7 @@ describe("upgrading a database that is already running", () => {
     // request 20261030200000 is applied on DEV and must not be replayed. This
     // disposable rebuild is not a live apply. Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261107120000_telloya_inbound_admission_reservation_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261107110000_telloya_subscription_usage_ledger_v1.sql")

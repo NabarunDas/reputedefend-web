@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Mail } from "lucide-react"
 import styles from "./telloya-enquiry-form.module.css"
 import type { TelloyaEnquiryRequest, TelloyaEnquiryResponse, TelloyaEnquiryCapabilities } from "@/lib/enquiry-contract"
 import { legalIdentity } from "@/lib/legal"
-import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes, type TelloyaPlanTier } from "@/lib/pricing"
+import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes, commercialCopy, type TelloyaPlanTier } from "@/lib/pricing"
 import { sendTelloyaLeadConversion } from "@/lib/analytics"
 
 type PlanTierInterest = TelloyaPlanTier | ""
@@ -640,14 +640,14 @@ export function TelloyaEnquiryForm({
             {selectedPlan && selectedPlan.monthlyPriceGbp != null && selectedPlan.minutesPerMonth != null && (
               <div className={styles.planCallout}>
                 <p className={styles.sectionNote}>
-                  {selectedPlan.name} is {formatGbpPrice(selectedPlan.monthlyPriceGbp)} per month and includes {formatMinutes(selectedPlan.minutesPerMonth)}. This price is indicative and is not a final approved offer.
+                  {selectedPlan.name} is {formatGbpPrice(selectedPlan.monthlyPriceGbp)} per month and includes {formatMinutes(selectedPlan.minutesPerMonth)}. {commercialCopy.standardEntitlement} {commercialCopy.extraReceptionist} This price is indicative and is not a final approved offer. This enquiry does not authorise a charge.
                 </p>
               </div>
             )}
             {values.planTier === "custom" && (
               <div className={styles.planCallout}>
                 <p className={styles.sectionNote}>
-                  Custom is quoted individually. The details below are the minimum needed for a quotation. They are not a final approved offer.
+                  Custom is quoted individually, including any operating locations and receptionist numbers beyond the standard entitlement of one of each. The details below are the minimum needed for a quotation. They are not a final approved offer. This enquiry does not authorise a charge.
                 </p>
               </div>
             )}
@@ -665,6 +665,7 @@ export function TelloyaEnquiryForm({
                     Add Relaunch Guard monitoring at {formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)}/location/month
                   </span>
                 </label>
+                <p className={styles.sectionNote}>{commercialCopy.guardPriceBasis} {commercialCopy.guardOnly} Selecting Guard records interest only.</p>
                 {values.guardInterested && (
                   <Field id={`${formId}-guardLocationCount`} label="How many locations need Guard protection?" error={errors.guardLocationCount}>
                     <input
@@ -679,7 +680,7 @@ export function TelloyaEnquiryForm({
                 )}
                 {indicativeMonthlyTotal && selectedPlan?.monthlyPriceGbp != null && (
                   <p className={styles.sectionNote}>
-                    Indicative monthly total: {formatGbpPrice(indicativeMonthlyTotal)} ({selectedPlan.name} {formatGbpPrice(selectedPlan.monthlyPriceGbp)} + Guard {formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {Number(values.guardLocationCount)}). This estimate is not a final approved offer and does not authorise billing.
+                    Indicative monthly total: {formatGbpPrice(indicativeMonthlyTotal)} ({selectedPlan.name} {formatGbpPrice(selectedPlan.monthlyPriceGbp)} + Guard {formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {Number(values.guardLocationCount)}). {commercialCopy.guardOnly} This estimate is not a final approved offer and does not authorise billing. Guard interest is not a purchase.
                   </p>
                 )}
               </div>
@@ -735,7 +736,7 @@ export function TelloyaEnquiryForm({
                     />
                   </Field>
                 </div>
-                <Field id={`${formId}-customLanguages`} label="Languages required" optional error={errors.customLanguages}>
+                <Field id={`${formId}-customLanguages`} label="Language preferences" optional error={errors.customLanguages} hint="A request only. Available languages depend on the voice provider.">
                   <input
                     name="customLanguages"
                     value={values.customLanguages}
@@ -765,6 +766,7 @@ export function TelloyaEnquiryForm({
                     Add Relaunch Guard monitoring at {formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)}/location/month
                   </span>
                 </label>
+                <p className={styles.sectionNote}>{commercialCopy.guardPriceBasis} {commercialCopy.guardOnly} Selecting Guard records interest only.</p>
                 {values.guardInterested && (
                   <Field id={`${formId}-guardLocationCount`} label="How many locations need Guard protection?" error={errors.guardLocationCount}>
                     <input
@@ -779,7 +781,7 @@ export function TelloyaEnquiryForm({
                 )}
                 {values.guardInterested && typeof guardLocations === "number" && (
                   <p className={styles.sectionNote}>
-                    Indicative Guard amount: {formatGbpPrice(Math.round(relaunchGuardAddon.pricePerLocationGbp * guardLocations * 100) / 100)} ({formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {guardLocations} locations). This is separate from the custom quotation, is not a final approved offer, and does not authorise billing.
+                    Indicative Guard amount: {formatGbpPrice(Math.round(relaunchGuardAddon.pricePerLocationGbp * guardLocations * 100) / 100)} ({formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {guardLocations} locations). {commercialCopy.guardOnly} This is separate from the custom quotation, is not a final approved offer, and does not authorise billing.
                   </p>
                 )}
               </div>
@@ -856,7 +858,7 @@ export function TelloyaEnquiryForm({
             <Field id={`${formId}-missedCallProblem`} label="Tell us about your missed-call challenge" optional error={errors.missedCallProblem}>
               <textarea name="missedCallProblem" value={values.missedCallProblem} onChange={(e) => update("missedCallProblem", e.target.value)} maxLength={500} rows={4} />
             </Field>
-            <p className={styles.sectionNote}>Preferred voice, accent and language. These can be confirmed during Admin onboarding.</p>
+            <p className={styles.sectionNote}>{commercialCopy.voicePreference} {commercialCopy.voiceProvider}</p>
               <div className={styles.twoCol}>
                 <Field id={`${formId}-voicePreference`} label="Voice preference" optional error={errors.voicePreference}>
                   <select
@@ -919,7 +921,7 @@ export function TelloyaEnquiryForm({
             <Field id={`${formId}-websiteUrl`} label="Business website URL" optional error={errors.websiteUrl}>
               <input name="websiteUrl" type="url" value={values.websiteUrl} onChange={(e) => update("websiteUrl", e.target.value)} maxLength={1000} placeholder="https://www.example.com" />
             </Field>
-            <Field id={`${formId}-locations`} label="Number of locations" optional error={errors.locations}>
+            <Field id={`${formId}-locations`} label="Number of locations" optional error={errors.locations} hint="Optional description of your business. A standard plan still includes one operating location. This field does not add receptionist locations.">
               <input name="locations" value={values.locations} onChange={(e) => update("locations", e.target.value)} maxLength={50} />
             </Field>
             <div>
@@ -931,7 +933,7 @@ export function TelloyaEnquiryForm({
                   onChange={(e) => update("overageInterested", e.target.checked)}
                 />
                 <span>
-                  Interested in additional minutes at {formatGbpPrice(overagePolicy.pricePerMinuteGbp)}/minute if plan allowance exceeded
+                  Interested in additional minutes at {formatGbpPrice(overagePolicy.pricePerMinuteGbp)}/minute if the plan allowance is exceeded. Interest is not authorisation to charge. A customer-defined monthly spending cap is required before any overage can be agreed.
                 </span>
               </label>
               {values.overageInterested && (

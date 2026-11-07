@@ -252,4 +252,41 @@ describe("Telloya short enquiry journey", () => {
     expect(screen.getByRole("checkbox", { name: /Add Relaunch Guard monitoring/ })).toBeChecked()
     expect(screen.getByRole("spinbutton", { name: /How many locations need Guard protection/ })).toBeInTheDocument()
   })
+
+  it("preselects Basic, Growth, Pro and Custom and keeps Guard optional", () => {
+    for (const tier of ["basic", "growth", "pro", "custom"] as const) {
+      cleanup()
+      renderEnabled(tier)
+      expect(screen.getByRole("radio", { name: new RegExp(tier, "i") })).toBeChecked()
+      expect(screen.getByRole("checkbox", { name: /Add Relaunch Guard monitoring/ })).not.toBeChecked()
+    }
+  })
+
+  it("collects Custom locations and numbers as a quotation and keeps voice fields optional", () => {
+    renderEnabled("custom")
+    expect(screen.getByText(/quoted individually, including any operating locations and receptionist numbers/i)).toBeInTheDocument()
+    expect(screen.getByRole("spinbutton", { name: /Phone numbers needed/ })).toBeRequired()
+    expect(screen.getByRole("spinbutton", { name: /^Number of locations/ })).toBeRequired()
+    expect(screen.getByRole("textbox", { name: /Language preferences/ })).not.toBeRequired()
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Monthly minutes needed/ }), { target: { value: "1000" } })
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Phone numbers needed/ }), { target: { value: "2" } })
+    fireEvent.change(screen.getByRole("spinbutton", { name: /^Number of locations/ }), { target: { value: "2" } })
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Optional details" }))
+    expect(screen.getByRole("combobox", { name: /Voice preference/ })).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: /Preferred accent/ })).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: /Primary language/ })).toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: /Speaking style/ })).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: /Additional languages/ })).toBeInTheDocument()
+    expect(screen.getByText(/not guaranteed offerings/i)).toBeInTheDocument()
+  })
+
+  it("states that overage interest is not a charge and that a spending cap is required", () => {
+    renderEnabled("pro")
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Optional details" }))
+    expect(screen.getByText(/Interest is not authorisation to charge/i)).toBeInTheDocument()
+    expect(screen.getByText(/customer-defined monthly spending cap/i)).toBeInTheDocument()
+    expect(screen.getByRole("checkbox", { name: /Interested in additional minutes/ })).not.toBeChecked()
+  })
 })

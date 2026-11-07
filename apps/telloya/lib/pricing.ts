@@ -121,3 +121,30 @@ export function formatGbpPrice(amount: number): string {
 export function formatMinutes(minutes: number): string {
   return `${minutes} minutes/month`
 }
+
+/**
+ * Approved standard-plan entitlement. Custom quotations are separate.
+ * Guard locations are priced on their own and do not add receptionist capacity.
+ */
+export const standardEntitlement = {
+  operatingLocations: 1,
+  receptionistNumbers: 1,
+} as const
+
+export const commercialCopy = {
+  standardEntitlement: "One operating location and one receptionist telephone number.",
+  extraReceptionist:
+    "Additional receptionist locations or numbers require a separately agreed Custom quotation.",
+  standardSetup: "Standard setup is included.",
+  complexSetup: "Complex setup requires a separate quotation.",
+  guardPriceBasis: `Optional Relaunch Guard costs ${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} per paid Guard location per month.`,
+  guardOnly: "Additional Guard-only locations do not create additional receptionist entitlements.",
+  overageOptIn: `Extra usage costs ${formatGbpPrice(overagePolicy.pricePerMinuteGbp)} per minute, with separate explicit opt-in and a customer-defined spending cap.`,
+  overageEnquiry: "Enquiry interest is not authorisation to charge for overage.",
+  voicePreference:
+    "A male or female voice, a preferred speaking style, a preferred accent, and primary or additional languages can be requested.",
+  voiceProvider:
+    "These are configuration preferences, not guaranteed offerings. Available combinations depend on the selected voice provider and technical compatibility.",
+  international:
+    "Conditional forwarding, number provisioning and available voices depend on the customer's provider and location.",
+} as const

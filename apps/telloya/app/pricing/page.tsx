@@ -122,9 +122,7 @@ export default function Pricing() {
                   </div>
                 ))}
               </div>
-              <p className={styles.guardExamplesNote}>
-                More than one location: Guard cost increases by {formatGbpPrice(guard.pricePerLocationGbp)} per location.
-              </p>
+              <p className={styles.guardExamplesNote}>{guard.quantityNote}</p>
             </div>
           </div>
 

@@ -53,6 +53,6 @@ export const cookiesOperator = {
   title: "The operator's privacy notice",
   paragraphs: [
     `${brandOperator}'s company-wide privacy notice is the legal reference for how the operator handles personal information. It is published on the ProfileRelaunch website and is separate from this Telloya cookie page.`,
-    "Telloya-specific terms for AI voice services, call recording, transcripts and data retention are not set out here. They will be published before public launch.",
+    "Telloya-specific terms for AI voice services, call recording, transcripts, data retention, VAT, cancellation and refunds are not set out here. They are awaiting approval and will be published before public launch.",
   ],
 } as const

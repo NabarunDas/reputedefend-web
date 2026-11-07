@@ -255,7 +255,9 @@
   cursor: not-allowed;
 }
 
-.page :is(a, button, h3):focus-visible {
+.page :is(a, button, h3):focus-visible,
+.controls button:focus,
+.summary .sceneTitle:focus {
   outline: 3px solid #d9ff94;
   outline-offset: 4px;
 }

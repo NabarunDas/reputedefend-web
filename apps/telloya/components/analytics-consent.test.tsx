@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import "@testing-library/jest-dom/vitest"
 import { TelloyaAnalyticsConsent, TelloyaCookieSettingsButton } from "./analytics-consent"
@@ -58,7 +58,7 @@ describe("TelloyaAnalyticsConsent", () => {
     expect(window.localStorage.getItem(TELLOYA_ANALYTICS_CONSENT_KEY)).toBe("accepted")
   })
 
-  it("opens settings from the footer, traps Tab, and closes on Escape", () => {
+  it("opens settings from the footer, traps Tab, and closes on Escape", async () => {
     window.localStorage.setItem(TELLOYA_ANALYTICS_CONSENT_KEY, "accepted")
     render(
       <>
@@ -89,7 +89,27 @@ describe("TelloyaAnalyticsConsent", () => {
     save.focus()
     fireEvent.keyDown(document, { key: "Escape" })
     expect(screen.queryByTestId("cookie-settings-dialog")).not.toBeInTheDocument()
-    expect(document.activeElement).toBe(opener)
+    await waitFor(() => expect(document.activeElement).toBe(opener))
+    expect(window.localStorage.getItem(TELLOYA_ANALYTICS_CONSENT_KEY)).toBe("accepted")
+  })
+
+  it("returns focus to the banner when settings were opened from it, and to the page after a choice", async () => {
+    render(
+      <>
+        <main id="main-content" tabIndex={-1} />
+        <TelloyaAnalyticsConsent measurementId={TEST_ID} />
+      </>,
+    )
+    const settings = screen.getByRole("button", { name: "Settings" })
+    settings.focus()
+    fireEvent.click(settings)
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Accept analytics" })))
+
+    const accept = screen.getByRole("button", { name: "Accept analytics" })
+    accept.focus()
+    fireEvent.click(accept)
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById("main-content")))
     expect(window.localStorage.getItem(TELLOYA_ANALYTICS_CONSENT_KEY)).toBe("accepted")
   })
 

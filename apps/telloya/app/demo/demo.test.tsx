@@ -151,6 +151,7 @@ describe("/demo illustrative sample", () => {
       .map((file) => readFileSync(resolve(demoDir, file), "utf8"))
       .join("\n")
     expect(source).not.toMatch(/fetch\(|XMLHttpRequest|WebSocket|retell|twilio|stripe|supabase|mediaDevices/i)
+    expect(source).not.toMatch(/gtag|googletagmanager|sendTelloyaLeadConversion|generate_lead|dataLayer/)
   })
 
   it("exposes named controls, moves focus, and accepts arrow keys", () => {
@@ -181,6 +182,8 @@ describe("/demo illustrative sample", () => {
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)/)
     expect(css).toMatch(/animation:\s*none !important/)
     expect(css).toMatch(/\.beat,\s*\.summary \{[^}]*opacity:\s*1/)
+    expect(css).toMatch(/\.controls button:focus/)
+    expect(css).toMatch(/\.summary \.sceneTitle:focus/)
     render(<DemoPage />)
     expect(screen.getByRole("note")).toBeVisible()
     expect(screen.getByText(DEMO_DISCLOSURE)).toBeVisible()

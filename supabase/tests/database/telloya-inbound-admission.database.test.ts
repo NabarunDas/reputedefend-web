@@ -8,6 +8,7 @@
  * database so the reservation command can be exercised. That simulation is
  * not a hosted DEV verification.
  */
+import { createHash } from "node:crypto"
 import { execFile as execFileCb, spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
@@ -53,18 +54,34 @@ const seat = (key: string): Seat => {
   return found
 }
 
-type ReserveResult = { status: string; reason?: string; billable?: boolean; decision?: string; reserveSeconds?: number }
+type ReserveResult = {
+  status: string
+  reason?: string
+  billable?: boolean
+  decision?: string
+  reserveSeconds?: number
+  admissionRef?: string
+  agentRef?: string
+  providerCallRef?: string | null
+  released?: number
+}
+
+function hashFor(label: string): string {
+  return createHash("sha256").update(label).digest("hex")
+}
 
 function command(seatKey: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const item = seat(seatKey)
+  const label = String(overrides.bodyLabel ?? overrides.providerCallRef ?? "default")
+  const rest = { ...overrides }
+  delete rest.bodyLabel
   return {
     environment: "dev",
-    providerCallRef: `call_${seatKey.toLowerCase()}`,
     callScope: "customer_phone",
     toNumber: item[6],
     now: NOW,
-    bodySha256: HASH_A,
-    ...overrides,
+    bodySha256: hashFor(`${seatKey}:${label}`),
+    ...rest,
   }
 }
 
@@ -104,7 +121,7 @@ function fixtureSql(): string {
   `).join("\n")
   const entitlements = seats.map(item => `('${item[4]}', '${item[1]}', '${item[2]}', 'TELLOYA', 'COMMERCIAL_SUBSCRIPTION', '${item[3]}', 'ELIGIBLE')`).join(",")
   const provisions = seats.map(item => `('${item[4]}', '${item[1]}', '${item[2]}', '${item[8]}')`).join(",")
-  const owners = seats.map(item => `('telloya_voice', '${item[6]}', 'dev', '${CUSTOMER}', '${item[1]}', '${item[2]}', '${item[3]}', 'agent_admission')`).join(",")
+  const owners = seats.map(item => `('telloya_voice', '${item[6]}', 'dev', '${CUSTOMER}', '${item[1]}', '${item[2]}', '${item[3]}', 'agent_seat_${item[0].toLowerCase()}')`).join(",")
   const accepted = seats.filter(item => item[9] !== "none")
   const acceptSql = accepted.map(item => `
     insert into public.commercial_offer_acceptances(
@@ -217,8 +234,17 @@ beforeAll(async () => {
 
 afterAll(async () => { await db.close() })
 
+async function callSql(fn: string, body: Record<string, unknown>): Promise<ReserveResult> {
+  const result = (await rows<{ result: ReserveResult }>(
+    `select public.${fn}($1::jsonb) as result`,
+    [JSON.stringify(body)],
+  ))[0]?.result
+  if (!result) throw new Error(`${fn} returned no row`)
+  return result
+}
+
 describe("inbound admission reservation", () => {
-  it("denies an unallocated number and a cross-tenant subscription", async () => {
+  it("denies an unallocated number and a contradictory tenant claim", async () => {
     expect(await reserve(command("A", { providerCallRef: "call_unknown", toNumber: "+449999999999" }))).toMatchObject({
       status: "denied",
       reason: "unknown_number",
@@ -228,13 +254,14 @@ describe("inbound admission reservation", () => {
       status: "denied",
       reason: "unknown_number",
     })
-    expect(await reserve(command("A", { providerCallRef: "call_cross", subscriptionId: seat("B")[3] }))).toMatchObject({
+    expect(await reserve(command("A", { providerCallRef: "call_cross", assertedSubscriptionId: seat("B")[3] }))).toMatchObject({
       status: "denied",
       reason: "cross_tenant",
       billable: false,
     })
     expect(await reservations("call_unknown")).toBe(0)
     expect(await reservations("call_cross")).toBe(0)
+    expect(await rows<{ n: number }>("select count(*)::int as n from admin_private.commercial_usage_admissions")).toEqual([{ n: 0 }])
   })
 
   it("denies unpaid, inactive, unprovisioned and out-of-period subscriptions", async () => {
@@ -258,16 +285,84 @@ describe("inbound admission reservation", () => {
     expect(await reservations("call_absent") + await reservations("call_wrong_minutes") + await reservations("call_wrong_cap")).toBe(0)
   })
 
-  it("reserves the accepted Basic allowance and treats a duplicate body as a replay", async () => {
-    const first = await reserve(command("A", { providerCallRef: "call_basic" }))
-    expect(first).toMatchObject({ status: "admitted", reason: "allow_included", reserveSeconds: 60, billable: true })
-    expect(await reserve(command("A", { providerCallRef: "call_basic" }))).toMatchObject({ status: "replay", decision: "admitted", billable: true })
-    expect(await reserve(command("A", { providerCallRef: "call_basic", bodySha256: HASH_B }))).toMatchObject({ status: "conflict", billable: false })
+  it("reserves the accepted Basic allowance and replays an identical body without a second reservation", async () => {
+    const firstBody = command("A", { providerCallRef: "call_basic" })
+    const first = await reserve(firstBody)
+    expect(first).toMatchObject({
+      status: "admitted",
+      reason: "allow_included",
+      reserveSeconds: 60,
+      billable: true,
+      agentRef: "agent_seat_a",
+      providerCallRef: "call_basic",
+    })
+    expect(first.admissionRef).toMatch(/^adm_[0-9a-f]{32}$/)
+    expect(await reserve(firstBody)).toMatchObject({
+      status: "replay",
+      decision: "admitted",
+      billable: true,
+      admissionRef: first.admissionRef,
+      agentRef: "agent_seat_a",
+    })
+    expect(await reserve({ ...firstBody, bodySha256: HASH_B })).toMatchObject({ status: "conflict", billable: false, admissionRef: first.admissionRef })
+    expect(await reserve({ ...firstBody, bodySha256: hashFor("quoted-other"), quotedAdmissionRef: first.admissionRef })).toMatchObject({
+      status: "conflict",
+      billable: false,
+    })
     expect(await reservations("call_basic")).toBe(1)
-    const stored = (await rows<{ included_minutes_snapshot: number; overage_opt_in_snapshot: boolean; overage_cap_minor_snapshot: number | null }>(
-      "select included_minutes_snapshot, overage_opt_in_snapshot, overage_cap_minor_snapshot from admin_private.commercial_usage_reservations where provider_call_ref = 'call_basic'",
+    const stored = (await rows<{ included_minutes_snapshot: number; overage_opt_in_snapshot: boolean; overage_cap_minor_snapshot: number | null; agent_ref: string }>(
+      `select reservation.included_minutes_snapshot, reservation.overage_opt_in_snapshot, reservation.overage_cap_minor_snapshot, admission.agent_ref
+       from admin_private.commercial_usage_reservations reservation
+       join admin_private.commercial_usage_admissions admission on admission.reservation_id = reservation.id
+       where reservation.provider_call_ref = 'call_basic'`,
     ))[0]
-    expect(stored).toEqual({ included_minutes_snapshot: 120, overage_opt_in_snapshot: false, overage_cap_minor_snapshot: null })
+    expect(stored).toEqual({
+      included_minutes_snapshot: 120,
+      overage_opt_in_snapshot: false,
+      overage_cap_minor_snapshot: null,
+      agent_ref: "agent_seat_a",
+    })
+  })
+
+  it("admits a payload with no provider call id, then binds the later call id once", async () => {
+    const first = await reserve(command("A", { bodyLabel: "no-call-id" }))
+    expect(first).toMatchObject({ status: "admitted", reason: "allow_included", agentRef: "agent_seat_a", providerCallRef: null, billable: true })
+    expect(await reservations("call_bound_later")).toBe(0)
+    const bound = await callSql("commercial_usage_bind_inbound_admission_v1", {
+      environment: "dev",
+      providerCallRef: "call_bound_later",
+      toNumber: seat("A")[6],
+      admissionRef: first.admissionRef,
+      now: NOW,
+    })
+    expect(bound).toMatchObject({ status: "bound", providerCallRef: "call_bound_later", admissionRef: first.admissionRef, agentRef: "agent_seat_a" })
+    expect(await callSql("commercial_usage_bind_inbound_admission_v1", {
+      environment: "dev",
+      providerCallRef: "call_bound_later",
+      toNumber: seat("A")[6],
+      admissionRef: first.admissionRef,
+      now: NOW,
+    })).toMatchObject({ status: "replay", decision: "bound", admissionRef: first.admissionRef })
+    expect(await callSql("commercial_usage_bind_inbound_admission_v1", {
+      environment: "dev",
+      providerCallRef: "call_bound_other",
+      toNumber: seat("A")[6],
+      admissionRef: first.admissionRef,
+      now: NOW,
+    })).toMatchObject({ status: "conflict", billable: false })
+    expect(await callSql("commercial_usage_bind_inbound_admission_v1", {
+      environment: "dev",
+      providerCallRef: "call_unmatched",
+      toNumber: seat("A")[6],
+      now: NOW,
+    })).toMatchObject({ status: "unbound", reason: "correlation_unverified", billable: false })
+    expect(await reservations("call_bound_later")).toBe(1)
+    expect(await reservations("call_bound_other") + await reservations("call_unmatched")).toBe(0)
+    const period = (await rows<{ period_start: string; state: string }>(
+      "select period_start::text, state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_bound_later'",
+    ))[0]
+    expect(period?.state).toBe("open")
+    expect(period?.period_start.startsWith("2026-11-01")).toBe(true)
   })
 
   it("denies a further minute when the included allowance is exhausted and overage is off", async () => {
@@ -294,8 +389,10 @@ describe("inbound admission reservation", () => {
     expect(await reservations("call_overage_cap")).toBe(0)
   })
 
-  it("keeps an in-progress reservation on the original period when the subscription renews", async () => {
-    expect(await reserve(command("R", { providerCallRef: "call_renew_open" }))).toMatchObject({ status: "admitted", reason: "allow_included" })
+  it("keeps an in-progress admission on the original period when the subscription renews", async () => {
+    const open = command("R", { bodyLabel: "renew-open" })
+    const first = await reserve(open)
+    expect(first).toMatchObject({ status: "admitted", reason: "allow_included", providerCallRef: null })
     await db.exec("set session_replication_role = replica")
     await db.query(
       "update public.commercial_subscriptions set current_period_start = $2::timestamptz, current_period_end = $3::timestamptz where id = $1::uuid",
@@ -303,11 +400,13 @@ describe("inbound admission reservation", () => {
     )
     await db.exec("set session_replication_role = origin")
     const original = (await rows<{ period_start: string; state: string }>(
-      "select period_start::text, state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_renew_open'",
+      "select period_start::text, state from admin_private.commercial_usage_admissions where admission_ref = $1",
+      [first.admissionRef],
     ))[0]
-    expect(original?.state).toBe("open")
+    expect(original?.state).toBe("reserved")
     expect(original?.period_start.startsWith("2026-11-01")).toBe(true)
-    expect(await reserve(command("R", { providerCallRef: "call_renew_next", bodySha256: HASH_B, now: "2026-12-15T12:00:00.000Z" }))).toMatchObject({
+    expect(await reserve(open)).toMatchObject({ status: "replay", admissionRef: first.admissionRef, billable: true })
+    expect(await reserve(command("R", { providerCallRef: "call_renew_next", now: "2026-12-15T12:00:00.000Z" }))).toMatchObject({
       status: "admitted",
       reason: "allow_included",
     })
@@ -317,14 +416,58 @@ describe("inbound admission reservation", () => {
     expect(next?.period_start.startsWith("2026-12-01")).toBe(true)
   })
 
+  it("keeps the original admission when the subscription is cancelled and refuses a new call", async () => {
+    const retry = command("R", { providerCallRef: "call_renew_next", now: "2026-12-15T12:00:00.000Z" })
+    await db.exec("set session_replication_role = replica")
+    await db.query(
+      "update public.commercial_subscriptions set state = 'CANCELED', canceled_at = now() where id = $1::uuid",
+      [seat("R")[3]],
+    )
+    await db.exec("set session_replication_role = origin")
+    expect(await reserve(retry)).toMatchObject({ status: "replay", decision: "admitted", billable: true })
+    expect(await reserve(command("R", { bodyLabel: "after-cancel", now: "2026-12-15T12:00:00.000Z" }))).toMatchObject({
+      status: "denied",
+      reason: "subscription_inactive",
+      billable: false,
+    })
+    expect(await reservations("call_renew_next")).toBe(1)
+  })
+
+  it("releases an expired unbound hold and a disconnected call without a second reservation", async () => {
+    const held = await reserve(command("A", { bodyLabel: "expire-me" }))
+    expect(held.status).toBe("admitted")
+    expect(await callSql("commercial_usage_release_inbound_admissions_v1", {
+      environment: "dev",
+      mode: "expire",
+      now: "2026-11-15T12:11:00.000Z",
+    })).toMatchObject({ status: "expired" })
+    expect(await reserve(command("A", { bodyLabel: "expire-me" }))).toMatchObject({
+      status: "replay",
+      reason: "admission_closed",
+      billable: false,
+      admissionRef: held.admissionRef,
+    })
+    const disconnected = await reserve(command("A", { providerCallRef: "call_disconnect", bodyLabel: "disconnect-me" }))
+    expect(disconnected.status).toBe("admitted")
+    expect(await callSql("commercial_usage_release_inbound_admissions_v1", {
+      environment: "dev",
+      mode: "disconnect",
+      providerCallRef: "call_disconnect",
+      now: NOW,
+    })).toMatchObject({ status: "disconnected", admissionRef: disconnected.admissionRef, billable: false })
+    expect((await rows<{ state: string }>(
+      "select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_disconnect'",
+    ))[0]?.state).toBe("released")
+    expect(await reservations("call_disconnect")).toBe(1)
+  })
+
   it("stores an admin web call as non-billable and keeps caller content out of the ledger", async () => {
     expect(await reserve({
       environment: "dev",
-      providerCallRef: "web_admin_qa",
       callScope: "admin_web_qa",
       toNumber: null,
       now: NOW,
-      bodySha256: HASH_A,
+      bodySha256: hashFor("admin-web"),
     })).toMatchObject({ status: "excluded", reason: "internal_admin_web_call", billable: false })
     expect(await reservations("web_admin_qa")).toBe(0)
     const columns = await rows<{ column_name: string }>(`
@@ -333,7 +476,7 @@ describe("inbound admission reservation", () => {
         and table_name in (
           'commercial_usage_events',
           'commercial_usage_reservations',
-          'commercial_usage_admission_receipts',
+          'commercial_usage_admissions',
           'commercial_usage_admission_conflicts'
         )
     `)
@@ -346,6 +489,8 @@ describe("inbound admission reservation", () => {
       service_public: boolean
       anon_public: boolean
       auth_public: boolean
+      service_bind: boolean
+      anon_release: boolean
       service_private: boolean
       service_schema: boolean
     }>(`
@@ -353,6 +498,8 @@ describe("inbound admission reservation", () => {
         has_function_privilege('service_role', 'public.commercial_usage_reserve_inbound_v1(jsonb)', 'EXECUTE') as service_public,
         has_function_privilege('anon', 'public.commercial_usage_reserve_inbound_v1(jsonb)', 'EXECUTE') as anon_public,
         has_function_privilege('authenticated', 'public.commercial_usage_reserve_inbound_v1(jsonb)', 'EXECUTE') as auth_public,
+        has_function_privilege('service_role', 'public.commercial_usage_bind_inbound_admission_v1(jsonb)', 'EXECUTE') as service_bind,
+        has_function_privilege('anon', 'public.commercial_usage_release_inbound_admissions_v1(jsonb)', 'EXECUTE') as anon_release,
         has_function_privilege('service_role', 'admin_private.commercial_usage_reserve_inbound_v1(jsonb)', 'EXECUTE') as service_private,
         has_schema_privilege('service_role', 'admin_private', 'USAGE') as service_schema
     `))[0]
@@ -360,6 +507,8 @@ describe("inbound admission reservation", () => {
       service_public: true,
       anon_public: false,
       auth_public: false,
+      service_bind: true,
+      anon_release: false,
       service_private: false,
       service_schema: false,
     })
@@ -433,8 +582,8 @@ describe.skipIf(!pgBin)("concurrent inbound reservation", () => {
     }
   }
 
-  function reserveSql(callRef: string) {
-    const body = JSON.stringify(command("A", { providerCallRef: callRef, bodySha256: HASH_A })).replace(/'/g, "''")
+  function reserveSql(label: string) {
+    const body = JSON.stringify(command("A", { bodyLabel: label })).replace(/'/g, "''")
     return `select public.commercial_usage_reserve_inbound_v1('${body}'::jsonb)::text;`
   }
 
@@ -487,7 +636,8 @@ describe.skipIf(!pgBin)("concurrent inbound reservation", () => {
       await first.query("COMMIT;")
       const denied = await pending
       expect(denied.stderr + denied.stdout).toContain("allowance_exhausted")
-      expect(await psql("select count(*) from admin_private.commercial_usage_reservations where provider_call_ref in ('call_race_1', 'call_race_2')")).toBe("1")
+      expect(await psql("select count(*) from admin_private.commercial_usage_admissions where state = 'reserved' and subscription_id = '" + seat("A")[3] + "'")).toBe("1")
+      expect(await psql("select count(*) from admin_private.commercial_usage_reservations where provider_call_ref in ('call_race_1', 'call_race_2')")).toBe("0")
     } finally {
       first.end()
       second.end()

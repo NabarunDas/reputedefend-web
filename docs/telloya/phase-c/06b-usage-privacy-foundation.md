@@ -78,19 +78,27 @@ Before any live call, confirm the agent data-storage setting, the training terms
 
 Retell's inbound webhook can return `{ "call_inbound": { "reject": true } }` and hang up before the agent starts. That response works when the webhook succeeds, including when a default inbound agent is configured.
 
-If every webhook attempt fails, Retell connects the call to the number's inbound agent when one is set. With a default agent, webhook failure is fail-open. That provider configuration has not been verified for this account. `inboundFailClosedProviderConfiguration` stays `UNVERIFIED`. Until it is verified, `admitInboundCall` returns the documented reject body and does not reserve a minute. An absent flag, a bad signature, a handler error, and an unavailable database use that same reject body.
+If every webhook attempt fails, Retell connects the call to the number's inbound agent when one is set. With a default agent, webhook failure is fail-open. That account setting has not been verified. An approved response does not depend on that default agent: it returns `override_agent_id` from `commercial_provider_number_owners` and `metadata.admission_id` from the server. A denial returns `{ "call_inbound": { "reject": true } }`. An absent flag, a bad signature, a handler error, and an unavailable database use that same reject body.
 
-`public.commercial_usage_reserve_inbound_v1` is the source-only reservation command. It identifies the allocated number, subscription, business, and location from server records, copies the allowance and overage terms from `commercial_offer_acceptances`, and reserves one minute only when confirmed seconds plus open reservations leave room. Two calls for the last minute take one period lock, so only one reservation is stored. The command is not applied to hosted DEV. It does not open a LIVE provision. The disposable tests simulate ACTIVE and LIVE rows because the applied schema still rejects both.
+The inbound page fetched on 7 November 2026 shows a preallocated `call_inbound.call_id` and says the later call object uses that id. PR #451 recorded an earlier reading of the same page in which the payload had no call id. The handler accepts both. It does not derive an identity from the caller number, and it does not trust a subscription id or agent id supplied by the webhook. An identical body replays the same admission. A different body that quotes the admission reference is a conflict and does not reserve again.
+
+`public.commercial_usage_reserve_inbound_v1` is the source-only reservation command. It identifies the allocated number, subscription, business, location, and agent from server records, copies the allowance from `commercial_offer_acceptances`, and holds one minute. When the webhook includes the documented call id, that id is stored on the reservation so a later `call_started` for the same id does not create a second row. When the call id is absent, the hold lives on `commercial_usage_admissions` until `public.commercial_usage_bind_inbound_admission_v1` sees that id or an echoed `admission_id`. An event that matches neither stays unbound and creates no reservation. An unbound hold expires after ten minutes and is released. A disconnected admission with no usage event is released. Usage evidence is not deleted. Two calls for the last minute take one period lock. The command is not applied to hosted DEV. It does not open a LIVE provision. The disposable tests simulate ACTIVE and LIVE rows because the applied schema still rejects both.
+
+Response `metadata` is a documented inbound field, and the call webhook overview shows `call.metadata` on later events. That echo was read from documentation. It was not verified with a live Retell call. `inboundMetadataPropagation` stays `DOCUMENTED_NOT_LIVE_VERIFIED`. The applied `call_started` command can still open its own reservation when no row exists for the later call id. Usage events stay off, so that path is not running. It remains a launch blocker.
 
 `reconcileInProgressCall` prepares a provider stop when the next minute would pass the cap. A simulated stop, a timeout, and a failed stop all leave `capEnforced` false. Spending-cap enforcement is not claimed.
+
+These checks are simulated or documentary. None of them is an actual Retell DEV call.
 
 Live routing stays off. These items still block a live call:
 
 1. Prove there is no default inbound agent, or prove the provider disconnects when the webhook fails.
-2. Mount the inbound webhook only after that proof. The handler is not mounted in this change.
-3. Apply `20261107120000` only after review. Do not apply it to hosted DEV from this change.
-4. Prove the provider stop against a real call, including the result when that stop fails.
-5. Play only an approved short message that the business will call back. Do not turn on voicemail or telephone forwarding.
-6. Keep `TELLOYA_USAGE_EVENTS_ENABLED` and `TELLOYA_INBOUND_ADMISSION_ENABLED` off until those checks are demonstrated.
+2. Prove on a real call that inbound response metadata, including `admission_id`, is present on `call_started` and `call_ended`.
+3. Make `call_started` consume the bound admission before it can open a second reservation.
+4. Mount the inbound webhook only after that proof. The handler is not mounted in this change.
+5. Apply `20261107120000` only after review. Do not apply it to hosted DEV from this change.
+6. Prove the provider stop against a real call, including the result when that stop fails.
+7. Play only an approved short message that the business will call back. Do not turn on voicemail or telephone forwarding.
+8. Keep `TELLOYA_USAGE_EVENTS_ENABLED` and `TELLOYA_INBOUND_ADMISSION_ENABLED` off until those checks are demonstrated.
 
 The customer-facing fallback to prepare, and not to activate now, is a short message that the business will return the call, then the end of the call. It is not voicemail and it is not forwarding.

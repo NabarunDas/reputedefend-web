@@ -406,7 +406,7 @@ export const environmentContract: readonly EnvVariable[] = [
     secret: false,
     scope: "PRODUCTION_AND_PREVIEW",
     atAdminCutover: "OPTIONAL",
-    controls: "Prepares a signed inbound admission decision for one allocated number. Exactly \"true\" is required before the handler asks the database to reserve a minute. The default remains off. While the provider fail-closed configuration is unverified, the handler returns the documented reject response and does not reserve usage. It does not place a call, buy a number, enable forwarding, mount a provider webhook, or create a Stripe charge. TELLOYA_USAGE_EVENTS_ENABLED stays off.",
+    controls: "Prepares a signed inbound admission decision for one allocated number. Exactly \"true\" is required before the handler asks the database to reserve a minute. The default remains off. An approval returns the number owner's override_agent_id and a server-generated admission reference. A denial returns the documented reject response. It does not place a call, buy a number, enable forwarding, mount a provider webhook, or create a Stripe charge. TELLOYA_USAGE_EVENTS_ENABLED stays off.",
     whenAbsent: "Inbound admission stays disabled. An invoked handler returns the provider reject response and does not reserve a customer minute.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,

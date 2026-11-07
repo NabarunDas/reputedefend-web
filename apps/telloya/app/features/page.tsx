@@ -51,14 +51,14 @@ export default function Features() {
                   <MessageSquare size={32} strokeWidth={1.7} aria-hidden="true" />
                 </div>
                 <div className={styles.workflowLabel}>AI Conversation</div>
-                <div className={styles.workflowDesc}>Telloya collects enquiry details naturally</div>
+                <div className={styles.workflowDesc}>Preliminary testing collected enquiry details</div>
               </div>
               <div className={styles.workflowStep}>
                 <div className={styles.workflowIcon}>
                   <CheckCircle2 size={32} strokeWidth={1.7} aria-hidden="true" />
                 </div>
                 <div className={styles.workflowLabel}>Lead Summary</div>
-                <div className={styles.workflowDesc}>You receive organized information to follow up</div>
+                <div className={styles.workflowDesc}>A summary can be prepared for follow-up</div>
               </div>
             </div>
           </div>

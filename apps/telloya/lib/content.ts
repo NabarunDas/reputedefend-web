@@ -10,7 +10,7 @@
 import { brandName } from "@/lib/brand"
 import { getCustomerPortalHref } from "@/lib/customer-portal"
 import { legalIdentity } from "../../../lib/legal"
-import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes } from "./pricing"
+import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes, standardEntitlement, commercialCopy } from "./pricing"
 
 // Homepage content
 export const homepageContent = {
@@ -99,7 +99,7 @@ export const homepageContent = {
       label: "Illustrative example only",
       caller: "Sarah Mitchell",
       service: "Boiler service and repair",
-      location: "Richmond, SW London",
+      location: "Caller's local area",
       problem: "Boiler not heating properly, pressure gauge showing low",
       callback: "Weekday mornings preferred",
       time: "11:23 AM",
@@ -121,18 +121,18 @@ export const homepageContent = {
     eyebrow: "Service plans",
     title: "Four plans to fit your business",
     lead:
-      "Choose from Basic, Growth, Pro or Custom. All plans include core AI receptionist capabilities. Optional Relaunch Guard profile monitoring available as an add-on.",
+      `Choose from Basic, Growth, Pro or Custom. A standard plan includes one operating location and one receptionist telephone number. ${commercialCopy.extraReceptionist} Optional Relaunch Guard is priced separately.`,
     tiers: telloyaPlans.map(p => ({
       name: p.name,
       price: p.monthlyPriceGbp !== null ? formatGbpPrice(p.monthlyPriceGbp) : "By quotation",
-      minutes: p.minutesPerMonth !== null ? formatMinutes(p.minutesPerMonth) : "Tailored allowance",
+      minutes: p.minutesPerMonth !== null ? formatMinutes(p.minutesPerMonth) : "By quotation",
       description: p.tier === "basic"
-        ? "Essential AI receptionist for smaller call volumes"
+        ? "Essential AI receptionist for smaller call volumes. Includes one operating location and one receptionist number."
         : p.tier === "growth"
-        ? "Recommended plan for growing businesses"
+        ? "Recommended plan for growing businesses. Includes one operating location and one receptionist number."
         : p.tier === "pro"
-        ? "Maximum included usage for high call volumes"
-        : "Bespoke solution for specific requirements",
+        ? "Higher included minutes for busier call volumes. Includes one operating location and one receptionist number."
+        : "A separate quotation when you need more than one operating location or receptionist number.",
       popular: p.popular ?? false,
       cta: "View pricing",
       href: "/pricing",
@@ -140,8 +140,8 @@ export const homepageContent = {
     guard: {
       name: relaunchGuardAddon.name,
       description: relaunchGuardAddon.description,
-      price: `${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)}/location/month`,
-      note: "Add Google Business Profile monitoring to any plan. Separate optional service.",
+      price: `${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} per paid Guard location / month`,
+      note: `${commercialCopy.guardPriceBasis} ${commercialCopy.guardOnly}`,
     },
   },
   faq: {
@@ -150,11 +150,15 @@ export const homepageContent = {
     questions: [
       {
         q: "How does call forwarding work?",
-        a: "Telloya uses missed-call forwarding, which depends on your telephone provider and configuration. We'll help you set this up during onboarding. Compatibility varies by provider.",
+        a: "Telloya is designed to use conditional forwarding of unanswered calls. Whether a provider offers that feature depends on the customer's telephone provider and location. Compatibility is checked before a service is agreed. An enquiry does not start forwarding.",
       },
       {
         q: "Do I need to change my phone number?",
-        a: "No. Telloya works with your existing business number through call forwarding.",
+        a: "A standard plan is designed to keep your existing business number when your provider supports conditional forwarding. It includes one receptionist telephone number. Extra receptionist numbers need a separate Custom quotation.",
+      },
+      {
+        q: "How many locations and numbers are included?",
+        a: `${commercialCopy.standardEntitlement} ${commercialCopy.extraReceptionist} ${commercialCopy.guardOnly}`,
       },
       {
         q: "What information does Telloya collect?",
@@ -206,7 +210,7 @@ export const howItWorksContent = {
         description:
           "When configured with your telephone provider, unanswered calls can be forwarded to Telloya's service number.",
         detail:
-          "Call forwarding setup depends on your provider. Most UK providers support this feature, but compatibility varies. We'll help you check during onboarding.",
+          "Conditional forwarding depends on the customer's telephone provider and location. It is not offered by every provider or in every country. Compatibility is checked before a service is agreed. An enquiry does not start forwarding.",
       },
       {
         number: "03",
@@ -252,7 +256,7 @@ export const howItWorksContent = {
         "If yes, Telloya continues: 'Great. Can I start with your name?'",
         "Then: 'And the best number to reach you on?'",
         "Followed by service-specific questions based on your business type",
-        "Ending with: 'Thank you. [Business Name] will call you back as soon as they can. Is there anything else you'd like me to pass on?'",
+        "Ending with: 'Thank you. I will pass on your preferred time. The business decides when to call you back. Is there anything else you would like me to pass on?'",
       ],
       note: "This is an illustrative example. The actual conversation adapts to how the caller responds.",
     },
@@ -261,12 +265,12 @@ export const howItWorksContent = {
     eyebrow: "Getting started",
     title: "Call forwarding setup",
     lead:
-      "Telloya works through missed-call forwarding. This is a standard feature offered by most UK telephone providers, but configuration varies.",
+      "Telloya is designed to use conditional missed-call forwarding. Availability and the setup steps depend on the customer's telephone provider and location.",
     steps: [
       {
         title: "Check provider compatibility",
         description:
-          "Most landline and mobile providers support call forwarding. We'll help you confirm this works with your current setup.",
+          "Support varies by provider and country. We can help check whether your current provider can forward unanswered calls. This page does not list carriers as supported.",
       },
       {
         title: "Configure forwarding rules",
@@ -276,7 +280,7 @@ export const howItWorksContent = {
       {
         title: "Test the service",
         description:
-          "Before going live, we'll run test calls to make sure forwarding works correctly and Telloya captures enquiries as expected.",
+          "A test call can be arranged before a service is treated as ready. Sending an enquiry does not start the service or that test.",
       },
     ],
     note:
@@ -288,8 +292,11 @@ export const howItWorksContent = {
     points: [
       "Telloya does not automatically confirm appointments or booking times",
       "It does not guarantee that every caller will leave their details",
+      "It does not promise that every call is answered",
+      "It does not provide an emergency response or dispatch an engineer",
       "It cannot replace a human receptionist for complex enquiries",
-      "Call forwarding depends on your telephone provider's capabilities",
+      "Call forwarding depends on the customer's telephone provider and location",
+      "An enquiry does not start the service, take payment, or create a subscription",
       "Some callers may prefer to try again later rather than speak with an AI",
     ],
     lead: "Telloya is designed to help with straightforward missed-call enquiries. It's not a complete replacement for all call handling.",
@@ -312,14 +319,14 @@ export const featuresContent = {
   hero: {
     eyebrow: "Features",
     title: "Designed for tradespeople",
-    lead: "Telloya focuses on the features that matter when you're working on site and can't answer the phone.",
+    lead: "Each feature is labelled by what preliminary testing showed, what is still planned, and what depends on a provider. A label is not a promise that every call is answered, or that the service starts after an enquiry.",
   },
   features: [
     {
       kicker: "Feature 01",
       title: "Missed-call assistance",
       description:
-        "When you can't pick up, Telloya can answer the forwarded call and help the customer. Our AI receptionist explains you're unavailable and offers to collect their enquiry details.",
+        "When a missed call is forwarded and the service is active, Telloya is designed to explain that you are unavailable and offer to collect the enquiry. This was shown in preliminary testing. It does not mean every call is answered.",
       status: "Demonstrated in proof of concept",
       points: [
         "Natural greeting and explanation",
@@ -345,7 +352,7 @@ export const featuresContent = {
       kicker: "Feature 03",
       title: "Lead summaries",
       description:
-        "Every enquiry Telloya captures is delivered as a clear, structured summary. You get the context you need without listening to the full call.",
+        "When an enquiry is captured, the intended result is a structured summary delivered by the method agreed for the service. Preliminary testing showed a summary. Customer call history is planned and is not live.",
       status: "Demonstrated in proof of concept",
       points: [
         "Structured format for quick review",
@@ -357,7 +364,7 @@ export const featuresContent = {
       kicker: "Feature 04",
       title: "Callback preferences",
       description:
-        "Telloya asks when the customer prefers to be called back. This helps you follow up at a time that works for them.",
+        "Telloya can ask when the caller would prefer a callback. That preference is information for you. It is not a booked appointment and it is not a guaranteed callback.",
       status: "Demonstrated in proof of concept",
       points: [
         "Morning, afternoon or evening preference",
@@ -395,18 +402,18 @@ export const featuresContent = {
     eyebrow: "Technical foundation",
     title: "Voice AI technology",
     lead:
-      "Telloya is built using established voice AI platforms. Implementation details and provider partnerships are subject to final technical architecture decisions.",
+      `${commercialCopy.voicePreference} ${commercialCopy.voiceProvider} The voice provider is confirmed with the customer before a service starts.`,
     points: [
-      "Real-time conversation processing",
-      "Natural language understanding",
-      "Phone number provisioning (provider and location dependent)",
-      "Telephony routing and call handling",
+      "Conversation handling shown in preliminary testing",
+      "Number provisioning depends on the provider and the customer's location",
+      "Call routing depends on the customer's telephone provider",
+      "Voice, accent and language combinations are requests, not a guaranteed catalogue",
     ],
   },
   future: {
     eyebrow: "Roadmap",
     title: "Planned enhancements",
-    lead: "We're actively building additional features based on early user feedback.",
+    lead: "The items below are under consideration. They are not current features and they are not included in a plan price.",
     items: [
       {
         title: "CRM integration",
@@ -415,13 +422,13 @@ export const featuresContent = {
       },
       {
         title: "SMS notifications",
-        description: "Instant alerts when a new enquiry comes in",
+        description: "Alerts when a new enquiry comes in",
         timeline: "Under consideration",
       },
       {
-        title: "Multi-language support",
-        description: "Handle calls in languages beyond English",
-        timeline: "Under consideration",
+        title: "Customer call history",
+        description: "A dashboard for past calls and minute tracking. This is planned and is not live.",
+        timeline: "Planned, not live",
       },
       {
         title: "Advanced call routing",
@@ -430,7 +437,7 @@ export const featuresContent = {
       },
     ],
     note:
-      "These are potential future enhancements, not current features. Availability and timeline depend on development priorities and user demand.",
+      `These items are not current features. ${commercialCopy.voicePreference} ${commercialCopy.voiceProvider}`,
   },
   cta: {
     title: "Want to see how Telloya could work for you?",
@@ -450,20 +457,20 @@ export const industriesContent = {
     eyebrow: "Industries",
     title: "Built for tradespeople",
     lead:
-      "Telloya is designed for local service businesses where missing a call can mean missing an opportunity. Here's how it works for different trades.",
+      "Telloya is designed for local service businesses where a missed call can mean a missed opportunity. The examples show the kind of detail a caller can give. They do not promise that every call is answered, that an appointment is booked, or that an engineer is sent.",
   },
   industries: [
     {
       name: "Plumbing",
-      tagline: "Handle emergency calls while you're on site",
+      tagline: "Collect urgent job details while you are on site",
       description:
-        "Plumbing emergencies don't wait. When you're fixing one urgent job, Telloya can capture details from the next caller — so you know what you're walking into.",
+        "When you are already with a customer, Telloya can help collect what the next caller describes. It does not send an engineer or provide an emergency response.",
       scenarios: [
         {
           title: "Emergency burst pipe",
           situation: "Customer has a burst pipe and needs someone urgently",
           telletoyaHelps:
-            "Telloya captures the exact location of the leak, property access details, and severity. You know it's urgent before calling back.",
+            "Telloya can record the location the caller describes, access details, and how serious they say the leak is. You decide how to follow up. Telloya does not dispatch anyone.",
         },
         {
           title: "Boiler breakdown",
@@ -479,28 +486,28 @@ export const industriesContent = {
         },
       ],
       benefits: [
-        "Know which calls need immediate response",
-        "Get location and access details before travelling",
-        "Distinguish between emergencies and quote requests",
+        "See how urgent the caller said the job is",
+        "Collect the location and access details they provide before you travel",
+        "Separate urgent descriptions from quote requests",
       ],
     },
     {
       name: "Heating Engineers",
-      tagline: "Never miss a boiler callout",
+      tagline: "Collect boiler callout details while you are on another job",
       description:
-        "Heating breakdowns are time-sensitive. Telloya helps you prioritise urgent callouts and collect the technical details you need before arriving.",
+        "Heating problems are often time-sensitive. Telloya can help collect the details the caller gives, so you can decide which jobs to follow up. It does not provide an emergency response.",
       scenarios: [
         {
           title: "No heating in winter",
           situation: "Boiler stopped working, cold house, elderly resident",
           telletoyaHelps:
-            "Telloya captures urgency, resident vulnerability, boiler type, error codes showing, and how long it's been off.",
+            "Telloya can record how urgent the caller says the job is, who is at the property, the boiler type, any error code they can see, and how long the heating has been off.",
         },
         {
           title: "Annual service",
           situation: "Customer wants to book their yearly boiler service",
           telletoyaHelps:
-            "Confirms it's routine, gets address, asks if anything's changed since last service, and preferred appointment windows.",
+            "The caller can describe a routine service, the address, and a preferred time. Telloya does not book the appointment.",
         },
         {
           title: "Radiator issues",
@@ -510,9 +517,9 @@ export const industriesContent = {
         },
       ],
       benefits: [
-        "Understand urgency before calling back",
-        "Capture error codes and symptoms",
-        "Schedule routine work efficiently",
+        "See the urgency the caller described before you call back",
+        "Collect error codes and symptoms the caller can provide",
+        "Keep routine work separate from urgent descriptions",
       ],
     },
     {
@@ -525,7 +532,7 @@ export const industriesContent = {
           title: "Power cut",
           situation: "Partial power loss, some circuits not working",
           telletoyaHelps:
-            "Tells you it's urgent, captures which circuits, whether consumer unit has tripped, and property type.",
+            "The caller can describe which circuits are affected, whether the consumer unit has tripped, and the type of property. Telloya does not decide whether the job is safe to attend.",
         },
         {
           title: "New installation",
@@ -541,9 +548,9 @@ export const industriesContent = {
         },
       ],
       benefits: [
-        "Identify safety-critical callouts immediately",
-        "Understand scope before quoting",
-        "Avoid unnecessary site visits for non-electrical issues",
+        "See what the caller said about safety before you decide the next step",
+        "Understand the scope they described before quoting",
+        "See when the caller says the problem is with an appliance rather than the wiring",
       ],
     },
     {
@@ -556,7 +563,7 @@ export const industriesContent = {
           title: "Landlord emergency",
           situation: "Tenant-reported leak, property damage risk",
           telletoyaHelps:
-            "Identifies it as urgent, captures property address, tenant contact, leak location, and landlord details.",
+            "The caller can describe a leak, the address, and who to contact. Telloya does not dispatch anyone or decide that a job is an emergency.",
         },
         {
           title: "Planned maintenance",
@@ -572,9 +579,9 @@ export const industriesContent = {
         },
       ],
       benefits: [
-        "Prioritise genuine emergencies",
-        "Collect landlord and tenant details correctly",
-        "Schedule routine work without phone tag",
+        "See which jobs the caller described as urgent",
+        "Collect the landlord and tenant details the caller provides",
+        "Keep routine work separate from urgent descriptions",
       ],
     },
   ],
@@ -612,7 +619,7 @@ export const pricingContent = {
     eyebrow: "Pricing",
     title: "Choose your plan",
     lead:
-      "Four Telloya plans to fit your business needs. All plans include core AI receptionist capabilities. Higher tiers provide more included monthly minutes.",
+      `Four Telloya plans. A standard plan includes one operating location and one receptionist telephone number. Higher tiers add included monthly minutes. ${commercialCopy.extraReceptionist}`,
   },
   currency: {
     note: "Published prices are in GBP. Settlement currency and other payment terms are confirmed before you proceed. This page does not offer local-currency checkout or conversion.",
@@ -636,20 +643,23 @@ export const pricingContent = {
       ? "Ideal for growing businesses with higher call volumes. Same core features with increased monthly minutes."
       : plan.tier === "pro"
       ? "For established businesses with consistent high call volumes. Same core features with substantial monthly minutes."
-      : "For businesses with specific needs, unusual volumes, multiple locations or language requirements. Custom quotation based on your exact situation.",
+      : "A separate quotation for more than one operating location or receptionist number, or for a minute allowance outside the standard plans.",
     features: plan.tier === "custom"
       ? [
-          "Bespoke minute allowances",
-          "Multiple business numbers",
-          "Multi-location support",
-          "Additional language requests",
-          "Custom configuration",
+          "Operating locations by quotation",
+          "Receptionist numbers by quotation",
+          "Minute allowance by quotation",
+          "Voice, accent and language preferences, subject to the voice provider",
+          "Configuration by quotation",
         ]
       : [
-          "Missed-call answering",
+          "One operating location",
+          "One receptionist telephone number",
+          "Missed-call answering when forwarding is available",
           "Conversational enquiry collection",
           "Lead summaries, including callback preferences, by the agreed delivery method",
           "Business-specific configuration",
+          "Voice, accent and language preferences, subject to the voice provider",
           "Usage visibility in a customer dashboard (planned)",
         ],
     cta: plan.tier === "custom" ? "Request a tailored quote" : `Enquire about ${plan.name}`,
@@ -659,12 +669,13 @@ export const pricingContent = {
     eyebrow: "Optional add-on",
     title: relaunchGuardAddon.name,
     lead:
-      "Add Google Business Profile monitoring to any Telloya plan. Relaunch Guard is a separate optional service, not a mandatory component.",
+      `Add Google Business Profile monitoring to any Telloya plan. Relaunch Guard is a separate optional service. ${commercialCopy.guardPriceBasis} ${commercialCopy.guardOnly}`,
     pricePerLocationGbp: relaunchGuardAddon.pricePerLocationGbp,
     infoUrl: relaunchGuardAddon.infoUrl,
     features: [
       "Profile observation and reporting",
-      "Monitoring per business location",
+      "Charged per paid Guard location",
+      "Does not add a receptionist location or number",
       "Subject to technical eligibility",
     ],
     examples: telloyaPlans
@@ -677,15 +688,17 @@ export const pricingContent = {
         combinedPrice: calculateCombinedPrice(p.monthlyPriceGbp!, 1),
       })),
     note:
-      "Subscriptions, technical eligibility and Guard activation are subject to confirmation. Relaunch Guard references the existing ProfileRelaunch Guard product. One-off ProfileRelaunch recovery services are not included in Guard.",
+      `Subscriptions, technical eligibility and Guard activation are subject to confirmation. ${commercialCopy.guardOnly} Relaunch Guard references the existing ProfileRelaunch Guard product. One-off ProfileRelaunch recovery services are not included in Guard.`,
     telloyaCompleteName: "Telloya Complete",
     telloyaCompleteNote:
       "\"Telloya Complete\" may be used as a descriptive name for Telloya plus Guard, but is not a competing fifth AI plan.",
+    quantityNote:
+      `More than one paid Guard location increases the Guard amount by ${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} per location. ${commercialCopy.guardOnly}`,
   },
   comparison: {
     eyebrow: "Compare plans",
     title: "Features and allowances",
-    lead: "All plans include the same core Telloya AI receptionist capabilities. Choose based on your expected monthly call volume.",
+    lead: `Standard plans share the same receptionist entitlement: ${commercialCopy.standardEntitlement} Choose a standard plan by the included monthly minutes. ${commercialCopy.extraReceptionist}`,
     table: {
       headers: ["Feature", "Basic", "Growth", "Pro", "Custom"],
       rows: [
@@ -696,8 +709,9 @@ export const pricingContent = {
         ["Lead summaries", true, true, true, true],
         ["Business configuration", true, true, true, true],
         ["Usage visibility", "Planned", "Planned", "Planned", "Planned"],
-        ["Voice & language preferences", "Request", "Request", "Request", "Request"],
-        ["Multiple locations", "Single", "Single", "Single", "Multiple"],
+        ["Voice, accent and language", "Request", "Request", "Request", "Request"],
+        ["Operating locations", String(standardEntitlement.operatingLocations), String(standardEntitlement.operatingLocations), String(standardEntitlement.operatingLocations), "Quotation"],
+        ["Receptionist numbers", String(standardEntitlement.receptionistNumbers), String(standardEntitlement.receptionistNumbers), String(standardEntitlement.receptionistNumbers), "Quotation"],
       ],
     },
   },
@@ -707,12 +721,13 @@ export const pricingContent = {
     lead:
       `If you need more AI call minutes beyond your monthly allowance, you can opt in to additional usage at ${formatGbpPrice(overagePolicy.pricePerMinuteGbp)} per minute.`,
     points: [
-      "Only available after explicit opt-in",
-      "Requires agreed monthly spending cap",
+      "Only available after a separate explicit opt-in",
+      "Requires a customer-defined monthly spending cap",
+      commercialCopy.overageEnquiry,
       "No unapproved automatic billing",
     ],
     note:
-      "Additional minute pricing and policy must be confirmed and agreed during commercial acceptance. This form does not authorise usage billing.",
+      `${commercialCopy.overageOptIn} ${commercialCopy.overageEnquiry} Additional minute pricing must be confirmed during commercial acceptance. This form does not authorise usage billing.`,
   },
   setup: {
     title: "Setup and terms",
@@ -720,12 +735,12 @@ export const pricingContent = {
       {
         title: "Standard setup included",
         description:
-          "Initial configuration and call forwarding guidance are included with all plans.",
+          commercialCopy.standardSetup + " Initial configuration and call-forwarding guidance are included with all plans.",
       },
       {
         title: "Complex setups quoted separately",
         description:
-          "Additional numbers, unusual carrier configurations and complex multi-location setups may require individual quotations.",
+          commercialCopy.complexSetup + " Additional receptionist numbers, unusual carrier configurations and more than one receptionist location are quoted separately.",
       },
       {
         title: "Subscription terms",
@@ -744,12 +759,12 @@ export const pricingContent = {
     points: [
       "Published prices are in GBP",
       "Settlement currency and payment terms are confirmed before proceeding",
-      "Call forwarding and number availability varies by location",
-      "Language support and voice options depend on provider compatibility",
-      "Activation subject to provider and regional availability",
+      commercialCopy.international,
+      "This page does not offer local-currency checkout or currency conversion",
+      "This page does not list countries, carriers or languages as currently available",
     ],
     note:
-      "Telloya is not restricted to UK-only operation, but capabilities depend on provider support in each region.",
+      "Telloya is marketed internationally. A service can proceed only where the customer's telephone provider, number provisioning and voice options are compatible. Compatibility is confirmed before a service starts.",
   },
   faq: {
     title: "Pricing questions",
@@ -760,7 +775,7 @@ export const pricingContent = {
       },
       {
         q: "What happens if I exceed my minutes?",
-        a: `By default, no additional minutes are charged. If you want the option to exceed your allowance, you can opt in to additional usage at ${formatGbpPrice(overagePolicy.pricePerMinuteGbp)} per minute with an agreed monthly spending cap. This must be explicitly confirmed during commercial acceptance—this enquiry form does not authorise automatic billing.`,
+        a: `By default, no additional minutes are charged. ${commercialCopy.overageOptIn} ${commercialCopy.overageEnquiry} This must be explicitly confirmed during commercial acceptance. This enquiry form does not authorise automatic billing.`,
       },
       {
         q: "Can I cancel my subscription?",
@@ -772,29 +787,29 @@ export const pricingContent = {
       },
       {
         q: "How does Relaunch Guard work with multiple locations?",
-        a: `Relaunch Guard costs ${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} per monitored location per month. If you have three locations, Guard adds ${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp * 3)} to your chosen Telloya plan. Subscriptions and technical eligibility are confirmed separately.`,
+        a: `${commercialCopy.guardPriceBasis} A standard Telloya plan still includes one operating location and one receptionist number. Three paid Guard locations add ${formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp * 3)}. ${commercialCopy.guardOnly} Subscriptions and technical eligibility are confirmed separately.`,
       },
       {
         q: "Is Relaunch Guard required?",
         a: "No. Relaunch Guard is an optional add-on. You can subscribe to any Telloya plan without Guard. Guard is a separate service for Google Business Profile monitoring.",
       },
       {
-        q: "Can I use Telloya outside the UK?",
-        a: "Telloya is not restricted to UK-only use, but availability depends on call forwarding support, number provisioning, and language compatibility in your location. We'll confirm compatibility during the enquiry process.",
+        q: "Where is Telloya available?",
+        a: `Telloya is marketed internationally. ${commercialCopy.international} Compatibility is confirmed before a service starts. This page does not list countries or carriers as available.`,
       },
       {
         q: "What currencies are supported?",
-        a: "Published plan prices are in GBP. Actual settlement currency and payment terms are confirmed before you proceed. This website does not offer local-currency checkout or conversion.",
+        a: "Published plan prices are in GBP. Settlement currency and payment terms are confirmed before you proceed. This website does not offer local-currency checkout or conversion.",
       },
       {
-        q: "Do you support languages other than English?",
-        a: "Every Telloya plan allows you to request preferred voice, accent and language options. Availability and combinations depend on provider, voice and regional compatibility and must be confirmed during setup.",
+        q: "Can I choose a voice, accent or language?",
+        a: `${commercialCopy.voicePreference} ${commercialCopy.voiceProvider}`,
       },
     ],
   },
   cta: {
     title: "Ready to get started?",
-    description: "All plans are enquiry-only at this stage. Choose your preferred plan and we'll help you get set up.",
+    description: "Choose a plan to preselect it on the enquiry form. Sending an enquiry does not take payment, create a subscription, or start the service.",
     cta: "Enquire now",
     href: "/enquire",
   },
@@ -896,5 +911,5 @@ export const footerContent = {
     { label: "Terms", href: "https://profilerelaunch.com/terms" },
   ],
   note:
-    "The Cookies link describes storage on this Telloya website. Privacy and Terms are ProfileRelaunch Ltd's company-wide website notices. Telloya-specific terms covering AI voice services, call recording, transcripts and data retention will be published before public launch.",
+    "The Cookies link describes storage on this Telloya website. Privacy and Terms are ProfileRelaunch Ltd's existing company-wide website notices. They are not Telloya service terms. Telloya-specific terms for voice services, call recording, transcripts, retention, VAT, cancellation and refunds are not published on this site. They still await approval and will be published before public launch.",
 } as const

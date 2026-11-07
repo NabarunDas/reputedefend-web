@@ -10,6 +10,8 @@
 -- 1. Body lock: hashtextextended('commercial-usage-body:' || env || ':' || sha)
 -- 2. Call lock: hashtext('commercial-usage:' || env || ':' || provider_call_ref)
 -- 3. Period lock: hashtextextended('commercial-usage-period:' || subscription || ':' || period_start)
+-- 4. Admission row lock: FOR UPDATE, only after the period lock.
+-- A replay lookup does not lock the admission row before those advisory locks.
 -- A later lock is never taken before an earlier one. Subscription state and
 -- period changes take the same period lock, old period before a later period.
 -- Expiry uses clock_timestamp(). An expired unbound hold is not an approval.
@@ -304,7 +306,11 @@ BEGIN
 END;
 $fn$;
 
-CREATE FUNCTION admin_private.commercial_usage_finish_replay_v1(p_id uuid)
+CREATE FUNCTION admin_private.commercial_usage_finish_replay_v1(
+  p_id uuid,
+  p_environment text,
+  p_hash text
+)
 RETURNS jsonb
 LANGUAGE plpgsql
 SET search_path = ''
@@ -315,7 +321,7 @@ BEGIN
   SELECT * INTO v_row
   FROM admin_private.commercial_usage_admissions
   WHERE id = p_id;
-  IF NOT FOUND THEN
+  IF NOT FOUND OR v_row.environment IS DISTINCT FROM p_environment THEN
     RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'unknown_admission', 'billable', false);
   END IF;
   IF v_row.decision = 'admitted' AND v_row.subscription_id IS NOT NULL AND v_row.period_start IS NOT NULL THEN
@@ -327,6 +333,15 @@ BEGIN
     FROM admin_private.commercial_usage_admissions
     WHERE id = p_id
     FOR UPDATE;
+    IF NOT FOUND OR v_row.environment IS DISTINCT FROM p_environment THEN
+      RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'unknown_admission', 'billable', false);
+    END IF;
+    IF v_row.body_sha256 IS DISTINCT FROM p_hash THEN
+      INSERT INTO admin_private.commercial_usage_admission_conflicts(admission_id, body_sha256)
+      VALUES (v_row.id, p_hash)
+      ON CONFLICT (admission_id, body_sha256) DO NOTHING;
+      RETURN pg_catalog.jsonb_build_object('status', 'conflict', 'billable', false, 'admissionRef', v_row.admission_ref);
+    END IF;
     IF v_row.state = 'reserved'
       AND v_row.bound_at IS NULL
       AND v_row.expires_at <= pg_catalog.clock_timestamp()
@@ -351,6 +366,12 @@ BEGIN
       END IF;
       SELECT * INTO v_row FROM admin_private.commercial_usage_admissions WHERE id = p_id;
     END IF;
+  END IF;
+  IF v_row.body_sha256 IS DISTINCT FROM p_hash THEN
+    INSERT INTO admin_private.commercial_usage_admission_conflicts(admission_id, body_sha256)
+    VALUES (v_row.id, p_hash)
+    ON CONFLICT (admission_id, body_sha256) DO NOTHING;
+    RETURN pg_catalog.jsonb_build_object('status', 'conflict', 'billable', false, 'admissionRef', v_row.admission_ref);
   END IF;
   RETURN admin_private.commercial_usage_admission_view_v1(v_row);
 END;
@@ -443,13 +464,12 @@ BEGIN
   IF v_quoted IS NOT NULL THEN
     SELECT * INTO v_existing
     FROM admin_private.commercial_usage_admissions
-    WHERE admission_ref = v_quoted
-    FOR UPDATE;
+    WHERE admission_ref = v_quoted;
     IF NOT FOUND OR v_existing.environment IS DISTINCT FROM v_environment THEN
       RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'unknown_admission', 'billable', false);
     END IF;
     IF v_existing.body_sha256 = v_hash THEN
-      RETURN admin_private.commercial_usage_finish_replay_v1(v_existing.id);
+      RETURN admin_private.commercial_usage_finish_replay_v1(v_existing.id, v_environment, v_hash);
     END IF;
     INSERT INTO admin_private.commercial_usage_admission_conflicts(admission_id, body_sha256)
     VALUES (v_existing.id, v_hash)
@@ -461,11 +481,10 @@ BEGIN
     PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('commercial-usage:' || v_environment || ':' || v_call_ref)::bigint);
     SELECT * INTO v_existing
     FROM admin_private.commercial_usage_admissions
-    WHERE environment = v_environment AND provider_call_ref = v_call_ref
-    FOR UPDATE;
+    WHERE environment = v_environment AND provider_call_ref = v_call_ref;
     IF FOUND THEN
       IF v_existing.body_sha256 = v_hash THEN
-        RETURN admin_private.commercial_usage_finish_replay_v1(v_existing.id);
+        RETURN admin_private.commercial_usage_finish_replay_v1(v_existing.id, v_environment, v_hash);
       END IF;
       INSERT INTO admin_private.commercial_usage_admission_conflicts(admission_id, body_sha256)
       VALUES (v_existing.id, v_hash)
@@ -476,10 +495,9 @@ BEGIN
 
   SELECT * INTO v_existing
   FROM admin_private.commercial_usage_admissions
-  WHERE environment = v_environment AND body_sha256 = v_hash
-  FOR UPDATE;
+  WHERE environment = v_environment AND body_sha256 = v_hash;
   IF FOUND THEN
-    RETURN admin_private.commercial_usage_finish_replay_v1(v_existing.id);
+    RETURN admin_private.commercial_usage_finish_replay_v1(v_existing.id, v_environment, v_hash);
   END IF;
 
   IF v_scope = 'admin_web_qa' THEN
@@ -1099,7 +1117,7 @@ REVOKE ALL ON FUNCTION
   admin_private.commercial_usage_admission_view_v1(admin_private.commercial_usage_admissions),
   admin_private.commercial_usage_lock_period_v1(uuid, timestamptz),
   admin_private.commercial_usage_lock_subscription_periods_v1(),
-  admin_private.commercial_usage_finish_replay_v1(uuid),
+  admin_private.commercial_usage_finish_replay_v1(uuid, text, text),
   admin_private.commercial_usage_release_expired_admissions_v1(uuid, timestamptz),
   admin_private.commercial_usage_reserve_inbound_v1(jsonb),
   admin_private.commercial_usage_bind_inbound_admission_v1(jsonb),

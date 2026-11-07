@@ -662,6 +662,26 @@ describe.skipIf(!pgBin)("concurrent inbound reservation", () => {
     return `select public.${fn}('${encoded}'::jsonb)::text;`
   }
 
+  function periodLockSql(admissionRef: string) {
+    return `select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
+      'commercial-usage-period:' || subscription_id::text || ':' || period_start::text, 0))
+      from admin_private.commercial_usage_admissions
+      where admission_ref = '${admissionRef}';`
+  }
+
+  async function activityCount(where: string) {
+    return psql(`select count(*) from pg_stat_activity a where a.datname = 'inboundadmit' and ${where}`)
+  }
+
+  async function grantedTupleLocks(marker: string) {
+    return psql(`select count(*) from pg_locks l
+      join pg_stat_activity a on a.pid = l.pid
+      where a.datname = 'inboundadmit'
+        and a.query like '%${marker}%'
+        and l.locktype = 'tuple'
+        and l.granted`)
+  }
+
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), "inboundadmit-pg-"))
     dataDir = join(root, "data")
@@ -794,6 +814,106 @@ describe.skipIf(!pgBin)("concurrent inbound reservation", () => {
     expect(later).toContain("\"reason\": \"bound\"")
     expect(await psql("select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_expire_race'")).toBe("open")
     expect(await psql("select state from admin_private.commercial_usage_admissions where admission_ref = '" + opened.admissionRef + "'")).toBe("bound")
+  })
+
+  it("lets a no-call-id replay and call binding share one reservation without a deadlock", async () => {
+    const opened = JSON.parse(await psql(jsonCall("commercial_usage_reserve_inbound_v1", command("R", { bodyLabel: "replay-vs-bind" })))) as ReserveResult
+    expect(opened).toMatchObject({ status: "admitted", providerCallRef: null, billable: true })
+    const holder = heldSession()
+    const replay = heldSession()
+    const binder = heldSession()
+    try {
+      await holder.query("BEGIN;")
+      const locked = await holder.query(periodLockSql(opened.admissionRef!))
+      expect(locked.stderr).toBe("")
+      const replayHash = hashFor("R:replay-vs-bind")
+      const pendingReplay = replay.query(jsonCall("commercial_usage_reserve_inbound_v1", command("R", { bodyLabel: "replay-vs-bind" })))
+      await new Promise(resolve => setTimeout(resolve, 400))
+      expect(await activityCount("a.query like '%" + replayHash + "%' and a.wait_event_type = 'Lock' and a.wait_event = 'advisory'")).toBe("1")
+      expect(await grantedTupleLocks(replayHash)).toBe("0")
+      const pendingBind = binder.query(jsonCall("commercial_usage_bind_inbound_admission_v1", {
+        environment: "dev",
+        providerCallRef: "call_replay_bind",
+        toNumber: seat("R")[6],
+        admissionRef: opened.admissionRef,
+        now: NOW,
+      }))
+      await new Promise(resolve => setTimeout(resolve, 400))
+      expect(await activityCount("a.query like '%call_replay_bind%' and a.wait_event_type = 'Lock' and a.wait_event = 'advisory'")).toBe("1")
+      expect(await grantedTupleLocks("call_replay_bind")).toBe("0")
+      expect(await grantedTupleLocks(replayHash)).toBe("0")
+      await holder.query("COMMIT;")
+      const replayed = await pendingReplay
+      const bound = await pendingBind
+      const replayText = replayed.stderr + replayed.stdout
+      const bindText = bound.stderr + bound.stdout
+      expect(replayText.toLowerCase()).not.toContain("deadlock")
+      expect(bindText.toLowerCase()).not.toContain("deadlock")
+      expect(replayText).not.toContain("invalid_billing_period")
+      expect(bindText).not.toContain("invalid_billing_period")
+      expect(replayText).toContain(opened.admissionRef)
+      expect(replayText).toContain("\"billable\": true")
+      expect(bindText).toContain(opened.admissionRef)
+      expect(await psql("select count(*) from admin_private.commercial_usage_reservations where provider_call_ref = 'call_replay_bind' and state = 'open'")).toBe("1")
+      expect(await psql("select count(*) from admin_private.commercial_usage_admissions where body_sha256 = '" + replayHash + "'")).toBe("1")
+      expect(await psql("select period_start::text from admin_private.commercial_usage_admissions where admission_ref = '" + opened.admissionRef + "'")).toContain("2026-11-01")
+      expect(await psql("select count(*) from admin_private.commercial_usage_events where provider_call_ref = 'call_replay_bind'")).toBe("0")
+    } finally {
+      await holder.query("ROLLBACK;").catch(() => undefined)
+      holder.end()
+      replay.end()
+      binder.end()
+    }
+  })
+
+  it("lets an identical replay and expiry settle an expired hold without an approval or a deadlock", async () => {
+    const opened = JSON.parse(await psql(jsonCall("commercial_usage_reserve_inbound_v1", command("R", { bodyLabel: "replay-vs-expiry" })))) as ReserveResult
+    expect(opened.status).toBe("admitted")
+    await psql(
+      "set session_replication_role = replica; update admin_private.commercial_usage_admissions set expires_at = clock_timestamp() - interval '1 minute' where admission_ref = '" + opened.admissionRef + "'; set session_replication_role = origin;",
+    )
+    const holder = heldSession()
+    const replay = heldSession()
+    const expirer = heldSession()
+    try {
+      await holder.query("BEGIN;")
+      const locked = await holder.query(periodLockSql(opened.admissionRef!))
+      expect(locked.stderr).toBe("")
+      const replayHash = hashFor("R:replay-vs-expiry")
+      const pendingReplay = replay.query(jsonCall("commercial_usage_reserve_inbound_v1", command("R", { bodyLabel: "replay-vs-expiry" })))
+      const pendingExpire = expirer.query(jsonCall("commercial_usage_release_inbound_admissions_v1", {
+        environment: "dev",
+        mode: "expire",
+        admissionRef: opened.admissionRef,
+        now: "2026-11-15T12:11:00.000Z",
+      }))
+      await new Promise(resolve => setTimeout(resolve, 400))
+      expect(await activityCount("a.query like '%" + replayHash + "%' and a.wait_event_type = 'Lock' and a.wait_event = 'advisory'")).toBe("1")
+      expect(await activityCount("a.query like '%" + opened.admissionRef + "%' and a.query like '%expire%' and a.wait_event_type = 'Lock' and a.wait_event = 'advisory'")).toBe("1")
+      expect(await grantedTupleLocks(replayHash)).toBe("0")
+      expect(await grantedTupleLocks(opened.admissionRef!)).toBe("0")
+      await holder.query("COMMIT;")
+      const replayed = await pendingReplay
+      const expired = await pendingExpire
+      const replayText = replayed.stderr + replayed.stdout
+      const expireText = expired.stderr + expired.stdout
+      expect(replayText.toLowerCase()).not.toContain("deadlock")
+      expect(expireText.toLowerCase()).not.toContain("deadlock")
+      expect(replayText).toContain("admission_expired")
+      expect(replayText).toContain("\"billable\": false")
+      expect(replayText).not.toContain("\"billable\": true")
+      expect(replayText).not.toContain("invalid_billing_period")
+      expect(replayText).not.toContain("agent_seat_r")
+      expect(await psql("select state from admin_private.commercial_usage_admissions where admission_ref = '" + opened.admissionRef + "'")).toBe("expired")
+      expect(await psql("select count(*) from admin_private.commercial_usage_admissions where body_sha256 = '" + replayHash + "'")).toBe("1")
+      expect(await psql("select reservation_id is null from admin_private.commercial_usage_admissions where admission_ref = '" + opened.admissionRef + "'")).toBe("t")
+      expect(await psql("select count(*) from admin_private.commercial_usage_reservations where subscription_id = '" + seat("R")[3] + "'")).toBe("2")
+    } finally {
+      await holder.query("ROLLBACK;").catch(() => undefined)
+      holder.end()
+      replay.end()
+      expirer.end()
+    }
   })
 
   it("keeps the reserved period when renewal waits, then rejects a call after cancellation", async () => {

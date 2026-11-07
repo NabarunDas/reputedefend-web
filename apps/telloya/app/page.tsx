@@ -159,7 +159,10 @@ export default function Home() {
             <Eyebrow>{example.eyebrow}</Eyebrow>
             <h2 id="example-title">From an unanswered call to <em>a useful conversation.</em></h2>
             <p>{example.lead}</p>
-            <Link href="/features" className={styles.textLink}>Explore what Telloya can capture <ArrowUpRight size={17} aria-hidden="true" /></Link>
+            <div className={styles.exampleLinks}>
+              <Link href="/features" className={styles.textLink}>Explore what Telloya can capture <ArrowUpRight size={17} aria-hidden="true" /></Link>
+              <Link href={example.demoLink.href} className={styles.textLink}>{example.demoLink.label} <ArrowUpRight size={17} aria-hidden="true" /></Link>
+            </div>
           </div>
           <div className={styles.leadCard}>
             <div className={styles.leadTop}><span><span className={styles.liveDot} /> Example enquiry</span><span>{example.card.time}</span></div>

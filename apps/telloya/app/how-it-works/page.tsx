@@ -66,6 +66,9 @@ export default function HowItWorks() {
               ))}
             </ul>
             <p className={styles.exampleNote}>{experience.example.note}</p>
+            <Link className={styles.exampleLink} href={experience.demoLink.href}>
+              {experience.demoLink.label} <ArrowUpRight size={16} aria-hidden="true" />
+            </Link>
           </div>
         </section>
 

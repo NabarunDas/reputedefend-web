@@ -62,10 +62,11 @@ describe("Telloya commercial statements", () => {
   })
 })
 
-describe("Telloya demo redirect", () => {
-  it("uses a temporary Next.js redirect rather than a permanent one", () => {
+describe("Telloya illustrative demo", () => {
+  it("renders a page instead of redirecting to the enquiry form", () => {
     const source = readFileSync(resolve(process.cwd(), "app/demo/page.tsx"), "utf8")
-    expect(source).toContain('redirect("/enquire")')
-    expect(source).not.toMatch(/permanent\s*:\s*true/)
+    expect(source).not.toContain("redirect(")
+    expect(source).toContain("DemoExperience")
+    expect(source).toContain('canonical: "/demo"')
   })
 })

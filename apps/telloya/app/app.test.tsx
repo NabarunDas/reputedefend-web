@@ -339,18 +339,18 @@ describe("Pre-launch Behavior", () => {
     
     const result = sitemap()
     expect(Array.isArray(result)).toBe(true)
-    expect(result.length).toBe(7)
+    expect(result.length).toBe(8)
     expect(result[0].url).toBe("https://telloya.com")
     expect(result.map((entry) => entry.url)).toEqual([
       "https://telloya.com",
       "https://telloya.com/how-it-works",
+      "https://telloya.com/demo",
       "https://telloya.com/features",
       "https://telloya.com/industries",
       "https://telloya.com/pricing",
       "https://telloya.com/enquire",
       "https://telloya.com/cookies",
     ])
-    expect(result.some((entry) => entry.url.includes("/demo"))).toBe(false)
     expect(result.every((entry) => !("lastModified" in entry))).toBe(true)
     
     process.env = originalEnv

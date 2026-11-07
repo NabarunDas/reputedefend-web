@@ -84,7 +84,7 @@ export const homepageContent = {
       },
       {
         title: "Professional experience",
-        description: "Customers get a helpful response even when you're unavailable",
+        description: "Give more callers a helpful response when you're unavailable.",
       },
       {
         title: "Designed for tradespeople",
@@ -242,7 +242,7 @@ export const howItWorksContent = {
         number: "06",
         title: "You follow up",
         description:
-          "With the full context in hand, you can call the customer back at the right time with the right preparation.",
+          "With the details the caller shared, you can decide how and when to follow up.",
         detail: "Following up is still your responsibility. Telloya captures the enquiry — you close it.",
       },
     ],
@@ -530,7 +530,7 @@ export const industriesContent = {
     },
     {
       name: "Electricians",
-      tagline: "Respond to callouts with full context",
+      tagline: "Review callout enquiries with useful details.",
       description:
         "Electrical work ranges from safety concerns to planned installations. Telloya records what the caller describes so you can decide the next step.",
       scenarios: [

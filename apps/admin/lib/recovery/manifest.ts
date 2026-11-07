@@ -1753,9 +1753,9 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Telloya standard location cap", probe: "admin_private.prevent_plan_overlap_v1" },
   },
   {
-    // Controlled web-call initiation. Applied once to DEV. This is the
-    // verified DEV ledger head. The ledger contains 115 entries and ends at
-    // 20261106200000. The previous ledger contained 114 entries and ended at
+    // Controlled web-call initiation. Applied once to DEV. The ledger later
+    // moved to 20261107110000. When this file was the head it contained 115
+    // entries and ended at 20261106200000. The previous ledger contained 114 entries and ended at
     // 20261106140000. 20261106120000 and 20261106140000 are applied and must
     // not be replayed. Do not replay 20261106200000. Do not apply
     // 20261106200000 to Production. Zero test attempts were created.
@@ -1775,21 +1775,38 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Controlled AI receptionist web-call initiation", probe: "public.admin_commercial_prepare_agent_test_call_v1" },
   },
   {
-    // Subscription usage ledger. Source only. It is not applied to hosted DEV
-    // or Production. The verified DEV ledger still contains 115 entries and
-    // ends at 20261106200000. Do not apply 20261107110000 to hosted DEV.
-    // Do not apply 20261107110000 to Production. Do not replay 20261106200000.
-    // Schema and functions only. containsDataChange stays false.
-    // No subscription, payment, catalogue row, or Stripe charge is created.
-    // safeToReplay stays false.
+    // Subscription usage ledger. Applied once to DEV. This is the verified
+    // DEV ledger head. The ledger contains 116 entries and ends at
+    // 20261107110000. The previous ledger contained 115 entries and ended at
+    // 20261106200000. Do not replay 20261107110000. Do not apply
+    // 20261107110000 to Production. No usage events, reservations, or legal
+    // holds were created. Schema and functions only. containsDataChange stays
+    // false. safeToReplay stays false.
     version: "20261107110000",
     filename: "20261107110000_telloya_subscription_usage_ledger_v1.sql",
     step: "Telloya subscription usage ledger",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Telloya subscription usage ledger", probe: "admin_private.commercial_usage_events" },
+  },
+  {
+    // Inbound admission reservation. Source only. It is not applied to hosted
+    // DEV or Production. The verified DEV ledger contains 116 entries and
+    // ends at 20261107110000. Do not apply 20261107120000 to hosted DEV.
+    // Do not apply 20261107120000 to Production. Do not replay 20261107110000.
+    // Schema and functions only. containsDataChange stays false.
+    // It does not enable Retell, forwarding, or a Stripe charge.
+    // safeToReplay stays false.
+    version: "20261107120000",
+    filename: "20261107120000_telloya_inbound_admission_reservation_v1.sql",
+    step: "Telloya inbound admission reservation",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya inbound admission reservation", probe: "public.commercial_usage_reserve_inbound_v1" },
   },
 ]
 
@@ -1802,8 +1819,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261106200000`. The live DEV ledger contains 115 entries. The previous
- * ledger contained 114 entries and ended at `20261106140000`. The ledger
+ * `20261107110000`. The live DEV ledger contains 116 entries. The previous
+ * ledger contained 115 entries and ended at `20261106200000`. The ledger
+ * before that contained 114 entries and ended at `20261106140000`. The ledger
  * before that contained 112 entries and ended at `20261106003939`.
  * `20261106120000` and `20261106140000` were applied once and must not be
  * replayed. Do not apply either file to Production. The seven
@@ -1937,7 +1955,10 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` contains only `20261107110000`. Do not apply it to hosted DEV or Production.
+ * `pendingMigrations()` contains only `20261107120000`. Do not apply it to hosted DEV or Production.
+ * `20261107110000` was applied once to DEV. Do not replay `20261107110000`.
+ * Do not apply `20261107110000` to Production. No usage events, reservations,
+ * or legal holds were created.
  * `20261106200000` was applied once to DEV.
  * Do not replay `20261106200000`. Do not apply `20261106200000` to Production.
  * `20261106120000` and `20261106140000` are already applied on DEV and must not

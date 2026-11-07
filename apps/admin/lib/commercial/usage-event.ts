@@ -25,8 +25,11 @@ export type StructuredLeadSummary = {
   summary: string | null
 }
 
+export type UsageProviderEvent = "call_started" | "call_ended" | "call_analyzed"
+
 export type UsageEventCommand = {
   environment: UsageEventEnvironment
+  eventType: UsageProviderEvent
   providerCallRef: string
   scope: UsageCallScope
   businessId: string | null
@@ -44,10 +47,69 @@ export type UsageEventResult =
   | { status: 404; outcome: "closed" }
   | { status: 401; outcome: "rejected_signature" }
   | { status: 422; outcome: "rejected_payload" | "unbound_number" | "cross_tenant" }
-  | { status: 202; outcome: "accepted" | "replay" | "out_of_order"; command: UsageEventCommand }
+  | { status: 202; outcome: "accepted"; command: UsageEventCommand }
+
+const CUSTOMER_CALL_TYPE = "phone_call"
+const QA_CALL_TYPE = "web_call"
+
+/** Durable receipt identity. Replay and conflict are decided by the database, per event type. */
+export function usageReceiptKey(command: Pick<UsageEventCommand, "environment" | "eventType" | "providerCallRef">): string {
+  return `${command.environment}:${command.eventType}:${command.providerCallRef}`
+}
+
+/**
+ * Payload for public.commercial_usage_apply_event_v1.
+ * The summary stays off this payload. The lead table is the only place a structured summary is stored.
+ */
+export function usageEventPayload(command: UsageEventCommand, snapshot: {
+  includedMinutes: number | null
+  overageOptIn: boolean
+  overageRateMinor: number | null
+  overageCapMinor: number | null
+} | null): {
+  environment: UsageEventEnvironment
+  eventType: UsageProviderEvent
+  providerCallRef: string
+  callScope: UsageCallScope
+  subscriptionId: string | null
+  businessId: string | null
+  locationId: string | null
+  endedAt: string | null
+  durationSeconds: number | null
+  durationQuality: "confirmed" | "missing"
+  bodySha256: string
+  includedMinutes: number | null
+  overageOptIn: boolean
+  overageRateMinor: number | null
+  overageCapMinor: number | null
+} {
+  const ended = command.eventType === "call_ended"
+  return {
+    environment: command.environment,
+    eventType: command.eventType,
+    providerCallRef: command.providerCallRef,
+    callScope: command.scope,
+    subscriptionId: command.subscriptionId,
+    businessId: command.businessId,
+    locationId: command.locationId,
+    endedAt: ended && command.endedAtMs != null ? new Date(command.endedAtMs).toISOString() : null,
+    durationSeconds: ended ? command.durationSeconds : null,
+    durationQuality: ended ? command.durationQuality : "missing",
+    bodySha256: command.bodySha256,
+    includedMinutes: snapshot?.includedMinutes ?? null,
+    overageOptIn: snapshot?.overageOptIn ?? false,
+    overageRateMinor: snapshot?.overageRateMinor ?? null,
+    overageCapMinor: snapshot?.overageCapMinor ?? null,
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function providerEventName(value: unknown): UsageProviderEvent | null {
+  if (value === "call_started" || value === "call_ended" || value === "call_analyzed") return value
+  return null
 }
 
 function bounded(value: unknown, max: number): string | null {
@@ -91,8 +153,6 @@ export function processUsageEvent(input: {
   rawBody: string
   signatureHeader: string | null
   bindingForNumber: (toNumber: string) => NumberBinding | null
-  seenBodySha256?: ReadonlySet<string>
-  priorEventTypes?: readonly string[]
 }): UsageEventResult {
   if (!usageEventsEnabled(input.enabledFlag)) return { status: 404, outcome: "closed" }
   const verified = verifyRetellSignature({
@@ -110,13 +170,14 @@ export function processUsageEvent(input: {
     return { status: 422, outcome: "rejected_payload" }
   }
   if (!isRecord(parsed) || !isRecord(parsed.call)) return { status: 422, outcome: "rejected_payload" }
-  const event = parsed.event
-  if (event !== "call_started" && event !== "call_ended" && event !== "call_analyzed") {
-    return { status: 422, outcome: "rejected_payload" }
-  }
+  const providerEvent = providerEventName(parsed.event)
+  if (providerEvent == null) return { status: 422, outcome: "rejected_payload" }
   const call = parsed.call
   if (typeof call.call_id !== "string" || !CALL_ID.test(call.call_id)) return { status: 422, outcome: "rejected_payload" }
-  const scope: UsageCallScope = call.call_type === "web_call" ? "admin_web_qa" : "customer_phone"
+  if (call.call_type !== CUSTOMER_CALL_TYPE && call.call_type !== QA_CALL_TYPE) {
+    return { status: 422, outcome: "rejected_payload" }
+  }
+  const scope: UsageCallScope = call.call_type === QA_CALL_TYPE ? "admin_web_qa" : "customer_phone"
   const suppliedSubscription = isRecord(call.metadata) ? call.metadata.subscription_id : undefined
   const toNumber = typeof call.to_number === "string" ? call.to_number : ""
   const binding = scope === "customer_phone" ? input.bindingForNumber(toNumber) : null
@@ -127,10 +188,10 @@ export function processUsageEvent(input: {
     return { status: 422, outcome: "cross_tenant" }
   }
 
-  const duration = event === "call_ended" ? durationSeconds(call) : { seconds: null, quality: "missing" as const, endedAtMs: null }
-  const bodySha256 = hashBody(input.rawBody)
+  const duration = providerEvent === "call_ended" ? durationSeconds(call) : { seconds: null, quality: "missing" as const, endedAtMs: null }
   const command: UsageEventCommand = {
     environment: input.environment,
+    eventType: providerEvent,
     providerCallRef: call.call_id,
     scope,
     businessId: binding?.businessId ?? null,
@@ -139,14 +200,9 @@ export function processUsageEvent(input: {
     durationSeconds: duration.seconds,
     durationQuality: duration.quality,
     endedAtMs: duration.endedAtMs,
-    bodySha256,
-    summary: summaryFrom(call, event),
+    bodySha256: hashBody(input.rawBody),
+    summary: summaryFrom(call, providerEvent),
     droppedContent: ["transcript", "recording", "access_token"],
-  }
-  if (input.seenBodySha256?.has(bodySha256)) return { status: 202, outcome: "replay", command }
-  const prior = input.priorEventTypes ?? []
-  if (event === "call_ended" && !prior.includes("call_started")) {
-    return { status: 202, outcome: "out_of_order", command }
   }
   return { status: 202, outcome: "accepted", command }
 }

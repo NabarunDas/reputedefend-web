@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   acceptedIncludedMinutes,
+  attributeCompletedCall,
   attributeUsagePeriod,
   evaluateUsage,
   ownerApprovedIncludedMinutes,
@@ -82,6 +83,70 @@ describe("monthly boundaries and no rollover", () => {
     expect(attributeUsagePeriod(PERIOD.endMs - 1, [PERIOD, NEXT])?.startMs).toBe(PERIOD.startMs)
     expect(attributeUsagePeriod(PERIOD.endMs, [PERIOD, NEXT])?.startMs).toBe(NEXT.startMs)
     expect(attributeUsagePeriod(PERIOD.startMs - 1, [PERIOD, NEXT])).toBeNull()
+  })
+
+  it("keeps a call that crosses renewal on the reserved period", () => {
+    const crossed = attributeCompletedCall({
+      reservationPeriod: PERIOD,
+      endedAtMs: NEXT.startMs + 60_000,
+      currentPeriod: NEXT,
+    })
+    expect(crossed).toEqual({ period: PERIOD, source: "reservation" })
+    const missingStart = attributeCompletedCall({
+      reservationPeriod: null,
+      endedAtMs: NEXT.startMs + 60_000,
+      currentPeriod: NEXT,
+    })
+    expect(missingStart).toEqual({ period: NEXT, source: "current_period" })
+    const lateWithoutReservation = attributeCompletedCall({
+      reservationPeriod: null,
+      endedAtMs: NEXT.endMs + 1,
+      currentPeriod: NEXT,
+    })
+    expect(lateWithoutReservation).toEqual({ period: null, source: "unattributed" })
+  })
+
+  it("keeps an in-progress reservation on its own period and leaves the next period's allowance intact", () => {
+    const original = evaluateUsage(position({
+      confirmedCustomerSeconds: 119 * 60,
+      openReservationSeconds: 60,
+    }))
+    expect(reason(original)).toBe("allowance_exhausted")
+    const renewed = evaluateUsage(position({
+      period: NEXT,
+      nowMs: NEXT.startMs,
+      confirmedCustomerSeconds: 0,
+      openReservationSeconds: 0,
+      previousPeriodCustomerSeconds: 119 * 60 + 60,
+    }))
+    expect(renewed.outcome).toBe("allow_included")
+  })
+
+  it("keeps cancellation, allowance and cap decisions on the subscription that owns the seconds", () => {
+    const canceled = evaluateUsage(position({
+      subscriptionState: "CANCELED",
+      confirmedCustomerSeconds: 30,
+    }))
+    expect(reason(canceled)).toBe("subscription_inactive")
+    const other = evaluateUsage(position({
+      period: NEXT,
+      nowMs: NEXT.startMs,
+      confirmedCustomerSeconds: 0,
+    }))
+    expect(other.outcome).toBe("allow_included")
+    const capped = evaluateUsage(position({
+      confirmedCustomerSeconds: 120 * 60,
+      openReservationSeconds: 60,
+      snapshot: { ...position().snapshot, overageOptIn: true, overageRateMinor: 25, overageCapMinor: 25 },
+    }))
+    expect(reason(capped)).toBe("spending_cap_exhausted")
+    const uncapped = evaluateUsage(position({
+      period: NEXT,
+      nowMs: NEXT.startMs,
+      confirmedCustomerSeconds: 30,
+      snapshot: { ...position().snapshot, tier: "GROWTH", includedMinutes: 300, overageOptIn: true, overageRateMinor: 25, overageCapMinor: 25 },
+    }))
+    expect(uncapped.outcome).toBe("allow_included")
   })
 
   it("rejects a snapshot that would roll unused minutes forward", () => {

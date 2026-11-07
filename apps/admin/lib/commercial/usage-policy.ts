@@ -122,6 +122,33 @@ export function attributeUsagePeriod(endedAtMs: number, periods: readonly UsageP
   return periods.find(period => endedAtMs >= period.startMs && endedAtMs < period.endMs) ?? null
 }
 
+export type UsageAttribution =
+  | { period: UsagePeriod; source: "reservation" }
+  | { period: UsagePeriod; source: "current_period" }
+  | { period: null; source: "unattributed" }
+
+/**
+ * Duration belongs to the period reserved when the call started, including when
+ * the call ends after renewal. With no reservation, duration belongs to the
+ * current period only while the end falls inside it. It is not copied into a later period.
+ */
+export function attributeCompletedCall(input: {
+  reservationPeriod: UsagePeriod | null
+  endedAtMs: number | null
+  currentPeriod: UsagePeriod | null
+}): UsageAttribution {
+  if (input.reservationPeriod) return { period: input.reservationPeriod, source: "reservation" }
+  if (
+    input.currentPeriod
+    && input.endedAtMs != null
+    && input.endedAtMs >= input.currentPeriod.startMs
+    && input.endedAtMs < input.currentPeriod.endMs
+  ) {
+    return { period: input.currentPeriod, source: "current_period" }
+  }
+  return { period: null, source: "unattributed" }
+}
+
 function deny(reason: string): UsageDecision {
   return { outcome: "deny", billable: false, reason, chargeCreated: false }
 }

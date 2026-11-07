@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { signRetellSignature } from "../../../telloya/lib/voice/signature"
-import { processUsageEvent, type NumberBinding } from "./usage-event"
+import { processUsageEvent, usageEventPayload, usageReceiptKey, type NumberBinding } from "./usage-event"
 import { usageEventsEnabled } from "./usage-events-flag"
 
 const NOW_MS = 1762300000000
@@ -79,9 +79,10 @@ describe("authenticated usage events", () => {
       recording_url: "https://recordings.example.invalid/call",
       access_token: "token_sentinel",
     })
-    const result = accept(raw, { priorEventTypes: ["call_started"] })
+    const result = accept(raw)
     expect(result.status).toBe(202)
     if (result.status !== 202) return
+    expect(result.command.eventType).toBe("call_ended")
     expect(result.command.subscriptionId).toBe(BINDING.subscriptionId)
     expect(result.command.durationSeconds).toBe(61)
     expect(result.command.durationQuality).toBe("confirmed")
@@ -89,7 +90,21 @@ describe("authenticated usage events", () => {
     expect(JSON.stringify(result.command)).not.toContain("TRANSCRIPT_SENTINEL")
     expect(JSON.stringify(result.command)).not.toContain("recordings.example")
     expect(JSON.stringify(result.command)).not.toContain("token_sentinel")
-    expect(accept(raw, { priorEventTypes: ["call_started"], seenBodySha256: new Set([result.command.bodySha256]) }).outcome).toBe("replay")
+    const again = accept(raw)
+    expect(again.status).toBe(202)
+    if (again.status !== 202) return
+    expect(again.command.bodySha256).toBe(result.command.bodySha256)
+    expect(usageReceiptKey(again.command)).toBe(usageReceiptKey(result.command))
+    const payload = usageEventPayload(result.command, {
+      includedMinutes: 120,
+      overageOptIn: false,
+      overageRateMinor: null,
+      overageCapMinor: null,
+    })
+    expect(JSON.stringify(payload)).not.toContain("TRANSCRIPT_SENTINEL")
+    expect(JSON.stringify(payload)).not.toContain("recordings.example")
+    expect(JSON.stringify(payload)).not.toContain("token_sentinel")
+    expect(payload).not.toHaveProperty("summary")
   })
 
   it("keeps a missing duration unconfirmed and accepts an ended event that arrives first", () => {
@@ -98,7 +113,7 @@ describe("authenticated usage events", () => {
       call_type: "phone_call",
       to_number: BINDING.inboundToNumber,
     })
-    const missingResult = accept(missing, { priorEventTypes: ["call_started"] })
+    const missingResult = accept(missing)
     expect(missingResult.status).toBe(202)
     if (missingResult.status !== 202) return
     expect(missingResult.command.durationQuality).toBe("missing")
@@ -110,7 +125,11 @@ describe("authenticated usage events", () => {
       start_timestamp: NOW_MS - 30_000,
       end_timestamp: NOW_MS,
     })
-    expect(accept(early).outcome).toBe("out_of_order")
+    const earlyResult = accept(early)
+    expect(earlyResult.status).toBe(202)
+    if (earlyResult.status !== 202) return
+    expect(earlyResult.command.eventType).toBe("call_ended")
+    expect(earlyResult.command.durationSeconds).toBe(30)
   })
 
   it("keeps an analysis summary on the allowlist and does not treat it as duration", () => {
@@ -121,9 +140,11 @@ describe("authenticated usage events", () => {
       transcript: "TRANSCRIPT_SENTINEL",
       call_analysis: { custom_analysis_data: { caller_name: "Ada", summary: "Leaking tap", transcript: "hidden" } },
     })
-    const result = accept(raw, { priorEventTypes: ["call_started", "call_ended"] })
+    const result = accept(raw)
     expect(result.status).toBe(202)
     if (result.status !== 202) return
+    expect(result.command.eventType).toBe("call_analyzed")
+    expect(result.command.durationSeconds).toBeNull()
     expect(result.command.durationQuality).toBe("missing")
     expect(result.command.summary).toEqual({
       callerName: "Ada",
@@ -143,11 +164,41 @@ describe("authenticated usage events", () => {
       end_timestamp: NOW_MS,
       metadata: { subscription_id: BINDING.subscriptionId },
     })
-    const result = accept(raw, { priorEventTypes: ["call_started"] })
+    const result = accept(raw)
     expect(result.status).toBe(202)
     if (result.status !== 202) return
     expect(result.command.scope).toBe("admin_web_qa")
     expect(result.command.subscriptionId).toBeNull()
+  })
+
+  it("rejects an unknown call type and keeps the three provider events distinct", () => {
+    const unknown = body("call_ended", { call_id: "call_usage_10", call_type: "agent_call", to_number: BINDING.inboundToNumber })
+    expect(accept(unknown).outcome).toBe("rejected_payload")
+    const omitted = body("call_ended", { call_id: "call_usage_11", to_number: BINDING.inboundToNumber })
+    expect(accept(omitted).outcome).toBe("rejected_payload")
+    const call = {
+      call_id: "call_usage_12",
+      call_type: "phone_call",
+      to_number: BINDING.inboundToNumber,
+      start_timestamp: NOW_MS - 30_000,
+      end_timestamp: NOW_MS,
+    }
+    const started = accept(body("call_started", call))
+    const ended = accept(body("call_ended", call))
+    const analyzed = accept(body("call_analyzed", call))
+    expect(started.status).toBe(202)
+    expect(ended.status).toBe(202)
+    expect(analyzed.status).toBe(202)
+    if (started.status !== 202 || ended.status !== 202 || analyzed.status !== 202) return
+    expect(started.command.durationSeconds).toBeNull()
+    expect(ended.command.durationSeconds).toBe(30)
+    expect(analyzed.command.durationSeconds).toBeNull()
+    expect(new Set([
+      usageReceiptKey(started.command),
+      usageReceiptKey(ended.command),
+      usageReceiptKey(analyzed.command),
+    ]).size).toBe(3)
+    expect(usageEventPayload(analyzed.command, null).durationSeconds).toBeNull()
   })
 
   it("rejects a customer number that is not allocated in this environment", () => {

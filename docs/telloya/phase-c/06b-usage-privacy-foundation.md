@@ -36,9 +36,11 @@ No charge is created. A reviewer must accept this rounding before any invoice it
 
 ## 3. Usage ledger
 
-`admin_private.commercial_usage_events` stores one row per provider call. A second delivery of the same body hash is a replay. A different hash for the same call is a conflict and does not add a second billable row. The original row cannot be updated or deleted. A later duration is an append-only row in `admin_private.commercial_usage_corrections`.
+`admin_private.commercial_usage_events` stores one duration row per provider call. Receipts are separate and unique per environment, event type, and provider call. A second delivery of the same body hash for that event is a replay. A different hash for the same event is a conflict and does not add a second billable row. `call_started`, `call_ended`, and `call_analyzed` do not conflict with each other. The original duration row cannot be updated or deleted. A later duration is an append-only row in `admin_private.commercial_usage_corrections`.
 
-A customer phone call is linked to the existing subscription, business, and location. The period must be the subscription's current Stripe period, or the period already reserved for that call when the event arrives after renewal. An event is not added to the next period. Internal Admin web calls use `call_scope = admin_web_qa`, have no subscription, and are excluded from `commercial_usage_customer_seconds_v1`.
+The hosted server role has no `USAGE` on `admin_private`. `public.commercial_usage_apply_event_v1`, `public.commercial_usage_correct_v1`, `public.commercial_usage_customer_seconds_v1`, and `public.telloya_voice_redact_expired_leads_v1` are `SECURITY DEFINER` and executable by `service_role` only. `anon` and `authenticated` cannot execute them. The migration does not grant schema access.
+
+`call_started` reserves the subscription's current period and the accepted minute, overage, rate, and cap snapshots. `call_ended` writes the full duration to that reserved period, including when the call ends after renewal. Those seconds are not copied into the next period, and the open reservation is not moved onto the new period's allowance. With no reservation, `call_ended` is recorded on the current period only when the end falls inside it. Otherwise the receipt is kept and no billable row is created. `call_analyzed` stores a receipt only. A customer phone call is linked to the existing subscription, business, and location. A subscription or business that does not match that binding is denied. Internal Admin web calls use `call_scope = admin_web_qa`, have no subscription, and are excluded from `commercial_usage_customer_seconds_v1`.
 
 Included minutes, the overage choice, the rate, and the cap are copied from the accepted snapshot. A marketing form preference is not a charge.
 
@@ -55,7 +57,7 @@ Included minutes, the overage choice, the rate, and the cap are copied from the 
 
 ## 5. Provider events
 
-`processUsageEvent` checks `TELLOYA_USAGE_EVENTS_ENABLED` and the existing Retell `x-retell-signature` over the raw body. A customer call is accepted only when the dialled number is bound in that environment. A subscription id in the payload that disagrees with the binding is rejected. `call_ended` supplies duration. `call_analyzed` may supply only `caller_name`, `callback_number`, `service_requested`, `callback_window`, and `summary`. Transcripts, recording URLs, and access tokens are dropped and are not logged.
+`processUsageEvent` checks `TELLOYA_USAGE_EVENTS_ENABLED` and the existing Retell `x-retell-signature` over the raw body. `phone_call` is a customer call. `web_call` is internal QA. Any other call type is rejected. A customer call is accepted only when the dialled number is bound in that environment. A subscription id in the payload that disagrees with the binding is rejected. `call_started` carries the reservation. `call_ended` supplies duration. `call_analyzed` may supply only `caller_name`, `callback_number`, `service_requested`, `callback_window`, and `summary`, and that summary is not written onto the usage row. Transcripts, recording URLs, access tokens, and the raw body are dropped and are not logged. Idempotency is the database receipt for that event. An in-memory set is not the record of delivery.
 
 The Admin controlled web-call path is unchanged and is classified as internal QA.
 

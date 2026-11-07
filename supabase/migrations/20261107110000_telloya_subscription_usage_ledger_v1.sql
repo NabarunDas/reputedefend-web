@@ -8,10 +8,12 @@
 -- SECURITY DEFINER functions below. Do not grant schema USAGE.
 -- Internal Admin web-call QA is stored with call_scope admin_web_qa and is
 -- excluded from the customer-second total. Unused minutes do not roll over.
--- call_started reserves the subscription period. call_ended writes duration
--- once, including when the call ends after that period renews. call_analyzed
--- stores a receipt only. A different hash for the same event is a conflict and
--- does not add another billable call. Corrections are append-only.
+-- call_started reserves the subscription period and copies the immutable
+-- commercial_offer_acceptances row. call_ended writes duration once, including
+-- when the call ends after that period renews. Without a reservation, call_ended
+-- bills the current period only when a provider end timestamp falls inside it.
+-- call_analyzed stores a receipt only. A different hash for the same event is a
+-- conflict and does not add another billable call. Corrections are append-only.
 
 BEGIN;
 
@@ -29,11 +31,13 @@ CREATE TABLE admin_private.commercial_usage_events (
   duration_quality text NOT NULL CHECK (duration_quality IN ('confirmed', 'missing')),
   ended_at timestamptz,
   body_sha256 text NOT NULL CHECK (body_sha256 ~ '^[0-9a-f]{64}$'),
+  plan_version_id uuid REFERENCES public.plan_versions (id) ON DELETE RESTRICT,
   included_minutes_snapshot integer CHECK (included_minutes_snapshot IS NULL OR included_minutes_snapshot >= 0),
   minutes_rollover_snapshot boolean NOT NULL DEFAULT false CHECK (minutes_rollover_snapshot = false),
   overage_opt_in_snapshot boolean NOT NULL,
   overage_rate_minor_snapshot integer CHECK (overage_rate_minor_snapshot IS NULL OR overage_rate_minor_snapshot >= 0),
   overage_cap_minor_snapshot integer CHECK (overage_cap_minor_snapshot IS NULL OR overage_cap_minor_snapshot >= 0),
+  overage_consent_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
   CONSTRAINT commercial_usage_events_call UNIQUE (environment, provider_call_ref),
   CONSTRAINT commercial_usage_events_customer_shape CHECK (
@@ -42,15 +46,30 @@ CREATE TABLE admin_private.commercial_usage_events (
       AND subscription_id IS NULL
       AND business_id IS NULL
       AND location_id IS NULL
+      AND plan_version_id IS NULL
     )
     OR (
       call_scope = 'customer_phone'
       AND subscription_id IS NOT NULL
       AND business_id IS NOT NULL
       AND location_id IS NOT NULL
+      AND plan_version_id IS NOT NULL
       AND period_start IS NOT NULL
       AND period_end IS NOT NULL
       AND period_end > period_start
+    )
+  ),
+  CONSTRAINT commercial_usage_events_overage_shape CHECK (
+    (
+      overage_opt_in_snapshot = false
+      AND overage_cap_minor_snapshot IS NULL
+      AND overage_consent_at IS NULL
+    )
+    OR (
+      overage_opt_in_snapshot = true
+      AND overage_rate_minor_snapshot IS NOT NULL
+      AND overage_cap_minor_snapshot IS NOT NULL
+      AND overage_consent_at IS NOT NULL
     )
   ),
   CONSTRAINT commercial_usage_events_location_business_fk
@@ -80,13 +99,29 @@ CREATE TABLE admin_private.commercial_usage_reservations (
   period_end timestamptz NOT NULL,
   reserved_seconds integer NOT NULL CHECK (reserved_seconds = 60),
   state text NOT NULL CHECK (state IN ('open', 'released', 'consumed')),
+  plan_version_id uuid NOT NULL REFERENCES public.plan_versions (id) ON DELETE RESTRICT,
   included_minutes_snapshot integer NOT NULL CHECK (included_minutes_snapshot >= 0),
+  minutes_rollover_snapshot boolean NOT NULL CHECK (minutes_rollover_snapshot = false),
   overage_opt_in_snapshot boolean NOT NULL,
   overage_rate_minor_snapshot integer CHECK (overage_rate_minor_snapshot IS NULL OR overage_rate_minor_snapshot >= 0),
   overage_cap_minor_snapshot integer CHECK (overage_cap_minor_snapshot IS NULL OR overage_cap_minor_snapshot >= 0),
+  overage_consent_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
   CONSTRAINT commercial_usage_reservations_call UNIQUE (environment, provider_call_ref),
   CONSTRAINT commercial_usage_reservations_period CHECK (period_end > period_start),
+  CONSTRAINT commercial_usage_reservations_overage_shape CHECK (
+    (
+      overage_opt_in_snapshot = false
+      AND overage_cap_minor_snapshot IS NULL
+      AND overage_consent_at IS NULL
+    )
+    OR (
+      overage_opt_in_snapshot = true
+      AND overage_rate_minor_snapshot IS NOT NULL
+      AND overage_cap_minor_snapshot IS NOT NULL
+      AND overage_consent_at IS NOT NULL
+    )
+  ),
   CONSTRAINT commercial_usage_reservations_location_business_fk
     FOREIGN KEY (location_id, business_id) REFERENCES public.locations (id, business_id) ON DELETE RESTRICT
 );
@@ -160,10 +195,13 @@ BEGIN
     OR NEW.period_start IS DISTINCT FROM OLD.period_start
     OR NEW.period_end IS DISTINCT FROM OLD.period_end
     OR NEW.reserved_seconds IS DISTINCT FROM OLD.reserved_seconds
+    OR NEW.plan_version_id IS DISTINCT FROM OLD.plan_version_id
     OR NEW.included_minutes_snapshot IS DISTINCT FROM OLD.included_minutes_snapshot
+    OR NEW.minutes_rollover_snapshot IS DISTINCT FROM OLD.minutes_rollover_snapshot
     OR NEW.overage_opt_in_snapshot IS DISTINCT FROM OLD.overage_opt_in_snapshot
     OR NEW.overage_rate_minor_snapshot IS DISTINCT FROM OLD.overage_rate_minor_snapshot
     OR NEW.overage_cap_minor_snapshot IS DISTINCT FROM OLD.overage_cap_minor_snapshot
+    OR NEW.overage_consent_at IS DISTINCT FROM OLD.overage_consent_at
     OR NEW.created_at IS DISTINCT FROM OLD.created_at
   THEN
     RAISE EXCEPTION 'commercial_usage_evidence_immutable' USING ERRCODE = '55000';
@@ -231,6 +269,102 @@ AS $fn$
     AND state = 'open';
 $fn$;
 
+CREATE FUNCTION admin_private.commercial_usage_load_acceptance_v1(
+  p_subscription uuid,
+  p_business uuid,
+  p_event jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SET search_path = ''
+AS $fn$
+DECLARE
+  v_subscription public.commercial_subscriptions%ROWTYPE;
+  v_acceptance public.commercial_offer_acceptances%ROWTYPE;
+  v_included integer;
+  v_overage boolean;
+  v_rate integer;
+  v_cap integer;
+  v_rollover boolean;
+  v_consent timestamptz;
+  v_plan uuid;
+BEGIN
+  SELECT * INTO v_subscription FROM public.commercial_subscriptions WHERE id = p_subscription;
+  IF NOT FOUND THEN
+    RETURN pg_catalog.jsonb_build_object('status', 'rejected', 'reason', 'acceptance_absent');
+  END IF;
+  SELECT * INTO v_acceptance
+  FROM public.commercial_offer_acceptances
+  WHERE subscription_id = p_subscription;
+  IF NOT FOUND THEN
+    RETURN pg_catalog.jsonb_build_object('status', 'rejected', 'reason', 'acceptance_absent');
+  END IF;
+  IF v_acceptance.business_id IS DISTINCT FROM v_subscription.business_id
+    OR v_acceptance.business_id IS DISTINCT FROM p_business
+    OR v_acceptance.customer_id IS DISTINCT FROM v_subscription.customer_id
+    OR v_acceptance.plan_version_id IS DISTINCT FROM v_subscription.plan_version_id
+    OR v_acceptance.amount_minor IS DISTINCT FROM v_subscription.amount_minor
+    OR v_acceptance.currency IS DISTINCT FROM v_subscription.currency
+    OR v_acceptance.cadence IS DISTINCT FROM v_subscription.cadence_snapshot
+    OR v_acceptance.tax_behaviour IS DISTINCT FROM v_subscription.tax_behaviour
+    OR v_acceptance.included_minutes IS NULL
+    OR v_acceptance.minutes_rollover
+  THEN
+    RETURN pg_catalog.jsonb_build_object('status', 'rejected', 'reason', 'acceptance_inconsistent');
+  END IF;
+
+  BEGIN
+    IF p_event ? 'includedMinutes' AND pg_catalog.jsonb_typeof(p_event->'includedMinutes') IS DISTINCT FROM 'null' THEN
+      v_included := (p_event->>'includedMinutes')::integer;
+    END IF;
+    IF p_event ? 'overageOptIn' AND pg_catalog.jsonb_typeof(p_event->'overageOptIn') IS DISTINCT FROM 'null' THEN
+      v_overage := (p_event->>'overageOptIn')::boolean;
+    END IF;
+    IF p_event ? 'overageRateMinor' AND pg_catalog.jsonb_typeof(p_event->'overageRateMinor') IS DISTINCT FROM 'null' THEN
+      v_rate := (p_event->>'overageRateMinor')::integer;
+    END IF;
+    IF p_event ? 'overageCapMinor' AND pg_catalog.jsonb_typeof(p_event->'overageCapMinor') IS DISTINCT FROM 'null' THEN
+      v_cap := (p_event->>'overageCapMinor')::integer;
+    END IF;
+    IF p_event ? 'minutesRollover' AND pg_catalog.jsonb_typeof(p_event->'minutesRollover') IS DISTINCT FROM 'null' THEN
+      v_rollover := (p_event->>'minutesRollover')::boolean;
+    END IF;
+    IF p_event ? 'overageConsentAt' AND NULLIF(p_event->>'overageConsentAt', '') IS NOT NULL THEN
+      v_consent := (p_event->>'overageConsentAt')::timestamptz;
+    END IF;
+    IF p_event ? 'planVersionId' AND NULLIF(p_event->>'planVersionId', '') IS NOT NULL THEN
+      v_plan := (p_event->>'planVersionId')::uuid;
+    END IF;
+  EXCEPTION
+    WHEN invalid_text_representation OR invalid_datetime_format OR datetime_field_overflow OR numeric_value_out_of_range THEN
+      RETURN pg_catalog.jsonb_build_object('status', 'rejected', 'reason', 'rejected_payload');
+  END;
+
+  IF (p_event ? 'includedMinutes' AND v_included IS DISTINCT FROM v_acceptance.included_minutes)
+    OR (p_event ? 'overageOptIn' AND v_overage IS DISTINCT FROM v_acceptance.overage_opt_in)
+    OR (p_event ? 'overageRateMinor' AND v_rate IS DISTINCT FROM v_acceptance.overage_rate_minor)
+    OR (p_event ? 'overageCapMinor' AND v_cap IS DISTINCT FROM v_acceptance.overage_cap_minor)
+    OR (p_event ? 'minutesRollover' AND v_rollover IS DISTINCT FROM v_acceptance.minutes_rollover)
+    OR (p_event ? 'overageConsentAt' AND v_consent IS DISTINCT FROM v_acceptance.overage_consent_at)
+    OR (p_event ? 'planVersionId' AND v_plan IS DISTINCT FROM v_acceptance.plan_version_id)
+  THEN
+    RETURN pg_catalog.jsonb_build_object('status', 'rejected', 'reason', 'acceptance_mismatch');
+  END IF;
+
+  RETURN pg_catalog.jsonb_build_object(
+    'status', 'ok',
+    'includedMinutes', v_acceptance.included_minutes,
+    'minutesRollover', v_acceptance.minutes_rollover,
+    'overageOptIn', v_acceptance.overage_opt_in,
+    'overageRateMinor', v_acceptance.overage_rate_minor,
+    'overageCapMinor', v_acceptance.overage_cap_minor,
+    'overageConsentAt', v_acceptance.overage_consent_at,
+    'planVersionId', v_acceptance.plan_version_id
+  );
+END;
+$fn$;
+
 CREATE FUNCTION admin_private.commercial_usage_apply_event_v1(p_event jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -259,7 +393,9 @@ DECLARE
   v_period_start timestamptz;
   v_period_end timestamptz;
   v_event_id uuid;
-  v_outside boolean := false;
+  v_terms jsonb;
+  v_plan uuid;
+  v_consent timestamptz;
 BEGIN
   IF p_event IS NULL OR pg_catalog.jsonb_typeof(p_event) <> 'object' THEN
     RETURN pg_catalog.jsonb_build_object('status', 'rejected');
@@ -396,10 +532,22 @@ BEGIN
       v_subscription_row.current_period_start IS NULL
       OR v_subscription_row.current_period_end IS NULL
       OR v_subscription_row.current_period_end <= v_subscription_row.current_period_start
-      OR v_included IS NULL
-      OR v_overage IS NULL
     ) THEN
       RETURN pg_catalog.jsonb_build_object('status', 'unattributed');
+    END IF;
+    IF v_event_id IS NULL THEN
+      v_terms := admin_private.commercial_usage_load_acceptance_v1(v_subscription, v_business, p_event);
+      IF v_terms->>'status' IS DISTINCT FROM 'ok' THEN
+        RETURN v_terms;
+      END IF;
+      v_included := (v_terms->>'includedMinutes')::integer;
+      v_overage := (v_terms->>'overageOptIn')::boolean;
+      v_rate := (v_terms->>'overageRateMinor')::integer;
+      v_cap := (v_terms->>'overageCapMinor')::integer;
+      v_plan := (v_terms->>'planVersionId')::uuid;
+      IF NULLIF(v_terms->>'overageConsentAt', '') IS NOT NULL THEN
+        v_consent := (v_terms->>'overageConsentAt')::timestamptz;
+      END IF;
     END IF;
   END IF;
 
@@ -407,21 +555,26 @@ BEGIN
     IF v_subscription_row.current_period_start IS NULL
       OR v_subscription_row.current_period_end IS NULL
       OR v_subscription_row.current_period_end <= v_subscription_row.current_period_start
-    THEN
-      RETURN pg_catalog.jsonb_build_object('status', 'unattributed');
-    END IF;
-    v_outside := v_ended IS NOT NULL AND (
-      v_ended < v_subscription_row.current_period_start
+      OR v_ended IS NULL
+      OR v_ended < v_subscription_row.current_period_start
       OR v_ended >= v_subscription_row.current_period_end
-    );
-    IF v_outside THEN
+    THEN
       INSERT INTO admin_private.commercial_usage_receipts(
         environment, event_type, provider_call_ref, body_sha256
       ) VALUES (v_environment, v_event_type, v_call_ref, v_hash);
       RETURN pg_catalog.jsonb_build_object('status', 'unattributed');
     END IF;
-    IF v_included IS NULL OR v_overage IS NULL THEN
-      RETURN pg_catalog.jsonb_build_object('status', 'rejected');
+    v_terms := admin_private.commercial_usage_load_acceptance_v1(v_subscription, v_business, p_event);
+    IF v_terms->>'status' IS DISTINCT FROM 'ok' THEN
+      RETURN v_terms;
+    END IF;
+    v_included := (v_terms->>'includedMinutes')::integer;
+    v_overage := (v_terms->>'overageOptIn')::boolean;
+    v_rate := (v_terms->>'overageRateMinor')::integer;
+    v_cap := (v_terms->>'overageCapMinor')::integer;
+    v_plan := (v_terms->>'planVersionId')::uuid;
+    IF NULLIF(v_terms->>'overageConsentAt', '') IS NOT NULL THEN
+      v_consent := (v_terms->>'overageConsentAt')::timestamptz;
     END IF;
   END IF;
 
@@ -438,13 +591,13 @@ BEGIN
     IF v_event_id IS NULL THEN
       INSERT INTO admin_private.commercial_usage_reservations(
         environment, provider_call_ref, subscription_id, location_id, business_id,
-        period_start, period_end, reserved_seconds, state,
-        included_minutes_snapshot, overage_opt_in_snapshot,
-        overage_rate_minor_snapshot, overage_cap_minor_snapshot
+        period_start, period_end, reserved_seconds, state, plan_version_id,
+        included_minutes_snapshot, minutes_rollover_snapshot, overage_opt_in_snapshot,
+        overage_rate_minor_snapshot, overage_cap_minor_snapshot, overage_consent_at
       ) VALUES (
         v_environment, v_call_ref, v_subscription, v_location, v_business,
         v_subscription_row.current_period_start, v_subscription_row.current_period_end,
-        60, 'open', v_included, v_overage, v_rate, v_cap
+        60, 'open', v_plan, v_included, false, v_overage, v_rate, v_cap, v_consent
       );
       v_period_start := v_subscription_row.current_period_start;
       v_period_end := v_subscription_row.current_period_end;
@@ -465,27 +618,31 @@ BEGIN
     IF v_scope = 'customer_phone' AND v_reservation.id IS NOT NULL THEN
       v_period_start := v_reservation.period_start;
       v_period_end := v_reservation.period_end;
+      v_plan := v_reservation.plan_version_id;
       v_included := v_reservation.included_minutes_snapshot;
       v_overage := v_reservation.overage_opt_in_snapshot;
       v_rate := v_reservation.overage_rate_minor_snapshot;
       v_cap := v_reservation.overage_cap_minor_snapshot;
+      v_consent := v_reservation.overage_consent_at;
     ELSIF v_scope = 'customer_phone' THEN
       v_period_start := v_subscription_row.current_period_start;
       v_period_end := v_subscription_row.current_period_end;
     END IF;
     INSERT INTO admin_private.commercial_usage_events(
       environment, provider_call_ref, call_scope, subscription_id, business_id, location_id,
-      period_start, period_end, duration_seconds, duration_quality, ended_at, body_sha256,
+      plan_version_id, period_start, period_end, duration_seconds, duration_quality, ended_at, body_sha256,
       included_minutes_snapshot, minutes_rollover_snapshot, overage_opt_in_snapshot,
-      overage_rate_minor_snapshot, overage_cap_minor_snapshot
+      overage_rate_minor_snapshot, overage_cap_minor_snapshot, overage_consent_at
     ) VALUES (
       v_environment, v_call_ref, v_scope, v_subscription, v_business, v_location,
+      CASE WHEN v_scope = 'customer_phone' THEN v_plan ELSE NULL END,
       v_period_start, v_period_end, v_duration, v_quality, v_ended, v_hash,
       CASE WHEN v_scope = 'customer_phone' THEN v_included ELSE NULL END,
       false,
       coalesce(CASE WHEN v_scope = 'customer_phone' THEN v_overage ELSE false END, false),
       CASE WHEN v_scope = 'customer_phone' THEN v_rate ELSE NULL END,
-      CASE WHEN v_scope = 'customer_phone' THEN v_cap ELSE NULL END
+      CASE WHEN v_scope = 'customer_phone' THEN v_cap ELSE NULL END,
+      CASE WHEN v_scope = 'customer_phone' THEN v_consent ELSE NULL END
     )
     RETURNING id INTO v_event_id;
     IF v_reservation.id IS NOT NULL AND v_reservation.state = 'open' THEN
@@ -673,6 +830,7 @@ REVOKE ALL ON FUNCTION
   admin_private.commercial_usage_reservation_guard_v1(),
   admin_private.commercial_usage_customer_seconds_v1(uuid, timestamptz, timestamptz),
   admin_private.commercial_usage_open_reservation_seconds_v1(uuid, timestamptz, timestamptz),
+  admin_private.commercial_usage_load_acceptance_v1(uuid, uuid, jsonb),
   admin_private.commercial_usage_apply_event_v1(jsonb),
   admin_private.commercial_usage_correct_v1(text, text, integer, text),
   admin_private.telloya_voice_redact_expired_leads_v1(timestamptz),
@@ -695,7 +853,7 @@ GRANT EXECUTE ON FUNCTION
 TO service_role;
 
 COMMENT ON FUNCTION public.commercial_usage_apply_event_v1(jsonb) IS
-  'Server role only. Records a usage receipt. call_started reserves the current subscription period. call_ended writes immutable duration evidence for that reserved period. call_analyzed stores no duration and no lead text.';
+  'Server role only. Records a usage receipt. call_started reserves the current subscription period from commercial_offer_acceptances. call_ended writes immutable duration evidence for that reserved period, or for the current period only when an unreserved end timestamp falls inside it. call_analyzed stores no duration and no lead text.';
 COMMENT ON FUNCTION public.commercial_usage_correct_v1(text, text, integer, text) IS
   'Server role only. Appends a duration correction. The original usage row stays unchanged.';
 COMMENT ON FUNCTION public.commercial_usage_customer_seconds_v1(uuid, timestamptz, timestamptz) IS

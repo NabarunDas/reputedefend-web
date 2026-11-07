@@ -9,7 +9,7 @@ import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 import { commercialProviderLane } from "./provider-lane"
 import { commercialSetupQueueEnabled } from "./setup-queue-flag"
 import { commercialInitiateAgentTestCallEnabled } from "./initiate-agent-test-call-flag"
-import { createAgentWebCall, telloyaVoiceApiKey } from "./agent-test-call-provider"
+import { createAgentWebCall, readDevAgentCallDuration, telloyaVoiceApiKey } from "./agent-test-call-provider"
 
 const reply = (message: string, status: number) => NextResponse.json({ message }, { status, headers: privateResponseHeaders })
 
@@ -221,6 +221,7 @@ export async function initiateAgentTestCallCommand(request: NextRequest) {
       p_payload: context(command),
     }
     let needsRecord = false
+    let createSent = false
     const record = (payload: Record<string, unknown>) => backend().rpc<Prepared>("admin_commercial_record_agent_test_creation_v1", {
       ...args,
       p_payload: payload,
@@ -244,6 +245,18 @@ export async function initiateAgentTestCallCommand(request: NextRequest) {
         return reply("A controlled web call cannot be opened for this subscription.", 403)
       }
       needsRecord = true
+      if (lane === "dev") {
+        const duration = await readDevAgentCallDuration({ agentId: claimed.agentRef, agentVersion: claimed.agentVersion })
+        if (duration.availability !== "accepted") {
+          await record({ outcome: "rejected" })
+          needsRecord = false
+          const message = duration.availability === "uncertain"
+            ? "The provider duration limit for this exact agent version could not be read. No web call was opened."
+            : "The provider duration limit for this exact agent version is missing or longer than 5 minutes. No web call was opened."
+          return reply(message, 502)
+        }
+      }
+      createSent = true
       const created = await createAgentWebCall({ agentId: claimed.agentRef, agentVersion: claimed.agentVersion, lane })
       if (created.availability === "uncertain") {
         await record({ outcome: "uncertain", providerCallId: created.callId })
@@ -278,7 +291,10 @@ export async function initiateAgentTestCallCommand(request: NextRequest) {
       )
     } catch {
       if (needsRecord) {
-        try { await record({ outcome: "uncertain", providerCallId: null }) } catch { /* the attempt stays claimed until reconciliation */ }
+        try {
+          await record(createSent ? { outcome: "uncertain", providerCallId: null } : { outcome: "rejected" })
+        } catch { /* the attempt stays claimed until reconciliation */ }
+        if (!createSent) return reply("The provider duration limit for this exact agent version could not be read. No web call was opened.", 502)
         return reply("We couldn’t confirm whether the provider opened the web call. Do not start another one. This attempt needs reconciliation.", 503)
       }
       return reply("A controlled web call cannot be opened for this subscription.", 500)

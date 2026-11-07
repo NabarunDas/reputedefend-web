@@ -106,7 +106,7 @@ Run this only after the enablement checklist and the go/no-go checks. One operat
 
 ## Usage charge, duration, and uncertain outcomes
 
-The charge acknowledgement is explicit and applies to that start. A provider usage charge can be incurred when create-web-call succeeds. The maximum duration returned to the browser is 600 seconds. At that limit the browser leaves the audio connection and shows that the test stays open until the provider confirms the end. The timer does not complete the attempt and does not start another call.
+The charge acknowledgement is explicit and applies to that start. A provider usage charge can be incurred when create-web-call succeeds. On the dev lane the server reads `GET /get-agent/{agent_id}?version=` for the stored integer version before create. The web call stays unopened unless that same version reports `max_call_duration_ms` from 60000 through 300000. The browser safeguard remains 600 seconds. At that limit the browser leaves the audio connection and shows that the test stays open until the provider confirms the end. The timer does not complete the attempt, does not prove the provider ended the call, and does not start another call.
 
 Expected provider evidence:
 

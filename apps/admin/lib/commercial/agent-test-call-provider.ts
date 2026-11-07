@@ -172,6 +172,8 @@ export type CreatedAgentWebCall =
     }
 
 const createWebCallEndpoint = "https://api.retellai.com/v3/create-web-call"
+const providerDurationFloorMs = 60_000
+export const devTestMaxCallDurationMs = 300_000
 
 function iceServers(value: unknown): ProviderIceServer[] | null {
   if (!Array.isArray(value) || value.length < 1 || value.length > 8) return null
@@ -250,6 +252,48 @@ export async function stopAgentWebCall(input: {
     if (response.status >= 200 && response.status < 300) return { availability: "stopped" }
     if (response.status === 408 || response.status === 429 || response.status >= 500) return { availability: "uncertain" }
     return { availability: "rejected" }
+  } catch {
+    return { availability: "uncertain" }
+  }
+}
+
+export type DevAgentDuration =
+  | { availability: "accepted"; maxCallDurationMs: number }
+  | { availability: "rejected" }
+  | { availability: "uncertain" }
+
+export async function readDevAgentCallDuration(input: {
+  agentId: string
+  agentVersion: number
+  fetchImpl?: typeof fetch
+}): Promise<DevAgentDuration> {
+  if (!agentPattern.test(input.agentId)) return { availability: "rejected" }
+  if (!Number.isSafeInteger(input.agentVersion) || input.agentVersion < 0 || input.agentVersion > 999_999_999) {
+    return { availability: "rejected" }
+  }
+  const apiKey = telloyaVoiceApiKey("dev")
+  if (!apiKey) return { availability: "rejected" }
+  const endpoint = new URL(`https://api.retellai.com/get-agent/${encodeURIComponent(input.agentId)}`)
+  endpoint.searchParams.set("version", String(input.agentVersion))
+  try {
+    const response = await (input.fetchImpl ?? fetch)(endpoint, {
+      method: "GET",
+      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+      redirect: "error",
+      signal: AbortSignal.timeout(lookupTimeoutMs),
+    })
+    if (response.status === 408 || response.status === 429 || response.status >= 500) return { availability: "uncertain" }
+    if (response.status !== 200) return { availability: "rejected" }
+    const body = await response.json() as unknown
+    if (!body || typeof body !== "object" || Array.isArray(body)) return { availability: "rejected" }
+    const record = body as Record<string, unknown>
+    if (text(record.agent_id) !== input.agentId) return { availability: "rejected" }
+    const version = agentVersion(record.version)
+    if (version.quality !== "present" || version.version !== input.agentVersion) return { availability: "rejected" }
+    const limit = record.max_call_duration_ms
+    if (typeof limit !== "number" || !Number.isSafeInteger(limit)) return { availability: "rejected" }
+    if (limit < providerDurationFloorMs || limit > devTestMaxCallDurationMs) return { availability: "rejected" }
+    return { availability: "accepted", maxCallDurationMs: limit }
   } catch {
     return { availability: "uncertain" }
   }

@@ -142,7 +142,8 @@
 }
 
 .stepTitle:focus {
-  outline: none;
+  outline: 3px solid #d9ff94;
+  outline-offset: 4px;
 }
 
 .stepTitle:focus-visible {
@@ -158,7 +159,8 @@
 }
 
 .summary:focus {
-  outline: none;
+  outline: 3px solid #d9ff94;
+  outline-offset: 4px;
 }
 
 .summary:focus-visible {
@@ -587,7 +589,8 @@ textarea.control {
 }
 
 .successTitle:focus {
-  outline: none;
+  outline: 3px solid #d9ff94;
+  outline-offset: 4px;
 }
 
 .successTitle:focus-visible {

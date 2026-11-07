@@ -58,7 +58,16 @@ describe("Telloya document titles", () => {
     }
   })
 
-  it("gives every public page its own canonical path", () => {
+  it("gives every public page a unique title, description and canonical path", () => {
+    const pages = [homeMetadata, howMetadata, featuresMetadata, industriesMetadata, pricingMetadata, enquireMetadata, cookiesMetadata, demoMetadata]
+    const titles = pages.map((metadata) => documentTitle(metadata.title))
+    const descriptions = pages.map((metadata) => metadata.description)
+    expect(new Set(titles).size).toBe(pages.length)
+    expect(new Set(descriptions).size).toBe(pages.length)
+    for (const description of descriptions) {
+      expect(typeof description).toBe("string")
+      expect(String(description).length).toBeGreaterThan(40)
+    }
     expect(homeMetadata.alternates).toEqual({ canonical: "/" })
     expect(howMetadata.alternates).toEqual({ canonical: "/how-it-works" })
     expect(featuresMetadata.alternates).toEqual({ canonical: "/features" })

@@ -78,9 +78,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           Skip to content
         </a>
         <Header />
-        <main id="main-content">{children}</main>
+        <main id="main-content" tabIndex={-1}>{children}</main>
         <Footer />
-        <TelloyaAnalyticsRoot measurementId={readTelloyaGaMeasurementId()} />
+        <TelloyaAnalyticsRoot
+          measurementId={readTelloyaGaMeasurementId()}
+          deploymentEnvironment={process.env.VERCEL_ENV}
+        />
       </body>
     </html>
   )

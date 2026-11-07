@@ -102,7 +102,8 @@ export function Header() {
           ref={mobileMenuRef}
           className={`mobile-menu ${mobileMenuOpen ? "mobile-menu-open" : ""}`}
           role="dialog"
-          aria-modal="true"
+          aria-modal={mobileMenuOpen ? true : undefined}
+          aria-hidden={mobileMenuOpen ? undefined : true}
           aria-label="Mobile navigation"
           inert={!mobileMenuOpen}
         >

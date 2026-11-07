@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { describe, it, expect } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import "@testing-library/jest-dom/vitest"
 import { TelloyaLogo } from "@/components/telloya-logo"
 import { Footer } from "@/components/footer"
@@ -101,6 +103,12 @@ describe("Navigation", () => {
     expect(loginLinks.length).toBeGreaterThan(0)
   })
 
+  it("makes the skip-link target focusable", () => {
+    const source = readFileSync(resolve(process.cwd(), "app/layout.tsx"), "utf8")
+    expect(source).toContain('href="#main-content"')
+    expect(source).toContain('id="main-content" tabIndex={-1}')
+  })
+
   it("mobile menu button has proper ARIA attributes", () => {
     const { container } = render(<Header />)
     const button = container.querySelector('.mobile-menu-button')
@@ -109,12 +117,18 @@ describe("Navigation", () => {
     expect(button).toHaveAttribute('aria-controls')
   })
 
-  it("mobile menu has dialog role and proper ARIA", () => {
+  it("mobile menu is a modal dialog only while it is open", () => {
     const { container } = render(<Header />)
     const menu = container.querySelector('#mobile-menu')
     expect(menu).toHaveAttribute('role', 'dialog')
-    expect(menu).toHaveAttribute('aria-modal', 'true')
     expect(menu).toHaveAttribute('aria-label')
+    expect(menu).not.toHaveAttribute('aria-modal')
+    expect(menu).toHaveAttribute('aria-hidden', 'true')
+    const opener = container.querySelector<HTMLButtonElement>('.mobile-menu-button')
+    expect(opener).not.toBeNull()
+    fireEvent.click(opener!)
+    expect(menu).toHaveAttribute('aria-modal', 'true')
+    expect(menu).not.toHaveAttribute('aria-hidden')
   })
 
   it("mobile menu has inert attribute when closed", () => {

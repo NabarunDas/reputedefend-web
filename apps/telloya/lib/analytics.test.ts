@@ -14,6 +14,7 @@ import {
   sanitizePathname,
   sendSanitizedPageView,
   sendTelloyaLeadConversion,
+  telloyaAnalyticsCollectionAllowed,
   telloyaLeadPayload,
   withdrawAnalytics,
 } from "@/lib/analytics"
@@ -31,6 +32,13 @@ describe("Telloya GA measurement ID", () => {
     expect(readTelloyaGaMeasurementId("UA-123456")).toBeUndefined()
     expect(readTelloyaGaMeasurementId("g-testonly123")).toBeUndefined()
     expect(readTelloyaGaMeasurementId(" G-TESTONLY123 ")).toBe(TEST_ID)
+  })
+
+  it("does not collect on a preview deployment", () => {
+    expect(telloyaAnalyticsCollectionAllowed(undefined)).toBe(true)
+    expect(telloyaAnalyticsCollectionAllowed("production")).toBe(true)
+    expect(telloyaAnalyticsCollectionAllowed("preview")).toBe(false)
+    expect(telloyaAnalyticsCollectionAllowed(" preview ")).toBe(false)
   })
 
   it("does not read the ProfileRelaunch measurement ID", () => {

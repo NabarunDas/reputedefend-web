@@ -536,7 +536,7 @@ export function TelloyaEnquiryForm({
         <div className={styles.prelaunchIcon}>
           <Mail size={32} aria-hidden="true" />
         </div>
-        <h3 className={styles.prelaunchTitle}>Online enquiry submission is being prepared</h3>
+        <h2 className={styles.prelaunchTitle}>Online enquiry submission is being prepared</h2>
         <p className={styles.prelaunchLead}>
           We&apos;re finalising the Telloya enquiry system before public launch. In the meantime, please email us directly to discuss your requirements.
         </p>
@@ -603,7 +603,13 @@ export function TelloyaEnquiryForm({
       <div className={styles.panel}>
         {step === 1 && (
           <>
-            <fieldset id={`${formId}-planTier`} tabIndex={-1} className={styles.options}>
+            <fieldset
+              id={`${formId}-planTier`}
+              tabIndex={-1}
+              className={styles.options}
+              aria-invalid={errors.planTier ? true : undefined}
+              aria-describedby={errors.planTier ? `${formId}-planTier-error` : undefined}
+            >
               <legend className={styles.visuallyHidden}>Choose your Telloya plan</legend>
               {telloyaPlans.map((plan) => {
                 const selected = values.planTier === plan.tier
@@ -634,7 +640,7 @@ export function TelloyaEnquiryForm({
                   </label>
                 )
               })}
-              {errors.planTier && <p className={styles.error}>{errors.planTier}</p>}
+              {errors.planTier && <p id={`${formId}-planTier-error`} className={styles.error}>{errors.planTier}</p>}
             </fieldset>
 
             {selectedPlan && selectedPlan.monthlyPriceGbp != null && selectedPlan.minutesPerMonth != null && (
@@ -960,6 +966,8 @@ export function TelloyaEnquiryForm({
                 name="privacyAccepted"
                 type="checkbox"
                 checked={values.privacyAccepted}
+                aria-invalid={errors.privacyAccepted ? true : undefined}
+                aria-describedby={errors.privacyAccepted ? `${formId}-privacyAccepted-error` : undefined}
                 onChange={(e) => update("privacyAccepted", e.target.checked)}
               />
               <span>
@@ -967,7 +975,7 @@ export function TelloyaEnquiryForm({
                 <Link href="https://profilerelaunch.com/privacy" target="_blank" rel="noopener noreferrer">privacy notice</Link>.
               </span>
             </label>
-            {errors.privacyAccepted && <p className={styles.error}>{errors.privacyAccepted}</p>}
+            {errors.privacyAccepted && <p id={`${formId}-privacyAccepted-error`} className={styles.error}>{errors.privacyAccepted}</p>}
           </div>
         )}
       </div>

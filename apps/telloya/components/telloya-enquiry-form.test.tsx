@@ -226,6 +226,7 @@ describe("Telloya short enquiry journey", () => {
   it("keeps online submission closed and explains that no payment is taken", () => {
     render(<TelloyaEnquiryForm />)
     expect(screen.getByRole("status")).toHaveTextContent(/enquiry system before public launch/i)
+    expect(screen.getByRole("heading", { level: 2, name: /Online enquiry submission is being prepared/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Submit enquiry/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("radio", { name: /Growth/ })).not.toBeInTheDocument()
   })
@@ -242,8 +243,25 @@ describe("Telloya short enquiry journey", () => {
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
     const summary = screen.getByRole("alert")
     expect(summary).toHaveTextContent("Please select a plan.")
+    const planGroup = screen.getByRole("group", { name: /Choose your Telloya plan/ })
+    expect(planGroup).toHaveAttribute("aria-invalid", "true")
+    expect(planGroup.getAttribute("aria-describedby")).toMatch(/planTier-error$/)
     fireEvent.click(screen.getByRole("button", { name: "Please select a plan." }))
     expect(document.activeElement?.id).toMatch(/planTier$/)
+  })
+
+  it("associates the privacy confirmation error with the checkbox", () => {
+    renderEnabled("basic")
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+    fillContact()
+    fireEvent.click(screen.getByRole("checkbox", { name: /privacy notice/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
+    const privacy = screen.getByRole("checkbox", { name: /privacy notice/ })
+    expect(privacy).toHaveAttribute("aria-invalid", "true")
+    expect(privacy.getAttribute("aria-describedby")).toMatch(/privacyAccepted-error$/)
+    expect(document.getElementById(privacy.getAttribute("aria-describedby") ?? "")).toHaveTextContent(
+      "Please confirm you have read the privacy notice.",
+    )
   })
 
   it("preserves a legacy complete-link Guard preference until a plan is chosen", () => {

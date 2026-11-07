@@ -60,6 +60,15 @@ export function telloyaAnalyticsIsConfigured(value?: string) {
   return Boolean(readTelloyaGaMeasurementId(value))
 }
 
+/**
+ * Preview deployments must not report into a Telloya GA4 property.
+ * An unset environment is local or test and may still exercise the client.
+ * Production is the only hosted environment allowed to collect.
+ */
+export function telloyaAnalyticsCollectionAllowed(vercelEnv: string | undefined) {
+  return (vercelEnv?.trim() ?? "") !== "preview"
+}
+
 export function sanitizePathname(pathname: string) {
   const raw = pathname.trim() || "/"
   const path = raw.split("?")[0]?.split("#")[0] || "/"

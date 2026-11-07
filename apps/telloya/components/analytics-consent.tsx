@@ -16,6 +16,21 @@ import styles from "./analytics-consent.module.css"
 
 const OPERATOR_PRIVACY_HREF = "https://profilerelaunch.com/privacy"
 
+function focusAfterConsentChange(opener: HTMLElement | null) {
+  window.requestAnimationFrame(() => {
+    if (opener?.isConnected && opener !== document.body && opener !== document.documentElement) {
+      opener.focus()
+      return
+    }
+    const bannerButton = document.querySelector<HTMLElement>("[data-testid='analytics-consent-banner'] button")
+    if (bannerButton) {
+      bannerButton.focus()
+      return
+    }
+    document.getElementById("main-content")?.focus()
+  })
+}
+
 function useClientReady() {
   return useSyncExternalStore(
     () => () => {},
@@ -52,7 +67,8 @@ export function TelloyaAnalyticsConsent({ measurementId }: { measurementId?: str
 
   useEffect(() => {
     function onOpen() {
-      openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      const active = document.activeElement
+      openerRef.current = active instanceof HTMLElement && active !== document.body ? active : null
       setAnalyticsOn(readStoredConsent() === "accepted")
       setSettingsOpen(true)
     }
@@ -81,7 +97,7 @@ export function TelloyaAnalyticsConsent({ measurementId }: { measurementId?: str
       if (event.key === "Escape") {
         event.preventDefault()
         setSettingsOpen(false)
-        openerRef.current?.focus()
+        focusAfterConsentChange(openerRef.current)
         return
       }
       if (event.key !== "Tab" || !focusables?.length) return
@@ -104,7 +120,7 @@ export function TelloyaAnalyticsConsent({ measurementId }: { measurementId?: str
 
   function closeSettings() {
     setSettingsOpen(false)
-    openerRef.current?.focus()
+    focusAfterConsentChange(openerRef.current)
   }
 
   function reject() {
@@ -112,6 +128,7 @@ export function TelloyaAnalyticsConsent({ measurementId }: { measurementId?: str
     withdrawAnalytics(id)
     setAnalyticsOn(false)
     setSettingsOpen(false)
+    focusAfterConsentChange(openerRef.current)
   }
 
   function accept() {
@@ -119,6 +136,7 @@ export function TelloyaAnalyticsConsent({ measurementId }: { measurementId?: str
     acceptAnalytics(id)
     setAnalyticsOn(true)
     setSettingsOpen(false)
+    focusAfterConsentChange(openerRef.current)
   }
 
   function saveSettings() {

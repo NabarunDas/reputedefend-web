@@ -14,11 +14,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     return []
   }
 
-  // /demo calls Next.js redirect("/enquire"), which is a temporary 307.
-  // The public sitemap lists the destination rather than the redirect.
+  // /demo is an illustrative page. Indexing still depends on the launch check above.
   const routes = [
     "",
     "/how-it-works",
+    "/demo",
     "/features",
     "/industries",
     "/pricing",

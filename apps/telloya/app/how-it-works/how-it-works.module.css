@@ -277,6 +277,16 @@
   border-top: 1px solid rgba(199,250,190,.18);
 }
 
+.exampleLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 16px;
+  color: #cffd9a;
+  font-weight: 800;
+}
+
 /* Setup grid */
 .setupGrid {
   display: grid;

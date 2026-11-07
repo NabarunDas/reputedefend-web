@@ -204,6 +204,7 @@
 .example {display:grid; grid-template-columns:.9fr 1.1fr; gap:75px; align-items:center; padding-block:95px; border-block: 1px solid rgba(198,242,188,.16); }
 .exampleCopy h2 {max-width:530px; margin-bottom:24px; }
 .exampleCopy > p:not(.eyebrow) {color:#bbcfbf; max-width:450px; line-height:1.75; }
+.exampleLinks { display:flex; flex-wrap:wrap; gap:4px 28px; align-items:center; }
 .textLink {display:inline-flex; align-items:center; gap:12px; color:#cffd9a; font-size:.9rem; font-weight:800; padding-block:12px; border-bottom:1px solid rgba(188,254,160,.4); }
 .leadCard {border:1px solid rgba(218,255,198,.32); border-radius:30px; padding:29px; background:linear-gradient(125deg,rgba(17,83,58,.60),rgba(4,38,30,.84)); box-shadow: 0 28px 100px rgba(0,0,0,.20),inset 0 1px rgba(255,255,255,.1); }
 .leadTop {display:flex; justify-content:space-between; gap:15px; align-items:center; border-bottom:1px solid rgba(199,250,190,.18); padding-bottom:19px; font-size:.76rem; color:#b7d2bf; }

@@ -9,7 +9,6 @@
 
 import { brandName } from "@/lib/brand"
 import { getCustomerPortalHref } from "@/lib/customer-portal"
-import { legalIdentity } from "../../../lib/legal"
 import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes, standardEntitlement, commercialCopy } from "./pricing"
 
 // Homepage content
@@ -104,6 +103,7 @@ export const homepageContent = {
       callback: "Weekday mornings preferred",
       time: "11:23 AM",
     },
+    demoLink: { label: "See Telloya in Action", href: "/demo" },
   },
   audience: {
     eyebrow: "Who Telloya is for",
@@ -260,6 +260,7 @@ export const howItWorksContent = {
       ],
       note: "This is an illustrative example. The actual conversation adapts to how the caller responds.",
     },
+    demoLink: { label: "See Telloya in Action", href: "/demo" },
   },
   setup: {
     eyebrow: "Getting started",
@@ -815,52 +816,7 @@ export const pricingContent = {
   },
 } as const
 
-// Demo/Enquiries page
-export const demoContent = {
-  seo: {
-    title: "Enquire About Telloya – AI Receptionist Demo",
-    description:
-      "Get in touch to learn more about Telloya AI receptionist for tradespeople and local service businesses.",
-  },
-  hero: {
-    eyebrow: "Get in touch",
-    title: "Request information about Telloya",
-    lead:
-      "We're preparing for public launch. Email us to learn more and we'll be in touch with details.",
-  },
-  contact: {
-    title: "How to contact us",
-    lead:
-      "Send an email to the address below with 'Telloya Enquiry' in the subject line. We'll respond to discuss your requirements.",
-    email: legalIdentity.contactEmail ?? "contact@profilerelaunch.com",
-    subject: "Telloya Enquiry",
-    whatToInclude: [
-      "Your business name and type of work",
-      "Rough location (town or region)",
-      "How many calls you typically miss per week",
-      "Whether you're interested in Telloya standalone or the proposed Complete package",
-      "Any questions about how the service works",
-    ],
-  },
-  future: {
-    title: "Real demonstrations coming soon",
-    description:
-      "We're building a proper demonstration experience where you can hear how Telloya handles calls. This will be available before public launch.",
-    note:
-      "We will not create fake AI demonstrations or pretend to have live call integration until the real service is ready.",
-  },
-  alternative: {
-    eyebrow: "Already a ProfileRelaunch customer?",
-    title: "Access your account",
-    lead: "Existing customers can log in to the ProfileRelaunch customer portal.",
-    cta: "Customer login",
-    href: getCustomerPortalHref(),
-  },
-  cta: {
-    title: "Questions about Telloya?",
-    description: "Send us an email and we'll help you understand how Telloya can support your business.",
-  },
-} as const
+// The illustrative /demo script lives in demo-script.ts. It is not a live call.
 
 // Navigation content
 export const navigationContent = {
@@ -885,6 +841,7 @@ export const footerContent = {
       title: "Telloya",
       links: [
         { label: "How It Works", href: "/how-it-works" },
+        { label: "See Telloya in Action", href: "/demo" },
         { label: "Features", href: "/features" },
         { label: "Industries", href: "/industries" },
         { label: "Pricing", href: "/pricing" },

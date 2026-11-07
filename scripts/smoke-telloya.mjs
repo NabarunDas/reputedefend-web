@@ -82,7 +82,7 @@ async function testLaunchState(launched, description) {
     assert.ok(ready, `Telloya production server did not become ready\n${serverLog}`)
 
     // Test homepage, robots.txt, and sitemap
-    for (const path of ["/", "/robots.txt", "/sitemap.xml"]) {
+    for (const path of ["/", "/demo", "/robots.txt", "/sitemap.xml"]) {
       const response = await fetch(`${origin}${path}`, { redirect: "manual" })
       assert.equal(response.headers.get("content-security-policy-report-only"), null, path)
       const csp = response.headers.get("content-security-policy") ?? ""
@@ -119,6 +119,15 @@ async function testLaunchState(launched, description) {
         }
       }
 
+      if (path === "/demo") {
+        assert.match(content, /Interactive illustration using fictional information/)
+        assert.match(content, /Explore Pricing/)
+        assert.match(content, /Enquire About Telloya/)
+        assert.match(content, /Hartley Plumbing/)
+        assert.match(content, /See Telloya in Action/)
+        assert.doesNotMatch(content, /Retell|Twilio|Stripe/)
+      }
+
       if (path === "/robots.txt") {
         if (launched) {
           assert.match(content, /Allow: \//, "Launched robots.txt should allow")
@@ -132,6 +141,7 @@ async function testLaunchState(launched, description) {
         if (launched) {
           assert.match(content, /<url>/, "Launched sitemap should contain URLs")
           assert.match(content, /telloya\.com/, "Launched sitemap should contain domain")
+          assert.match(content, /telloya\.com\/demo/, "Launched sitemap should list the illustrative demo")
         } else {
           assert.doesNotMatch(content, /<url>/, "Pre-launch sitemap should not contain URLs")
         }

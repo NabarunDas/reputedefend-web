@@ -7,6 +7,7 @@ import { metadata as industriesMetadata } from "@/app/industries/page"
 import { metadata as pricingMetadata } from "@/app/pricing/page"
 import { metadata as enquireMetadata } from "@/app/enquire/page"
 import { metadata as cookiesMetadata } from "@/app/cookies/page"
+import { metadata as demoMetadata } from "@/app/demo/page"
 import { metadata as notFoundMetadata } from "@/app/not-found"
 
 function documentTitle(title: unknown, template = titleTemplate) {
@@ -27,6 +28,7 @@ describe("Telloya document titles", () => {
       pricingMetadata.title,
       enquireMetadata.title,
       cookiesMetadata.title,
+      demoMetadata.title,
       notFoundMetadata.title,
     ].map((title) => documentTitle(title))
 
@@ -47,7 +49,7 @@ describe("Telloya document titles", () => {
   })
 
   it("keeps the approved share image on pages that set their own social title", () => {
-    const pages = [homeMetadata, howMetadata, featuresMetadata, industriesMetadata, pricingMetadata, enquireMetadata, cookiesMetadata]
+    const pages = [homeMetadata, howMetadata, featuresMetadata, industriesMetadata, pricingMetadata, enquireMetadata, cookiesMetadata, demoMetadata]
     for (const metadata of pages) {
       const twitter = metadata.twitter
       expect(metadata.openGraph?.images).toEqual([socialShareImage])
@@ -64,5 +66,6 @@ describe("Telloya document titles", () => {
     expect(pricingMetadata.alternates).toEqual({ canonical: "/pricing" })
     expect(enquireMetadata.alternates).toEqual({ canonical: "/enquire" })
     expect(cookiesMetadata.alternates).toEqual({ canonical: "/cookies" })
+    expect(demoMetadata.alternates).toEqual({ canonical: "/demo" })
   })
 })

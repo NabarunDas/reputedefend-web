@@ -34,6 +34,7 @@ export function inboundLaunchBlockers(): readonly string[] {
     "default_inbound_agent_fallback_unverified",
     "inbound_metadata_propagation_not_live_verified",
     "call_started_not_bound_to_admission",
+    "admission_usage_ingest_not_applied",
     "in_progress_provider_stop_not_proved",
     "inbound_admission_flag_off",
     "usage_events_flag_off",

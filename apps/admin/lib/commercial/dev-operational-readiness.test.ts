@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
 const readiness = readFileSync(new URL("../../../../docs/customer-platform/03A-03-03-02-08-dev-operational-readiness.md", import.meta.url), "utf8")
+const prerequisites = readFileSync(new URL("../../../../docs/customer-platform/03A-03-03-02-08-02-dev-test-prerequisites.md", import.meta.url), "utf8")
 const commercial = readFileSync(new URL("../../../../docs/telloya/phase-c/commercial-readiness.md", import.meta.url), "utf8")
 
 describe("controlled Retell DEV operational readiness", () => {
@@ -17,5 +18,12 @@ describe("controlled Retell DEV operational readiness", () => {
     expect(readiness).toContain("600 seconds")
     expect(readiness).toContain("pendingMigrations()` is empty.")
     expect(readiness).toContain("I understand this controlled web call may incur a provider usage charge.")
+    expect(readiness).toContain("max_call_duration_ms")
+    expect(prerequisites).toContain("TELLOYA_ENQUIRY_ENABLED")
+    expect(prerequisites).toContain("CUSTOMER_COMMERCIAL_PAYMENT_SETTLEMENT_ENABLED")
+    expect(prerequisites).toContain("max_call_duration_ms")
+    expect(prerequisites).toContain("300000")
+    expect(prerequisites).toContain("GET https://api.retellai.com/get-agent/{agent_id}?version={integer}")
+    expect(prerequisites).toContain("not ready for that call")
   })
 })

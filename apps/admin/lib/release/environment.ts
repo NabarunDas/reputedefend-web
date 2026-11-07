@@ -393,7 +393,7 @@ export const environmentContract: readonly EnvVariable[] = [
     secret: true,
     scope: "PRODUCTION_AND_PREVIEW",
     atAdminCutover: "ABSENT",
-    controls: "Server-side credential for the dev provider lane. Verification uses it for a read-only call lookup. Initiation uses it for POST /v3/create-web-call, and cancellation uses it for POST /v2/stop-call/{callId}, only when ADMIN_COMMERCIAL_INITIATE_AGENT_TEST_CALL_ENABLED is exactly true. It does not place a telephone call, buy a number, enable forwarding, or activate routing. It is not configured by this change. The initiation flag stays off.",
+    controls: "Server-side credential for the dev provider lane. Verification uses it for a read-only call lookup. Initiation uses it for POST /v3/create-web-call, and cancellation uses it for POST /v2/stop-call/{callId}, only when ADMIN_COMMERCIAL_INITIATE_AGENT_TEST_CALL_ENABLED is exactly true. Before that create, the dev lane reads GET /get-agent/{agent_id}?version= for the stored integer version. A missing max_call_duration_ms, a different version, or a limit above 300000 ms blocks the web call and does not update the agent. It does not place a telephone call, buy a number, enable forwarding, or activate routing. It is not configured by this change. The initiation flag stays off.",
     whenAbsent: "The conversation-test command records that provider evidence is unavailable. It does not record a pass. A controlled web call is not opened.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,

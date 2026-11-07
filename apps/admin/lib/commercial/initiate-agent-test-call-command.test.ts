@@ -113,6 +113,23 @@ function providerResponse(patch: Record<string, unknown> = {}) {
   }), { status: 201, headers: { "content-type": "application/json" } })
 }
 
+function durationResponse(patch: Record<string, unknown> = {}, status = 200) {
+  return new Response(JSON.stringify({
+    agent_id: "agent-0021",
+    version: 4,
+    max_call_duration_ms: 300_000,
+    ...patch,
+  }), { status, headers: { "content-type": "application/json" } })
+}
+
+function fetchWithDuration(create: () => Response | Promise<Response>) {
+  return vi.fn(async (url: string, _init: RequestInit) => {
+    void _init
+    if (String(url).includes("/get-agent/")) return durationResponse()
+    return create()
+  })
+}
+
 function req(payload: unknown = body, requestOrigin = origin) {
   return new NextRequest(`${requestOrigin}/api/commercial/initiate-agent-test-call`, {
     method: "POST",
@@ -208,7 +225,7 @@ describe("start controlled receptionist test", () => {
   })
 
   it("creates a v3 web call once from the stored agent version and returns connection fields only after binding", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(providerResponse())
+    const fetchMock = fetchWithDuration(() => providerResponse())
     vi.stubGlobal("fetch", fetchMock)
     const response = await POST(req())
     expect(response.status).toBe(200)
@@ -230,13 +247,21 @@ describe("start controlled receptionist test", () => {
     expect(JSON.stringify(json)).not.toContain("stored-token-should-not-leak")
     expect(JSON.stringify(json)).not.toContain("stored-ice")
     expect(JSON.stringify(json)).not.toContain("ice_servers")
-    const called = fetchMock.mock.calls[0]
+    const durationCall = fetchMock.mock.calls.find(call => String(call[0]).includes("/get-agent/"))
+    const called = fetchMock.mock.calls.find(call => String(call[0]).includes("/v3/create-web-call"))
+    expect(String(durationCall?.[0])).toBe("https://api.retellai.com/get-agent/agent-0021?version=4")
+    expect(String(durationCall?.[0])).not.toContain("latest")
+    expect(fetchMock.mock.calls.findIndex(call => String(call[0]).includes("/get-agent/"))).toBeLessThan(
+      fetchMock.mock.calls.findIndex(call => String(call[0]).includes("/v3/create-web-call")),
+    )
+    if (!called) throw new Error("create was not called")
     expect(String(called[0])).toBe("https://api.retellai.com/v3/create-web-call")
     expect(called[1].method).toBe("POST")
-    expect(called[1].headers.authorization).toBe("Bearer test-key-value")
-    expect(JSON.parse(called[1].body as string)).toEqual({ agent_id: "agent-0021", agent_version: 4 })
-    expect(called[1].body).not.toContain("metadata")
-    expect(called[1].body).not.toContain("latest")
+    const headers = new Headers(called[1].headers)
+    expect(headers.get("authorization")).toBe("Bearer test-key-value")
+    expect(JSON.parse(String(called[1].body))).toEqual({ agent_id: "agent-0021", agent_version: 4 })
+    expect(String(called[1].body)).not.toContain("metadata")
+    expect(String(called[1].body)).not.toContain("latest")
     expect(claimCall()).toHaveLength(1)
     expect(mocks.rpc.mock.calls.findIndex(call => call[0] === "admin_commercial_claim_agent_test_creation_v1")).toBeLessThan(
       mocks.rpc.mock.calls.length,
@@ -318,7 +343,8 @@ describe("start controlled receptionist test", () => {
       }
       throw new Error(name)
     })
-    vi.stubGlobal("fetch", vi.fn(async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (String(url).includes("/get-agent/")) return durationResponse()
       fetches += 1
       throw new Error("network")
     }))
@@ -334,7 +360,8 @@ describe("start controlled receptionist test", () => {
     for (const status of [408, 429, 503]) {
       phase = "prepared"
       fetches = 0
-      vi.stubGlobal("fetch", vi.fn(async () => {
+      vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+        if (String(url).includes("/get-agent/")) return durationResponse()
         fetches += 1
         return new Response("busy", { status })
       }))
@@ -348,7 +375,7 @@ describe("start controlled receptionist test", () => {
   })
 
   it("records a definitive provider rejection without binding and blocks a second key while another attempt is active", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("no", { status: 422 }))
+    const fetchMock = fetchWithDuration(() => new Response("no", { status: 422 }))
     vi.stubGlobal("fetch", fetchMock)
     const rejected = await POST(req())
     expect(rejected.status).toBe(502)
@@ -368,17 +395,17 @@ describe("start controlled receptionist test", () => {
     }))
     expect(second.status).toBe(409)
     expect((await second.json()).message).toContain("already has a controlled test")
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls.filter(call => String(call[0]).includes("/v3/create-web-call"))).toHaveLength(1)
   })
 
   it("keeps an incomplete provider payload for reconciliation and does not bind a mismatched echoed agent", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(providerResponse({ transport: "phone" })))
+    vi.stubGlobal("fetch", fetchWithDuration(() => providerResponse({ transport: "phone" })))
     const wrongTransport = await POST(req())
     expect(wrongTransport.status).toBe(503)
     expect(recordCall()?.[1].p_payload).toMatchObject({ outcome: "uncertain", providerCallId: "call_created_01" })
     expect(bindCall()).toBeUndefined()
     installRpc({ bind: { status: "denied", reason: "agent", providerConfirmedAgent: false } })
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(providerResponse({ agent_id: "agent-0099" })))
+    vi.stubGlobal("fetch", fetchWithDuration(() => providerResponse({ agent_id: "agent-0099" })))
     const wrongAgent = await POST(req())
     expect(wrongAgent.status).toBe(403)
     expect((await wrongAgent.json()).message).toContain("Do not start another one")
@@ -399,6 +426,64 @@ describe("start controlled receptionist test", () => {
     expect(provider).not.toContain("allowAgentTestCreate")
     expect(provider).not.toContain("const creates")
     expect(provider).toContain("https://api.retellai.com/v2/stop-call/")
+    expect(provider).toContain("https://api.retellai.com/get-agent/")
+    expect(provider).toContain("max_call_duration_ms")
+    expect(provider).not.toContain("update-agent")
+    expect(provider).not.toContain("create-agent")
+    expect(source).toContain("readDevAgentCallDuration")
     expect(source).not.toContain("connectionToken")
+  })
+
+  it("blocks a dev web call when the exact agent version has no 5-minute provider duration limit", async () => {
+    const cases = [
+      durationResponse({ max_call_duration_ms: undefined }),
+      durationResponse({ max_call_duration_ms: 3_600_000 }),
+      durationResponse({ version: 5 }),
+      durationResponse({ agent_id: "agent-0099" }),
+      durationResponse({}, 404),
+      durationResponse({}, 503),
+    ]
+    for (const agent of cases) {
+      const fetchMock = vi.fn(async (url: string, _init: RequestInit) => {
+        void _init
+        if (String(url).includes("/get-agent/")) return agent
+        return providerResponse()
+      })
+      vi.stubGlobal("fetch", fetchMock)
+      installRpc()
+      const response = await POST(req())
+      expect(response.status).toBe(502)
+      expect((await response.json()).message).toContain("No web call was opened.")
+      expect(fetchMock.mock.calls.some(call => String(call[0]).includes("/v3/create-web-call"))).toBe(false)
+      expect(recordCall()?.[1].p_payload).toEqual({ outcome: "rejected" })
+      expect(bindCall()).toBeUndefined()
+    }
+    const fetchMock = vi.fn(async (url: string, _init: RequestInit) => {
+      void url
+      void _init
+      throw new Error("network")
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    installRpc()
+    const unread = await POST(req())
+    expect(unread.status).toBe(502)
+    expect((await unread.json()).message).toContain("could not be read")
+    expect(fetchMock.mock.calls.some(call => String(call[0]).includes("/v3/create-web-call"))).toBe(false)
+    expect(recordCall()?.[1].p_payload).toEqual({ outcome: "rejected" })
+  })
+
+  it("does not read the dev duration limit on the production lane", async () => {
+    vi.stubEnv("VERCEL_ENV", "production")
+    vi.stubEnv("TELLOYA_RETELL_PRODUCTION_API_KEY", "live-key-value")
+    const fetchMock = vi.fn(async (url: string, _init: RequestInit) => {
+      void url
+      void _init
+      return providerResponse()
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const response = await POST(req())
+    expect(response.status).toBe(200)
+    expect(fetchMock.mock.calls.map(call => String(call[0]))).toEqual(["https://api.retellai.com/v3/create-web-call"])
+    expect(new Headers(fetchMock.mock.calls[0][1].headers).get("authorization")).toBe("Bearer live-key-value")
   })
 })

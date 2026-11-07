@@ -19,11 +19,11 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261106200000_admin_commercial_initiate_agent_test_call_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261107110000_telloya_subscription_usage_ledger_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261107110000_telloya_subscription_usage_ledger_v1.sql")
+    expect(migrationHead.filename).toBe("20261107120000_telloya_inbound_admission_reservation_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
@@ -39,7 +39,7 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261107110000_telloya_subscription_usage_ledger_v1.sql"])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261107120000_telloya_inbound_admission_reservation_v1.sql"])
     expect(chainAfter(appliedMigrationHead.version)).toEqual(pendingMigrations())
     expect(findMigration("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")).toMatchObject({
       appliedToDev: true,
@@ -57,7 +57,7 @@ describe("the migration chain manifest", () => {
       "20260916000000_relaunch_guard_data_foundation_v1.sql",
     ]
     expect(ledgerGap.every(filename => findMigration(filename)?.appliedToDev === true)).toBe(true)
-    expect(migrationChain.filter(entry => entry.appliedToDev).length - ledgerGap.length).toBe(115)
+    expect(migrationChain.filter(entry => entry.appliedToDev).length - ledgerGap.length).toBe(116)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
     expect(findMigration("20261028120000_guided_postpayment_handover_v1.sql")?.appliedToDev).toBe(true)

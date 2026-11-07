@@ -1,12 +1,12 @@
 import Link from "next/link"
 import { TelloyaLogo } from "@/components/telloya-logo"
 import { TelloyaCookieSettingsButton } from "@/components/analytics-consent"
-import { readTelloyaGaMeasurementId } from "@/lib/analytics"
+import { readTelloyaGaMeasurementId, telloyaAnalyticsCollectionAllowed } from "@/lib/analytics"
 import { brandHomeLabel } from "@/lib/brand"
 import { publicLegalDisclosure } from "../../../lib/legal"
 import { footerContent } from "@/lib/content"
 
-export function Footer() {
+export function Footer({ deploymentEnvironment }: { deploymentEnvironment?: string }) {
   const currentYear = new Date().getFullYear()
   const disclosure = publicLegalDisclosure()
 
@@ -68,9 +68,11 @@ export function Footer() {
                   </li>
                 )
               })}
-              {readTelloyaGaMeasurementId() ? (
+              {telloyaAnalyticsCollectionAllowed(deploymentEnvironment) && readTelloyaGaMeasurementId() ? (
                 <li>
-                  <TelloyaCookieSettingsButton />
+                  <TelloyaCookieSettingsButton
+                    deploymentEnvironment={deploymentEnvironment}
+                  />
                 </li>
               ) : null}
             </ul>

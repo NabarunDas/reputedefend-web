@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import Image from "next/image"
+import { getImageProps } from "next/image"
+import { preload } from "react-dom"
 import {
   ArrowRight,
   ArrowUpRight,
@@ -35,7 +36,36 @@ const industryIcons = [Wrench, Zap, Headphones, ShieldCheck, Sparkles] as const
  * The approved console photograph is the SCENERY, not a card or a screenshot
  * standing in for the website. The accessible content and CTAs stay in HTML.
  */
+const mobileConsoleSrc = "/brand/telloya-cinematic-console-mobile.webp"
+const mobileConsoleMedia = "(max-width: 639px)"
+const desktopConsoleMedia = "(min-width: 640px)"
+
 function CinematicWorld() {
+  const { props: desktopConsole } = getImageProps({
+    src: "/brand/telloya-cinematic-console.webp",
+    alt: "",
+    width: 1672,
+    height: 604,
+    sizes: "100vw",
+    loading: "eager",
+    fetchPriority: "high",
+  })
+  // The approved mobile file is the LCP image below 640px. Preload that exact
+  // file there, and keep the desktop derivative preload on wider screens so
+  // the two requests do not compete.
+  preload(mobileConsoleSrc, {
+    as: "image",
+    fetchPriority: "high",
+    media: mobileConsoleMedia,
+  })
+  preload(desktopConsole.src, {
+    as: "image",
+    imageSrcSet: desktopConsole.srcSet,
+    imageSizes: desktopConsole.sizes,
+    fetchPriority: "high",
+    media: desktopConsoleMedia,
+  })
+
   return (
     <div className={styles.world} aria-hidden="true">
       <div className={styles.worldMist} />
@@ -43,16 +73,8 @@ function CinematicWorld() {
       <div className={styles.worldLight} />
       <div className={styles.worldLandscape}>
         <picture>
-          <source media="(max-width: 639px)" srcSet="/brand/telloya-cinematic-console-mobile.webp" />
-          <Image
-            src="/brand/telloya-cinematic-console.webp"
-            alt=""
-            width={1672}
-            height={604}
-            priority
-            sizes="100vw"
-            className={styles.worldImage}
-          />
+          <source media={mobileConsoleMedia} srcSet={mobileConsoleSrc} />
+          <img {...desktopConsole} className={styles.worldImage} alt="" />
         </picture>
       </div>
       <div className={styles.worldForeground} />

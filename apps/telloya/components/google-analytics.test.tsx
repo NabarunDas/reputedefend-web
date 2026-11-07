@@ -6,6 +6,7 @@ import "@testing-library/jest-dom/vitest"
 import { TelloyaGoogleAnalytics, resetTelloyaAnalyticsRuntime } from "./google-analytics"
 import {
   acceptAnalytics,
+  clearPublishedTelloyaAnalyticsEnvironment,
   sendTelloyaLeadConversion,
   storeConsent,
   TELLOYA_ANALYTICS_CONSENT_KEY,
@@ -57,6 +58,7 @@ afterEach(() => {
   cleanup()
   window.localStorage.clear()
   resetTelloyaAnalyticsRuntime()
+  clearPublishedTelloyaAnalyticsEnvironment()
   delete window.gtag
   delete window.dataLayer
   navigation.pathname = "/pricing?plan=pro&email=ada@example.com#plans"
@@ -65,24 +67,40 @@ afterEach(() => {
 
 describe("TelloyaGoogleAnalytics", () => {
   it("does not insert a script or queue commands before consent or without an id", () => {
-    const { rerender } = render(<TelloyaGoogleAnalytics measurementId={TEST_ID} />)
+    const { rerender } = render(<TelloyaGoogleAnalytics measurementId={TEST_ID} deploymentEnvironment="production" />)
     expect(document.querySelector("[data-testid='ga-external-script']")).toBeNull()
     expect(window.dataLayer).toBeUndefined()
     expect(window.gtag).toBeUndefined()
-    rerender(<TelloyaGoogleAnalytics measurementId="UA-123" />)
+    rerender(<TelloyaGoogleAnalytics measurementId="UA-123" deploymentEnvironment="production" />)
     expect(document.querySelector("[data-testid='ga-external-script']")).toBeNull()
+  })
+
+  it("does not load outside production even after acceptance", () => {
+    acceptAnalytics(TEST_ID)
+    for (const deploymentEnvironment of [undefined, "preview", "development", "staging"]) {
+      const { unmount } = render(
+        <TelloyaGoogleAnalytics measurementId={TEST_ID} deploymentEnvironment={deploymentEnvironment} />,
+      )
+      expect(document.querySelector("[data-testid='ga-external-script']")).toBeNull()
+      expect(window.dataLayer).toBeUndefined()
+      expect(sendTelloyaLeadConversion({ planTier: "pro", guardInterested: false })).toBe(false)
+      unmount()
+      resetTelloyaAnalyticsRuntime()
+      delete window.gtag
+      delete window.dataLayer
+    }
   })
 
   it("does not load after rejection", () => {
     window.localStorage.setItem(TELLOYA_ANALYTICS_CONSENT_KEY, "rejected")
-    render(<TelloyaGoogleAnalytics measurementId={TEST_ID} />)
+    render(<TelloyaGoogleAnalytics measurementId={TEST_ID} deploymentEnvironment="production" />)
     expect(document.querySelector("[data-testid='ga-external-script']")).toBeNull()
     expect(window.dataLayer).toBeUndefined()
   })
 
   it("loads once after acceptance, denies ads, and sends one sanitised page view", async () => {
     acceptAnalytics(TEST_ID)
-    render(<TelloyaGoogleAnalytics measurementId={TEST_ID} />)
+    render(<TelloyaGoogleAnalytics measurementId={TEST_ID} deploymentEnvironment="production" />)
     const script = document.querySelector("[data-testid='ga-external-script']")
     expect(script).toHaveAttribute("data-src", `https://www.googletagmanager.com/gtag/js?id=${TEST_ID}`)
     await waitFor(() => expect(commandNames()).toEqual(["consent", "js", "config", "event"]))
@@ -123,14 +141,14 @@ describe("TelloyaGoogleAnalytics", () => {
 
   it("sends one sanitised view per route change and ignores a repeated consent event", async () => {
     acceptAnalytics(TEST_ID)
-    const view = render(<TelloyaGoogleAnalytics measurementId={TEST_ID} />)
+    const view = render(<TelloyaGoogleAnalytics measurementId={TEST_ID} deploymentEnvironment="production" />)
     await waitFor(() => expect(pageViewCount()).toBe(1))
     storeConsent("accepted")
-    view.rerender(<TelloyaGoogleAnalytics measurementId={TEST_ID} />)
+    view.rerender(<TelloyaGoogleAnalytics measurementId={TEST_ID} deploymentEnvironment="production" />)
     expect(pageViewCount()).toBe(1)
 
     navigation.pathname = "/features?ref=TY-26-ABCDEF&submissionKey=11111111-1111-4111-8111-111111111111#voice"
-    view.rerender(<TelloyaGoogleAnalytics measurementId={TEST_ID} />)
+    view.rerender(<TelloyaGoogleAnalytics measurementId={TEST_ID} deploymentEnvironment="production" />)
     await waitFor(() => expect(pageViewCount()).toBe(2))
     const views = (window.dataLayer ?? [])
       .map((entry) => Array.from(entry as ArrayLike<unknown>))
@@ -145,12 +163,12 @@ describe("TelloyaGoogleAnalytics", () => {
   it("stops further reporting after withdrawal", async () => {
     vi.stubEnv("NEXT_PUBLIC_TELLOYA_GA_MEASUREMENT_ID", TEST_ID)
     acceptAnalytics(TEST_ID)
-    const view = render(<TelloyaGoogleAnalytics measurementId={TEST_ID} />)
+    const view = render(<TelloyaGoogleAnalytics measurementId={TEST_ID} deploymentEnvironment="production" />)
     await waitFor(() => expect(pageViewCount()).toBe(1))
     withdrawAnalytics(TEST_ID)
     await waitFor(() => expect(document.querySelector("[data-testid='ga-external-script']")).toBeNull())
     navigation.pathname = "/enquire?email=ada@example.com"
-    view.rerender(<TelloyaGoogleAnalytics measurementId={TEST_ID} />)
+    view.rerender(<TelloyaGoogleAnalytics measurementId={TEST_ID} deploymentEnvironment="production" />)
     expect(pageViewCount()).toBe(1)
     expect(sendTelloyaLeadConversion({ planTier: "pro", guardInterested: false })).toBe(false)
     expect(JSON.stringify(window.dataLayer)).not.toMatch(/generate_lead|ada@/)

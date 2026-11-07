@@ -9,6 +9,7 @@ import {
   readStoredConsent,
   readTelloyaGaMeasurementId,
   subscribeConsent,
+  telloyaAnalyticsCollectionAllowed,
   TELLOYA_COOKIE_SETTINGS_EVENT,
   withdrawAnalytics,
 } from "@/lib/analytics"
@@ -39,7 +40,14 @@ function useClientReady() {
   )
 }
 
-export function TelloyaCookieSettingsButton({ measurementId }: { measurementId?: string }) {
+export function TelloyaCookieSettingsButton({
+  measurementId,
+  deploymentEnvironment,
+}: {
+  measurementId?: string
+  deploymentEnvironment?: string
+}) {
+  if (!telloyaAnalyticsCollectionAllowed(deploymentEnvironment)) return null
   if (!readTelloyaGaMeasurementId(measurementId ?? process.env.NEXT_PUBLIC_TELLOYA_GA_MEASUREMENT_ID)) return null
 
   return (

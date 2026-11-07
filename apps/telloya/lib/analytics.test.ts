@@ -13,6 +13,8 @@ import {
   removeAnalyticsCookies,
   sanitizePathname,
   sendSanitizedPageView,
+  clearPublishedTelloyaAnalyticsEnvironment,
+  publishTelloyaAnalyticsEnvironment,
   sendTelloyaLeadConversion,
   telloyaAnalyticsCollectionAllowed,
   telloyaLeadPayload,
@@ -34,11 +36,12 @@ describe("Telloya GA measurement ID", () => {
     expect(readTelloyaGaMeasurementId(" G-TESTONLY123 ")).toBe(TEST_ID)
   })
 
-  it("does not collect on a preview deployment", () => {
-    expect(telloyaAnalyticsCollectionAllowed(undefined)).toBe(true)
+  it("collects only in an explicit production environment", () => {
     expect(telloyaAnalyticsCollectionAllowed("production")).toBe(true)
-    expect(telloyaAnalyticsCollectionAllowed("preview")).toBe(false)
-    expect(telloyaAnalyticsCollectionAllowed(" preview ")).toBe(false)
+    expect(telloyaAnalyticsCollectionAllowed(" production ")).toBe(true)
+    for (const environment of [undefined, "", "preview", " preview ", "development", "staging", "Production"]) {
+      expect(telloyaAnalyticsCollectionAllowed(environment)).toBe(false)
+    }
   })
 
   it("does not read the ProfileRelaunch measurement ID", () => {
@@ -61,6 +64,24 @@ describe("page view sanitisation", () => {
     expect(JSON.stringify(payload)).not.toMatch(/plan=|email=|TY-|submissionKey/)
   })
 
+  it("does not send a page view or lead outside production", () => {
+    vi.stubEnv("NEXT_PUBLIC_TELLOYA_GA_MEASUREMENT_ID", TEST_ID)
+    const gtag = vi.fn()
+    window.gtag = gtag
+    acceptAnalytics(TEST_ID)
+    for (const environment of [undefined, "", "preview", "development", "staging"]) {
+      publishTelloyaAnalyticsEnvironment(environment)
+      expect(sendSanitizedPageView("https://telloya.com", "/enquire?email=ada@example.com")).toBe(false)
+      expect(sendTelloyaLeadConversion({ planTier: "growth", guardInterested: true })).toBe(false)
+    }
+    publishTelloyaAnalyticsEnvironment("production")
+    expect(sendSanitizedPageView("https://telloya.com", "/enquire?email=ada@example.com")).toBe(true)
+    expect(gtag).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(gtag.mock.calls)).not.toMatch(/ada@/)
+    window.localStorage.clear()
+    clearPublishedTelloyaAnalyticsEnvironment()
+  })
+
   it("keeps automatic page views, signals and advertising personalisation off", () => {
     expect(TELLOYA_GA_RUNTIME_CONFIG).toEqual({
       send_page_view: false,
@@ -76,6 +97,7 @@ describe("Telloya consent storage", () => {
     window.localStorage.clear()
     vi.unstubAllEnvs()
     delete window.gtag
+    clearPublishedTelloyaAnalyticsEnvironment()
   })
 
   it("keeps the Telloya choice separate from ProfileRelaunch", () => {
@@ -88,6 +110,7 @@ describe("Telloya consent storage", () => {
   })
 
   it("does not send a page view before acceptance", () => {
+    publishTelloyaAnalyticsEnvironment("production")
     const gtag = vi.fn()
     window.gtag = gtag
     expect(sendSanitizedPageView("https://telloya.com", "/enquire?email=ada@example.com")).toBe(false)
@@ -141,9 +164,11 @@ describe("Telloya lead conversion", () => {
     window.localStorage.clear()
     vi.unstubAllEnvs()
     delete window.gtag
+    clearPublishedTelloyaAnalyticsEnvironment()
   })
 
   it("sends one non-personal generate_lead after consent", () => {
+    publishTelloyaAnalyticsEnvironment("production")
     vi.stubEnv("NEXT_PUBLIC_TELLOYA_GA_MEASUREMENT_ID", TEST_ID)
     const gtag = vi.fn()
     window.gtag = gtag
@@ -180,6 +205,7 @@ describe("Telloya lead conversion", () => {
   })
 
   it("does not send after withdrawal", () => {
+    publishTelloyaAnalyticsEnvironment("production")
     vi.stubEnv("NEXT_PUBLIC_TELLOYA_GA_MEASUREMENT_ID", TEST_ID)
     const gtag = vi.fn()
     window.gtag = gtag

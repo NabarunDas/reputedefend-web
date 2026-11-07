@@ -7,6 +7,7 @@
  * measurement ID or consent record.
  *
  * Analytics stays off until a visitor accepts. Advertising consent stays denied.
+ * Collection is eligible only when the deployment is explicitly Vercel Production.
  */
 
 export const TELLOYA_ANALYTICS_CONSENT_KEY = "telloya:analytics-consent:v1"
@@ -60,13 +61,34 @@ export function telloyaAnalyticsIsConfigured(value?: string) {
   return Boolean(readTelloyaGaMeasurementId(value))
 }
 
+const TELLOYA_ANALYTICS_DEPLOYMENT_KEY = "__telloyaAnalyticsDeployment"
+
 /**
- * Preview deployments must not report into a Telloya GA4 property.
- * An unset environment is local or test and may still exercise the client.
- * Production is the only hosted environment allowed to collect.
+ * Only an explicit Vercel Production deployment may collect.
+ * Preview, development, an unset value, and any other environment fail closed.
  */
 export function telloyaAnalyticsCollectionAllowed(vercelEnv: string | undefined) {
-  return (vercelEnv?.trim() ?? "") !== "preview"
+  return vercelEnv?.trim() === "production"
+}
+
+export function publishTelloyaAnalyticsEnvironment(vercelEnv: string | undefined) {
+  if (typeof window === "undefined") return
+  Object.assign(window, { [TELLOYA_ANALYTICS_DEPLOYMENT_KEY]: vercelEnv?.trim() ?? "" })
+}
+
+export function readPublishedTelloyaAnalyticsEnvironment() {
+  if (typeof window === "undefined") return undefined
+  const value = (window as unknown as Record<string, unknown>)[TELLOYA_ANALYTICS_DEPLOYMENT_KEY]
+  return typeof value === "string" ? value : undefined
+}
+
+export function clearPublishedTelloyaAnalyticsEnvironment() {
+  if (typeof window === "undefined") return
+  delete (window as unknown as Record<string, unknown>)[TELLOYA_ANALYTICS_DEPLOYMENT_KEY]
+}
+
+function analyticsCollectionIsActive() {
+  return telloyaAnalyticsCollectionAllowed(readPublishedTelloyaAnalyticsEnvironment())
 }
 
 export function sanitizePathname(pathname: string) {
@@ -175,6 +197,7 @@ export function acceptAnalytics(measurementId: string) {
 
 export function sendSanitizedPageView(origin: string, pathname: string) {
   if (typeof window === "undefined" || typeof window.gtag !== "function") return false
+  if (!analyticsCollectionIsActive()) return false
   if (readStoredConsent() !== "accepted") return false
   window.gtag("event", "page_view", pageViewPayload(origin, pathname))
   return true
@@ -206,6 +229,7 @@ export function sendTelloyaLeadConversion(input: {
   guardInterested?: boolean
 }) {
   if (typeof window === "undefined" || typeof window.gtag !== "function") return false
+  if (!analyticsCollectionIsActive()) return false
   if (readStoredConsent() !== "accepted") return false
   const measurementId = readTelloyaGaMeasurementId()
   if (!measurementId) return false

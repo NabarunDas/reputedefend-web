@@ -103,6 +103,14 @@ describe("Navigation", () => {
     expect(loginLinks.length).toBeGreaterThan(0)
   })
 
+  it("preloads the approved mobile console only on narrow screens", () => {
+    const source = readFileSync(resolve(process.cwd(), "app/page.tsx"), "utf8")
+    expect(source).toContain('"/brand/telloya-cinematic-console-mobile.webp"')
+    expect(source).toContain('"(max-width: 639px)"')
+    expect(source).toContain('"(min-width: 640px)"')
+    expect(source).toContain("fetchPriority: \"high\"")
+  })
+
   it("makes the skip-link target focusable", () => {
     const source = readFileSync(resolve(process.cwd(), "app/layout.tsx"), "utf8")
     expect(source).toContain('href="#main-content"')

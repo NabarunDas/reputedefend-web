@@ -26,6 +26,10 @@ describe("TelloyaAnalyticsConsent", () => {
     expect(container).toBeEmptyDOMElement()
     render(<TelloyaCookieSettingsButton measurementId="" />)
     expect(screen.queryByRole("button", { name: "Cookie settings" })).not.toBeInTheDocument()
+    render(<TelloyaCookieSettingsButton measurementId={TEST_ID} deploymentEnvironment="preview" />)
+    render(<TelloyaCookieSettingsButton measurementId={TEST_ID} deploymentEnvironment="development" />)
+    render(<TelloyaCookieSettingsButton measurementId={TEST_ID} />)
+    expect(screen.queryByRole("button", { name: "Cookie settings" })).not.toBeInTheDocument()
     expect(window.localStorage.getItem(TELLOYA_ANALYTICS_CONSENT_KEY)).toBeNull()
   })
 
@@ -62,7 +66,7 @@ describe("TelloyaAnalyticsConsent", () => {
     window.localStorage.setItem(TELLOYA_ANALYTICS_CONSENT_KEY, "accepted")
     render(
       <>
-        <TelloyaCookieSettingsButton measurementId={TEST_ID} />
+        <TelloyaCookieSettingsButton measurementId={TEST_ID} deploymentEnvironment="production" />
         <TelloyaAnalyticsConsent measurementId={TEST_ID} />
       </>,
     )
@@ -117,7 +121,7 @@ describe("TelloyaAnalyticsConsent", () => {
     window.localStorage.setItem(TELLOYA_ANALYTICS_CONSENT_KEY, "accepted")
     render(
       <>
-        <TelloyaCookieSettingsButton measurementId={TEST_ID} />
+        <TelloyaCookieSettingsButton measurementId={TEST_ID} deploymentEnvironment="production" />
         <TelloyaAnalyticsConsent measurementId={TEST_ID} />
       </>,
     )

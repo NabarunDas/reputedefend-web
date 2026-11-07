@@ -7,9 +7,11 @@ import {
   DENIED_AD_CONSENT,
   TELLOYA_GA_RUNTIME_CONFIG,
   getConsentSnapshot,
+  publishTelloyaAnalyticsEnvironment,
   readTelloyaGaMeasurementId,
   sendSanitizedPageView,
   subscribeConsent,
+  telloyaAnalyticsCollectionAllowed,
 } from "@/lib/analytics"
 
 let configuredMeasurementId: string | undefined
@@ -43,12 +45,20 @@ function queueGtag(measurementId: string) {
   window.gtag("config", measurementId, { ...TELLOYA_GA_RUNTIME_CONFIG })
 }
 
-export function TelloyaGoogleAnalytics({ measurementId }: { measurementId?: string }) {
+export function TelloyaGoogleAnalytics({
+  measurementId,
+  deploymentEnvironment,
+}: {
+  measurementId?: string
+  deploymentEnvironment?: string
+}) {
   const id = readTelloyaGaMeasurementId(measurementId)
   const pathname = usePathname()
   const consent = useSyncExternalStore(subscribeConsent, getConsentSnapshot, getConsentSnapshot)
   const lastSentPath = useRef<string | null>(null)
-  const enabled = Boolean(id && consent === "accepted")
+  const allowed = telloyaAnalyticsCollectionAllowed(deploymentEnvironment)
+  if (typeof window !== "undefined") publishTelloyaAnalyticsEnvironment(deploymentEnvironment)
+  const enabled = Boolean(id && consent === "accepted" && allowed)
 
   // Queue consent and config before the gtag.js tag is committed so the loader
   // cannot send an automatic page view.

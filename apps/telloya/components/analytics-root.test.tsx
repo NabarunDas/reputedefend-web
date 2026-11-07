@@ -27,13 +27,16 @@ afterEach(() => {
 })
 
 describe("TelloyaAnalyticsRoot", () => {
-  it("does not mount consent or Google Analytics on a preview deployment", () => {
-    const { container } = render(
-      <TelloyaAnalyticsRoot measurementId="G-TESTONLY123" deploymentEnvironment="preview" />,
-    )
-    expect(container).toBeEmptyDOMElement()
-    expect(document.querySelector("[data-testid='ga-external-script']")).toBeNull()
-  })
+  it.each([undefined, "", "preview", "development", "staging", "Production"])(
+    "does not mount consent or Google Analytics when the environment is %s",
+    (deploymentEnvironment) => {
+      const { container } = render(
+        <TelloyaAnalyticsRoot measurementId="G-TESTONLY123" deploymentEnvironment={deploymentEnvironment} />,
+      )
+      expect(container).toBeEmptyDOMElement()
+      expect(document.querySelector("[data-testid='ga-external-script']")).toBeNull()
+    },
+  )
 
   it("shows the consent choice in production and still waits for acceptance", () => {
     render(<TelloyaAnalyticsRoot measurementId="G-TESTONLY123" deploymentEnvironment="production" />)

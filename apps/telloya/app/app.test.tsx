@@ -103,6 +103,18 @@ describe("Navigation", () => {
     expect(loginLinks.length).toBeGreaterThan(0)
   })
 
+  it("rings the missed-call card around its resting angle and stops when motion is reduced", () => {
+    const css = readFileSync(resolve(process.cwd(), "app/homepage.module.css"), "utf8")
+    expect(css).toMatch(/\.callBeacon \{[^}]*transform:rotate\(9deg\)/)
+    expect(css).toContain("@keyframes missedCallRing")
+    expect(css).toContain("transform: rotate(11deg)")
+    expect(css).toContain("transform: rotate(7deg)")
+    expect(css).toContain("animation: missedCallRing 5.5s linear infinite")
+    expect(css).toMatch(/@media \(prefers-reduced-motion: no-preference\) \{\s*\.callBeacon \{ animation: missedCallRing/)
+    expect(css).toMatch(/@media \(prefers-reduced-motion:reduce\)\{[\s\S]*animation:none!important/)
+    expect(css).not.toMatch(/\.beaconPhone \{[^}]*animation/)
+  })
+
   it("preloads the approved mobile console only on narrow screens", () => {
     const source = readFileSync(resolve(process.cwd(), "app/page.tsx"), "utf8")
     expect(source).toContain('"/brand/telloya-cinematic-console-mobile.webp"')

@@ -259,6 +259,19 @@
 .finalCta > a {flex-shrink:0;}
 
 @keyframes atmosphericBreathe {from {transform:translateX(-1.4%) scale(1);}to{transform:translateX(1.4%) scale(1.06);}}
+/* 0.6s of ±2° around the 9° rest, then a hold, so a ring starts every 5.5s. */
+@keyframes missedCallRing {
+  0%, 11%, 100% { transform: rotate(9deg); }
+  1.4% { transform: rotate(11deg); }
+  2.8% { transform: rotate(7deg); }
+  4.2% { transform: rotate(11deg); }
+  5.6% { transform: rotate(7deg); }
+  7% { transform: rotate(11deg); }
+  8.4% { transform: rotate(7deg); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .callBeacon { animation: missedCallRing 5.5s linear infinite; }
+}
 @media (max-width:1100px){
   .challenge{grid-template-columns:.93fr 1.15fr;gap:30px;} .callBeacon{display:none;}
   .industryGrid{grid-template-columns:repeat(3,1fr);} .benefitGrid{grid-template-columns:repeat(2,1fr);}

@@ -463,11 +463,7 @@ describe("Page Structure and Accessibility", () => {
     const links = Array.from(container.querySelectorAll('.site-nav-links a'))
     
     const hrefs = links.map(link => link.getAttribute('href'))
-    expect(hrefs).toContain('/how-it-works')
-    expect(hrefs).toContain('/features')
-    expect(hrefs).toContain('/industries')
-    expect(hrefs).toContain('/pricing')
-    expect(hrefs).toContain('/enquire')
+    expect(hrefs).toEqual(['/how-it-works', '/features', '/industries', '/pricing', '/demo'])
   })
 
   it("customer login CTA points to valid portal href", () => {

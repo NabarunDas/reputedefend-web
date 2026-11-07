@@ -211,12 +211,11 @@ describe("demo links and launch boundaries", () => {
     expect(screen.getByRole("link", { name: /See how Telloya works/i })).toHaveAttribute("href", "/how-it-works")
     expect(screen.getAllByRole("link", { name: "Enquire about Telloya" }).every((link) => link.getAttribute("href") === "/enquire")).toBe(true)
     expect(container.querySelector("img")?.getAttribute("src")).toContain("telloya-cinematic-console")
-    const demoLinks = screen.getAllByRole("link", { name: "See Telloya in Action" })
-    expect(demoLinks.some((link) => link.getAttribute("href") === "/demo")).toBe(true)
+    expect(screen.getByRole("link", { name: "See a Sample Conversation" })).toHaveAttribute("href", "/demo")
     unmount()
 
     render(<HowItWorks />)
-    expect(screen.getByRole("link", { name: "See Telloya in Action" })).toHaveAttribute("href", "/demo")
+    expect(screen.getByRole("link", { name: "See a Sample Conversation" })).toHaveAttribute("href", "/demo")
     expect(screen.getByRole("link", { name: /Enquire now/i })).toHaveAttribute("href", "/enquire")
   })
 

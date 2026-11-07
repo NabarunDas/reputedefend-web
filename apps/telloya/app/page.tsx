@@ -92,20 +92,18 @@ export default function Home() {
       <section className={styles.hero} aria-labelledby="home-title">
         <CinematicWorld />
         <div className={styles.heroCopy}>
-          <div className={styles.heroEyebrow}><span className={styles.eyebrowDot} /> AI receptionist · by ProfileRelaunch Ltd</div>
+          <div className={styles.heroEyebrow}><span className={styles.eyebrowDot} /> {hero.eyebrow}</div>
           <h1 id="home-title" className={styles.heroTitle}>
-            <span>Your AI Receptionist</span>
-            <em>Never Misses a Call</em>
+            <span>{hero.headlineLead}</span>
+            <em>{hero.headlineEmphasis}</em>
           </h1>
-          <p className={styles.heroSubtitle}>
-            When you cannot answer, Telloya can help capture the enquiry and the details you need to follow up.
-          </p>
+          <p className={styles.heroSubtitle}>{hero.supporting}</p>
           <div className={styles.heroActions}>
             <Link className={styles.primaryCta} href={hero.primaryHref}>
-              See how Telloya works <ArrowUpRight size={19} aria-hidden="true" />
+              {hero.primaryCta} <ArrowUpRight size={19} aria-hidden="true" />
             </Link>
             <Link className={styles.glassCta} href={hero.secondaryHref}>
-              Enquire about Telloya <ArrowRight size={18} aria-hidden="true" />
+              {hero.secondaryCta} <ArrowRight size={18} aria-hidden="true" />
             </Link>
           </div>
         </div>

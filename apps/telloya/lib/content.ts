@@ -19,10 +19,12 @@ export const homepageContent = {
       "When you're on a job and can't pick up, Telloya can help handle missed-call enquiries, collect useful details and make it easier to follow up.",
   },
   hero: {
-    headline: "You focus on the job. Telloya helps answer your missed calls.",
+    eyebrow: "AI receptionist · by ProfileRelaunch Ltd",
+    headlineLead: "Don't Let Missed Calls",
+    headlineEmphasis: "Cost You Customers.",
     supporting:
-      "When you're on a job and can't pick up, Telloya can help handle missed-call enquiries, collect useful details and make it easier to follow up.",
-    primaryCta: "See how it works",
+      "Busy on a job? Telloya helps answer your missed calls, speaks with potential customers and captures the details you need to follow up.",
+    primaryCta: "See how Telloya works",
     primaryHref: "/how-it-works",
     secondaryCta: "Enquire about Telloya",
     secondaryHref: "/enquire",
@@ -192,7 +194,7 @@ export const howItWorksContent = {
     eyebrow: "How it works",
     title: "From missed call to useful lead",
     lead:
-      "Telloya is designed to help when you can't answer the phone. Here's how the service works from start to finish.",
+      "When you're busy, Telloya helps you stay responsive. It can speak with callers, collect what they need and prepare a summary so you can follow up.",
   },
   journey: {
     title: "The customer journey",
@@ -288,19 +290,18 @@ export const howItWorksContent = {
       "We provide setup guidance, but the forwarding configuration itself depends on your telephone provider. If forwarding isn't supported or doesn't work reliably, Telloya may not be suitable for your setup.",
   },
   limitations: {
-    eyebrow: "Important to know",
-    title: "What Telloya doesn't do",
+    eyebrow: "Before you start",
+    heading: "Good to know",
+    headingEmphasis: "before you begin.",
+    lead:
+      "Telloya helps with missed-call enquiries when forwarding is set up, the service is active and the caller is happy to share details.",
     points: [
-      "Telloya does not automatically confirm appointments or booking times",
-      "It does not guarantee that every caller will leave their details",
-      "It does not promise that every call is answered",
-      "It does not provide an emergency response or dispatch an engineer",
-      "It cannot replace a human receptionist for complex enquiries",
-      "Call forwarding depends on the customer's telephone provider and location",
-      "An enquiry does not start the service, take payment, or create a subscription",
-      "Some callers may prefer to try again later rather than speak with an AI",
+      "Unanswered calls can be forwarded where the telephone provider and location support it. Compatibility is checked before a service starts.",
+      "A caller can decline to leave details, or choose to try again later.",
+      "Telloya records what the caller reports. It does not decide whether a job is urgent, diagnose a fault, book an appointment or send an engineer.",
+      "You decide whether and when to follow up.",
+      "Sending an enquiry does not start the service, take payment or create a subscription.",
     ],
-    lead: "Telloya is designed to help with straightforward missed-call enquiries. It's not a complete replacement for all call handling.",
   },
   cta: {
     title: "Ready to see if Telloya fits your business?",
@@ -309,6 +310,17 @@ export const howItWorksContent = {
     href: "/enquire",
   },
 } as const
+
+export const featureStageLabels = {
+  demonstrated: "Tested in demonstration",
+  planned: "Planned",
+} as const
+
+export type FeatureStage = keyof typeof featureStageLabels
+
+export function featureStatusPresentation(stage: FeatureStage) {
+  return { stage, label: featureStageLabels[stage] }
+}
 
 // Features page
 export const featuresContent = {
@@ -319,16 +331,22 @@ export const featuresContent = {
   },
   hero: {
     eyebrow: "Features",
-    title: "Designed for tradespeople",
-    lead: "Each feature is labelled by what preliminary testing showed, what is still planned, and what depends on a provider. A label is not a promise that every call is answered, or that the service starts after an enquiry.",
+    title: "Every Missed Call Could Be a New Opportunity.",
+    lead:
+      "When you're busy, Telloya helps speak with callers, capture what they need and prepare useful enquiry details so you can follow up.",
   },
+  workflow: [
+    { label: "Missed Call", description: "Customer calls while you're unavailable" },
+    { label: "AI Conversation", description: "Telloya asks useful questions and records the details the caller shares." },
+    { label: "Lead Summary", description: "A summary can be prepared for follow-up" },
+  ],
   features: [
     {
       kicker: "Feature 01",
       title: "Missed-call assistance",
       description:
-        "When a missed call is forwarded and the service is active, Telloya is designed to explain that you are unavailable and offer to collect the enquiry. This was shown in preliminary testing. It does not mean every call is answered.",
-      status: "Demonstrated in proof of concept",
+        "Give callers a helpful response while you're busy. With supported call forwarding and an active service, Telloya can offer to collect their enquiry.",
+      stage: "demonstrated",
       points: [
         "Natural greeting and explanation",
         "Professional tone without sounding robotic",
@@ -339,8 +357,8 @@ export const featuresContent = {
       kicker: "Feature 02",
       title: "Conversational enquiry collection",
       description:
-        "Telloya asks for the information you need to follow up effectively. The conversation feels natural, not like filling out a form over the phone.",
-      status: "Demonstrated in proof of concept",
+        "Know what the caller needs before you ring them back. Telloya asks useful questions and records the details they share.",
+      stage: "demonstrated",
       points: [
         "Contact details (name and phone number)",
         "Service requested",
@@ -353,8 +371,8 @@ export const featuresContent = {
       kicker: "Feature 03",
       title: "Lead summaries",
       description:
-        "When an enquiry is captured, the intended result is a structured summary delivered by the method agreed for the service. Preliminary testing showed a summary. Customer call history is planned and is not live.",
-      status: "Demonstrated in proof of concept",
+        "Get useful context for your follow-up. Details collected during a conversation can be prepared as a summary and shared through the agreed delivery method.",
+      stage: "demonstrated",
       points: [
         "Structured format for quick review",
         "Key details highlighted",
@@ -365,11 +383,11 @@ export const featuresContent = {
       kicker: "Feature 04",
       title: "Callback preferences",
       description:
-        "Telloya can ask when the caller would prefer a callback. That preference is information for you. It is not a booked appointment and it is not a guaranteed callback.",
-      status: "Demonstrated in proof of concept",
+        "Find out when a caller would prefer to hear from you, without automatically booking an appointment.",
+      stage: "demonstrated",
       points: [
         "Morning, afternoon or evening preference",
-        "Urgent vs routine enquiries",
+        "The caller can say how soon they would like to hear back",
         "Any-time option for flexible customers",
       ],
     },
@@ -377,26 +395,13 @@ export const featuresContent = {
       kicker: "Feature 05",
       title: "Business-specific configuration",
       description:
-        "Telloya is configured for your business type and services. The questions adapt to what your customers typically need.",
-      status: "Demonstrated in proof of concept",
+        "Get questions that fit the work you do. Telloya can use your business name, your services and the details your customers usually need to share.",
+      stage: "demonstrated",
       points: [
         "Business name and service description",
         "Industry-specific question flow",
         "Custom greeting message",
       ],
-    },
-    {
-      kicker: "Feature 06",
-      title: "Usage visibility",
-      description:
-        "A customer dashboard for call history, lead summaries and minute consumption is planned. It is not operational.",
-      status: "Planned",
-      points: [
-        "Dashboard with call history (planned)",
-        "Lead status tracking (planned)",
-        "Usage and minute consumption (planned)",
-      ],
-      note: "The customer dashboard is planned and is not available. Lead summaries are delivered through the agreed method.",
     },
   ],
   technical: {
@@ -405,7 +410,7 @@ export const featuresContent = {
     lead:
       `${commercialCopy.voicePreference} ${commercialCopy.voiceProvider} The voice provider is confirmed with the customer before a service starts.`,
     points: [
-      "Conversation handling shown in preliminary testing",
+      "Enquiry conversations have been demonstrated",
       "Number provisioning depends on the provider and the customer's location",
       "Call routing depends on the customer's telephone provider",
       "Voice, accent and language combinations are requests, not a guaranteed catalogue",
@@ -428,7 +433,7 @@ export const featuresContent = {
       },
       {
         title: "Customer call history",
-        description: "A dashboard for past calls and minute tracking. This is planned and is not live.",
+        description: "See past calls, lead summaries and minute use in one place. A customer dashboard is planned and is not live.",
         timeline: "Planned, not live",
       },
       {
@@ -458,12 +463,12 @@ export const industriesContent = {
     eyebrow: "Industries",
     title: "Built for tradespeople",
     lead:
-      "Telloya is designed for local service businesses where a missed call can mean a missed opportunity. The examples show the kind of detail a caller can give. They do not promise that every call is answered, that an appointment is booked, or that an engineer is sent.",
+      "Telloya is for local service businesses where a missed call can mean a missed job. These examples show details a caller can share. Telloya records what they report. You assess the enquiry and decide what happens next.",
   },
   industries: [
     {
       name: "Plumbing",
-      tagline: "Collect urgent job details while you are on site",
+      tagline: "Collect the job details callers describe while you are on site",
       description:
         "When you are already with a customer, Telloya can help collect what the next caller describes. It does not send an engineer or provide an emergency response.",
       scenarios: [
@@ -477,13 +482,13 @@ export const industriesContent = {
           title: "Boiler breakdown",
           situation: "No hot water, family home, heating engineer needed",
           telletoyaHelps:
-            "Telloya collects boiler make and model, symptoms, when it stopped working, and whether it's under warranty.",
+            "Records the boiler details, the symptoms the caller describes, when they say it stopped, and whether they say it is under warranty.",
         },
         {
           title: "Quote requests",
           situation: "Bathroom refurbishment, needs a quote",
           telletoyaHelps:
-            "Tells you it's not urgent, gets rough scope (full bathroom, shower room, etc.), and preferred visit times for assessment.",
+            "Asks about the proposed work, records the scope the caller describes and notes when they would prefer to discuss a quote.",
         },
       ],
       benefits: [
@@ -514,7 +519,7 @@ export const industriesContent = {
           title: "Radiator issues",
           situation: "One radiator cold, others working fine",
           telletoyaHelps:
-            "Assesses it's not urgent, captures which radiator, system type, and whether customer has tried bleeding it.",
+            "Asks which radiator is affected and records the symptoms and information the caller provides.",
         },
       ],
       benefits: [
@@ -527,7 +532,7 @@ export const industriesContent = {
       name: "Electricians",
       tagline: "Respond to callouts with full context",
       description:
-        "Electrical work ranges from urgent safety issues to planned installations. Telloya helps you understand what each job involves before you commit.",
+        "Electrical work ranges from safety concerns to planned installations. Telloya records what the caller describes so you can decide the next step.",
       scenarios: [
         {
           title: "Power cut",
@@ -539,13 +544,13 @@ export const industriesContent = {
           title: "New installation",
           situation: "Customer wants additional sockets installed",
           telletoyaHelps:
-            "Confirms it's not urgent, gets rough scope (how many, which rooms), property age, and availability for assessment.",
+            "Records the work requested, the rooms involved and when the caller would prefer to discuss an assessment.",
         },
         {
           title: "Faulty appliance",
           situation: "Oven not working properly",
           telletoyaHelps:
-            "Determines it's appliance-specific, captures symptoms, whether it's tripping the circuit, and appliance age.",
+            "Records which appliance the caller mentioned, the symptoms described and whether the caller reports any circuit tripping.",
         },
       ],
       benefits: [
@@ -558,7 +563,7 @@ export const industriesContent = {
       name: "Property Maintenance",
       tagline: "Manage multiple enquiry types efficiently",
       description:
-        "Property maintenance covers everything from leaks to lockouts. Telloya helps you sort urgent work from routine jobs and collect the details that matter.",
+        "Property maintenance covers everything from leaks to lockouts. Telloya collects what the caller reports, so you can tell an urgent description from routine work.",
       scenarios: [
         {
           title: "Landlord emergency",
@@ -570,13 +575,13 @@ export const industriesContent = {
           title: "Planned maintenance",
           situation: "Quarterly property inspection needed",
           telletoyaHelps:
-            "Logs it as routine, gets property address, number of units, access requirements, and scheduling preferences.",
+            "Records the caller's description of a planned inspection, the property address, how many units they mention and the access details they provide.",
         },
         {
           title: "Cosmetic work",
           situation: "Painting and decorating quote",
           telletoyaHelps:
-            "Confirms not urgent, captures rooms, condition, timescale, and arranges convenient assessment time.",
+            "Collects the proposed work, approximate scope and preferred time for the business to discuss an assessment.",
         },
       ],
       benefits: [
@@ -620,7 +625,7 @@ export const pricingContent = {
     eyebrow: "Pricing",
     title: "Choose your plan",
     lead:
-      `Four Telloya plans. A standard plan includes one operating location and one receptionist telephone number. Higher tiers add included monthly minutes. ${commercialCopy.extraReceptionist}`,
+      `Standard plans share the same core receptionist capabilities. The main difference is included monthly call minutes. A standard plan covers one operating location and one receptionist telephone number. Custom is for requirements outside a standard plan. ${commercialCopy.extraReceptionist}`,
   },
   currency: {
     note: "Published prices are in GBP. Settlement currency and other payment terms are confirmed before you proceed. This page does not offer local-currency checkout or conversion.",
@@ -661,7 +666,6 @@ export const pricingContent = {
           "Lead summaries, including callback preferences, by the agreed delivery method",
           "Business-specific configuration",
           "Voice, accent and language preferences, subject to the voice provider",
-          "Usage visibility in a customer dashboard (planned)",
         ],
     cta: plan.tier === "custom" ? "Request a tailored quote" : `Enquire about ${plan.name}`,
     href: `/enquire?plan=${plan.tier}`,

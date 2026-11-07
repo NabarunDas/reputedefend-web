@@ -2,10 +2,11 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowUpRight, PhoneIncoming, MessageSquare, CheckCircle2 } from "lucide-react"
 import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
-import { featuresContent } from "@/lib/content"
+import { featureStatusPresentation, featuresContent } from "@/lib/content"
 import styles from "./features.module.css"
 
-const { seo, hero, features, technical, future, cta } = featuresContent
+const { seo, hero, workflow, features, technical, future, cta } = featuresContent
+const workflowIcons = [PhoneIncoming, MessageSquare, CheckCircle2] as const
 
 export const metadata: Metadata = {
   title: absolutePageTitle(seo.title),
@@ -39,27 +40,18 @@ export default function Features() {
           </div>
           <div className={styles.workflowSection}>
             <div className={styles.workflowSteps}>
-              <div className={styles.workflowStep}>
-                <div className={styles.workflowIcon}>
-                  <PhoneIncoming size={32} strokeWidth={1.7} aria-hidden="true" />
-                </div>
-                <div className={styles.workflowLabel}>Missed Call</div>
-                <div className={styles.workflowDesc}>Customer calls while you&apos;re unavailable</div>
-              </div>
-              <div className={styles.workflowStep}>
-                <div className={styles.workflowIcon}>
-                  <MessageSquare size={32} strokeWidth={1.7} aria-hidden="true" />
-                </div>
-                <div className={styles.workflowLabel}>AI Conversation</div>
-                <div className={styles.workflowDesc}>Preliminary testing collected enquiry details</div>
-              </div>
-              <div className={styles.workflowStep}>
-                <div className={styles.workflowIcon}>
-                  <CheckCircle2 size={32} strokeWidth={1.7} aria-hidden="true" />
-                </div>
-                <div className={styles.workflowLabel}>Lead Summary</div>
-                <div className={styles.workflowDesc}>A summary can be prepared for follow-up</div>
-              </div>
+              {workflow.map((step, index) => {
+                const Icon = workflowIcons[index] ?? PhoneIncoming
+                return (
+                  <div key={step.label} className={styles.workflowStep}>
+                    <div className={styles.workflowIcon}>
+                      <Icon size={32} strokeWidth={1.7} aria-hidden="true" />
+                    </div>
+                    <div className={styles.workflowLabel}>{step.label}</div>
+                    <div className={styles.workflowDesc}>{step.description}</div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </section>
@@ -73,29 +65,26 @@ export default function Features() {
             <p className={styles.sectionLead}>Every feature serves a real need when you&apos;re working on site.</p>
           </div>
           <div className={styles.featuresList}>
-            {features.map((feature) => (
-              <article key={feature.title} className={styles.featureCard}>
-                {feature.kicker && <p className={styles.featureKicker}>{feature.kicker}</p>}
-                <h3>{feature.title}</h3>
-                <div 
-                  className={styles.featureStatus} 
-                  data-status={feature.status.toLowerCase().includes("available") ? "available" : "future"}
-                >
-                  {feature.status}
-                </div>
-                <p className={styles.featureDescription}>{feature.description}</p>
-                {feature.points && feature.points.length > 0 && (
-                  <ul className={styles.featurePoints}>
-                    {feature.points.map((point, index) => (
-                      <li key={index}>{point}</li>
-                    ))}
-                  </ul>
-                )}
-                {"note" in feature && feature.note && (
-                  <div className={styles.featureNote}>{feature.note}</div>
-                )}
-              </article>
-            ))}
+            {features.map((feature) => {
+              const status = featureStatusPresentation(feature.stage)
+              return (
+                <article key={feature.title} className={styles.featureCard}>
+                  {feature.kicker && <p className={styles.featureKicker}>{feature.kicker}</p>}
+                  <h3>{feature.title}</h3>
+                  <div className={styles.featureStatus} data-status={status.stage}>
+                    {status.label}
+                  </div>
+                  <p className={styles.featureDescription}>{feature.description}</p>
+                  {feature.points && feature.points.length > 0 && (
+                    <ul className={styles.featurePoints}>
+                      {feature.points.map((point, index) => (
+                        <li key={index}>{point}</li>
+                      ))}
+                    </ul>
+                  )}
+                </article>
+              )
+            })}
           </div>
         </section>
 

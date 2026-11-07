@@ -97,7 +97,7 @@ export default function HowItWorks() {
           <div className={styles.sectionHeader}>
             <p className={styles.eyebrow}>{limitations.eyebrow}</p>
             <h2 id="limitations-title" className={styles.sectionTitle}>
-              What Telloya <em>can and cannot do.</em>
+              {limitations.heading} <em>{limitations.headingEmphasis}</em>
             </h2>
             <p className={styles.sectionLead}>{limitations.lead}</p>
           </div>

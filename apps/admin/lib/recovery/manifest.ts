@@ -1775,10 +1775,10 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Controlled AI receptionist web-call initiation", probe: "public.admin_commercial_prepare_agent_test_call_v1" },
   },
   {
-    // Subscription usage ledger. Applied once to DEV. This is the verified
-    // DEV ledger head. The ledger contains 116 entries and ends at
-    // 20261107110000. The previous ledger contained 115 entries and ended at
-    // 20261106200000. Do not replay 20261107110000. Do not apply
+    // Subscription usage ledger. Applied once to DEV. The ledger later moved
+    // to 20261107120000. When this file was the head it contained 116 entries
+    // and ended at 20261107110000. The previous ledger contained 115 entries
+    // and ended at 20261106200000. Do not replay 20261107110000. Do not apply
     // 20261107110000 to Production. No usage events, reservations, or legal
     // holds were created. Schema and functions only. containsDataChange stays
     // false. safeToReplay stays false.
@@ -1792,18 +1792,21 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Telloya subscription usage ledger", probe: "admin_private.commercial_usage_events" },
   },
   {
-    // Inbound admission reservation. Source only. It is not applied to hosted
-    // DEV or Production. The verified DEV ledger contains 116 entries and
-    // ends at 20261107110000. Do not apply 20261107120000 to hosted DEV.
-    // Do not apply 20261107120000 to Production. Do not replay 20261107110000.
-    // Schema and functions only. containsDataChange stays false.
-    // It does not enable Retell, forwarding, or a Stripe charge.
-    // safeToReplay stays false.
+    // Inbound admission reservation. Applied once to DEV. The verified DEV
+    // ledger contains 117 entries and ends at 20261107120000. The previous
+    // ledger contained 116 entries and ended at 20261107110000. The migration
+    // is registered once. The stored SQL matches the committed source. Two
+    // private tables have RLS enabled. Three public functions are service-role
+    // only. Three triggers were added. Admission records are zero. Production
+    // is unchanged. Do not replay 20261107120000. Do not apply 20261107120000
+    // to Production. Do not replay 20261107110000. Retell live routing stays
+    // disabled. Both usage flags stay off. Schema and functions only.
+    // containsDataChange stays false. safeToReplay stays false.
     version: "20261107120000",
     filename: "20261107120000_telloya_inbound_admission_reservation_v1.sql",
     step: "Telloya inbound admission reservation",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Telloya inbound admission reservation", probe: "public.commercial_usage_reserve_inbound_v1" },
@@ -1819,8 +1822,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261107110000`. The live DEV ledger contains 116 entries. The previous
- * ledger contained 115 entries and ended at `20261106200000`. The ledger
+ * `20261107120000`. The live DEV ledger contains 117 entries. The previous
+ * ledger contained 116 entries and ended at `20261107110000`. The ledger
+ * before that contained 115 entries and ended at `20261106200000`. The ledger
  * before that contained 114 entries and ended at `20261106140000`. The ledger
  * before that contained 112 entries and ended at `20261106003939`.
  * `20261106120000` and `20261106140000` were applied once and must not be
@@ -1955,7 +1959,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` contains only `20261107120000`. Do not apply it to hosted DEV or Production.
+ * `pendingMigrations()` is empty.
+ * `20261107120000` was applied once to DEV. Do not replay `20261107120000`.
+ * Do not apply `20261107120000` to Production. Admission records are zero.
  * `20261107110000` was applied once to DEV. Do not replay `20261107110000`.
  * Do not apply `20261107110000` to Production. No usage events, reservations,
  * or legal holds were created.

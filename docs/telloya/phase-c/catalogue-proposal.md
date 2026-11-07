@@ -4,10 +4,10 @@ Status: the operating-location and receptionist-number policy in this document i
 
 Foundation verified from the repository after PR #438 merged to `develop` at `990e0217`:
 
-- Supabase DEV project `profilerelaunch-dev` ledger: 114 applied migrations, head `20261106140000`. The previous ledger had 112 entries and ended at `20261106003939`.
+- Supabase DEV project `profilerelaunch-dev` ledger: 115 applied migrations, head `20261106200000`. The previous ledger had 114 entries and ended at `20261106140000`. The ledger before that had 112 entries and ended at `20261106003939`.
 - The seven commercial migrations through forwarding instructions are applied and must not be replayed.
 - Repository migrations do not insert `product_catalogue`, `plan_versions`, `commercial_agreement_versions`, or `commercial_subscriptions`. A later onboarding command can insert a `DRAFT` product row for its own request. This phase does not run that command against DEV.
-- The test-call migration `20261106120000_admin_commercial_verify_agent_test_call_v1.sql` is applied on DEV and must not be replayed. It is not part of this catalogue proposal. Do not apply it to Production.
+- The test-call migration `20261106120000_admin_commercial_verify_agent_test_call_v1.sql` is applied on DEV and must not be replayed. It is not part of this catalogue proposal. Do not apply it to Production. `20261106200000_admin_commercial_initiate_agent_test_call_v1.sql` is applied on DEV and must not be replayed. Do not apply it to Production. The controlled test-call flag stays off.
 
 The existing commercial command, offer acceptance, and checkout preparation stay the billing path. This proposal does not add a second catalogue or a second payment command.
 
@@ -108,7 +108,7 @@ No Stripe product, price, customer, or subscription is created.
 
 Do not seed hosted DEV from this approval. The location and number policy can be stored on the draft rows, and hosted seeding stays closed until the agreement text, the tax behaviour, and any Custom price are approved in writing.
 
-1. Read the DEV ledger. Stop unless the head is `20261106140000` and the count is 114. Stop if Production is not still `20261014170000`.
+1. Read the DEV ledger. Stop unless the head is `20261106200000` and the count is 115. Stop if Production is not still `20261014170000`.
 2. Confirm there is still no approved Telloya plan, agreement, or commercial subscription.
 3. Insert this proposal as `DRAFT` only, using `TELLOYA-DRAFT-2026-11-1` and versions 9301–9304. Do not insert the `TELLOYA-TEST-` fixture.
 4. Stop. A different change, by a named reviewer, approves the agreement, the conditions, and the plans. Do not approve them in the insert.

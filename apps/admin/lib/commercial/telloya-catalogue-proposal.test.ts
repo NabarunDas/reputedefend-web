@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { pendingMigrations } from "../recovery/manifest"
+import { findMigration, pendingMigrations } from "../recovery/manifest"
 import {
   telloyaCatalogueProposal,
   telloyaDraftAgreement,
@@ -81,7 +81,7 @@ describe("Telloya catalogue proposal", () => {
     expect(agreementDoc).toContain(telloyaDraftAgreement.body)
     expect(agreementDoc).toContain("not approved for a customer")
     expect(proposalDoc).toContain("20261106003939")
-    expect(proposalDoc).toContain("114")
+    expect(proposalDoc).toContain("115")
     expect(proposalDoc).toContain("OWNER DECISION REQUIRED")
     expect(proposalDoc).toContain("Do not insert the `TELLOYA-TEST-` fixture")
     expect(proposalDoc).toContain("**Approved.**")
@@ -101,9 +101,11 @@ describe("Telloya catalogue proposal", () => {
     expect(migrations).toContain("20261106140000_telloya_standard_location_cap_v1.sql")
     expect(migrations).not.toContain("proposed-location-number-constraint.sql")
     expect(migrations).toContain("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261106200000_admin_commercial_initiate_agent_test_call_v1.sql",
-    ])
-    expect(pendingMigrations().every(entry => entry.appliedToDev === false && entry.containsDataChange === false && entry.safeToReplay === false)).toBe(true)
+    expect(pendingMigrations()).toEqual([])
+    expect(findMigration("20261106200000_admin_commercial_initiate_agent_test_call_v1.sql")).toMatchObject({
+      appliedToDev: true,
+      containsDataChange: false,
+      safeToReplay: false,
+    })
   })
 })

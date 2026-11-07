@@ -19,7 +19,7 @@ All of these are required before `TELLOYA_ENQUIRY_ENABLED=true` on hosted DEV:
 - `TELLOYA_LAUNCHED` stays unset on that test. Indexing is not part of the enquiry test.
 - No Stripe key, Retell route, or forwarding change is included.
 - The database target is hosted DEV, not Production.
-- The usage-ledger migration `20261107110000` stays unapplied.
+- Do not modify the existing usage-ledger migration `20261107110000`: the Supabase DEV ledger already records it as applied (116 DEV migrations verified 7 November 2026). Do not replay or reverse it, and do not assume it is applied in Production. The separate C-06B-02 reconciliation PR #451 remains under review; the DEV enquiry test must not change the usage-ledger schema or enable metering.
 - A rollback owner is named who can set `TELLOYA_ENQUIRY_ENABLED` back to false.
 
 **Gate now: BLOCKED.** None of those approvals was given in this phase.

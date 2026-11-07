@@ -128,6 +128,14 @@ describe("launch and legal controls", () => {
   it("leaves public launch and enquiry submission disabled by default", () => {
     expect(getEnquiryCapabilities({})).toEqual({ submissionEnabled: false })
     expect(getEnquiryCapabilities({ TELLOYA_ENQUIRY_ENABLED: "false" }).submissionEnabled).toBe(false)
+    for (const value of ["", "false", "FALSE", "True", "TRUE", "1", "yes", "on"]) {
+      expect(getEnquiryCapabilities({ TELLOYA_ENQUIRY_ENABLED: value }).submissionEnabled).toBe(false)
+      expect(isSitePublic({ VERCEL_ENV: "production", TELLOYA_LAUNCHED: value })).toBe(false)
+    }
+    expect(getEnquiryCapabilities({ TELLOYA_ENQUIRY_ENABLED: " true " }).submissionEnabled).toBe(true)
+    for (const environment of [undefined, "", "preview", "development", "staging", "Production"]) {
+      expect(isSitePublic({ VERCEL_ENV: environment, TELLOYA_LAUNCHED: "true" })).toBe(false)
+    }
     expect(isSitePublic({})).toBe(false)
     expect(isSitePublic({ VERCEL_ENV: "production", TELLOYA_LAUNCHED: "false" })).toBe(false)
     expect(pricingContent.plans.map((plan) => plan.href)).toEqual([

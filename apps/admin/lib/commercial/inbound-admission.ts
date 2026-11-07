@@ -11,21 +11,21 @@ const ADMISSION_REF = /^adm_[0-9a-f]{32}$/
 /**
  * Retell connects a call when every inbound webhook attempt fails and the
  * number has a default inbound agent. That account setting has not been
- * verified here. An approved response carries override_agent_id, so a default
- * inbound agent is not required for a call this server accepts.
+ * verified. While this constant stays UNVERIFIED, a signed request is rejected
+ * and no minute is reserved. The feature flag does not bypass that gate.
+ * An approved response is available only when the caller passes VERIFIED, and
+ * then it carries override_agent_id so a default inbound agent is not required.
  *
- * The inbound webhook page fetched on 7 November 2026 includes a preallocated
- * call_inbound.call_id and says the later call object uses that id. PR #451
- * recorded an earlier reading in which that field was absent. This handler
- * accepts both shapes. It does not invent an identity from the caller number.
+ * call_id is optional. This code does not treat a preallocated call id as
+ * guaranteed provider behaviour. A well-formed value, when present, is stored
+ * for correlation. The caller number is not an identity.
  *
- * Response metadata is a documented inbound field, and later call webhooks
- * include call.metadata when metadata was set. That echo has not been verified
- * with a live Retell call. A later event that matches neither a stored
- * provider call id nor an echoed admission reference stays unbound.
+ * Response metadata and an in-progress provider stop are unverified against a
+ * live Retell call. A later event that matches neither a stored provider call
+ * id nor an echoed admission reference stays unbound.
  */
 export const inboundFailClosedProviderConfiguration = "UNVERIFIED" as const
-export const inboundMetadataPropagation = "DOCUMENTED_NOT_LIVE_VERIFIED" as const
+export const inboundMetadataPropagation = "UNVERIFIED" as const
 
 export type InboundProviderConfiguration = typeof inboundFailClosedProviderConfiguration | "VERIFIED"
 
@@ -81,6 +81,7 @@ export type InboundAdmissionOutcome =
   | "admission_disabled"
   | "rejected_signature"
   | "rejected_payload"
+  | "provider_fail_open_unverified"
   | "database_unavailable"
   | "provider_response_invalid"
   | "admitted"
@@ -267,6 +268,7 @@ export async function admitInboundCall(input: {
     nowMs: input.nowMs,
   })
   if ("error" in built) return reject("rejected_payload", "rejected_payload", launchBlocked)
+  if (launchBlocked) return reject("provider_fail_open_unverified", "provider_fail_open_unverified", true)
 
   let reserved: InboundReservationResult
   try {

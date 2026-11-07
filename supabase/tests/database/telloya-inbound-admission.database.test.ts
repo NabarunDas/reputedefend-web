@@ -433,20 +433,35 @@ describe("inbound admission reservation", () => {
     expect(await reservations("call_renew_next")).toBe(1)
   })
 
-  it("releases an expired unbound hold and a disconnected call without a second reservation", async () => {
-    const held = await reserve(command("A", { bodyLabel: "expire-me" }))
+  it("replays an open hold and refuses the same body after the database clock expires it", async () => {
+    const open = command("A", { bodyLabel: "expire-me" })
+    const held = await reserve(open)
     expect(held.status).toBe("admitted")
-    expect(await callSql("commercial_usage_release_inbound_admissions_v1", {
-      environment: "dev",
-      mode: "expire",
-      now: "2026-11-15T12:11:00.000Z",
-    })).toMatchObject({ status: "expired" })
-    expect(await reserve(command("A", { bodyLabel: "expire-me" }))).toMatchObject({
+    expect(await reserve(open)).toMatchObject({
       status: "replay",
-      reason: "admission_closed",
+      decision: "admitted",
+      billable: true,
+      admissionRef: held.admissionRef,
+      agentRef: "agent_seat_a",
+    })
+    await db.exec("set session_replication_role = replica")
+    await db.query(
+      "update admin_private.commercial_usage_admissions set expires_at = clock_timestamp() - interval '1 minute' where admission_ref = $1",
+      [held.admissionRef],
+    )
+    await db.exec("set session_replication_role = origin")
+    const expired = await reserve(open)
+    expect(expired).toMatchObject({
+      status: "replay",
+      reason: "admission_expired",
       billable: false,
       admissionRef: held.admissionRef,
     })
+    expect(expired.agentRef).toBeUndefined()
+    expect((await rows<{ state: string }>(
+      "select state from admin_private.commercial_usage_admissions where admission_ref = $1",
+      [held.admissionRef],
+    ))[0]?.state).toBe("expired")
     const disconnected = await reserve(command("A", { providerCallRef: "call_disconnect", bodyLabel: "disconnect-me" }))
     expect(disconnected.status).toBe("admitted")
     expect(await callSql("commercial_usage_release_inbound_admissions_v1", {
@@ -459,6 +474,61 @@ describe("inbound admission reservation", () => {
       "select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_disconnect'",
     ))[0]?.state).toBe("released")
     expect(await reservations("call_disconnect")).toBe(1)
+  })
+
+  it("keeps a bound call and its reservation after the pre-connect timeout", async () => {
+    const held = await reserve(command("A", { bodyLabel: "already-bound" }))
+    expect(await callSql("commercial_usage_bind_inbound_admission_v1", {
+      environment: "dev",
+      providerCallRef: "call_already_bound",
+      toNumber: seat("A")[6],
+      admissionRef: held.admissionRef,
+      now: NOW,
+    })).toMatchObject({ status: "bound", billable: true })
+    await db.exec("set session_replication_role = replica")
+    await db.query(
+      "update admin_private.commercial_usage_admissions set expires_at = clock_timestamp() - interval '1 minute' where admission_ref = $1",
+      [held.admissionRef],
+    )
+    await db.exec("set session_replication_role = origin")
+    expect(await callSql("commercial_usage_release_inbound_admissions_v1", {
+      environment: "dev",
+      mode: "expire",
+      admissionRef: held.admissionRef,
+      now: "2026-11-15T12:11:00.000Z",
+    })).toMatchObject({ status: "replay", reason: "bound", admissionRef: held.admissionRef })
+    expect((await rows<{ state: string }>(
+      "select state from admin_private.commercial_usage_admissions where admission_ref = $1",
+      [held.admissionRef],
+    ))[0]?.state).toBe("bound")
+    expect((await rows<{ state: string }>(
+      "select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_already_bound'",
+    ))[0]?.state).toBe("open")
+  })
+
+  it("does not bind a delayed call start after the unbound hold has expired", async () => {
+    const held = await reserve(command("A", { providerCallRef: "call_delayed", bodyLabel: "delayed-start" }))
+    expect(held.status).toBe("admitted")
+    await db.exec("set session_replication_role = replica")
+    await db.query(
+      "update admin_private.commercial_usage_admissions set expires_at = clock_timestamp() - interval '1 minute' where admission_ref = $1",
+      [held.admissionRef],
+    )
+    await db.exec("set session_replication_role = origin")
+    expect(await callSql("commercial_usage_bind_inbound_admission_v1", {
+      environment: "dev",
+      providerCallRef: "call_delayed",
+      toNumber: seat("A")[6],
+      admissionRef: held.admissionRef,
+      now: NOW,
+    })).toMatchObject({ status: "denied", reason: "admission_expired", billable: false, admissionRef: held.admissionRef })
+    expect((await rows<{ state: string }>(
+      "select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_delayed'",
+    ))[0]?.state).toBe("released")
+    expect(await reservations("call_delayed")).toBe(1)
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from admin_private.commercial_usage_events where provider_call_ref = 'call_delayed'",
+    ))[0]?.n).toBe(0)
   })
 
   it("stores an admin web call as non-billable and keeps caller content out of the ledger", async () => {
@@ -587,6 +657,11 @@ describe.skipIf(!pgBin)("concurrent inbound reservation", () => {
     return `select public.commercial_usage_reserve_inbound_v1('${body}'::jsonb)::text;`
   }
 
+  function jsonCall(fn: string, body: Record<string, unknown>) {
+    const encoded = JSON.stringify(body).replace(/'/g, "''")
+    return `select public.${fn}('${encoded}'::jsonb)::text;`
+  }
+
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), "inboundadmit-pg-"))
     dataDir = join(root, "data")
@@ -642,5 +717,130 @@ describe.skipIf(!pgBin)("concurrent inbound reservation", () => {
       first.end()
       second.end()
     }
+  })
+
+  it("blocks a second overage call until a hold has become one reservation", async () => {
+    const opened = JSON.parse(await psql(jsonCall("commercial_usage_reserve_inbound_v1", command("B", { bodyLabel: "hold-race" })))) as ReserveResult
+    expect(opened.status).toBe("admitted")
+    const binder = heldSession()
+    const caller = heldSession()
+    try {
+      await binder.query("BEGIN;")
+      const bound = await binder.query(jsonCall("commercial_usage_bind_inbound_admission_v1", {
+        environment: "dev",
+        providerCallRef: "call_hold_race",
+        toNumber: seat("B")[6],
+        admissionRef: opened.admissionRef,
+        now: NOW,
+      }))
+      expect(bound.stderr + bound.stdout).toContain("bound")
+      const pending = caller.query(jsonCall("commercial_usage_reserve_inbound_v1", command("B", { bodyLabel: "second-overage" })))
+      await new Promise(resolve => setTimeout(resolve, 400))
+      const waiting = Number(await psql("select count(*) from pg_stat_activity where wait_event_type = 'Lock' and datname = 'inboundadmit'"))
+      expect(waiting).toBeGreaterThan(0)
+      await binder.query("COMMIT;")
+      const denied = await pending
+      expect(denied.stderr + denied.stdout).toContain("spending_cap_exhausted")
+      expect(await psql("select count(*) from admin_private.commercial_usage_reservations where provider_call_ref = 'call_hold_race' and state = 'open'")).toBe("1")
+      expect(await psql("select count(*) from admin_private.commercial_usage_admissions where body_sha256 = '" + hashFor("B:second-overage") + "'")).toBe("0")
+    } finally {
+      binder.end()
+      caller.end()
+    }
+  })
+
+  it("keeps a call bound when expiry waits on the same period lock", async () => {
+    const opened = JSON.parse(await psql(jsonCall("commercial_usage_reserve_inbound_v1", command("R", { bodyLabel: "expire-race" })))) as ReserveResult
+    expect(opened.status).toBe("admitted")
+    const binder = heldSession()
+    const expirer = heldSession()
+    try {
+      await binder.query("BEGIN;")
+      const bound = await binder.query(jsonCall("commercial_usage_bind_inbound_admission_v1", {
+        environment: "dev",
+        providerCallRef: "call_expire_race",
+        toNumber: seat("R")[6],
+        admissionRef: opened.admissionRef,
+        now: NOW,
+      }))
+      expect(bound.stderr + bound.stdout).toContain("\"status\": \"bound\"")
+      const pending = expirer.query(jsonCall("commercial_usage_release_inbound_admissions_v1", {
+        environment: "dev",
+        mode: "expire",
+        admissionRef: opened.admissionRef,
+        now: "2026-11-15T12:11:00.000Z",
+      }))
+      await new Promise(resolve => setTimeout(resolve, 400))
+      const waiting = Number(await psql("select count(*) from pg_stat_activity where wait_event_type = 'Lock' and datname = 'inboundadmit'"))
+      expect(waiting).toBeGreaterThan(0)
+      await binder.query("COMMIT;")
+      const kept = await pending
+      expect(kept.stderr + kept.stdout).toContain("\"reason\": \"bound\"")
+      expect(kept.stderr + kept.stdout).not.toContain("\"status\": \"expired\"")
+      expect(await psql("select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_expire_race'")).toBe("open")
+    } finally {
+      binder.end()
+      expirer.end()
+    }
+    await psql(
+      "set session_replication_role = replica; update admin_private.commercial_usage_admissions set expires_at = clock_timestamp() - interval '1 minute' where admission_ref = '" + opened.admissionRef + "'; set session_replication_role = origin;",
+    )
+    const later = await psql(jsonCall("commercial_usage_release_inbound_admissions_v1", {
+      environment: "dev",
+      mode: "expire",
+      admissionRef: opened.admissionRef,
+      now: "2026-11-15T12:11:00.000Z",
+    }))
+    expect(later).toContain("\"reason\": \"bound\"")
+    expect(await psql("select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_expire_race'")).toBe("open")
+    expect(await psql("select state from admin_private.commercial_usage_admissions where admission_ref = '" + opened.admissionRef + "'")).toBe("bound")
+  })
+
+  it("keeps the reserved period when renewal waits, then rejects a call after cancellation", async () => {
+    const reserver = heldSession()
+    const renewer = heldSession()
+    try {
+      await reserver.query("BEGIN;")
+      const admitted = await reserver.query(jsonCall("commercial_usage_reserve_inbound_v1", command("R", { bodyLabel: "renew-race" })))
+      expect(admitted.stderr + admitted.stdout).toContain("admitted")
+      const pending = renewer.query(
+        "update public.commercial_subscriptions set current_period_start = '2026-12-01T00:00:00.000Z', current_period_end = '2027-01-01T00:00:00.000Z' where id = '" + seat("R")[3] + "';",
+      )
+      await new Promise(resolve => setTimeout(resolve, 400))
+      const waiting = Number(await psql("select count(*) from pg_stat_activity where wait_event_type = 'Lock' and datname = 'inboundadmit'"))
+      expect(waiting).toBeGreaterThan(0)
+      await reserver.query("COMMIT;")
+      const renewed = await pending
+      expect(renewed.stderr).toBe("")
+    } finally {
+      reserver.end()
+      renewer.end()
+    }
+    expect(await psql("select period_start::text from admin_private.commercial_usage_admissions where body_sha256 = '" + hashFor("R:renew-race") + "'")).toContain("2026-11-01")
+    expect(await psql("select current_period_start::text from public.commercial_subscriptions where id = '" + seat("R")[3] + "'")).toContain("2026-12-01")
+
+    const canceller = heldSession()
+    const holder = heldSession()
+    try {
+      await holder.query("BEGIN;")
+      const next = await holder.query(jsonCall("commercial_usage_reserve_inbound_v1", command("R", { bodyLabel: "cancel-race", now: "2026-12-15T12:00:00.000Z" })))
+      expect(next.stderr + next.stdout).toContain("admitted")
+      const pending = canceller.query(
+        "update public.commercial_subscriptions set state = 'CANCELED', canceled_at = clock_timestamp() where id = '" + seat("R")[3] + "';",
+      )
+      await new Promise(resolve => setTimeout(resolve, 400))
+      const waiting = Number(await psql("select count(*) from pg_stat_activity where wait_event_type = 'Lock' and datname = 'inboundadmit'"))
+      expect(waiting).toBeGreaterThan(0)
+      await holder.query("COMMIT;")
+      const cancelled = await pending
+      expect(cancelled.stderr).toBe("")
+    } finally {
+      holder.end()
+      canceller.end()
+    }
+    expect(await psql("select period_start::text from admin_private.commercial_usage_admissions where body_sha256 = '" + hashFor("R:cancel-race") + "'")).toContain("2026-12-01")
+    const refused = await psql(jsonCall("commercial_usage_reserve_inbound_v1", command("R", { bodyLabel: "after-cancel-race", now: "2026-12-15T12:00:00.000Z" })))
+    expect(refused).toContain("subscription_inactive")
+    expect(await psql("select count(*) from admin_private.commercial_usage_admissions where body_sha256 = '" + hashFor("R:after-cancel-race") + "'")).toBe("0")
   })
 })

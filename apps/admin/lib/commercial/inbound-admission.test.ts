@@ -101,7 +101,7 @@ describe("inbound call admission", () => {
     expect(built.payload.providerCallRef).toBe(other.payload.providerCallRef)
   })
 
-  it("keeps an optional preallocated call id and drops caller content and commercial preferences", () => {
+  it("keeps an optional call id when one is supplied and drops caller content and commercial preferences", () => {
     const body = raw({
       call_id: "call_preallocated_1",
       agent_version: 3,
@@ -134,7 +134,7 @@ describe("inbound call admission", () => {
   })
 
   it("returns the number owner's agent and the same admission reference on an identical retry", async () => {
-    expect(inboundMetadataPropagation).toBe("DOCUMENTED_NOT_LIVE_VERIFIED")
+    expect(inboundMetadataPropagation).toBe("UNVERIFIED")
     expect(inboundLaunchBlockers()).toContain("default_inbound_agent_fallback_unverified")
     expect(inboundLaunchBlockers()).toContain("inbound_metadata_propagation_not_live_verified")
     const reserve = vi.fn(async (_payload: InboundReservationPayload): Promise<InboundReservationResult> => ({
@@ -145,11 +145,12 @@ describe("inbound call admission", () => {
       agentRef: AGENT,
       reserveSeconds: 60,
     }))
-    const first = await admit(raw(), { reserve })
+    const first = await admit(raw(), { providerConfiguration: "VERIFIED", reserve })
     expect(first.body).toEqual({
       call_inbound: { override_agent_id: AGENT, metadata: { admission_id: ADMISSION } },
     })
-    expect(first.launchBlocked).toBe(inboundFailClosedProviderConfiguration === "UNVERIFIED")
+    expect(first.launchBlocked).toBe(false)
+    expect(inboundFailClosedProviderConfiguration).toBe("UNVERIFIED")
     reserve.mockResolvedValueOnce({
       status: "replay",
       decision: "admitted",
@@ -158,7 +159,7 @@ describe("inbound call admission", () => {
       admissionRef: ADMISSION,
       agentRef: AGENT,
     })
-    const retry = await admit(raw(), { reserve })
+    const retry = await admit(raw(), { providerConfiguration: "VERIFIED", reserve })
     expect(retry).toMatchObject({
       outcome: "replay",
       admissionRef: ADMISSION,
@@ -166,6 +167,33 @@ describe("inbound call admission", () => {
       body: first.body,
     })
     expect(JSON.stringify(retry.body)).not.toContain("agent_from_caller")
+  })
+
+  it("rejects a correctly signed call while the provider configuration is unverified", async () => {
+    const reserve = vi.fn(async (_payload: InboundReservationPayload): Promise<InboundReservationResult> => ({
+      status: "admitted",
+      billable: true,
+      admissionRef: ADMISSION,
+      agentRef: AGENT,
+    }))
+    const result = await admit(raw(), { enabledFlag: "true", reserve })
+    expect(result).toMatchObject({
+      httpStatus: 200,
+      body: INBOUND_RETELL_REJECT,
+      outcome: "provider_fail_open_unverified",
+      admissionRef: null,
+      reservationBillable: false,
+      launchBlocked: true,
+      persistedCallerContent: false,
+    })
+    expect(result.body).not.toHaveProperty("call_inbound.override_agent_id")
+    expect(JSON.stringify(result.body)).not.toContain(ADMISSION)
+    expect(JSON.stringify(result.body)).not.toContain(AGENT)
+    expect(reserve).not.toHaveBeenCalled()
+    expect(await admit(raw(), { enabledFlag: "true", providerConfiguration: "UNVERIFIED", reserve })).toMatchObject({
+      outcome: "provider_fail_open_unverified",
+    })
+    expect(reserve).not.toHaveBeenCalled()
   })
 
   it("does not authorise a closed replay, a conflict, or a response without an agent", async () => {
@@ -176,11 +204,11 @@ describe("inbound call admission", () => {
       billable: false,
       admissionRef: ADMISSION,
     }))
-    expect(await admit(raw(), { reserve: closed })).toMatchObject({ body: INBOUND_RETELL_REJECT, outcome: "replay", reservationBillable: false })
+    expect(await admit(raw(), { providerConfiguration: "VERIFIED", reserve: closed })).toMatchObject({ body: INBOUND_RETELL_REJECT, outcome: "replay", reservationBillable: false })
     const conflict = vi.fn(async (_payload: InboundReservationPayload) => ({ status: "conflict", billable: false, admissionRef: ADMISSION }))
-    expect(await admit(raw({ from_number: "+447700900124" }), { reserve: conflict })).toMatchObject({ body: INBOUND_RETELL_REJECT, outcome: "conflict" })
+    expect(await admit(raw({ from_number: "+447700900124" }), { providerConfiguration: "VERIFIED", reserve: conflict })).toMatchObject({ body: INBOUND_RETELL_REJECT, outcome: "conflict" })
     const missingAgent = vi.fn(async (_payload: InboundReservationPayload) => ({ status: "admitted", billable: true, admissionRef: ADMISSION }))
-    expect(await admit(raw({ from_number: "+447700900125" }), { reserve: missingAgent })).toMatchObject({
+    expect(await admit(raw({ from_number: "+447700900125" }), { providerConfiguration: "VERIFIED", reserve: missingAgent })).toMatchObject({
       body: INBOUND_RETELL_REJECT,
       outcome: "provider_response_invalid",
       reservationBillable: false,
@@ -189,7 +217,7 @@ describe("inbound call admission", () => {
 
   it("returns the documented reject body when the simulated database denies or is unavailable", async () => {
     const denied = vi.fn(async (_payload: InboundReservationPayload) => ({ status: "denied", reason: "allowance_exhausted", billable: false }))
-    expect(await admit(raw(), { reserve: denied })).toMatchObject({
+    expect(await admit(raw(), { providerConfiguration: "VERIFIED", reserve: denied })).toMatchObject({
       body: INBOUND_RETELL_REJECT,
       outcome: "denied",
       reason: "allowance_exhausted",
@@ -198,7 +226,7 @@ describe("inbound call admission", () => {
     const unavailable = vi.fn(async (_payload: InboundReservationPayload) => {
       throw new Error("connection terminated")
     })
-    expect(await admit(raw({ from_number: "+447700900126" }), { reserve: unavailable })).toMatchObject({
+    expect(await admit(raw({ from_number: "+447700900126" }), { providerConfiguration: "VERIFIED", reserve: unavailable })).toMatchObject({
       body: INBOUND_RETELL_REJECT,
       outcome: "database_unavailable",
       reservationBillable: false,

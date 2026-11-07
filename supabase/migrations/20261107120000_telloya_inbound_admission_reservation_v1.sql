@@ -6,9 +6,15 @@
 -- This file does not enable Retell, forwarding, a provider webhook, or a
 -- Stripe charge. It does not open service_provisions.state = LIVE. It does
 -- not store a transcript, recording, token, caller number, or raw provider body.
--- A preallocated provider call id is optional. The caller number is not an
--- identity. An identical body is one admission. A quoted admission reference
--- cannot authorise a different body. An unbound hold expires and is released.
+-- Lock order, always transaction-scoped and always in this sequence:
+-- 1. Body lock: hashtextextended('commercial-usage-body:' || env || ':' || sha)
+-- 2. Call lock: hashtext('commercial-usage:' || env || ':' || provider_call_ref)
+-- 3. Period lock: hashtextextended('commercial-usage-period:' || subscription || ':' || period_start)
+-- A later lock is never taken before an earlier one. Subscription state and
+-- period changes take the same period lock, old period before a later period.
+-- Expiry uses clock_timestamp(). An expired unbound hold is not an approval.
+-- A bound call is not released because the pre-connect timeout has passed.
+-- A provider call id is optional and is not treated as guaranteed.
 -- service_role has no USAGE on admin_private. The callable paths are the
 -- public SECURITY DEFINER functions below.
 
@@ -161,7 +167,7 @@ CREATE FUNCTION admin_private.commercial_usage_admission_view_v1(
 )
 RETURNS jsonb
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 SET search_path = ''
 AS $fn$
 BEGIN
@@ -174,7 +180,13 @@ BEGIN
       'admissionRef', p_row.admission_ref
     );
   END IF;
-  IF p_row.state IN ('reserved', 'bound') THEN
+  IF p_row.state = 'bound'
+    OR (
+      p_row.state = 'reserved'
+      AND p_row.bound_at IS NULL
+      AND p_row.expires_at > pg_catalog.clock_timestamp()
+    )
+  THEN
     RETURN pg_catalog.jsonb_build_object(
       'status', 'replay',
       'decision', 'admitted',
@@ -184,6 +196,22 @@ BEGIN
       'agentRef', p_row.agent_ref,
       'reserveSeconds', 60,
       'providerCallRef', p_row.provider_call_ref
+    );
+  END IF;
+  IF p_row.state = 'expired'
+    OR (
+      p_row.state = 'reserved'
+      AND p_row.bound_at IS NULL
+      AND p_row.expires_at <= pg_catalog.clock_timestamp()
+    )
+  THEN
+    RETURN pg_catalog.jsonb_build_object(
+      'status', 'replay',
+      'decision', p_row.decision,
+      'reason', 'admission_expired',
+      'billable', false,
+      'admissionRef', p_row.admission_ref,
+      'state', 'expired'
     );
   END IF;
   RETURN pg_catalog.jsonb_build_object(
@@ -197,6 +225,25 @@ BEGIN
 END;
 $fn$;
 
+CREATE FUNCTION admin_private.commercial_usage_lock_period_v1(
+  p_subscription uuid,
+  p_period_start timestamptz
+)
+RETURNS void
+LANGUAGE plpgsql
+SET search_path = ''
+AS $fn$
+BEGIN
+  IF p_subscription IS NULL OR p_period_start IS NULL THEN
+    RETURN;
+  END IF;
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
+    'commercial-usage-period:' || p_subscription::text || ':' || p_period_start::text,
+    0
+  ));
+END;
+$fn$;
+
 CREATE FUNCTION admin_private.commercial_usage_release_expired_admissions_v1(
   p_subscription uuid,
   p_now timestamptz
@@ -207,21 +254,42 @@ SET search_path = ''
 AS $fn$
 DECLARE
   v_row admin_private.commercial_usage_admissions%ROWTYPE;
+  v_period timestamptz;
+  v_clock timestamptz := pg_catalog.clock_timestamp();
 BEGIN
+  -- p_now is not an expiry authority. The database clock is.
+  -- The caller already holds the billing-period lock. This sweep does not take
+  -- another advisory lock, so it cannot invert the call-then-period order.
+  SELECT current_period_start INTO v_period
+  FROM public.commercial_subscriptions
+  WHERE id = p_subscription;
   FOR v_row IN
     SELECT *
     FROM admin_private.commercial_usage_admissions
     WHERE subscription_id = p_subscription
+      AND period_start IS NOT DISTINCT FROM v_period
       AND state = 'reserved'
       AND bound_at IS NULL
-      AND expires_at <= p_now
-    FOR UPDATE
+      AND expires_at <= v_clock
   LOOP
+    SELECT * INTO v_row
+    FROM admin_private.commercial_usage_admissions
+    WHERE id = v_row.id
+    FOR UPDATE;
+    IF v_row.state IS DISTINCT FROM 'reserved'
+      OR v_row.bound_at IS NOT NULL
+      OR v_row.expires_at > pg_catalog.clock_timestamp()
+    THEN
+      CONTINUE;
+    END IF;
     IF v_row.provider_call_ref IS NOT NULL AND EXISTS (
       SELECT 1 FROM admin_private.commercial_usage_events AS event
       WHERE event.environment = v_row.environment
         AND event.provider_call_ref = v_row.provider_call_ref
     ) THEN
+      UPDATE admin_private.commercial_usage_admissions
+      SET state = 'bound', bound_at = pg_catalog.clock_timestamp()
+      WHERE id = v_row.id AND state = 'reserved';
       CONTINUE;
     END IF;
     IF v_row.reservation_id IS NOT NULL THEN
@@ -230,9 +298,61 @@ BEGIN
       WHERE id = v_row.reservation_id AND state = 'open';
     END IF;
     UPDATE admin_private.commercial_usage_admissions
-    SET state = 'expired', released_at = p_now
+    SET state = 'expired', released_at = pg_catalog.clock_timestamp()
     WHERE id = v_row.id AND state = 'reserved';
   END LOOP;
+END;
+$fn$;
+
+CREATE FUNCTION admin_private.commercial_usage_finish_replay_v1(p_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SET search_path = ''
+AS $fn$
+DECLARE
+  v_row admin_private.commercial_usage_admissions%ROWTYPE;
+BEGIN
+  SELECT * INTO v_row
+  FROM admin_private.commercial_usage_admissions
+  WHERE id = p_id;
+  IF NOT FOUND THEN
+    RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'unknown_admission', 'billable', false);
+  END IF;
+  IF v_row.decision = 'admitted' AND v_row.subscription_id IS NOT NULL AND v_row.period_start IS NOT NULL THEN
+    IF v_row.provider_call_ref IS NOT NULL THEN
+      PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('commercial-usage:' || v_row.environment || ':' || v_row.provider_call_ref)::bigint);
+    END IF;
+    PERFORM admin_private.commercial_usage_lock_period_v1(v_row.subscription_id, v_row.period_start);
+    SELECT * INTO v_row
+    FROM admin_private.commercial_usage_admissions
+    WHERE id = p_id
+    FOR UPDATE;
+    IF v_row.state = 'reserved'
+      AND v_row.bound_at IS NULL
+      AND v_row.expires_at <= pg_catalog.clock_timestamp()
+    THEN
+      IF v_row.provider_call_ref IS NOT NULL AND EXISTS (
+        SELECT 1 FROM admin_private.commercial_usage_events AS event
+        WHERE event.environment = v_row.environment
+          AND event.provider_call_ref = v_row.provider_call_ref
+      ) THEN
+        UPDATE admin_private.commercial_usage_admissions
+        SET state = 'bound', bound_at = pg_catalog.clock_timestamp()
+        WHERE id = v_row.id AND state = 'reserved';
+      ELSE
+        IF v_row.reservation_id IS NOT NULL THEN
+          UPDATE admin_private.commercial_usage_reservations
+          SET state = 'released'
+          WHERE id = v_row.reservation_id AND state = 'open';
+        END IF;
+        UPDATE admin_private.commercial_usage_admissions
+        SET state = 'expired', released_at = pg_catalog.clock_timestamp()
+        WHERE id = v_row.id AND state = 'reserved';
+      END IF;
+      SELECT * INTO v_row FROM admin_private.commercial_usage_admissions WHERE id = p_id;
+    END IF;
+  END IF;
+  RETURN admin_private.commercial_usage_admission_view_v1(v_row);
 END;
 $fn$;
 
@@ -272,6 +392,7 @@ DECLARE
   v_minutes integer;
   v_raw integer;
   v_reason text;
+  v_locked_period timestamptz;
   v_admission_ref text;
   v_admission_id uuid;
   v_reservation_id uuid;
@@ -328,7 +449,7 @@ BEGIN
       RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'unknown_admission', 'billable', false);
     END IF;
     IF v_existing.body_sha256 = v_hash THEN
-      RETURN admin_private.commercial_usage_admission_view_v1(v_existing);
+      RETURN admin_private.commercial_usage_finish_replay_v1(v_existing.id);
     END IF;
     INSERT INTO admin_private.commercial_usage_admission_conflicts(admission_id, body_sha256)
     VALUES (v_existing.id, v_hash)
@@ -344,7 +465,7 @@ BEGIN
     FOR UPDATE;
     IF FOUND THEN
       IF v_existing.body_sha256 = v_hash THEN
-        RETURN admin_private.commercial_usage_admission_view_v1(v_existing);
+        RETURN admin_private.commercial_usage_finish_replay_v1(v_existing.id);
       END IF;
       INSERT INTO admin_private.commercial_usage_admission_conflicts(admission_id, body_sha256)
       VALUES (v_existing.id, v_hash)
@@ -358,7 +479,7 @@ BEGIN
   WHERE environment = v_environment AND body_sha256 = v_hash
   FOR UPDATE;
   IF FOUND THEN
-    RETURN admin_private.commercial_usage_admission_view_v1(v_existing);
+    RETURN admin_private.commercial_usage_finish_replay_v1(v_existing.id);
   END IF;
 
   IF v_scope = 'admin_web_qa' THEN
@@ -438,11 +559,61 @@ BEGIN
     RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'invalid_billing_period', 'billable', false);
   END IF;
 
-  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
-    'commercial-usage-period:' || v_subscription.id::text || ':' || v_subscription.current_period_start::text,
-    0
-  ));
-  PERFORM admin_private.commercial_usage_release_expired_admissions_v1(v_subscription.id, v_now);
+  v_locked_period := v_subscription.current_period_start;
+  PERFORM admin_private.commercial_usage_lock_period_v1(v_subscription.id, v_locked_period);
+  SELECT * INTO v_subscription
+  FROM public.commercial_subscriptions
+  WHERE id = v_owner.subscription_id
+    AND business_id = v_owner.business_id
+    AND customer_id = v_owner.customer_id;
+  IF NOT FOUND THEN
+    RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'subscription_absent', 'billable', false);
+  END IF;
+  IF v_subscription.current_period_start IS NOT NULL
+    AND v_subscription.current_period_start IS DISTINCT FROM v_locked_period
+    AND v_locked_period IS NOT NULL
+    AND v_subscription.current_period_start::text >= v_locked_period::text
+  THEN
+    PERFORM admin_private.commercial_usage_lock_period_v1(v_subscription.id, v_subscription.current_period_start);
+    SELECT * INTO v_subscription
+    FROM public.commercial_subscriptions
+    WHERE id = v_owner.subscription_id
+      AND business_id = v_owner.business_id
+      AND customer_id = v_owner.customer_id;
+  END IF;
+  IF NOT FOUND OR v_subscription.state IN ('DRAFT', 'OFFERED', 'ACCEPTED', 'PAYMENT_PENDING', 'PAST_DUE') THEN
+    RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'subscription_unpaid', 'billable', false);
+  END IF;
+  IF v_subscription.state NOT IN ('ACTIVE', 'CANCEL_AT_PERIOD_END') THEN
+    RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'subscription_inactive', 'billable', false);
+  END IF;
+  SELECT provision.state INTO v_provision_state
+  FROM public.service_provisions AS provision
+  JOIN public.product_entitlements AS entitlement
+    ON entitlement.id = provision.entitlement_id
+  WHERE provision.business_id = v_owner.business_id
+    AND provision.location_id = v_owner.location_id
+    AND entitlement.commercial_subscription_id = v_owner.subscription_id
+    AND entitlement.component_code = 'TELLOYA'
+    AND entitlement.business_id = v_owner.business_id
+    AND entitlement.location_id = v_owner.location_id
+    AND entitlement.state = 'ELIGIBLE'
+  ORDER BY CASE WHEN provision.state = 'LIVE' THEN 0 ELSE 1 END
+  LIMIT 1;
+  IF v_provision_state IS DISTINCT FROM 'LIVE' THEN
+    RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'provision_inactive', 'billable', false);
+  END IF;
+  IF v_subscription.current_period_start IS NULL
+    OR v_subscription.current_period_end IS NULL
+    OR v_subscription.current_period_end <= v_subscription.current_period_start
+    OR v_now < v_subscription.current_period_start
+    OR v_now >= v_subscription.current_period_end
+    OR v_subscription.current_period_start IS DISTINCT FROM v_locked_period
+      AND v_subscription.current_period_start::text < v_locked_period::text
+  THEN
+    RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'invalid_billing_period', 'billable', false);
+  END IF;
+  PERFORM admin_private.commercial_usage_release_expired_admissions_v1(v_subscription.id, pg_catalog.clock_timestamp());
 
   v_terms := admin_private.commercial_usage_load_acceptance_v1(v_subscription.id, v_owner.business_id, p_event);
   IF v_terms->>'status' IS DISTINCT FROM 'ok' THEN
@@ -477,7 +648,7 @@ BEGIN
     AND period_end = v_subscription.current_period_end
     AND state = 'reserved'
     AND reservation_id IS NULL
-    AND expires_at > v_now;
+    AND expires_at > pg_catalog.clock_timestamp();
   v_committed := v_confirmed + v_open + v_holds;
   v_included_seconds := v_included * 60;
   IF v_committed + 60 <= v_included_seconds THEN
@@ -525,7 +696,7 @@ BEGIN
     v_subscription.current_period_start, v_subscription.current_period_end,
     'admitted', 'reserved', v_reservation_id, v_reason, v_included, false,
     v_overage, v_rate, v_cap, v_consent,
-    v_now + interval '10 minutes'
+    pg_catalog.clock_timestamp() + interval '10 minutes'
   )
   RETURNING id INTO v_admission_id;
 
@@ -588,24 +759,52 @@ BEGIN
   IF v_quoted IS NOT NULL THEN
     SELECT * INTO v_row
     FROM admin_private.commercial_usage_admissions
-    WHERE admission_ref = v_quoted AND environment = v_environment
-    FOR UPDATE;
+    WHERE admission_ref = v_quoted AND environment = v_environment;
   ELSE
     SELECT * INTO v_row
     FROM admin_private.commercial_usage_admissions
-    WHERE environment = v_environment AND provider_call_ref = v_call_ref
-    FOR UPDATE;
+    WHERE environment = v_environment AND provider_call_ref = v_call_ref;
   END IF;
   IF NOT FOUND THEN
     RETURN pg_catalog.jsonb_build_object('status', 'unbound', 'reason', 'correlation_unverified', 'billable', false);
   END IF;
+  PERFORM admin_private.commercial_usage_lock_period_v1(v_row.subscription_id, v_row.period_start);
+  SELECT * INTO v_row
+  FROM admin_private.commercial_usage_admissions
+  WHERE id = v_row.id
+  FOR UPDATE;
   IF v_row.decision IS DISTINCT FROM 'admitted' OR v_row.to_number IS DISTINCT FROM v_number THEN
     RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'cross_tenant', 'billable', false, 'admissionRef', v_row.admission_ref);
   END IF;
   IF v_row.provider_call_ref IS NOT NULL AND v_row.provider_call_ref IS DISTINCT FROM v_call_ref THEN
     RETURN pg_catalog.jsonb_build_object('status', 'conflict', 'billable', false, 'admissionRef', v_row.admission_ref);
   END IF;
-  IF v_row.state NOT IN ('reserved', 'bound') OR v_row.expires_at <= v_now AND v_row.bound_at IS NULL THEN
+  IF v_row.state = 'reserved'
+    AND v_row.bound_at IS NULL
+    AND v_row.expires_at <= pg_catalog.clock_timestamp()
+  THEN
+    IF v_row.provider_call_ref IS NOT NULL AND EXISTS (
+      SELECT 1 FROM admin_private.commercial_usage_events AS event
+      WHERE event.environment = v_row.environment AND event.provider_call_ref = v_row.provider_call_ref
+    ) THEN
+      UPDATE admin_private.commercial_usage_admissions
+      SET state = 'bound', bound_at = pg_catalog.clock_timestamp()
+      WHERE id = v_row.id AND state = 'reserved';
+    ELSE
+      IF v_row.reservation_id IS NOT NULL THEN
+        UPDATE admin_private.commercial_usage_reservations
+        SET state = 'released'
+        WHERE id = v_row.reservation_id AND state = 'open';
+      END IF;
+      UPDATE admin_private.commercial_usage_admissions
+      SET state = 'expired', released_at = pg_catalog.clock_timestamp()
+      WHERE id = v_row.id AND state = 'reserved';
+    END IF;
+    RETURN pg_catalog.jsonb_build_object(
+      'status', 'denied', 'reason', 'admission_expired', 'billable', false, 'admissionRef', v_row.admission_ref
+    );
+  END IF;
+  IF v_row.state NOT IN ('reserved', 'bound') THEN
     RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'admission_closed', 'billable', false, 'admissionRef', v_row.admission_ref);
   END IF;
 
@@ -675,7 +874,7 @@ BEGIN
   SET provider_call_ref = v_call_ref,
       reservation_id = v_reservation_id,
       state = 'bound',
-      bound_at = v_now
+      bound_at = pg_catalog.clock_timestamp()
   WHERE id = v_row.id AND state = 'reserved';
 
   RETURN pg_catalog.jsonb_build_object(
@@ -733,13 +932,27 @@ BEGIN
       WHERE environment = v_environment
         AND state = 'reserved'
         AND bound_at IS NULL
-        AND expires_at <= v_now
-      FOR UPDATE
+        AND expires_at <= pg_catalog.clock_timestamp()
+      ORDER BY subscription_id::text, period_start::text, id::text
     LOOP
+      PERFORM admin_private.commercial_usage_lock_period_v1(v_row.subscription_id, v_row.period_start);
+      SELECT * INTO v_row
+      FROM admin_private.commercial_usage_admissions
+      WHERE id = v_row.id
+      FOR UPDATE;
+      IF v_row.state IS DISTINCT FROM 'reserved'
+        OR v_row.bound_at IS NOT NULL
+        OR v_row.expires_at > pg_catalog.clock_timestamp()
+      THEN
+        CONTINUE;
+      END IF;
       IF v_row.provider_call_ref IS NOT NULL AND EXISTS (
         SELECT 1 FROM admin_private.commercial_usage_events AS event
         WHERE event.environment = v_row.environment AND event.provider_call_ref = v_row.provider_call_ref
       ) THEN
+        UPDATE admin_private.commercial_usage_admissions
+        SET state = 'bound', bound_at = pg_catalog.clock_timestamp()
+        WHERE id = v_row.id AND state = 'reserved';
         CONTINUE;
       END IF;
       IF v_row.reservation_id IS NOT NULL THEN
@@ -748,7 +961,7 @@ BEGIN
         WHERE id = v_row.reservation_id AND state = 'open';
       END IF;
       UPDATE admin_private.commercial_usage_admissions
-      SET state = 'expired', released_at = v_now
+      SET state = 'expired', released_at = pg_catalog.clock_timestamp()
       WHERE id = v_row.id AND state = 'reserved';
       v_count := v_count + 1;
     END LOOP;
@@ -761,22 +974,39 @@ BEGIN
     AND (
       (v_quoted IS NOT NULL AND admission_ref = v_quoted)
       OR (v_quoted IS NULL AND provider_call_ref = v_call_ref)
-    )
-  FOR UPDATE;
+    );
   IF NOT FOUND THEN
     RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'unknown_admission');
   END IF;
+  IF v_row.provider_call_ref IS NOT NULL THEN
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('commercial-usage:' || v_row.environment || ':' || v_row.provider_call_ref)::bigint);
+  END IF;
+  PERFORM admin_private.commercial_usage_lock_period_v1(v_row.subscription_id, v_row.period_start);
+  SELECT * INTO v_row
+  FROM admin_private.commercial_usage_admissions
+  WHERE id = v_row.id
+  FOR UPDATE;
   IF v_row.provider_call_ref IS NOT NULL AND EXISTS (
     SELECT 1 FROM admin_private.commercial_usage_events AS event
     WHERE event.environment = v_row.environment AND event.provider_call_ref = v_row.provider_call_ref
   ) THEN
+    IF v_row.state = 'reserved' THEN
+      UPDATE admin_private.commercial_usage_admissions
+      SET state = 'bound', bound_at = pg_catalog.clock_timestamp()
+      WHERE id = v_row.id AND state = 'reserved';
+    END IF;
     RETURN pg_catalog.jsonb_build_object('status', 'denied', 'reason', 'usage_evidence_present', 'admissionRef', v_row.admission_ref);
   END IF;
-  IF v_mode = 'expire' AND NOT (v_row.state = 'reserved' AND v_row.bound_at IS NULL AND v_row.expires_at <= v_now) THEN
+  IF v_mode = 'expire' AND NOT (
+    v_row.state = 'reserved' AND v_row.bound_at IS NULL AND v_row.expires_at <= pg_catalog.clock_timestamp()
+  ) THEN
     RETURN pg_catalog.jsonb_build_object('status', 'replay', 'reason', v_row.state, 'admissionRef', v_row.admission_ref);
   END IF;
   IF v_row.state NOT IN ('reserved', 'bound') THEN
     RETURN pg_catalog.jsonb_build_object('status', 'replay', 'reason', v_row.state, 'admissionRef', v_row.admission_ref);
+  END IF;
+  IF v_mode = 'expire' AND v_row.state = 'bound' THEN
+    RETURN pg_catalog.jsonb_build_object('status', 'replay', 'reason', 'bound', 'admissionRef', v_row.admission_ref);
   END IF;
   IF v_row.reservation_id IS NOT NULL THEN
     UPDATE admin_private.commercial_usage_reservations
@@ -785,7 +1015,7 @@ BEGIN
   END IF;
   UPDATE admin_private.commercial_usage_admissions
   SET state = CASE WHEN v_mode = 'expire' THEN 'expired' ELSE 'disconnected' END,
-      released_at = v_now
+      released_at = pg_catalog.clock_timestamp()
   WHERE id = v_row.id AND state IN ('reserved', 'bound');
   RETURN pg_catalog.jsonb_build_object(
     'status', CASE WHEN v_mode = 'expire' THEN 'expired' ELSE 'disconnected' END,
@@ -822,6 +1052,40 @@ AS $fn$
   SELECT admin_private.commercial_usage_release_inbound_admissions_v1($1);
 $fn$;
 
+CREATE FUNCTION admin_private.commercial_usage_lock_subscription_periods_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $fn$
+DECLARE
+  v_old timestamptz;
+  v_new timestamptz;
+BEGIN
+  IF TG_OP = 'UPDATE' AND (
+    NEW.state IS DISTINCT FROM OLD.state
+    OR NEW.current_period_start IS DISTINCT FROM OLD.current_period_start
+    OR NEW.current_period_end IS DISTINCT FROM OLD.current_period_end
+  ) THEN
+    v_old := OLD.current_period_start;
+    v_new := NEW.current_period_start;
+    IF v_old IS NOT NULL AND v_new IS NOT NULL AND v_new::text < v_old::text THEN
+      PERFORM admin_private.commercial_usage_lock_period_v1(OLD.id, v_new);
+      PERFORM admin_private.commercial_usage_lock_period_v1(OLD.id, v_old);
+    ELSE
+      PERFORM admin_private.commercial_usage_lock_period_v1(OLD.id, v_old);
+      IF v_new IS DISTINCT FROM v_old THEN
+        PERFORM admin_private.commercial_usage_lock_period_v1(OLD.id, v_new);
+      END IF;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$fn$;
+
+CREATE TRIGGER commercial_subscriptions_usage_period_lock
+  BEFORE UPDATE ON public.commercial_subscriptions
+  FOR EACH ROW EXECUTE FUNCTION admin_private.commercial_usage_lock_subscription_periods_v1();
+
 ALTER TABLE admin_private.commercial_usage_admissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_private.commercial_usage_admission_conflicts ENABLE ROW LEVEL SECURITY;
 
@@ -833,6 +1097,9 @@ FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION
   admin_private.commercial_usage_admission_guard_v1(),
   admin_private.commercial_usage_admission_view_v1(admin_private.commercial_usage_admissions),
+  admin_private.commercial_usage_lock_period_v1(uuid, timestamptz),
+  admin_private.commercial_usage_lock_subscription_periods_v1(),
+  admin_private.commercial_usage_finish_replay_v1(uuid),
   admin_private.commercial_usage_release_expired_admissions_v1(uuid, timestamptz),
   admin_private.commercial_usage_reserve_inbound_v1(jsonb),
   admin_private.commercial_usage_bind_inbound_admission_v1(jsonb),
@@ -849,12 +1116,12 @@ GRANT EXECUTE ON FUNCTION
 TO service_role;
 
 COMMENT ON FUNCTION public.commercial_usage_reserve_inbound_v1(jsonb) IS
-  'Server role only. Reserves one customer minute from the accepted offer for the number owner. The admission reference is generated here. An identical body replays that admission. A different body cannot reuse it. A preallocated provider call id is stored when the webhook supplies one. The caller number is not an identity.';
+  'Server role only. Reserves one customer minute from the accepted offer for the number owner. The admission reference is generated here. An identical body replays that admission until the database clock expires an unbound hold. A different body cannot reuse it. A provider call id is stored only when the webhook supplies one. The caller number is not an identity.';
 
 COMMENT ON FUNCTION public.commercial_usage_bind_inbound_admission_v1(jsonb) IS
   'Server role only. Links one open admission to a later provider call id when that id was stored at admission or the later event echoes the admission reference and the number owner still matches. An unmatched event does not create a reservation.';
 
 COMMENT ON FUNCTION public.commercial_usage_release_inbound_admissions_v1(jsonb) IS
-  'Server role only. Releases an unbound expired hold or a disconnected admission that has no usage event. It does not delete usage evidence.';
+  'Server role only. Releases an unbound hold that the database clock has expired, or a disconnected admission that has no usage event. It does not delete usage evidence and it does not release a bound call because the pre-connect timeout elapsed.';
 
 COMMIT;

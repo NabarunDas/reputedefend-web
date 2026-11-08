@@ -110,6 +110,9 @@ function planTierLabel(tier: string | undefined): string {
   return tier
 }
 
+const planConsultation = "Not selected — consultation required"
+const planConsultationNextAction = "Contact the customer to discuss requirements and recommend a suitable Telloya plan."
+
 export function telloyaInternalNotificationText(data: TelloyaEnquiryData, ref: string, submittedAt: Date) {
   const lines = [
     `Enquiry Reference: ${ref}`,
@@ -119,6 +122,9 @@ export function telloyaInternalNotificationText(data: TelloyaEnquiryData, ref: s
 
   if (data.planTier) {
     lines.push(`Selected Plan: ${planTierLabel(data.planTier)}. Customer interest only. This is not an approved offer.`)
+  } else {
+    lines.push(`Plan selection: ${planConsultation}`)
+    lines.push(`Next action: ${planConsultationNextAction}`)
   }
 
   if (data.guardInterested) {
@@ -206,6 +212,9 @@ export function telloyaInternalNotificationHtml(data: TelloyaEnquiryData, ref: s
 
   if (data.planTier) {
     rows.push({ label: "Selected Plan", value: `${planTierLabel(data.planTier)}. Customer interest only. This is not an approved offer.` })
+  } else {
+    rows.push({ label: "Plan selection", value: planConsultation })
+    rows.push({ label: "Next action", value: planConsultationNextAction })
   }
 
   if (data.guardInterested) {

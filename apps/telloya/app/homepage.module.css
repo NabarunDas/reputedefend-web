@@ -233,7 +233,8 @@
 .popularCard {border-color:rgba(208,255,156,.38); background:linear-gradient(150deg,rgba(11,97,60,.42),rgba(4,36,28,.60)); }
 .popularLabel {position:absolute; top:-11px; left:50%; transform:translateX(-50%); padding:5px 16px; background:linear-gradient(135deg,#7cd14a,#5fb832); color:#001a12; border-radius:99px; font-size:.70rem; font-weight:900; letter-spacing:.06em; text-transform:uppercase; box-shadow:0 4px 14px rgba(124,209,74,.32); }
 .planPricing {margin-bottom:8px; }
-.planPrice {font-size:1.95rem; font-weight:800; color:#fffdf6; letter-spacing:-.04em; line-height:1; }
+.planPrice {font-size:1.95rem; font-weight:800; color:#fffdf6; letter-spacing:-.04em; line-height:1; white-space:nowrap; }
+.planPricePeriod {margin-left:2px; font-size:.92rem; font-weight:650; letter-spacing:-.02em; color:rgba(244,248,239,.7); }
 .planMinutes {margin-top:5px; color:#b9ec8a; font-size:.87rem; font-weight:600; letter-spacing:-.01em; }
 .planCard h3 {font-family:Georgia,"Times New Roman",serif; font-size:1.65rem; font-weight:500; color:#fffdf6; letter-spacing:-.03em; margin-bottom:8px; }
 .planCard > p {color:#b4cdbb; font-size:.91rem; line-height:1.55; flex-grow:1; margin-top:4px; }

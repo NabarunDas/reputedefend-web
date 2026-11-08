@@ -4,6 +4,7 @@ import { ArrowUpRight, Check, ExternalLink } from "lucide-react"
 import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { pricingContent } from "@/lib/content"
 import { formatGbpPrice, formatMinutes } from "@/lib/pricing"
+import { ComparisonScroller } from "./comparison-scroller"
 import styles from "./pricing.module.css"
 
 const { seo, hero, currency, plans, standardIncludes, guard, comparison, overage, setup, international, faq, cta } = pricingContent
@@ -156,16 +157,7 @@ export default function Pricing() {
             </h2>
             <p className={styles.sectionLead}>{comparison.lead}</p>
           </div>
-          <p id="comparison-scroll-hint" className={styles.scrollHint}>
-            Scroll sideways to compare all plans.
-          </p>
-          <div
-            className={styles.tableContainer}
-            tabIndex={0}
-            role="region"
-            aria-label="Telloya plan comparison"
-            aria-describedby="comparison-scroll-hint"
-          >
+          <ComparisonScroller>
             <table className={styles.comparisonTable}>
               <caption className={styles.visuallyHidden}>Telloya plan features and allowances</caption>
               <thead>
@@ -196,7 +188,7 @@ export default function Pricing() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ComparisonScroller>
         </section>
 
         {/* Overage Policy */}

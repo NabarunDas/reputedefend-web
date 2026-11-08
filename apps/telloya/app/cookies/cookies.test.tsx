@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import "@testing-library/jest-dom/vitest"
@@ -25,5 +27,14 @@ describe("Telloya cookies page", () => {
     expect(text).not.toMatch(/\b\d+\s+(day|days|month|months|year|years)\b/i)
     expect(text).not.toMatch(/retained for|retention period|call recordings are stored/i)
     expect(text).toMatch(/will be published before public launch/)
+  })
+
+  it("lets the cookie cards shrink and wrap the privacy URL", () => {
+    const css = readFileSync(resolve(process.cwd(), "app/cookies/cookies.module.css"), "utf8")
+    expect(css).toMatch(/\.section \{[^}]*min-width:\s*0;/)
+    expect(css).toMatch(/\.section a \{[^}]*overflow-wrap:\s*anywhere;/)
+    expect(css).not.toMatch(/overflow-x:\s*hidden/)
+    render(<CookiesPage />)
+    expect(screen.getByRole("link", { name: operatorPrivacyHref })).toHaveAttribute("href", operatorPrivacyHref)
   })
 })

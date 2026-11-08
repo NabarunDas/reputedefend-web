@@ -197,24 +197,6 @@ export default function Pricing() {
               </tbody>
             </table>
           </div>
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `(function () {
-                var region = document.querySelector('[aria-label="Telloya plan comparison"]');
-                if (!region || region.dataset.keyboardScroll === "ready") return;
-                region.dataset.keyboardScroll = "ready";
-                region.addEventListener("keydown", function (event) {
-                  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-                  if (region.scrollWidth <= region.clientWidth + 1) return;
-                  var max = region.scrollWidth - region.clientWidth;
-                  var next = Math.min(max, Math.max(0, region.scrollLeft + (event.key === "ArrowRight" ? 80 : -80)));
-                  if (next === region.scrollLeft) return;
-                  region.scrollLeft = next;
-                  event.preventDefault();
-                });
-              })();`,
-            }}
-          />
         </section>
 
         {/* Overage Policy */}

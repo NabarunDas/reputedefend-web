@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { cleanup, render, screen, within } from "@testing-library/react"
+import { act, cleanup, render, screen, within } from "@testing-library/react"
 import "@testing-library/jest-dom/vitest"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -130,8 +130,10 @@ describe("pricing page presentation", () => {
     render(<PricingPage />)
     const region = screen.getByRole("region", { name: "Telloya plan comparison" })
     expect(region).toHaveAttribute("tabindex", "0")
-    expect(region).toHaveAttribute("aria-describedby", "comparison-scroll-hint")
-    expect(screen.getByText("Scroll sideways to compare all plans.")).toHaveAttribute("id", "comparison-scroll-hint")
+    expect(region).not.toHaveAttribute("aria-describedby")
+    const hint = screen.getByText("Scroll sideways to compare all plans.")
+    expect(hint).toHaveAttribute("id", "comparison-scroll-hint")
+    expect(hint).toHaveAttribute("hidden")
 
     const table = within(region).getByRole("table", { name: "Telloya plan features and allowances" })
     const columnHeaders = within(table).getAllByRole("columnheader")
@@ -158,9 +160,37 @@ describe("pricing page presentation", () => {
     expect(pageSource).not.toContain("<script")
     expect(css).toContain("overflow-x: auto;")
     expect(css).toContain(".scrollHint {\n  display: none;")
-    expect(css).toMatch(/@media \(max-width: 900px\) \{[\s\S]*\.scrollHint \{\s*display: block;/)
+    expect(css).toMatch(/\.scrollHint\[data-visible="true"\] \{\n  display: block;\n\}/)
+    expect(css.slice(css.indexOf("@media (max-width: 900px)"))).not.toContain(".scrollHint")
     expect(css).toContain(".tableContainer:focus-visible")
     expect(css).toContain(".visuallyHidden")
+  })
+
+  it("shows the comparison hint only while the table overflows", () => {
+    render(<PricingPage />)
+    const region = screen.getByRole("region", { name: "Telloya plan comparison" })
+    const hint = screen.getByText("Scroll sideways to compare all plans.")
+
+    const setWidths = (scrollWidth: number, clientWidth: number) => {
+      Object.defineProperty(region, "scrollWidth", { configurable: true, get: () => scrollWidth })
+      Object.defineProperty(region, "clientWidth", { configurable: true, get: () => clientWidth })
+    }
+
+    setWidths(565, 324)
+    act(() => window.dispatchEvent(new Event("resize")))
+    expect(hint).not.toHaveAttribute("hidden")
+    expect(hint).toHaveAttribute("data-visible", "true")
+    expect(region).toHaveAttribute("aria-describedby", "comparison-scroll-hint")
+
+    setWidths(702, 702)
+    act(() => window.dispatchEvent(new Event("resize")))
+    expect(hint).toHaveAttribute("hidden")
+    expect(hint).toHaveAttribute("data-visible", "false")
+    expect(region).not.toHaveAttribute("aria-describedby")
+
+    setWidths(703, 702)
+    act(() => window.dispatchEvent(new Event("resize")))
+    expect(hint).toHaveAttribute("hidden")
   })
 
   it("leaves overage, enquiry submission and launch controls unchanged", () => {

@@ -384,6 +384,10 @@
   letter-spacing: -.01em;
 }
 
+.scrollHint[data-visible="true"] {
+  display: block;
+}
+
 .tableContainer {
   position: relative;
   overflow-x: auto;
@@ -826,10 +830,6 @@
     max-width: 620px;
   }
 
-  .scrollHint {
-    display: block;
-  }
-  
   .setupGrid {
     grid-template-columns: 1fr;
   }

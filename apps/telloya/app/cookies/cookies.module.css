@@ -67,6 +67,8 @@
 }
 
 .section {
+  /* Grid items otherwise stay at min-content, so the privacy URL widens the card. */
+  min-width: 0;
   padding: clamp(18px, 3vw, 28px);
   border: 1px solid rgba(16, 38, 31, 0.12);
   border-radius: 20px;
@@ -94,6 +96,7 @@
   color: #0a6e3c;
   font-weight: 700;
   text-underline-offset: 3px;
+  overflow-wrap: anywhere;
 }
 
 .section a:focus-visible {

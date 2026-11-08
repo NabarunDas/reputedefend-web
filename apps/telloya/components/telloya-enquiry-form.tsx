@@ -10,6 +10,7 @@ import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice
 import { sendTelloyaLeadConversion } from "@/lib/analytics"
 
 type PlanTierInterest = TelloyaPlanTier | ""
+type EnquiryPathway = "advice" | "detailed"
 type VoicePreferenceChoice = "female" | "male" | "no-preference" | ""
 type SpeakingStyleChoice = "friendly" | "professional" | "calm" | "no-preference" | ""
 
@@ -106,6 +107,18 @@ function strictAmount(value: string | undefined, min: number, max: number): numb
   return parsed
 }
 
+const DETAILED_ERROR_FIELDS = [
+  "planTier",
+  "guardLocationCount",
+  "customMonthlyMinutes",
+  "customMonthlyCalls",
+  "customPhoneNumbers",
+  "customLocations",
+  "customLanguages",
+  "customRequirements",
+  "overageMonthlyCapGbp",
+] as const
+
 const OPTIONAL_FIELDS = new Set<string>([
   "phoneSetup",
   "missedCallProblem",
@@ -138,6 +151,7 @@ export function TelloyaEnquiryForm({
   const submissionEnabled = capabilities?.submissionEnabled ?? false
   const [step, setStep] = useState<1 | 2>(1)
   const [optionalOpen, setOptionalOpen] = useState(false)
+  const [pathway, setPathway] = useState<EnquiryPathway>(initialPlanTier || initialGuardInterested ? "detailed" : "advice")
   const [values, setValues] = useState<EnquiryValues>({ 
     ...INITIAL_VALUES, 
     planTier: initialPlanTier,
@@ -213,12 +227,23 @@ export function TelloyaEnquiryForm({
     })
   }
 
+  function selectPathway(next: EnquiryPathway) {
+    setPathway(next)
+    if (next === "advice") {
+      setErrors((current) => {
+        const cleared = { ...current }
+        for (const field of DETAILED_ERROR_FIELDS) delete cleared[field]
+        return cleared
+      })
+    }
+  }
+
   function validateStep(nextStep: 1 | 2): EnquiryFieldErrors {
     const stepErrors: EnquiryFieldErrors = {}
+    const advising = pathway === "advice"
 
-    if (nextStep >= 1) {
-      // Check for plan tier selection (or legacy product field for backward compatibility)
-      if (!values.planTier && !values.product) {
+    if (nextStep >= 1 && !advising) {
+      if (!values.planTier) {
         stepErrors.planTier = "Please select a plan."
       }
 
@@ -254,7 +279,7 @@ export function TelloyaEnquiryForm({
       if (!values.email || !/^\S+@\S+\.\S+$/.test(values.email)) stepErrors.email = "Please enter a valid email address."
       if (!values.phone || !/^[+]?[\d\s().-]{7,}$/.test(values.phone)) stepErrors.phone = "Please enter a valid phone number."
       if (!values.privacyAccepted) stepErrors.privacyAccepted = "Please confirm you have read the privacy notice."
-      if (values.overageInterested) {
+      if (!advising && values.overageInterested) {
         const cap = strictAmount(values.overageMonthlyCapGbp, 1, 100000)
         if (cap === undefined) stepErrors.overageMonthlyCapGbp = "Please enter a monthly spending cap."
         else if (cap === "invalid") stepErrors.overageMonthlyCapGbp = "Please enter an amount between £1 and £100,000."
@@ -311,12 +336,13 @@ export function TelloyaEnquiryForm({
       return
     }
 
-    const guardLocationCount = values.guardInterested ? strictWholeNumber(values.guardLocationCount, 1, 999) : undefined
-    const customMonthlyMinutes = values.planTier === "custom" ? strictWholeNumber(values.customMonthlyMinutes, 1, 1000000) : undefined
-    const customMonthlyCalls = values.planTier === "custom" ? strictWholeNumber(values.customMonthlyCalls, 1, 100000) : undefined
-    const customPhoneNumbers = values.planTier === "custom" ? strictWholeNumber(values.customPhoneNumbers, 1, 999) : undefined
-    const customLocations = values.planTier === "custom" ? strictWholeNumber(values.customLocations, 1, 9999) : undefined
-    const overageMonthlyCapGbp = values.overageInterested ? strictAmount(values.overageMonthlyCapGbp, 1, 100000) : undefined
+    const advising = pathway === "advice"
+    const guardLocationCount = !advising && values.guardInterested ? strictWholeNumber(values.guardLocationCount, 1, 999) : undefined
+    const customMonthlyMinutes = !advising && values.planTier === "custom" ? strictWholeNumber(values.customMonthlyMinutes, 1, 1000000) : undefined
+    const customMonthlyCalls = !advising && values.planTier === "custom" ? strictWholeNumber(values.customMonthlyCalls, 1, 100000) : undefined
+    const customPhoneNumbers = !advising && values.planTier === "custom" ? strictWholeNumber(values.customPhoneNumbers, 1, 999) : undefined
+    const customLocations = !advising && values.planTier === "custom" ? strictWholeNumber(values.customLocations, 1, 9999) : undefined
+    const overageMonthlyCapGbp = !advising && values.overageInterested ? strictAmount(values.overageMonthlyCapGbp, 1, 100000) : undefined
     const numericErrors: EnquiryFieldErrors = {}
     if (guardLocationCount === "invalid") numericErrors.guardLocationCount = "Please enter a whole number between 1 and 999."
     if (customMonthlyMinutes === "invalid") numericErrors.customMonthlyMinutes = "Please enter a whole number between 1 and 1,000,000."
@@ -349,22 +375,22 @@ export function TelloyaEnquiryForm({
 
     // Create payload to check if it has changed. Inactive conditional numbers are omitted.
     const payload: TelloyaEnquiryRequest = {
-      product: values.product || "telloya",
-      planTier: values.planTier,
-      guardInterested: values.guardInterested,
+      product: advising ? "telloya" : values.product || "telloya",
+      ...(advising ? {} : { planTier: values.planTier }),
+      guardInterested: advising ? false : values.guardInterested,
       guardLocationCount,
       customMonthlyMinutes,
       customMonthlyCalls,
       customPhoneNumbers,
       customLocations,
-      customLanguages: values.planTier === "custom" ? values.customLanguages || undefined : undefined,
-      customRequirements: values.planTier === "custom" ? values.customRequirements || undefined : undefined,
+      customLanguages: !advising && values.planTier === "custom" ? values.customLanguages || undefined : undefined,
+      customRequirements: !advising && values.planTier === "custom" ? values.customRequirements || undefined : undefined,
       voicePreference: values.voicePreference || undefined,
       voiceAccent: values.voiceAccent || undefined,
       primaryLanguage: values.primaryLanguage || undefined,
       speakingStyle: values.speakingStyle || undefined,
       additionalLanguages: values.additionalLanguages || undefined,
-      overageInterested: values.overageInterested,
+      overageInterested: advising ? false : values.overageInterested,
       overageMonthlyCapGbp,
       businessName: values.businessName,
       country: values.country,
@@ -442,8 +468,8 @@ export function TelloyaEnquiryForm({
           setStatusText("Your enquiry has been received.")
           if (json.leadConversion === true) {
             sendTelloyaLeadConversion({
-              planTier: values.planTier,
-              guardInterested: values.guardInterested,
+              planTier: advising ? undefined : values.planTier,
+              guardInterested: advising ? false : values.guardInterested,
             })
           }
           requestFocus("success")
@@ -602,7 +628,47 @@ export function TelloyaEnquiryForm({
 
       <div className={styles.panel}>
         {step === 1 && (
-          <>
+          <div className={styles.fields}>
+            <fieldset className={styles.options}>
+              <legend className={styles.visuallyHidden}>How would you like to enquire?</legend>
+              <label className={`${styles.option} ${pathway === "advice" ? styles.optionSelected : ""}`}>
+                <input
+                  id={`${formId}-pathway-advice`}
+                  type="radio"
+                  name="enquiryPathway"
+                  value="advice"
+                  checked={pathway === "advice"}
+                  onChange={() => selectPathway("advice")}
+                />
+                <span className={styles.optionMark} aria-hidden="true">{pathway === "advice" && <Check size={14} />}</span>
+                <span>
+                  <span className={styles.optionLabel}>Help me choose a plan</span>
+                  <span className={styles.optionCopy}>I&apos;m interested in Telloya. Help me find the right package for my business.</span>
+                </span>
+              </label>
+              <label className={`${styles.option} ${pathway === "detailed" ? styles.optionSelected : ""}`}>
+                <input
+                  id={`${formId}-pathway-detailed`}
+                  type="radio"
+                  name="enquiryPathway"
+                  value="detailed"
+                  checked={pathway === "detailed"}
+                  onChange={() => selectPathway("detailed")}
+                />
+                <span className={styles.optionMark} aria-hidden="true">{pathway === "detailed" && <Check size={14} />}</span>
+                <span>
+                  <span className={styles.optionLabel}>I know what I need</span>
+                  <span className={styles.optionCopy}>I&apos;d like to select my plan and provide my setup requirements.</span>
+                </span>
+              </label>
+            </fieldset>
+            {pathway === "advice" && (
+              <p className={styles.sectionNote}>
+                We&apos;ll help you work out which Telloya plan suits your business. You don&apos;t need to know your monthly call minutes yet.
+              </p>
+            )}
+            {pathway === "detailed" && (
+            <>
             <div className={styles.fields}>
               <p className={styles.sectionNote}>
                 Choose the plan that best matches your expected monthly call minutes. Need more locations, receptionist numbers or a different allowance? Choose Custom. You can <Link href="/pricing">compare the plans</Link> before deciding.
@@ -797,37 +863,47 @@ export function TelloyaEnquiryForm({
                 )}
               </div>
             )}
-          </>
+            </>
+            )}
+          </div>
         )}
 
         {step === 2 && (
           <div className={styles.fields}>
             <ReviewBlock title="Your service" onEdit={() => goToStep(1)}>
-              <ReviewItem label="Plan" value={selectedPlan?.name || "Not selected"} />
-              {selectedPlan?.monthlyPriceGbp != null && (
-                <ReviewItem label="Price" value={`${formatGbpPrice(selectedPlan.monthlyPriceGbp)} per month, indicative`} />
-              )}
-              {selectedPlan?.minutesPerMonth != null && (
-                <ReviewItem label="Included minutes" value={formatMinutes(selectedPlan.minutesPerMonth)} />
-              )}
-              {values.guardInterested && (
-                <ReviewItem label="Relaunch Guard" value={`Yes (${values.guardLocationCount || 0} locations)`} />
-              )}
-              {indicativeMonthlyTotal != null && (
-                <ReviewItem label="Indicative monthly total" value={`${formatGbpPrice(indicativeMonthlyTotal)} estimate, not a charge`} />
-              )}
-              {values.planTier === "custom" && (
+              {pathway === "advice" ? (
+                <ReviewItem label="Plan" value="Help me choose" />
+              ) : (
                 <>
-                  <ReviewItem label="Monthly minutes" value={values.customMonthlyMinutes} />
-                  <ReviewItem label="Monthly calls" value={values.customMonthlyCalls} />
-                  <ReviewItem label="Phone numbers" value={values.customPhoneNumbers} />
-                  <ReviewItem label="Locations" value={values.customLocations} />
+                  <ReviewItem label="Plan" value={selectedPlan?.name || "Not selected"} />
+                  {selectedPlan?.monthlyPriceGbp != null && (
+                    <ReviewItem label="Price" value={`${formatGbpPrice(selectedPlan.monthlyPriceGbp)} per month, indicative`} />
+                  )}
+                  {selectedPlan?.minutesPerMonth != null && (
+                    <ReviewItem label="Included minutes" value={formatMinutes(selectedPlan.minutesPerMonth)} />
+                  )}
+                  {values.guardInterested && (
+                    <ReviewItem label="Relaunch Guard" value={`Yes (${values.guardLocationCount || 0} locations)`} />
+                  )}
+                  {indicativeMonthlyTotal != null && (
+                    <ReviewItem label="Indicative monthly total" value={`${formatGbpPrice(indicativeMonthlyTotal)} estimate, not a charge`} />
+                  )}
+                  {values.planTier === "custom" && (
+                    <>
+                      <ReviewItem label="Monthly minutes" value={values.customMonthlyMinutes} />
+                      <ReviewItem label="Monthly calls" value={values.customMonthlyCalls} />
+                      <ReviewItem label="Phone numbers" value={values.customPhoneNumbers} />
+                      <ReviewItem label="Locations" value={values.customLocations} />
+                    </>
+                  )}
                 </>
               )}
             </ReviewBlock>
 
             <p className={styles.sectionNote}>
-              Review your selected plan, then provide your business and contact details so we can discuss the next steps.
+              {pathway === "advice"
+                ? "Our team will discuss your requirements and help you choose a suitable plan."
+                : "Review your selected plan, then provide your business and contact details so we can discuss the next steps."}
             </p>
 
             <Field id={`${formId}-businessName`} label="Business name" error={errors.businessName}>
@@ -935,7 +1011,7 @@ export function TelloyaEnquiryForm({
             <Field id={`${formId}-locations`} label="Number of locations" optional error={errors.locations} hint="Optional description of your business. A standard plan still includes one operating location. This field does not add receptionist locations.">
               <input name="locations" value={values.locations} onChange={(e) => update("locations", e.target.value)} maxLength={50} />
             </Field>
-            <div>
+            {pathway === "detailed" && <div>
               <label className={styles.check} htmlFor={`${formId}-overageInterested`}>
                 <input
                   id={`${formId}-overageInterested`}
@@ -961,7 +1037,7 @@ export function TelloyaEnquiryForm({
                   />
                 </Field>
               )}
-            </div>
+            </div>}
             </div>
             )}
 

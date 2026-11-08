@@ -707,6 +707,11 @@ button, input, textarea, select { font: inherit; }
   border-top: 1px solid rgba(176, 244, 175, .22);
 }
 
+.site-footer > .container {
+  container-name: telloya-footer;
+  container-type: inline-size;
+}
+
 .footer-content {
   display: grid;
   grid-template-columns: 1fr;
@@ -714,10 +719,22 @@ button, input, textarea, select { font: inherit; }
   margin-bottom: 32px;
 }
 
+/* 34rem is the measured point where four columns still fit.
+   At 150% root text their min-content is about 32.2rem, and at 200%
+   about 28.9rem. Standard text at 768px is 45rem, so the row stays. */
 @media (min-width: 768px) {
   .footer-content {
-    grid-template-columns: 1.5fr 1fr 1fr 1fr;
-    gap: 48px;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px 48px;
+  }
+}
+
+@media (min-width: 768px) {
+  @container telloya-footer (min-width: 34rem) {
+    .footer-content {
+      grid-template-columns: 1.5fr 1fr 1fr 1fr;
+      gap: 48px;
+    }
   }
 }
 

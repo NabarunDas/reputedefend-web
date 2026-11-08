@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useLayoutEffect, useState, useRef } from "react"
 import { TelloyaLogo } from "@/components/telloya-logo"
 import { brandHomeLabel } from "@/lib/brand"
 import { navigationContent } from "@/lib/content"
@@ -12,6 +12,7 @@ export function Header() {
   const cinematic = true // Always use cinematic design across all routes
   const [scrolled, setScrolled] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const headerRef = useRef<HTMLElement>(null)
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null)
   const mobileMenuRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
@@ -21,6 +22,53 @@ export function Header() {
     onScroll()
     window.addEventListener("scroll", onScroll, { passive: true })
     return () => window.removeEventListener("scroll", onScroll)
+  }, [])
+
+  useLayoutEffect(() => {
+    const header = headerRef.current
+    const bar = header?.querySelector<HTMLElement>(":scope > .container")
+    if (!header || !bar) return
+
+    const visibleControls = () => [...header.querySelectorAll<HTMLElement>(".site-logo, .site-nav-link, .site-nav-account, .site-nav-cta .button-secondary, .site-nav-compact-cta, .mobile-menu-button")].filter((element) => {
+      const style = getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.visibility !== "hidden" && rect.width > 0 && rect.height > 0
+    })
+
+    const modeFits = (mode: string) => {
+      header.dataset.nav = mode
+      const barRect = bar.getBoundingClientRect()
+      const controls = visibleControls()
+      const inside = controls.every((element) => {
+        const rect = element.getBoundingClientRect()
+        return rect.left >= barRect.left - 1 && rect.right <= barRect.right + 1
+      })
+      const clear = controls.every((element, index) => controls.slice(index + 1).every((other) => {
+        const a = element.getBoundingClientRect()
+        const b = other.getBoundingClientRect()
+        return a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1
+      }))
+      return inside && clear
+    }
+
+    const chooseMode = () => {
+      const width = window.innerWidth
+      const preferred = width >= 1181 ? ["desktop", "compact", "mobile"] : width >= 768 ? ["compact", "mobile"] : ["mobile"]
+      const chosen = preferred.find((mode) => modeFits(mode)) ?? "mobile"
+      header.dataset.nav = chosen
+      if (chosen === "desktop") setMobileMenuOpen(false)
+    }
+
+    chooseMode()
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(chooseMode) : null
+    observer?.observe(bar)
+    const nav = header.querySelector(".site-nav")
+    if (nav) observer?.observe(nav)
+    window.addEventListener("resize", chooseMode)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener("resize", chooseMode)
+    }
   }, [])
 
   useEffect(() => {
@@ -62,7 +110,7 @@ export function Header() {
   }
 
   return (
-    <header className={`site-header ${cinematic ? "site-header-cinematic" : "site-header-standard"} ${scrolled ? "site-header-scrolled" : ""}`}>
+    <header ref={headerRef} className={`site-header ${cinematic ? "site-header-cinematic" : "site-header-standard"} ${scrolled ? "site-header-scrolled" : ""}`}>
       <div className="container">
         <Link href="/" aria-label={brandHomeLabel} className="site-logo">
           <TelloyaLogo variant="symbol" priority />
@@ -85,6 +133,9 @@ export function Header() {
             <a href={navigationContent.account.href} className="site-nav-account" rel="noopener noreferrer">{navigationContent.account.label}</a>
             <Link href={navigationContent.cta.href} className="button-secondary">{navigationContent.cta.label}</Link>
           </div>
+          <Link href={navigationContent.cta.href} className="site-nav-compact-cta" aria-label={navigationContent.cta.label}>
+            Enquire
+          </Link>
           <button
             ref={mobileMenuButtonRef}
             className="mobile-menu-button"

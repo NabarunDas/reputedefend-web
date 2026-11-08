@@ -488,7 +488,8 @@ describe("Page Structure and Accessibility", () => {
   it("labels dashboard usage as planned and does not promise local-currency checkout", async () => {
     const Pricing = (await import("@/app/pricing/page")).default
     render(<Pricing />)
-    expect(screen.getAllByText("Usage visibility in a customer dashboard (planned)").length).toBeGreaterThan(0)
+    expect(screen.queryByText("Usage visibility in a customer dashboard (planned)")).not.toBeInTheDocument()
+    expect(screen.getAllByText("Usage visibility").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Planned").length).toBeGreaterThanOrEqual(4)
     expect(screen.getAllByText(/does not offer local-currency checkout or conversion/i).length).toBeGreaterThan(0)
     expect(screen.queryByText(/unused minutes do not roll over/i)).not.toBeInTheDocument()

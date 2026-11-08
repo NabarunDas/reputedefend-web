@@ -193,14 +193,13 @@
   margin-bottom: 18px;
 }
 
-.featureStatus[data-status="available"] {
+.featureStatus[data-status="demonstrated"] {
   background: rgba(150,248,119,.18);
   color: #d0ff9c;
   border: 1px solid rgba(180,255,145,.35);
 }
 
-.featureStatus[data-status="planned"],
-.featureStatus[data-status="future"] {
+.featureStatus[data-status="planned"] {
   background: rgba(240, 198, 116, .16);
   color: #f0c674;
   border: 1px solid rgba(240, 198, 116, .30);

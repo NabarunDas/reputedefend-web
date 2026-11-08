@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { describe, expect, it } from "vitest"
-import { howItWorksContent, pricingContent, featuresContent, homepageContent } from "@/lib/content"
+import { howItWorksContent, pricingContent, featuresContent, homepageContent, featureStageLabels } from "@/lib/content"
 import { relaunchGuardAddon, telloyaPlans, overagePolicy } from "@/lib/pricing"
 
 describe("Telloya capability claims", () => {
@@ -12,26 +12,34 @@ describe("Telloya capability claims", () => {
     expect(delivered?.detail).toMatch(/not operational/i)
     expect(`${delivered?.description} ${delivered?.detail}`).not.toMatch(/appears in your dashboard/i)
 
-    const usage = featuresContent.features.find((feature) => feature.title === "Usage visibility")
-    expect(usage?.status).toBe("Planned")
-    expect(usage?.note).toMatch(/not available/i)
-    expect(usage?.note).toMatch(/agreed method/i)
+    expect(featuresContent.features.map((feature) => feature.title as string)).not.toContain("Usage visibility")
+    expect(featuresContent.features.every((feature) => feature.stage === "demonstrated")).toBe(true)
+    const history = featuresContent.future.items.find((item) => item.title === "Customer call history")
+    expect(history?.description).toMatch(/planned/i)
+    expect(history?.description).toMatch(/not live/i)
+    expect(history?.timeline).toMatch(/Planned/)
 
     for (const plan of pricingContent.plans) {
       if (plan.tier === "custom") continue
       expect(plan.features.join(" ")).toMatch(/agreed delivery method/i)
-      expect(plan.features.join(" ")).toMatch(/planned/i)
+      expect(plan.features.join(" ")).not.toMatch(/planned|dashboard/i)
       expect(plan.features).not.toContain("Usage visibility")
     }
+    expect(featureStageLabels.demonstrated).toBe("Tested in demonstration")
+    expect(featureStageLabels.planned).toBe("Planned")
 
     const row = pricingContent.comparison.table.rows.find((entry) => entry[0] === "Usage visibility")
     expect(row?.slice(1)).toEqual(["Planned", "Planned", "Planned", "Planned"])
   })
 
-  it("keeps the approved immersive homepage headline for owner review", () => {
+  it("renders the approved homepage headline from the shared content", () => {
     const source = readFileSync(resolve(process.cwd(), "app/page.tsx"), "utf8")
-    expect(source).toContain("Never Misses a Call")
-    expect(homepageContent.hero.headline).not.toContain("Never Misses a Call")
+    expect(source).not.toContain("Never Misses a Call")
+    expect(source).toContain("hero.headlineLead")
+    expect(source).toContain("hero.headlineEmphasis")
+    expect(homepageContent.hero.headlineLead).toBe("Don't Let Missed Calls")
+    expect(homepageContent.hero.headlineEmphasis).toBe("Cost You Customers.")
+    expect(`${homepageContent.hero.headlineLead} ${homepageContent.hero.headlineEmphasis}`).not.toContain("Never Misses a Call")
   })
 })
 

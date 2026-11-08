@@ -106,21 +106,26 @@ describe("international and voice wording", () => {
 
 describe("capability boundaries", () => {
   it("keeps call history planned and does not promise emergency dispatch or successful answering", () => {
-    const usage = featuresContent.features.find((feature) => feature.title === "Usage visibility")
-    expect(usage?.status).toBe("Planned")
-    expect(usage?.description).toMatch(/not operational/i)
+    expect(featuresContent.features.map((feature) => feature.title as string)).not.toContain("Usage visibility")
+    const history = featuresContent.future.items.find((item) => item.title === "Customer call history")
+    expect(history?.description).toMatch(/planned/i)
+    expect(history?.description).toMatch(/not live/i)
     expect(marketing).not.toMatch(/Never miss a boiler|Handle emergency calls|dispatch an engineer or provide an emergency response is included/i)
-    expect(industriesContent.hero.lead).toMatch(/do not promise that every call is answered/i)
+    expect(industriesContent.hero.lead).toMatch(/You assess the enquiry and decide what happens next/i)
     expect(industriesContent.industries.map((industry) => industry.tagline).join(" ")).not.toMatch(/Never miss|emergency calls/i)
-    expect(howItWorksContent.limitations.points.join(" ")).toMatch(/does not provide an emergency response/i)
-    expect(howItWorksContent.limitations.points.join(" ")).toMatch(/does not promise that every call is answered/i)
-    expect(howItWorksContent.limitations.points.join(" ")).toMatch(/enquiry does not start the service/i)
+    const examples = industriesContent.industries.flatMap((industry) => industry.scenarios.map((scenario) => scenario.telletoyaHelps)).join(" ")
+    expect(examples).not.toMatch(/not urgent|assesses|determines|arranges|books an appointment|dispatches/i)
+    expect(howItWorksContent.limitations.points.join(" ")).toMatch(/send an engineer/i)
+    expect(howItWorksContent.limitations.points.join(" ")).not.toMatch(/every call is answered|cannot guarantee/i)
+    expect(howItWorksContent.limitations.points.join(" ")).toMatch(/does not start the service/i)
   })
 
-  it("keeps the approved homepage headline in the page and records it as unsubstantiated", () => {
+  it("keeps the approved homepage headline in shared content and off the old claim", () => {
     const source = readFileSync(resolve(process.cwd(), "app/page.tsx"), "utf8")
-    expect(source).toContain("Never Misses a Call")
-    expect(homepageContent.hero.headline).not.toContain("Never Misses a Call")
+    expect(source).not.toContain("Never Misses a Call")
+    expect(homepageContent.hero.headlineLead).toBe("Don't Let Missed Calls")
+    expect(homepageContent.hero.headlineEmphasis).toBe("Cost You Customers.")
+    expect(homepageContent.hero.supporting).toContain("captures the details you need to follow up")
   })
 })
 

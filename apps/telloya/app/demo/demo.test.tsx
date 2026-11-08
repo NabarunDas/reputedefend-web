@@ -205,7 +205,9 @@ describe("/demo illustrative sample", () => {
 describe("demo links and launch boundaries", () => {
   it("links the homepage and how-it-works page without changing the homepage hero", () => {
     const { container, unmount } = render(<HomePage />)
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Never Misses a Call")
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Don't Let Missed Calls")
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Cost You Customers.")
+    expect(screen.queryByText("Never Misses a Call")).not.toBeInTheDocument()
     expect(screen.getByRole("link", { name: /See how Telloya works/i })).toHaveAttribute("href", "/how-it-works")
     expect(screen.getAllByRole("link", { name: "Enquire about Telloya" }).every((link) => link.getAttribute("href") === "/enquire")).toBe(true)
     expect(container.querySelector("img")?.getAttribute("src")).toContain("telloya-cinematic-console")

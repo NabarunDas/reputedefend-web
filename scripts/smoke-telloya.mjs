@@ -105,8 +105,9 @@ async function testLaunchState(launched, description) {
       if (path === "/") {
         assert.match(content, /_next\/static\//, path)
         assert.match(content, /Telloya/, path)
-        assert.match(content, /Your AI Receptionist/, "Homepage should have hero headline")
-        assert.match(content, /Never Misses a Call/, "Homepage should have headline emphasis")
+        assert.match(content, /Don(?:'|&#0?39;|&#x27;)t Let Missed Calls/, "Homepage should have hero headline")
+        assert.match(content, /Cost You Customers/, "Homepage should have headline emphasis")
+        assert.doesNotMatch(content, /Never Misses a Call/, "Homepage should not use the retired absolute claim")
         assert.match(content, /ProfileRelaunch Ltd/, path)
         assert.match(content, /17520826/, "Should include company registration number")
         assert.doesNotMatch(content, /ensures no opportunity is missed/, "Should not use absolute claims")

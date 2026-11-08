@@ -6,7 +6,7 @@ import { pricingContent } from "@/lib/content"
 import { formatGbpPrice, formatMinutes } from "@/lib/pricing"
 import styles from "./pricing.module.css"
 
-const { seo, hero, currency, plans, guard, comparison, overage, setup, international, faq, cta } = pricingContent
+const { seo, hero, currency, plans, standardIncludes, guard, comparison, overage, setup, international, faq, cta } = pricingContent
 
 export const metadata: Metadata = {
   title: absolutePageTitle(seo.title),
@@ -60,19 +60,32 @@ export default function Pricing() {
                   )}
                 </div>
                 <p className={styles.planDescription}>{plan.description}</p>
-                <ul className={styles.planFeatures}>
-                  {plan.features.map((feature, index) => (
-                    <li key={index}>
-                      <Check size={16} aria-hidden="true" />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
+                {plan.tier === "custom" ? (
+                  <ul className={styles.planFeatures}>
+                    {plan.features.map((feature, index) => (
+                      <li key={index}>
+                        <Check size={16} aria-hidden="true" />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className={styles.planEntitlement}>1 operating location · 1 receptionist number</p>
+                )}
                 <Link className={styles.planCta} href={plan.href}>
                   {plan.cta} <ArrowUpRight size={16} aria-hidden="true" />
                 </Link>
               </article>
             ))}
+          </div>
+          <div className={styles.standardIncludes}>
+            <h2 className={styles.standardIncludesTitle}>{standardIncludes.title}</h2>
+            <ul className={styles.standardIncludesList}>
+              {standardIncludes.features.map((feature) => (
+                <li key={feature}>{feature}</li>
+              ))}
+            </ul>
+            <p className={styles.standardIncludesNote}>{standardIncludes.note}</p>
           </div>
         </section>
 
@@ -143,19 +156,29 @@ export default function Pricing() {
             </h2>
             <p className={styles.sectionLead}>{comparison.lead}</p>
           </div>
-          <div className={styles.tableContainer}>
+          <p id="comparison-scroll-hint" className={styles.scrollHint}>
+            Scroll sideways to compare all plans.
+          </p>
+          <div
+            className={styles.tableContainer}
+            tabIndex={0}
+            role="region"
+            aria-label="Telloya plan comparison"
+            aria-describedby="comparison-scroll-hint"
+          >
             <table className={styles.comparisonTable}>
+              <caption className={styles.visuallyHidden}>Telloya plan features and allowances</caption>
               <thead>
                 <tr>
                   {comparison.table.headers.map((header) => (
-                    <th key={header}>{header}</th>
+                    <th key={header} scope="col">{header}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {comparison.table.rows.map((row, index) => (
                   <tr key={index}>
-                    <td className={styles.featureCell}>{row[0]}</td>
+                    <th scope="row" className={styles.featureCell}>{row[0]}</th>
                     {row.slice(1).map((cell, cellIndex) => (
                       <td key={cellIndex}>
                         {typeof cell === "boolean" ? (
@@ -174,6 +197,24 @@ export default function Pricing() {
               </tbody>
             </table>
           </div>
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `(function () {
+                var region = document.querySelector('[aria-label="Telloya plan comparison"]');
+                if (!region || region.dataset.keyboardScroll === "ready") return;
+                region.dataset.keyboardScroll = "ready";
+                region.addEventListener("keydown", function (event) {
+                  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                  if (region.scrollWidth <= region.clientWidth + 1) return;
+                  var max = region.scrollWidth - region.clientWidth;
+                  var next = Math.min(max, Math.max(0, region.scrollLeft + (event.key === "ArrowRight" ? 80 : -80)));
+                  if (next === region.scrollLeft) return;
+                  region.scrollLeft = next;
+                  event.preventDefault();
+                });
+              })();`,
+            }}
+          />
         </section>
 
         {/* Overage Policy */}

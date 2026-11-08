@@ -9,7 +9,7 @@
 
 import { brandName } from "@/lib/brand"
 import { getCustomerPortalHref } from "@/lib/customer-portal"
-import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes, standardEntitlement, commercialCopy } from "./pricing"
+import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes, standardEntitlement, commercialCopy, coreTelloyaCapabilities } from "./pricing"
 
 // Homepage content
 export const homepageContent = {
@@ -127,6 +127,7 @@ export const homepageContent = {
     tiers: telloyaPlans.map(p => ({
       name: p.name,
       price: p.monthlyPriceGbp !== null ? formatGbpPrice(p.monthlyPriceGbp) : "By quotation",
+      pricePeriod: p.monthlyPriceGbp !== null ? "/month" : null,
       minutes: p.minutesPerMonth !== null ? formatMinutes(p.minutesPerMonth) : "By quotation",
       description: p.tier === "basic"
         ? "Essential AI receptionist for smaller call volumes. Includes one operating location and one receptionist number."
@@ -639,7 +640,7 @@ export const pricingContent = {
     tagline: plan.tier === "basic" 
       ? "Essential AI receptionist"
       : plan.tier === "growth"
-      ? "Recommended"
+      ? "For growing call volumes"
       : plan.tier === "pro"
       ? "Maximum included usage"
       : "Tailored to your requirements",
@@ -670,8 +671,13 @@ export const pricingContent = {
     cta: plan.tier === "custom" ? "Request a tailored quote" : `Enquire about ${plan.name}`,
     href: `/enquire?plan=${plan.tier}`,
   })),
+  standardIncludes: {
+    title: "Included with Basic, Growth and Pro",
+    features: coreTelloyaCapabilities,
+    note: `${commercialCopy.voicePreference} ${commercialCopy.voiceProvider}`,
+  },
   guard: {
-    eyebrow: "Optional add-on",
+    eyebrow: "Optional add-on — not required",
     title: relaunchGuardAddon.name,
     lead:
       `Add Google Business Profile monitoring to any Telloya plan. Relaunch Guard is a separate optional service. ${commercialCopy.guardPriceBasis} ${commercialCopy.guardOnly}`,

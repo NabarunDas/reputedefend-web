@@ -260,7 +260,7 @@ describe("Marketing Claims", () => {
     
     expect(basicPlan?.popular).toBeFalsy()
     expect(growthPlan?.popular).toBe(true)
-    expect(growthPlan?.tagline).toBe("Recommended")
+    expect(growthPlan?.tagline).toBe("For growing call volumes")
     expect(proPlan?.popular).toBeFalsy()
     expect(customPlan?.popular).toBeFalsy()
   })
@@ -281,7 +281,7 @@ describe("Marketing Claims", () => {
     
     // Verify Guard section exists and is labeled as optional
     expect(pricingContent.guard).toBeDefined()
-    expect(pricingContent.guard.eyebrow).toBe("Optional add-on")
+    expect(pricingContent.guard.eyebrow).toBe("Optional add-on — not required")
     expect(pricingContent.guard.pricePerLocationGbp).toBe(9.99)
     
     // Verify lead explains it's separate and optional

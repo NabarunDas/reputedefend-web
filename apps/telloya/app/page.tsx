@@ -222,7 +222,10 @@ export default function Home() {
               <article className={`${styles.planCard} ${tier.popular ? styles.popularCard : ""}`} key={tier.name}>
                 {tier.popular && <div className={styles.popularLabel}>Recommended</div>}
                 <div className={styles.planPricing}>
-                  <div className={styles.planPrice}>{tier.price}</div>
+                  <div className={styles.planPrice}>
+                    {tier.price}
+                    {tier.pricePeriod ? <span className={styles.planPricePeriod}>{tier.pricePeriod}</span> : null}
+                  </div>
                   <div className={styles.planMinutes}>{tier.minutes}</div>
                 </div>
                 <h3>{tier.name}</h3>

@@ -294,7 +294,14 @@ describe("guard onboarding SQL", () => {
     expect(row.rows[0].included_start_at).toBe(row.rows[0].activated_at)
     expect(new Date(row.rows[0].included_end_at).getTime() - new Date(row.rows[0].included_start_at).getTime()).toBe(30 * 24 * 3600 * 1000)
     expect(activated?.firstPlannedWindow).toBe("MORNING")
-    expect(JSON.stringify(activated)).not.toMatch(/12:00|09:00|17:00/)
+    // Activation instants are real timestamps. Drop them so a run at
+    // 09:00, 12:00, or 17:00 UTC does not look like a stored clock time.
+    expect(JSON.stringify({
+      ...activated,
+      activatedAt: undefined,
+      includedStartAt: undefined,
+      includedEndAt: undefined,
+    })).not.toMatch(/12:00|09:00|17:00/)
     expect(await rpc("admin_guard_command_v1", [token, key(), "activate", { coverageId: offer!.id }, activated!.version])).toMatchObject({ status: "success", replay: true })
     expect((await db.query<{ n: number }>("select count(*)::int as n from public.guard_coverages where location_id=$1", [location])).rows[0].n).toBe(1)
   })

@@ -210,7 +210,8 @@ button, input, textarea, select { font: inherit; }
   right: 0;
   bottom: 0;
   z-index: 100;
-  background: var(--paper);
+  background: #001910;
+  color: #f4f8ef;
   padding: 24px;
   overflow-y: auto;
   transform: translateX(100%);
@@ -235,8 +236,21 @@ button, input, textarea, select { font: inherit; }
   border: none;
   background: transparent;
   cursor: pointer;
-  color: var(--ink);
+  color: #f6fff0;
   font-size: 24px;
+}
+
+.mobile-menu-close:hover,
+.mobile-menu-close:focus-visible {
+  color: #d9ff94;
+}
+
+.mobile-menu-close:focus-visible,
+.mobile-menu-link:focus-visible,
+.mobile-menu-account:focus-visible,
+.mobile-menu-cta .button-secondary:focus-visible {
+  outline: 3px solid #d9ff94;
+  outline-offset: 3px;
 }
 
 .mobile-menu-links {
@@ -251,9 +265,14 @@ button, input, textarea, select { font: inherit; }
 .mobile-menu-link {
   font-size: 1.25rem;
   font-weight: 600;
-  color: var(--ink);
+  color: #f4f8ef;
   padding: 8px 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid rgba(198, 242, 188, 0.22);
+}
+
+.mobile-menu-link:hover,
+.mobile-menu-link:focus-visible {
+  color: #d1ff9c;
 }
 
 .mobile-menu-cta {
@@ -267,9 +286,27 @@ button, input, textarea, select { font: inherit; }
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  color: var(--ink);
+  color: #f4f8ef;
   font-size: 1rem;
   font-weight: 650;
+}
+
+.mobile-menu-account:hover,
+.mobile-menu-account:focus-visible {
+  color: #d1ff9c;
+}
+
+.mobile-menu-cta .button-secondary {
+  color: #d6ffa4;
+  border: 1px solid rgba(192, 255, 151, 0.56);
+  background: linear-gradient(135deg, rgba(118, 213, 90, 0.18), rgba(12, 75, 45, 0.42));
+  box-shadow: inset 0 1px 0 rgba(240, 255, 225, 0.13), 0 0 18px rgba(175, 251, 124, 0.1);
+}
+
+.mobile-menu-cta .button-secondary:hover {
+  background: rgba(125, 238, 99, 0.23);
+  border-color: #c5ff98;
+  color: #fff;
 }
 
 /* Buttons */
@@ -999,9 +1036,35 @@ button.footer-legal-link:focus-visible {
   text-underline-offset: 4px;
 }
 .site-header-cinematic .site-nav-account:focus-visible,
-.site-header-cinematic .site-nav-cta .button-secondary:focus-visible {
+.site-header-cinematic .site-nav-cta .button-secondary:focus-visible,
+.site-header-cinematic .site-nav-compact-cta:focus-visible,
+.site-header-cinematic .mobile-menu-button:focus-visible {
   outline: 3px solid #d9ff94;
   outline-offset: 3px;
+}
+
+.site-header-cinematic .site-nav-compact-cta {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  color: #d6ffa4;
+  border: 1px solid rgba(192, 255, 151, 0.56);
+  background: linear-gradient(135deg, rgba(118, 213, 90, 0.18), rgba(12, 75, 45, 0.42));
+  box-shadow: inset 0 1px 0 rgba(240, 255, 225, 0.13), 0 0 18px rgba(175, 251, 124, 0.1);
+  font-size: .86rem;
+  font-weight: 760;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.site-header-cinematic .site-nav-compact-cta:hover {
+  background: rgba(125, 238, 99, 0.23);
+  border-color: #c5ff98;
+  color: #fff;
 }
 .site-header-cinematic .site-nav-cta .button-secondary {
   display: inline-flex;
@@ -1044,6 +1107,25 @@ button.footer-legal-link:focus-visible {
   .site-header-cinematic > .container { width: calc(100% - 36px); min-height: 66px; padding: 9px 22px; }
   .site-header-cinematic .site-nav { margin-left: auto; }
 }
+
+@media (min-width: 768px) and (max-width: 1180px) {
+  .site-header-cinematic .site-nav-compact-cta { display: inline-flex; }
+}
+
+.site-header-cinematic[data-nav="desktop"] .site-nav-links { display: flex; }
+.site-header-cinematic[data-nav="desktop"] .site-nav-cta { display: flex; }
+.site-header-cinematic[data-nav="desktop"] .site-nav-compact-cta,
+.site-header-cinematic[data-nav="desktop"] .mobile-menu-button { display: none; }
+
+.site-header-cinematic[data-nav="compact"] .site-nav-links,
+.site-header-cinematic[data-nav="compact"] .site-nav-cta { display: none; }
+.site-header-cinematic[data-nav="compact"] .site-nav-compact-cta { display: inline-flex; }
+.site-header-cinematic[data-nav="compact"] .mobile-menu-button { display: flex; }
+
+.site-header-cinematic[data-nav="mobile"] .site-nav-links,
+.site-header-cinematic[data-nav="mobile"] .site-nav-cta,
+.site-header-cinematic[data-nav="mobile"] .site-nav-compact-cta { display: none; }
+.site-header-cinematic[data-nav="mobile"] .mobile-menu-button { display: flex; }
 @media (max-width: 520px) {
   .site-header-cinematic > .container { width: calc(100% - 28px); margin-top: 10px; padding-inline: 16px; min-height: 62px; }
   .site-header-cinematic .site-logo .telloya-logo-lockup { width: 142px; height: 52px; }

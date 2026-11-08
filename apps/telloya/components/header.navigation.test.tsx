@@ -43,6 +43,11 @@ describe("Telloya navigation", () => {
     expect(desktopEnquire).toHaveAttribute("href", "/enquire")
     expect(navigationContent.account.href).toBe(getCustomerPortalHref())
     expect(navigationContent.cta).toEqual({ label: "Enquire about Telloya", href: "/enquire" })
+
+    const compactEnquire = container.querySelector(".site-nav-compact-cta")
+    expect(compactEnquire).toHaveTextContent("Enquire")
+    expect(compactEnquire).toHaveAccessibleName("Enquire about Telloya")
+    expect(compactEnquire).toHaveAttribute("href", "/enquire")
   })
 
   it("keeps every header link keyboard reachable and does not submit an enquiry", () => {
@@ -82,11 +87,28 @@ describe("Telloya navigation", () => {
       expect(link).toHaveFocus()
     }
     expect(within(menu as HTMLElement).getByRole("link", { name: "See Example" })).toHaveAttribute("aria-current", "page")
+    expect(within(menu as HTMLElement).getByRole("link", { name: "Customer Login" })).toHaveAttribute("href", getCustomerPortalHref())
+
+    const opener = screen.getByRole("button", { name: "Open menu" })
+    expect(opener).toHaveAttribute("aria-expanded", "true")
+    expect(opener).toHaveAttribute("aria-controls", "mobile-menu")
+    expect(menu).toHaveAttribute("role", "dialog")
+    expect(menu).toHaveAttribute("aria-modal", "true")
+    expect(menu).toHaveAttribute("aria-label", "Mobile navigation")
+    expect(menu).not.toHaveAttribute("inert")
 
     fireEvent.keyDown(document, { key: "Escape" })
     expect(menu).toHaveAttribute("aria-hidden", "true")
+    expect(menu).toHaveAttribute("inert")
+    expect(opener).toHaveFocus()
 
-    fireEvent.click(screen.getByRole("button", { name: "Open menu" }))
+    fireEvent.click(opener)
+    fireEvent.click(screen.getByRole("button", { name: "Close menu" }))
+    expect(menu).toHaveAttribute("aria-hidden", "true")
+    expect(opener).toHaveAttribute("aria-expanded", "false")
+    expect(opener).toHaveFocus()
+
+    fireEvent.click(opener)
     fireEvent.click(within(menu as HTMLElement).getByRole("link", { name: "Enquire about Telloya" }))
     expect(menu).toHaveAttribute("aria-hidden", "true")
   })

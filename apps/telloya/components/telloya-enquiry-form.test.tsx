@@ -4,6 +4,7 @@ import { resolve } from "node:path"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import "@testing-library/jest-dom/vitest"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { commercialCopy, formatGbpPrice, formatMinutes, telloyaPlans } from "@/lib/pricing"
 import { TelloyaEnquiryForm } from "./telloya-enquiry-form"
 
 afterEach(() => cleanup())
@@ -77,7 +78,7 @@ describe("Telloya short enquiry journey", () => {
     renderEnabled("pro")
     expect(screen.queryByRole("spinbutton", { name: /How many locations need Guard protection/ })).not.toBeInTheDocument()
     expect(screen.getByText(/£120 per month and includes 500 minutes\/month/)).toBeInTheDocument()
-    expect(screen.getByText(/not a final approved offer/)).toBeInTheDocument()
+    expect(screen.getByText(/We'll confirm pricing and compatibility with you before you decide whether to proceed/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole("checkbox", { name: /Add Relaunch Guard monitoring/ }))
     const locations = screen.getByRole("spinbutton", { name: /How many locations need Guard protection/ })
     fireEvent.change(locations, { target: { value: "3" } })
@@ -121,7 +122,8 @@ describe("Telloya short enquiry journey", () => {
     expect(summary).toHaveTextContent("Please enter a valid phone number.")
     expect(summary).toHaveTextContent("Please confirm you have read the privacy notice.")
     expect(summary).not.toHaveTextContent("phone setup")
-    expect(screen.getAllByText(/does not take payment, activate the service, or authorise a recurring charge/).length).toBeGreaterThan(0)
+    expect(screen.getByText("Review your selected plan, then provide your business and contact details so we can discuss the next steps.")).toBeInTheDocument()
+    expect(screen.getAllByText(/does not take payment, activate the service, or authorise a recurring charge/)).toHaveLength(1)
     fireEvent.click(screen.getByRole("button", { name: "Please enter your business name." }))
     expect(document.activeElement).toHaveAttribute("name", "businessName")
   })
@@ -158,7 +160,8 @@ describe("Telloya short enquiry journey", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
     expect(await screen.findByRole("heading", { name: /we have received your enquiry/i })).toBeInTheDocument()
     expect(screen.getByText(reference)).toBeInTheDocument()
-    expect(screen.getByText(/Admin will review it and contact you/)).toBeInTheDocument()
+    expect(screen.getByText("Our team will review your enquiry and get in touch using the details you provided.")).toBeInTheDocument()
+    expect(screen.queryByText(/Admin will review it/)).not.toBeInTheDocument()
     expect(screen.getByText(/confirmation email has been accepted/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Copy reference" }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(reference))
@@ -229,6 +232,7 @@ describe("Telloya short enquiry journey", () => {
     expect(screen.getByRole("heading", { level: 2, name: /Online enquiry submission is being prepared/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Submit enquiry/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("radio", { name: /Growth/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "compare the plans" })).not.toBeInTheDocument()
   })
 
   it("uses a mobile-first layout and accessible progress", () => {
@@ -282,7 +286,8 @@ describe("Telloya short enquiry journey", () => {
 
   it("collects Custom locations and numbers as a quotation and keeps voice fields optional", () => {
     renderEnabled("custom")
-    expect(screen.getByText(/quoted individually, including any operating locations and receptionist numbers/i)).toBeInTheDocument()
+    expect(screen.getByText(/quoted individually for requirements outside the standard plans/i)).toBeInTheDocument()
+    expect(screen.getByText(/best estimate of the monthly minutes, receptionist numbers and operating locations/i)).toBeInTheDocument()
     expect(screen.getByRole("spinbutton", { name: /Phone numbers needed/ })).toBeRequired()
     expect(screen.getByRole("spinbutton", { name: /^Number of locations/ })).toBeRequired()
     expect(screen.getByRole("textbox", { name: /Language preferences/ })).not.toBeRequired()
@@ -306,5 +311,43 @@ describe("Telloya short enquiry journey", () => {
     expect(screen.getByText(/Interest is not authorisation to charge/i)).toBeInTheDocument()
     expect(screen.getByText(/customer-defined monthly spending cap/i)).toBeInTheDocument()
     expect(screen.getByRole("checkbox", { name: /Interested in additional minutes/ })).not.toBeChecked()
+  })
+})
+
+describe("Telloya enquiry guidance copy", () => {
+  it("explains plan selection and links compare the plans to pricing", () => {
+    renderEnabled()
+    expect(screen.getByText(/Choose the plan that best matches your expected monthly call minutes/)).toBeInTheDocument()
+    expect(screen.getByText(/Need more locations, receptionist numbers or a different allowance\? Choose Custom\./)).toBeInTheDocument()
+    const link = screen.getByRole("link", { name: "compare the plans" })
+    expect(link).toHaveAttribute("href", "/pricing")
+    expect(link.closest("p")).toHaveTextContent("You can compare the plans before deciding.")
+  })
+
+  it("builds each standard plan description from canonical commercial data", () => {
+    for (const plan of telloyaPlans) {
+      if (plan.monthlyPriceGbp == null || plan.minutesPerMonth == null) continue
+      cleanup()
+      renderEnabled(plan.tier)
+      const description = screen.getByText((_, node) => {
+        if (node?.tagName !== "P") return false
+        const text = node.textContent ?? ""
+        return text.includes(`${plan.name} is ${formatGbpPrice(plan.monthlyPriceGbp!)} per month and includes ${formatMinutes(plan.minutesPerMonth!)}.`)
+          && text.includes(commercialCopy.standardEntitlement)
+          && text.includes(commercialCopy.extraReceptionist)
+          && text.includes("We'll confirm pricing and compatibility with you before you decide whether to proceed.")
+      })
+      expect(description).toBeInTheDocument()
+    }
+  })
+
+  it("asks for Custom estimates without making monthly calls required", () => {
+    renderEnabled("custom")
+    expect(screen.getByText(/Enter your best estimate of the monthly minutes, receptionist numbers and operating locations you need/)).toBeInTheDocument()
+    expect(screen.getByRole("spinbutton", { name: /Monthly minutes needed/ })).toBeRequired()
+    expect(screen.getByRole("spinbutton", { name: /Phone numbers needed/ })).toBeRequired()
+    expect(screen.getByRole("spinbutton", { name: /^Number of locations/ })).toBeRequired()
+    expect(screen.getByRole("spinbutton", { name: /Expected calls per month/ })).not.toBeRequired()
+    expect(screen.queryByRole("checkbox", { name: /not sure/i })).not.toBeInTheDocument()
   })
 })

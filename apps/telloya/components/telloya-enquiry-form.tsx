@@ -515,7 +515,7 @@ export function TelloyaEnquiryForm({
           </div>
         )}
         <p className={styles.successBody}>
-          Your enquiry was received. Admin will review it and contact you.
+          Our team will review your enquiry and get in touch using the details you provided.
         </p>
         <p className={styles.successNote}>
           Please keep this reference handy so we can find your enquiry quickly if you contact us.
@@ -603,6 +603,10 @@ export function TelloyaEnquiryForm({
       <div className={styles.panel}>
         {step === 1 && (
           <>
+            <div className={styles.fields}>
+              <p className={styles.sectionNote}>
+                Choose the plan that best matches your expected monthly call minutes. Need more locations, receptionist numbers or a different allowance? Choose Custom. You can <Link href="/pricing">compare the plans</Link> before deciding.
+              </p>
             <fieldset
               id={`${formId}-planTier`}
               tabIndex={-1}
@@ -642,18 +646,19 @@ export function TelloyaEnquiryForm({
               })}
               {errors.planTier && <p id={`${formId}-planTier-error`} className={styles.error}>{errors.planTier}</p>}
             </fieldset>
+            </div>
 
             {selectedPlan && selectedPlan.monthlyPriceGbp != null && selectedPlan.minutesPerMonth != null && (
               <div className={styles.planCallout}>
                 <p className={styles.sectionNote}>
-                  {selectedPlan.name} is {formatGbpPrice(selectedPlan.monthlyPriceGbp)} per month and includes {formatMinutes(selectedPlan.minutesPerMonth)}. {commercialCopy.standardEntitlement} {commercialCopy.extraReceptionist} This price is indicative and is not a final approved offer. This enquiry does not authorise a charge.
+                  {selectedPlan.name} is {formatGbpPrice(selectedPlan.monthlyPriceGbp)} per month and includes {formatMinutes(selectedPlan.minutesPerMonth)}. {commercialCopy.standardEntitlement} {commercialCopy.extraReceptionist} We&apos;ll confirm pricing and compatibility with you before you decide whether to proceed.
                 </p>
               </div>
             )}
             {values.planTier === "custom" && (
               <div className={styles.planCallout}>
                 <p className={styles.sectionNote}>
-                  Custom is quoted individually, including any operating locations and receptionist numbers beyond the standard entitlement of one of each. The details below are the minimum needed for a quotation. They are not a final approved offer. This enquiry does not authorise a charge.
+                  Custom is quoted individually for requirements outside the standard plans. Enter your best estimate of the monthly minutes, receptionist numbers and operating locations you need. We&apos;ll confirm the final requirements before preparing a quotation.
                 </p>
               </div>
             )}
@@ -822,7 +827,7 @@ export function TelloyaEnquiryForm({
             </ReviewBlock>
 
             <p className={styles.sectionNote}>
-              Submitting this enquiry does not take payment, activate the service, or authorise a recurring charge.
+              Review your selected plan, then provide your business and contact details so we can discuss the next steps.
             </p>
 
             <Field id={`${formId}-businessName`} label="Business name" error={errors.businessName}>

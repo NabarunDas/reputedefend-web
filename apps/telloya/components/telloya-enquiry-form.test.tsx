@@ -68,6 +68,43 @@ describe("Telloya short enquiry journey", () => {
     vi.unstubAllGlobals()
   })
 
+  it("does not submit or show contact errors after one Continue click", () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    renderEnabled("")
+    const form = document.querySelector("form")
+    const submits: Event[] = []
+    form?.addEventListener("submit", (event) => submits.push(event))
+    const continueButton = screen.getByRole("button", { name: /Continue/ })
+    expect(continueButton).toHaveAttribute("type", "button")
+    fireEvent.click(continueButton)
+    expect(submits).toHaveLength(0)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(continueButton).toHaveAttribute("type", "button")
+    const submit = screen.getByRole("button", { name: "Submit enquiry" })
+    expect(submit).toHaveAttribute("type", "submit")
+    expect(submit).not.toBe(continueButton)
+    expect(screen.getByRole("heading", { name: "Your business and contact details" })).toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(screen.queryByText("Please enter your business name.")).not.toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: /Business name/ })).toHaveValue("")
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Your business and contact details" }))
+    fireEvent.click(submit)
+    expect(submits).toHaveLength(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.getByRole("alert")).toHaveTextContent("Please enter your business name.")
+    expect(screen.getByRole("heading", { name: "Your business and contact details" })).toBeInTheDocument()
+  })
+
+  it("keeps a selected plan when Continue moves to contact details", () => {
+    renderEnabled("growth")
+    const continueButton = screen.getByRole("button", { name: /Continue/ })
+    fireEvent.click(continueButton)
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(screen.getByText("Growth")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Submit enquiry" })).not.toBe(continueButton)
+  })
+
   it.each(["basic", "growth", "pro", "custom"] as const)("preselects %s from the plan parameter", (plan) => {
     renderEnabled(plan)
     expect(screen.getByRole("radio", { name: new RegExp(`^${plan}`, "i") })).toBeChecked()

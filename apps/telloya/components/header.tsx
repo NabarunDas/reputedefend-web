@@ -82,7 +82,8 @@ export function Header() {
             ))}
           </ul>
           <div className="site-nav-cta">
-            <a href={navigationContent.cta.href} className="button-secondary" rel="noopener noreferrer">{navigationContent.cta.label}</a>
+            <a href={navigationContent.account.href} className="site-nav-account" rel="noopener noreferrer">{navigationContent.account.label}</a>
+            <Link href={navigationContent.cta.href} className="button-secondary">{navigationContent.cta.label}</Link>
           </div>
           <button
             ref={mobileMenuButtonRef}
@@ -123,9 +124,12 @@ export function Header() {
             ))}
           </ul>
           <div className="mobile-menu-cta">
-            <a href={navigationContent.cta.href} className="button-secondary" rel="noopener noreferrer" onClick={closeMenu}>
-              {navigationContent.cta.label}
+            <a href={navigationContent.account.href} className="mobile-menu-account" rel="noopener noreferrer" onClick={closeMenu}>
+              {navigationContent.account.label}
             </a>
+            <Link href={navigationContent.cta.href} className="button-secondary" onClick={closeMenu}>
+              {navigationContent.cta.label}
+            </Link>
           </div>
         </div>
       </div>

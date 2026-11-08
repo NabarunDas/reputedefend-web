@@ -105,7 +105,7 @@ export const homepageContent = {
       callback: "Weekday mornings preferred",
       time: "11:23 AM",
     },
-    demoLink: { label: "See Telloya in Action", href: "/demo" },
+    demoLink: { label: "See a Sample Conversation", href: "/demo" },
   },
   audience: {
     eyebrow: "Who Telloya is for",
@@ -262,7 +262,7 @@ export const howItWorksContent = {
       ],
       note: "This is an illustrative example. The actual conversation adapts to how the caller responds.",
     },
-    demoLink: { label: "See Telloya in Action", href: "/demo" },
+    demoLink: { label: "See a Sample Conversation", href: "/demo" },
   },
   setup: {
     eyebrow: "Getting started",
@@ -829,11 +829,15 @@ export const navigationContent = {
     { label: "Features", href: "/features" },
     { label: "Industries", href: "/industries" },
     { label: "Pricing", href: "/pricing" },
-    { label: "Enquire", href: "/enquire" },
+    { label: "See Example", href: "/demo" },
   ],
-  cta: {
+  account: {
     label: "Customer Login",
     href: getCustomerPortalHref(),
+  },
+  cta: {
+    label: "Enquire about Telloya",
+    href: "/enquire",
   },
 } as const
 

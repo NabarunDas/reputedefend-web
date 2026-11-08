@@ -4,6 +4,7 @@ import { resolve } from "node:path"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import "@testing-library/jest-dom/vitest"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { validateTelloyaEnquiry } from "@/lib/telloya-enquiry"
 import { commercialCopy, formatGbpPrice, formatMinutes, telloyaPlans } from "@/lib/pricing"
 import { TelloyaEnquiryForm } from "./telloya-enquiry-form"
 
@@ -69,7 +70,7 @@ describe("Telloya short enquiry journey", () => {
 
   it.each(["basic", "growth", "pro", "custom"] as const)("preselects %s from the plan parameter", (plan) => {
     renderEnabled(plan)
-    expect(screen.getByRole("radio", { name: new RegExp(plan, "i") })).toBeChecked()
+    expect(screen.getByRole("radio", { name: new RegExp(`^${plan}`, "i") })).toBeChecked()
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuemax", "2")
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "1")
   })
@@ -243,6 +244,8 @@ describe("Telloya short enquiry journey", () => {
     const progress = screen.getByRole("progressbar")
     expect(progress).toHaveAttribute("aria-valuemin", "1")
     expect(progress).toHaveAttribute("aria-valuemax", "2")
+    expect(screen.queryByRole("group", { name: /Choose your Telloya plan/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("radio", { name: /I know what I need/ }))
     expect(screen.getByRole("group", { name: /Choose your Telloya plan/ })).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
     const summary = screen.getByRole("alert")
@@ -279,7 +282,7 @@ describe("Telloya short enquiry journey", () => {
     for (const tier of ["basic", "growth", "pro", "custom"] as const) {
       cleanup()
       renderEnabled(tier)
-      expect(screen.getByRole("radio", { name: new RegExp(tier, "i") })).toBeChecked()
+      expect(screen.getByRole("radio", { name: new RegExp(`^${tier}`, "i") })).toBeChecked()
       expect(screen.getByRole("checkbox", { name: /Add Relaunch Guard monitoring/ })).not.toBeChecked()
     }
   })
@@ -349,5 +352,112 @@ describe("Telloya enquiry guidance copy", () => {
     expect(screen.getByRole("spinbutton", { name: /^Number of locations/ })).toBeRequired()
     expect(screen.getByRole("spinbutton", { name: /Expected calls per month/ })).not.toBeRequired()
     expect(screen.queryByRole("checkbox", { name: /not sure/i })).not.toBeInTheDocument()
+  })
+})
+
+describe("Telloya progressive enquiry journey", () => {
+  it("starts on Help me choose and hides the plan selector", () => {
+    renderEnabled("")
+    expect(screen.getByRole("radio", { name: /Help me choose a plan/ })).toBeChecked()
+    expect(screen.getByRole("radio", { name: /I know what I need/ })).not.toBeChecked()
+    expect(screen.getByText(/You don't need to know your monthly call minutes yet/)).toBeInTheDocument()
+    expect(screen.queryByRole("radio", { name: /Basic/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("radio", { name: /Growth/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("checkbox", { name: /Add Relaunch Guard monitoring/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("spinbutton", { name: /Monthly minutes needed/ })).not.toBeInTheDocument()
+  })
+
+  it("advances Help me choose without a plan and keeps contact and privacy requirements", () => {
+    renderEnabled("")
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+    expect(screen.getByRole("heading", { name: /Your business and contact details/ })).toBeInTheDocument()
+    expect(screen.getByText("Help me choose")).toBeInTheDocument()
+    expect(screen.getByText("Our team will discuss your requirements and help you choose a suitable plan.")).toBeInTheDocument()
+    expect(screen.queryByText(/per month, indicative/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/minutes\/month/)).not.toBeInTheDocument()
+    expect(screen.getByText(/does not take payment, activate the service, or authorise a recurring charge/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
+    const summary = screen.getByRole("alert")
+    expect(summary).toHaveTextContent("Please enter your business name.")
+    expect(summary).toHaveTextContent("Please confirm you have read the privacy notice.")
+    fireEvent.click(screen.getByRole("button", { name: "Optional details" }))
+    expect(screen.queryByRole("checkbox", { name: /Interested in additional minutes/ })).not.toBeInTheDocument()
+  })
+
+  it.each(["basic", "growth", "pro", "custom"] as const)("opens %s from a pricing preselection on the detailed pathway", (tier) => {
+    renderEnabled(tier)
+    expect(screen.getByRole("radio", { name: /I know what I need/ })).toBeChecked()
+    expect(screen.getByRole("radio", { name: new RegExp(`^${tier}`, "i") })).toBeChecked()
+    const plan = telloyaPlans.find((item) => item.tier === tier)
+    expect(plan).toBeTruthy()
+    if (plan?.monthlyPriceGbp != null) {
+      expect(screen.getByText(new RegExp(`${formatGbpPrice(plan.monthlyPriceGbp)}/month`))).toBeInTheDocument()
+    } else {
+      expect(screen.getByText(/Contact for quotation/)).toBeInTheDocument()
+    }
+  })
+
+  it("keeps a legacy Complete link on the detailed pathway with Guard interest", () => {
+    renderEnabled("", true)
+    expect(screen.getByRole("radio", { name: /I know what I need/ })).toBeChecked()
+    expect(screen.getByRole("radio", { name: /Basic/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("radio", { name: /Growth/ }))
+    expect(screen.getByRole("checkbox", { name: /Add Relaunch Guard monitoring/ })).toBeChecked()
+  })
+
+  it("submits a product-only enquiry and drops stale detailed choices", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => ({
+        ok: true,
+        enquiryRef: reference,
+        leadConversion: false,
+        receiptEmailStatus: "sent",
+        message: "Your enquiry has been received.",
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    renderEnabled("growth")
+    fireEvent.click(screen.getByRole("checkbox", { name: /Add Relaunch Guard monitoring/ }))
+    fireEvent.change(screen.getByRole("spinbutton", { name: /How many locations need Guard protection/ }), { target: { value: "2" } })
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Optional details" }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /Interested in additional minutes/ }))
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Proposed monthly cap/ }), { target: { value: "40" } })
+    fillContact()
+    fireEvent.click(screen.getByRole("button", { name: /Back/ }))
+    fireEvent.click(screen.getByRole("radio", { name: /Help me choose a plan/ }))
+    expect(screen.queryByRole("radio", { name: /Growth/ })).not.toBeInTheDocument()
+    expect(screen.queryByText("Please select a plan.")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("radio", { name: /I know what I need/ }))
+    expect(screen.getByRole("radio", { name: /Growth/ })).toBeChecked()
+    expect(screen.getByRole("spinbutton", { name: /How many locations need Guard protection/ })).toHaveValue(2)
+    fireEvent.click(screen.getByRole("radio", { name: /Help me choose a plan/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+    expect(screen.getByRole("textbox", { name: /Business name/ })).toHaveValue("Harbour Plumbing")
+    expect(screen.getByText("Help me choose")).toBeInTheDocument()
+    expect(screen.queryByText("£79 per month, indicative")).not.toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: /current phone setup/ })).toBeInTheDocument()
+    expect(screen.queryByRole("checkbox", { name: /Interested in additional minutes/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
+    await screen.findByRole("heading", { name: /we have received your enquiry/i })
+    expect(screen.getByText("Our team will review your enquiry and get in touch using the details you provided.")).toBeInTheDocument()
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>
+    expect(body.product).toBe("telloya")
+    expect(body.planTier).toBeUndefined()
+    expect(body.guardInterested).toBe(false)
+    expect(body.guardLocationCount).toBeUndefined()
+    expect(body.customMonthlyMinutes).toBeUndefined()
+    expect(body.overageInterested).toBe(false)
+    expect(body.overageMonthlyCapGbp).toBeUndefined()
+    expect(body.businessName).toBe("Harbour Plumbing")
+    expect(body.privacyAccepted).toBe(true)
+    const validated = validateTelloyaEnquiry(body)
+    expect(validated.valid).toBe(true)
+    if (validated.valid) {
+      expect(validated.data.planTier).toBeUndefined()
+      expect(validated.data.product).toBe("telloya")
+      expect(validated.data.guardInterested).toBe(false)
+      expect(validated.data.overageInterested).toBe(false)
+    }
   })
 })

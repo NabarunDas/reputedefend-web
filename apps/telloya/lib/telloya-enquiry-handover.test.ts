@@ -85,6 +85,58 @@ describe("Telloya enquiry handover", () => {
     expect(internal?.text).not.toContain("Relaunch Guard: Interested")
   })
 
+  it("persists a product-only Telloya enquiry as plan consultation without a subscription", async () => {
+    const sent: EnquiryEmailMessage[] = []
+    const stored: Array<Record<string, unknown>> = []
+    const { planTier: _planTier, ...productOnly } = requestBody()
+    const validatedEnquiry = validateTelloyaEnquiry(productOnly)
+    expect(validatedEnquiry.valid).toBe(true)
+    if (!validatedEnquiry.valid) return
+    expect(validatedEnquiry.data.planTier).toBeUndefined()
+    expect(validatedEnquiry.data.product).toBe("telloya")
+
+    const result = await persistTelloyaEnquiry(validatedEnquiry.data, key, {
+      nodeEnv: "test",
+      config,
+      create: async (_key, data) => {
+        stored.push(data as unknown as Record<string, unknown>)
+        return { status: "created", id: "enq-advice", attempt: "att-advice", sendAck: true, enquiryRef: reference }
+      },
+      finish: async () => {},
+      provider: { send: async (message) => { sent.push(message); return { ok: true, id: "msg" } } },
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      persisted: true,
+      enquiryRef: reference,
+      receiptEmailStatus: "sent",
+      leadConversion: true,
+    })
+    expect(reference).toMatch(/^TY-\d\d-[A-HJ-NP-Z2-9]{6}$/)
+    expect(stored[0]).toMatchObject({
+      product: "telloya",
+      privacyAccepted: true,
+      guardInterested: false,
+      overageInterested: false,
+    })
+    expect(stored[0].planTier).toBeUndefined()
+    expect(stored[0].customMonthlyMinutes).toBeUndefined()
+    expect(stored[0]).not.toHaveProperty("subscription")
+    expect(stored[0]).not.toHaveProperty("stripe")
+    const internal = sent.find((message) => message.kind === "internal")
+    const customer = sent.find((message) => message.kind === "customer-ack")
+    expect(internal?.subject).toContain("New Telloya enquiry")
+    expect(internal?.text).toContain("Product Interest: Telloya (AI Receptionist)")
+    expect(internal?.text).not.toContain("Selected Plan:")
+    expect(internal?.text).not.toContain("£49")
+    expect(internal?.text).not.toContain("£79")
+    expect(internal?.text).not.toContain("£120")
+    expect(customer?.text).toContain(reference)
+    expect(customer?.text).toContain("does not, by itself, create a client relationship or activate any service")
+    expect(customer?.text).not.toMatch(/subscription|payment|Stripe|entitlement/i)
+  })
+
   it("keeps Guard interest and a full optional record without authorising a purchase", async () => {
     const sent: EnquiryEmailMessage[] = []
     const stored: Array<Record<string, unknown>> = []

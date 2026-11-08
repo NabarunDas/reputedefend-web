@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { cloneElement, useEffect, useId, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react"
+import { cloneElement, useEffect, useId, useRef, useState, type FormEvent, type MouseEvent, type ReactElement, type ReactNode } from "react"
 import { ArrowLeft, ArrowRight, Check, Mail } from "lucide-react"
 import styles from "./telloya-enquiry-form.module.css"
 import type { TelloyaEnquiryRequest, TelloyaEnquiryResponse, TelloyaEnquiryCapabilities } from "@/lib/enquiry-contract"
@@ -289,7 +289,10 @@ export function TelloyaEnquiryForm({
     return stepErrors
   }
 
-  function continueToNext() {
+  function continueToNext(event?: MouseEvent<HTMLButtonElement>) {
+    // Cancel the click before the step change. Otherwise React can reuse this
+    // button node, switch it to type="submit", and the same click submits.
+    event?.preventDefault()
     const stepErrors = validateStep(1)
     setErrors(stepErrors)
     if (Object.keys(stepErrors).length) {
@@ -1068,11 +1071,11 @@ export function TelloyaEnquiryForm({
           </button>
         ) : <span />}
         {step < 2 ? (
-          <button type="button" className={styles.next} onClick={continueToNext}>
+          <button key="continue" type="button" className={styles.next} onClick={continueToNext}>
             Continue <ArrowRight size={16} aria-hidden="true" />
           </button>
         ) : (
-          <button type="submit" className={styles.next} disabled={status === "loading"}>
+          <button key="submit" type="submit" className={styles.next} disabled={status === "loading"}>
             {status === "loading" ? "Submitting…" : "Submit enquiry"}
           </button>
         )}

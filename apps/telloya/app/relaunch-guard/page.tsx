@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Image from "next/image"
 import Link from "next/link"
 import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { relaunchGuardOverview as copy } from "@/lib/relaunch-guard-overview"
@@ -15,18 +16,32 @@ export default function RelaunchGuardPage() {
   return (
     <div className={styles.page}>
       <section className={styles.hero} aria-labelledby="guard-overview-title">
-        <div className={styles.heroContent}>
-          <p className={styles.eyebrow}>{copy.hero.eyebrow}</p>
-          <h1 id="guard-overview-title" className={styles.heroTitle}>{copy.hero.title}</h1>
-          <p className={styles.heroLead}>{copy.hero.lead}</p>
-          <div className={styles.actions}>
-            <Link href={copy.actions.enquireHref} className={styles.primary}>{copy.actions.enquireLabel}</Link>
-            <a className={styles.secondary} href={copy.actions.externalHref} target="_blank" rel="noopener noreferrer">
-              {copy.actions.externalLabel}
-              <span className={styles.visuallyHidden}> (opens in a new tab)</span>
-            </a>
+        <div className={styles.heroLayout}>
+          <div className={styles.heroContent}>
+            <p className={styles.eyebrow}>{copy.hero.eyebrow}</p>
+            <h1 id="guard-overview-title" className={styles.heroTitle}>{copy.hero.title}</h1>
+            <p className={styles.heroLead}>{copy.hero.lead}</p>
+            <div className={styles.actions}>
+              <Link href={copy.actions.enquireHref} className={styles.primary}>{copy.actions.enquireLabel}</Link>
+              <a className={styles.secondary} href={copy.actions.externalHref} target="_blank" rel="noopener noreferrer">
+                {copy.actions.externalLabel}
+                <span className={styles.visuallyHidden}> (opens in a new tab)</span>
+              </a>
+            </div>
+            <p className={styles.heroNote}>{copy.actions.enquireNote}</p>
           </div>
-          <p className={styles.heroNote}>{copy.actions.enquireNote}</p>
+          <figure className={styles.heroFigure}>
+            <Image
+              src="/relaunch-guard-hero.webp"
+              alt="Illustration of a concept Google Business Profile on a laptop, with profile availability, business details and reviews marked for a twice-daily check."
+              width={912}
+              height={355}
+              priority
+              fetchPriority="high"
+              sizes="(min-width: 960px) 520px, calc(100vw - 32px)"
+              className={styles.heroArt}
+            />
+          </figure>
         </div>
       </section>
 

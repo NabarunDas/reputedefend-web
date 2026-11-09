@@ -13,6 +13,8 @@
 }
 
 .hero {
+  container-name: guard-hero;
+  container-type: inline-size;
   padding: clamp(108px, 14vh, 148px) 0 clamp(36px, 6vh, 64px);
   text-align: center;
   background:
@@ -20,10 +22,50 @@
     linear-gradient(180deg, #001c16 0%, #00110e 100%);
 }
 
-.heroContent,
+.heroLayout,
 .section {
   width: min(1080px, calc(100% - 32px));
   margin-inline: auto;
+}
+
+.heroFigure {
+  width: min(912px, 100%);
+  margin: 36px auto 0;
+  min-width: 0;
+}
+
+.heroArt {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 912 / 355;
+  border: 1px solid rgba(198, 242, 188, .22);
+  border-radius: 18px;
+}
+
+@container guard-hero (min-width: 60rem) {
+  .heroLayout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+    align-items: center;
+    column-gap: clamp(28px, 4vw, 56px);
+    width: min(1180px, calc(100% - 48px));
+    text-align: left;
+  }
+
+  .heroLead,
+  .heroNote {
+    margin-inline: 0;
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
+
+  .heroFigure {
+    width: 100%;
+    margin: 0;
+  }
 }
 
 .eyebrow {
@@ -177,7 +219,7 @@
 
 @media (max-width: 520px) {
   .hero { padding-top: 102px; }
-  .heroContent,
+  .heroLayout,
   .section { width: min(1080px, calc(100% - 24px)); }
   .section { padding-block: 36px; }
 }

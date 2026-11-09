@@ -835,6 +835,7 @@ export const navigationContent = {
     { label: "Features", href: "/features" },
     { label: "Industries", href: "/industries" },
     { label: "Pricing", href: "/pricing" },
+    { label: "Relaunch Guard", href: "/relaunch-guard" },
     { label: "See Example", href: "/demo" },
   ],
   account: {
@@ -859,6 +860,7 @@ export const footerContent = {
         { label: "Features", href: "/features" },
         { label: "Industries", href: "/industries" },
         { label: "Pricing", href: "/pricing" },
+        { label: "Relaunch Guard", href: "/relaunch-guard" },
         { label: "Enquire", href: "/enquire" },
       ],
     },

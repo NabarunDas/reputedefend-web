@@ -373,7 +373,7 @@ describe("Pre-launch Behavior", () => {
     
     const result = sitemap()
     expect(Array.isArray(result)).toBe(true)
-    expect(result.length).toBe(8)
+    expect(result.length).toBe(9)
     expect(result[0].url).toBe("https://telloya.com")
     expect(result.map((entry) => entry.url)).toEqual([
       "https://telloya.com",
@@ -382,6 +382,7 @@ describe("Pre-launch Behavior", () => {
       "https://telloya.com/features",
       "https://telloya.com/industries",
       "https://telloya.com/pricing",
+      "https://telloya.com/relaunch-guard",
       "https://telloya.com/enquire",
       "https://telloya.com/cookies",
     ])
@@ -463,7 +464,7 @@ describe("Page Structure and Accessibility", () => {
     const links = Array.from(container.querySelectorAll('.site-nav-links a'))
     
     const hrefs = links.map(link => link.getAttribute('href'))
-    expect(hrefs).toEqual(['/how-it-works', '/features', '/industries', '/pricing', '/demo'])
+    expect(hrefs).toEqual(['/how-it-works', '/features', '/industries', '/pricing', '/relaunch-guard', '/demo'])
   })
 
   it("customer login CTA points to valid portal href", () => {

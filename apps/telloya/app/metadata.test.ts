@@ -8,6 +8,7 @@ import { metadata as pricingMetadata } from "@/app/pricing/page"
 import { metadata as enquireMetadata } from "@/app/enquire/page"
 import { metadata as cookiesMetadata } from "@/app/cookies/page"
 import { metadata as demoMetadata } from "@/app/demo/page"
+import { metadata as guardMetadata } from "@/app/relaunch-guard/page"
 import { metadata as notFoundMetadata } from "@/app/not-found"
 
 function documentTitle(title: unknown, template = titleTemplate) {
@@ -29,6 +30,7 @@ describe("Telloya document titles", () => {
       enquireMetadata.title,
       cookiesMetadata.title,
       demoMetadata.title,
+      guardMetadata.title,
       notFoundMetadata.title,
     ].map((title) => documentTitle(title))
 
@@ -49,7 +51,7 @@ describe("Telloya document titles", () => {
   })
 
   it("keeps the approved share image on pages that set their own social title", () => {
-    const pages = [homeMetadata, howMetadata, featuresMetadata, industriesMetadata, pricingMetadata, enquireMetadata, cookiesMetadata, demoMetadata]
+    const pages = [homeMetadata, howMetadata, featuresMetadata, industriesMetadata, pricingMetadata, enquireMetadata, cookiesMetadata, demoMetadata, guardMetadata]
     for (const metadata of pages) {
       const twitter = metadata.twitter
       expect(metadata.openGraph?.images).toEqual([socialShareImage])
@@ -59,7 +61,7 @@ describe("Telloya document titles", () => {
   })
 
   it("gives every public page a unique title, description and canonical path", () => {
-    const pages = [homeMetadata, howMetadata, featuresMetadata, industriesMetadata, pricingMetadata, enquireMetadata, cookiesMetadata, demoMetadata]
+    const pages = [homeMetadata, howMetadata, featuresMetadata, industriesMetadata, pricingMetadata, enquireMetadata, cookiesMetadata, demoMetadata, guardMetadata]
     const titles = pages.map((metadata) => documentTitle(metadata.title))
     const descriptions = pages.map((metadata) => metadata.description)
     expect(new Set(titles).size).toBe(pages.length)
@@ -76,5 +78,6 @@ describe("Telloya document titles", () => {
     expect(enquireMetadata.alternates).toEqual({ canonical: "/enquire" })
     expect(cookiesMetadata.alternates).toEqual({ canonical: "/cookies" })
     expect(demoMetadata.alternates).toEqual({ canonical: "/demo" })
+    expect(guardMetadata.alternates).toEqual({ canonical: "/relaunch-guard" })
   })
 })

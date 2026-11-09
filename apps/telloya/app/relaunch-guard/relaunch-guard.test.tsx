@@ -23,6 +23,10 @@ describe("Relaunch Guard overview", () => {
     render(<RelaunchGuardPage />)
 
     expect(screen.getByRole("heading", { level: 1, name: "Relaunch Guard" })).toBeInTheDocument()
+    const artwork = screen.getByRole("img", { name: /concept Google Business Profile/i })
+    expect(artwork.getAttribute("src")).toContain("relaunch-guard-hero.webp")
+    expect(artwork).toHaveAttribute("width", "912")
+    expect(artwork).toHaveAttribute("height", "355")
     expect(screen.getByText(copy.hero.lead)).toBeInTheDocument()
     expect(screen.getByText(copy.checks.cards[0].text)).toBeInTheDocument()
     expect(screen.getByText(copy.checks.cards[1].text)).toBeInTheDocument()

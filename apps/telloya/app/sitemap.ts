@@ -22,6 +22,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/features",
     "/industries",
     "/pricing",
+    "/relaunch-guard",
     "/enquire",
     "/cookies",
   ]

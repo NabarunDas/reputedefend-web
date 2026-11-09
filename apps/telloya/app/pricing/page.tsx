@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowUpRight, Check, ExternalLink } from "lucide-react"
+import { ArrowUpRight, Check } from "lucide-react"
 import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { pricingContent } from "@/lib/content"
 import { formatGbpPrice, formatMinutes } from "@/lib/pricing"
@@ -113,14 +113,9 @@ export default function Pricing() {
                   </li>
                 ))}
               </ul>
-              <a 
-                href={guard.infoUrl} 
-                className={styles.guardLink}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Learn more about Relaunch Guard <ExternalLink size={14} aria-hidden="true" />
-              </a>
+              <Link href="/relaunch-guard" className={styles.guardLink}>
+                Learn more about Relaunch Guard
+              </Link>
             </div>
 
             <div className={styles.guardExamples}>

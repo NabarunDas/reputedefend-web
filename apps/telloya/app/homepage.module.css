@@ -246,6 +246,7 @@
 .planGuardDescription {color:#b4cdbb; font-size:.94rem; line-height:1.58; }
 .planGuardPrice {font-size:1.6rem; font-weight:800; color:#c5ef9d; letter-spacing:-.03em; margin-top:8px; }
 .planGuardNote {color:rgba(244,248,239,.75); font-size:.87rem; line-height:1.55; font-style:italic; margin-top:6px; }
+.planGuardLink {align-self:flex-start; margin-top:8px; color:#c9ff9a; font-weight:700; border-bottom:1px solid rgba(193,250,148,.38); padding-bottom:4px; }
 .faq {display:grid;grid-template-columns:.8fr 1.2fr;gap:75px;padding-block:102px;}
 .faqList details {border-bottom:1px solid rgba(198,242,188,.22);}
 .faqList summary {cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:18px;list-style:none;color:#ecf8eb;font-size:1.04rem;font-weight:700;padding:20px 0;}

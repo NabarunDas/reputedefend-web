@@ -20,20 +20,22 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const primaryLabels = ["How It Works", "Features", "Industries", "Pricing", "See Example"]
-const primaryHrefs = ["/how-it-works", "/features", "/industries", "/pricing", "/demo"]
+const primaryLabels = ["How It Works", "Features", "Industries", "Pricing", "Relaunch Guard", "See Example"]
+const primaryHrefs = ["/how-it-works", "/features", "/industries", "/pricing", "/relaunch-guard", "/demo"]
 
 describe("Telloya navigation", () => {
-  it("shows five primary links, with See Example fifth, and keeps login separate from enquire", () => {
+  it("shows six primary links, with Relaunch Guard after Pricing, and keeps login separate from enquire", () => {
     const { container } = render(<Header />)
     const primary = within(container.querySelector(".site-nav-links") as HTMLElement).getAllByRole("link")
     expect(primary.map((link) => link.textContent)).toEqual(primaryLabels)
     expect(primary.map((link) => link.getAttribute("href"))).toEqual(primaryHrefs)
-    expect(primary).toHaveLength(5)
-    expect(primary[4]).toHaveTextContent("See Example")
-    expect(primary[4]).toHaveAttribute("href", "/demo")
-    expect(primary[4]).toHaveAttribute("aria-current", "page")
-    expect(primary.slice(0, 4).every((link) => link.getAttribute("aria-current") === null)).toBe(true)
+    expect(primary).toHaveLength(6)
+    expect(primary[4]).toHaveTextContent("Relaunch Guard")
+    expect(primary[4]).toHaveAttribute("href", "/relaunch-guard")
+    expect(primary[5]).toHaveTextContent("See Example")
+    expect(primary[5]).toHaveAttribute("href", "/demo")
+    expect(primary[5]).toHaveAttribute("aria-current", "page")
+    expect(primary.slice(0, 5).every((link) => link.getAttribute("aria-current") === null)).toBe(true)
 
     const desktopLogin = container.querySelector(".site-nav-account")
     const desktopEnquire = container.querySelector(".site-nav-cta .button-secondary")

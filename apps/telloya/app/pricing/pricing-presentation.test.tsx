@@ -63,6 +63,7 @@ describe("homepage pricing period", () => {
       ["Features", "/features"],
       ["Industries", "/industries"],
       ["Pricing", "/pricing"],
+      ["Relaunch Guard", "/relaunch-guard"],
       ["See Example", "/demo"],
     ])
     expect(screen.getAllByRole("link", { name: "See Example" }).length).toBeGreaterThan(0)
@@ -116,6 +117,7 @@ describe("pricing page presentation", () => {
     render(<PricingPage />)
     const guard = screen.getByRole("region", { name: "Relaunch Guard" })
     expect(within(guard).getByText("Optional add-on — not required")).toBeInTheDocument()
+    expect(within(guard).getByRole("link", { name: "Learn more about Relaunch Guard" })).toHaveAttribute("href", "/relaunch-guard")
     expect(within(guard).getByText("£9.99")).toBeInTheDocument()
     expect(within(guard).getByText("/location/month")).toBeInTheDocument()
     expect(relaunchGuardAddon.pricePerLocationGbp).toBe(9.99)

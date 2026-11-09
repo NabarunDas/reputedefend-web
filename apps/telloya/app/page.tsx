@@ -240,6 +240,7 @@ export default function Home() {
               <p className={styles.planGuardDescription}>{plans.guard.description}</p>
               <div className={styles.planGuardPrice}>{plans.guard.price}</div>
               <p className={styles.planGuardNote}>{plans.guard.note}</p>
+              <Link href="/relaunch-guard" className={styles.planGuardLink}>Learn about Relaunch Guard</Link>
             </div>
           </div>
         </section>

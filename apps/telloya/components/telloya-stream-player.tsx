@@ -24,11 +24,13 @@ export function TelloyaStreamPlayer({
   description = telloyaStreamPlayer.description,
   descriptionPlacement = "before",
   emphasizePlay = false,
+  framed = false,
 }: {
   poster?: TelloyaStreamPoster
   description?: string
   descriptionPlacement?: "before" | "after"
   emphasizePlay?: boolean
+  framed?: boolean
 } = {}) {
   const [active, setActive] = useState(false)
   const frameRef = useRef<HTMLIFrameElement>(null)
@@ -44,7 +46,8 @@ export function TelloyaStreamPlayer({
   }, [active])
 
   return (
-    <div className={styles.player}>
+    <div className={framed ? styles.card : styles.player}>
+      {framed ? <p className={styles.kicker}>Featured demonstration</p> : null}
       {descriptionPlacement === "before" ? descriptionNode : null}
       <div className={styles.shell}>
         {active ? (
@@ -82,6 +85,7 @@ export function TelloyaStreamPlayer({
           </button>
         )}
       </div>
+      {framed && !active ? <p className={styles.hint}>Click to play the demonstration video</p> : null}
       {descriptionPlacement === "after" ? descriptionNode : null}
     </div>
   )

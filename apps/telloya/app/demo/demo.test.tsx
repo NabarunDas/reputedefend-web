@@ -51,6 +51,8 @@ describe("/demo illustrative sample", () => {
     expect(screen.getByRole("heading", { level: 1, name: "See how Telloya works" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Explore the conversation step by step" })).toBeInTheDocument()
     expect(screen.getByText("From missed call to meaningful follow-up.")).toBeInTheDocument()
+    expect(screen.getByText("Featured demonstration")).toBeInTheDocument()
+    expect(screen.getByText("Click to play the demonstration video")).toBeInTheDocument()
     expect(screen.getByText("Illustrative demonstration featuring fictional characters and enquiries.")).toBeInTheDocument()
     expect(screen.getByRole("note")).toHaveTextContent(DEMO_DISCLOSURE)
     expect(screen.getAllByRole("link", { name: "Explore Pricing" }).every((link) => link.getAttribute("href") === "/pricing")).toBe(true)

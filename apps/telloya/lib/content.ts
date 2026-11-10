@@ -166,11 +166,11 @@ export const homepageContent = {
       },
       {
         q: "What information does Telloya collect?",
-        a: "Telloya can collect caller contact details and the enquiry details agreed for your business, such as the service needed, location, a description of the problem and a preferred callback time.",
+        a: "During assisted setup, you specify the relevant information you want collected. A supported configuration can include caller contact details, the type of work, location, a description of the problem and callback preferences. Telloya collects those agreed details. A complex requirement outside the supported configuration may need a separate quotation.",
       },
       {
         q: "Can I choose what Telloya asks my customers?",
-        a: "Yes. During setup, we'll discuss your business, the services you provide and the details you'd like to collect. Telloya can be configured to ask relevant questions and prepare useful enquiry summaries. The final configuration is agreed based on your requirements and supported capabilities.",
+        a: "Yes. During assisted setup you can specify the questions you want asked and the relevant information you want collected. We agree that supported configuration with you, and it is included with the standard plans. A complex requirement outside the supported configuration may need a separate quotation.",
       },
       {
         q: "Does Telloya confirm appointments?",

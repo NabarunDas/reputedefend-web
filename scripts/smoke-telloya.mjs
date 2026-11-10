@@ -122,7 +122,9 @@ async function testLaunchState(launched, description) {
       }
 
       if (path === "/demo") {
-        assert.match(content, /Interactive illustration using fictional information/)
+        assert.match(content, /Fictional browser-only walkthrough/)
+        assert.match(content, /Illustrative demonstration featuring fictional characters and enquiries/)
+        assert.match(content, /See how Telloya works/)
         assert.match(content, /Explore Pricing/)
         assert.match(content, /Enquire About Telloya/)
         assert.match(content, /Hartley Plumbing/)

@@ -5,13 +5,39 @@ import { Play } from "lucide-react"
 import { telloyaStreamPlayer } from "@/lib/telloya-stream"
 import styles from "./telloya-stream-player.module.css"
 
-const desktopPoster = "/brand/telloya-cinematic-console.webp"
-const mobilePoster = "/brand/telloya-cinematic-console-mobile.webp"
+const defaultPoster = {
+  src: "/brand/telloya-cinematic-console.webp",
+  mobileSrc: "/brand/telloya-cinematic-console-mobile.webp",
+  width: 1672,
+  height: 604,
+}
 
-export function TelloyaStreamPlayer() {
+type TelloyaStreamPoster = {
+  src: string
+  width: number
+  height: number
+  mobileSrc?: string
+}
+
+export function TelloyaStreamPlayer({
+  poster = defaultPoster,
+  description = telloyaStreamPlayer.description,
+  descriptionPlacement = "before",
+  emphasizePlay = false,
+}: {
+  poster?: TelloyaStreamPoster
+  description?: string
+  descriptionPlacement?: "before" | "after"
+  emphasizePlay?: boolean
+} = {}) {
   const [active, setActive] = useState(false)
   const frameRef = useRef<HTMLIFrameElement>(null)
   const descriptionId = useId()
+  const descriptionNode = (
+    <p id={descriptionId} className={descriptionPlacement === "after" ? styles.descriptionAfter : styles.description}>
+      {description}
+    </p>
+  )
 
   useEffect(() => {
     if (active) frameRef.current?.focus()
@@ -19,7 +45,7 @@ export function TelloyaStreamPlayer() {
 
   return (
     <div className={styles.player}>
-      <p id={descriptionId} className={styles.description}>{telloyaStreamPlayer.description}</p>
+      {descriptionPlacement === "before" ? descriptionNode : null}
       <div className={styles.shell}>
         {active ? (
           <iframe
@@ -39,16 +65,16 @@ export function TelloyaStreamPlayer() {
             onClick={() => setActive(true)}
           >
             <picture>
-              <source media="(max-width: 639px)" srcSet={mobilePoster} />
+              {poster.mobileSrc ? <source media="(max-width: 639px)" srcSet={poster.mobileSrc} /> : null}
               <img
                 className={styles.poster}
-                src={desktopPoster}
+                src={poster.src}
                 alt=""
-                width={1672}
-                height={604}
+                width={poster.width}
+                height={poster.height}
               />
             </picture>
-            <span className={styles.play} aria-hidden="true">
+            <span className={emphasizePlay ? `${styles.play} ${styles.playStrong}` : styles.play} aria-hidden="true">
               <Play size={22} />
               Play
             </span>
@@ -56,6 +82,7 @@ export function TelloyaStreamPlayer() {
           </button>
         )}
       </div>
+      {descriptionPlacement === "after" ? descriptionNode : null}
     </div>
   )
 }

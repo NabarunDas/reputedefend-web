@@ -48,12 +48,16 @@ describe("demo script transitions", () => {
 describe("/demo illustrative sample", () => {
   it("renders the illustration instead of redirecting to enquire", () => {
     render(<DemoPage />)
-    expect(screen.getByRole("heading", { level: 1, name: "See Telloya in Action" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { level: 1, name: "See how Telloya works" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Explore the conversation step by step" })).toBeInTheDocument()
+    expect(screen.getByText("From missed call to meaningful follow-up.")).toBeInTheDocument()
+    expect(screen.getByText("Illustrative demonstration featuring fictional characters and enquiries.")).toBeInTheDocument()
     expect(screen.getByRole("note")).toHaveTextContent(DEMO_DISCLOSURE)
-    expect(screen.getByRole("link", { name: "Explore Pricing" })).toHaveAttribute("href", "/pricing")
+    expect(screen.getAllByRole("link", { name: "Explore Pricing" }).every((link) => link.getAttribute("href") === "/pricing")).toBe(true)
+    expect(screen.getByRole("link", { name: "Enquire about Telloya" })).toHaveAttribute("href", "/enquire")
     expect(screen.getByRole("link", { name: "Enquire About Telloya" })).toHaveAttribute("href", "/enquire")
     expect(document.querySelector("[data-script-version]")).toHaveAttribute("data-script-version", DEMO_SCRIPT_VERSION)
-    expect(screen.queryByRole("link", { name: "Explore Pricing" })?.getAttribute("href")).not.toBe("/enquire")
+    expect(renderedText()).not.toMatch(/does not record audio|without audio|silent/i)
   })
 
   it("starts, advances, goes back, replays, and opens the lead summary", () => {

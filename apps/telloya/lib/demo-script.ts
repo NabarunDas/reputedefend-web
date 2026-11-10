@@ -5,25 +5,27 @@
 export const DEMO_SCRIPT_VERSION = "telloya-interactive-demo-v1" as const
 
 export const DEMO_DISCLOSURE =
-  "Interactive illustration using fictional information. This is not a live AI call, telephone connection or customer record."
+  "Fictional browser-only walkthrough. It does not place a telephone call or save a customer enquiry."
 
 export const demoPageCopy = {
   seo: {
-    title: "See Telloya in Action",
+    title: "See how Telloya works",
     description:
-      "Follow a fictional plumbing enquiry from an unanswered call to a lead summary. This illustration is not a live call or a customer record.",
+      "Watch an illustrative Telloya film, from a missed call to follow-up, then step through a fictional enquiry. The walkthrough does not place a call or save an enquiry.",
   },
-  eyebrow: "Illustrative example",
-  title: "See Telloya in Action",
-  lead:
-    "Telloya is designed to help when a customer calls and the business cannot pick up. This sample follows one routine plumbing enquiry, from the missed call to a summary the business could use to follow up.",
-  boundary:
-    "The sample stays in this browser. It does not place a call, record audio, store a transcript, track usage, or create a lead.",
+  eyebrow: "See Telloya in action",
+  title: "See how Telloya works",
+  lead: "From missed call to meaningful follow-up.",
+  filmNote: "Illustrative demonstration featuring fictional characters and enquiries.",
+  walkthroughTitle: "Explore the conversation step by step",
+  walkthroughLead:
+    "Follow a fictional customer conversation and see how Telloya prepares an enquiry summary.",
   fictionNote:
     "Alex Rowan, Hartley Plumbing, Larkspur Close and Fernwick are fictional. No telephone number is shown, and no visit is booked.",
   playerTitle: "Sample conversation",
   pricingCta: "Explore Pricing",
   pricingHref: "/pricing",
+  videoEnquireCta: "Enquire about Telloya",
   enquireCta: "Enquire About Telloya",
   enquireHref: "/enquire",
   ctaTitle: "See whether Telloya fits the way you work",

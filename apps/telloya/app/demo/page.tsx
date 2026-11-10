@@ -18,30 +18,53 @@ export const metadata: Metadata = {
   }),
 }
 
+const filmPoster = {
+  src: "/demo/telloya-film-poster.webp",
+  width: 1280,
+  height: 720,
+}
+
 export default function DemoPage() {
   return (
     <div className={styles.page}>
       <section className={styles.hero} aria-labelledby="demo-title">
-        <div className={styles.heroContent}>
+        <div className={styles.heroCopy}>
           <p className={styles.eyebrow}>{demoPageCopy.eyebrow}</p>
           <h1 id="demo-title" className={styles.heroTitle}>
             {demoPageCopy.title}
           </h1>
           <p className={styles.heroLead}>{demoPageCopy.lead}</p>
-          <p className={styles.heroBoundary}>{demoPageCopy.boundary}</p>
+        </div>
+        <div className={styles.film}>
+          <TelloyaStreamPlayer
+            poster={filmPoster}
+            description={demoPageCopy.filmNote}
+            descriptionPlacement="after"
+            emphasizePlay
+          />
+        </div>
+        <div className={styles.heroActions}>
+          <div className={styles.ctaRow}>
+            <Link className={styles.primaryLink} href={demoPageCopy.enquireHref}>
+              {demoPageCopy.videoEnquireCta} <ArrowUpRight size={18} aria-hidden="true" />
+            </Link>
+            <Link className={styles.secondaryLink} href={demoPageCopy.pricingHref}>
+              {demoPageCopy.pricingCta} <ArrowUpRight size={18} aria-hidden="true" />
+            </Link>
+          </div>
+          <p className={styles.ctaAssurance}>{demoPageCopy.ctaLead}</p>
         </div>
       </section>
 
       <div className={styles.body}>
-        <p id="demo-disclosure" className={styles.disclosure} role="note">
-          {DEMO_DISCLOSURE}
-        </p>
-        <p className={styles.fiction}>{demoPageCopy.fictionNote}</p>
-        <DemoExperience />
-        <section className={styles.film} aria-labelledby="demo-film-title">
-          <h2 id="demo-film-title" className={styles.filmTitle}>Watch the illustrative film</h2>
-          <p className={styles.filmLead}>The film complements the interactive sample above. Neither one is a live call or a customer recording.</p>
-          <TelloyaStreamPlayer />
+        <section className={styles.walkthrough} aria-labelledby="walkthrough-title">
+          <h2 id="walkthrough-title" className={styles.walkthroughTitle}>{demoPageCopy.walkthroughTitle}</h2>
+          <p className={styles.walkthroughLead}>{demoPageCopy.walkthroughLead}</p>
+          <p id="demo-disclosure" className={styles.disclosure} role="note">
+            {DEMO_DISCLOSURE}
+          </p>
+          <p className={styles.fiction}>{demoPageCopy.fictionNote}</p>
+          <DemoExperience />
         </section>
 
         <section className={styles.ctaSection} aria-labelledby="demo-cta-title">

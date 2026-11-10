@@ -19,10 +19,12 @@ export const metadata: Metadata = {
 export default async function EnquirePage({
   searchParams,
 }: {
-  searchParams: Promise<{ plan?: string | string[]; product?: string | string[] }>
+  searchParams: Promise<{ plan?: string | string[]; product?: string | string[]; intent?: string | string[] }>
 }) {
   const capabilities = getEnquiryCapabilities()
   const params = await searchParams
+  const intentParam = Array.isArray(params.intent) ? params.intent[0] : params.intent
+  const initialRequestIntent = intentParam === "personalised-demo" ? "personalised-demo" : ""
   
   // Parse plan preselection from URL
   // NEW: ?plan=basic|growth|pro|custom (Phase 05A-02)
@@ -73,7 +75,7 @@ export default async function EnquirePage({
 
       <div className={styles.main}>
         <div className={styles.formColumn}>
-          <TelloyaEnquiryForm capabilities={capabilities} initialPlanTier={initialPlanTier} initialGuardInterested={initialGuardInterested} />
+          <TelloyaEnquiryForm capabilities={capabilities} initialPlanTier={initialPlanTier} initialGuardInterested={initialGuardInterested} initialRequestIntent={initialRequestIntent} />
           <aside className={styles.aside}>
             <section className={styles.process} aria-labelledby="next-title">
               <h2 id="next-title">What happens next</h2>

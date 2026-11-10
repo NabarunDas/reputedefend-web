@@ -36,6 +36,7 @@ export const telloyaEnquiryLimits = {
   missedCallProblem: 5000,
   phoneSetup: 5000,
   contactPreference: 100,
+  receptionistQuestions: 2000,
   source: 32,
 } as const
 
@@ -85,6 +86,8 @@ export type TelloyaEnquiryInput = {
   missedCallProblem?: string
   phoneSetup?: string
   contactPreference?: string
+  receptionistQuestions?: string
+  requestIntent?: "personalised-demo"
 
   // Consent
   privacyAccepted: boolean
@@ -134,6 +137,8 @@ const STRING_FIELDS = [
   "missedCallProblem",
   "phoneSetup",
   "contactPreference",
+  "receptionistQuestions",
+  "requestIntent",
   "source",
 ] as const
 const PHONE_PATTERN = /^[+]?[\d\s().-]{7,}$/
@@ -183,6 +188,14 @@ function isHttpUrl(value: string) {
 
 function firstError(errors: TelloyaEnquiryFieldErrors, fallback: string) {
   return Object.values(errors)[0] ?? fallback
+}
+
+function normalizeRequestIntent(value: unknown): "personalised-demo" | undefined | "invalid" {
+  if (value == null || value === "") return undefined
+  if (typeof value !== "string") return "invalid"
+  const normalized = normalizeTelloyaText(value)
+  if (!normalized) return undefined
+  return normalized === "personalised-demo" ? "personalised-demo" : "invalid"
 }
 
 export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
@@ -264,6 +277,11 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
     return { valid: false, error: PROCESS_ERROR }
   }
 
+  const requestIntent = normalizeRequestIntent(input.requestIntent)
+  if (requestIntent === "invalid") {
+    return { valid: false, error: PROCESS_ERROR }
+  }
+
   const data: TelloyaEnquiryInput = {
     fullName: normalizeTelloyaText(asString(input.fullName)),
     email: normalizeTelloyaText(asString(input.email)),
@@ -293,6 +311,8 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
     missedCallProblem: input.missedCallProblem ? normalizeTelloyaText(asString(input.missedCallProblem)) : undefined,
     phoneSetup: input.phoneSetup ? normalizeTelloyaText(asString(input.phoneSetup)) : undefined,
     contactPreference: input.contactPreference ? normalizeTelloyaText(asString(input.contactPreference)) : undefined,
+    receptionistQuestions: input.receptionistQuestions ? normalizeTelloyaText(asString(input.receptionistQuestions)) || undefined : undefined,
+    requestIntent,
     privacyAccepted: asAccepted(input.privacyAccepted),
     source: "telloya",
   }
@@ -509,6 +529,10 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
     errors.contactPreference = `Please keep your preference within ${telloyaEnquiryLimits.contactPreference} characters.`
   }
 
+  if (data.receptionistQuestions && data.receptionistQuestions.length > telloyaEnquiryLimits.receptionistQuestions) {
+    errors.receptionistQuestions = `Please keep this within ${telloyaEnquiryLimits.receptionistQuestions.toLocaleString("en-GB")} characters.`
+  }
+
   // Privacy acceptance
   if (!data.privacyAccepted) {
     errors.privacyAccepted = "Please confirm that you have read the privacy notice."
@@ -615,6 +639,8 @@ export function telloyaEnquiryToPayload(data: TelloyaEnquiryInput) {
     missedCallProblem: data.missedCallProblem || "",
     phoneSetup: data.phoneSetup || "",
     contactPreference: data.contactPreference || "",
+    ...(data.receptionistQuestions ? { receptionistQuestions: data.receptionistQuestions } : {}),
+    ...(data.requestIntent ? { requestIntent: data.requestIntent } : {}),
     details,
     privacyAccepted: data.privacyAccepted,
     source: "telloya",

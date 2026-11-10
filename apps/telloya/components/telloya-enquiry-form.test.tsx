@@ -42,12 +42,17 @@ describe("Telloya enquiry form commercial labels", () => {
 const enabled = { submissionEnabled: true as const }
 const reference = "TY-26-ABCDEF"
 
-function renderEnabled(initialPlanTier: "" | "basic" | "growth" | "pro" | "custom" = "growth", initialGuardInterested = false) {
+function renderEnabled(
+  initialPlanTier: "" | "basic" | "growth" | "pro" | "custom" = "growth",
+  initialGuardInterested = false,
+  initialRequestIntent: "personalised-demo" | "" = "",
+) {
   return render(
     <TelloyaEnquiryForm
       capabilities={enabled}
       initialPlanTier={initialPlanTier}
       initialGuardInterested={initialGuardInterested}
+      initialRequestIntent={initialRequestIntent}
     />,
   )
 }
@@ -199,6 +204,7 @@ describe("Telloya short enquiry journey", () => {
     expect(await screen.findByRole("heading", { name: /we have received your enquiry/i })).toBeInTheDocument()
     expect(screen.getByText(reference)).toBeInTheDocument()
     expect(screen.getByText("Our team will review your enquiry and get in touch using the details you provided.")).toBeInTheDocument()
+    expect(screen.queryByText(/personalised Telloya demonstration/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Admin will review it/)).not.toBeInTheDocument()
     expect(screen.getByText(/confirmation email has been accepted/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Copy reference" }))
@@ -478,6 +484,7 @@ describe("Telloya progressive enquiry journey", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
     await screen.findByRole("heading", { name: /we have received your enquiry/i })
     expect(screen.getByText("Our team will review your enquiry and get in touch using the details you provided.")).toBeInTheDocument()
+    expect(screen.queryByText(/personalised Telloya demonstration/)).not.toBeInTheDocument()
     const body = JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>
     expect(body.product).toBe("telloya")
     expect(body.planTier).toBeUndefined()
@@ -488,6 +495,8 @@ describe("Telloya progressive enquiry journey", () => {
     expect(body.overageMonthlyCapGbp).toBeUndefined()
     expect(body.businessName).toBe("Harbour Plumbing")
     expect(body.privacyAccepted).toBe(true)
+    expect(body.receptionistQuestions).toBeUndefined()
+    expect(body.requestIntent).toBeUndefined()
     const validated = validateTelloyaEnquiry(body)
     expect(validated.valid).toBe(true)
     if (validated.valid) {
@@ -495,6 +504,89 @@ describe("Telloya progressive enquiry journey", () => {
       expect(validated.data.product).toBe("telloya")
       expect(validated.data.guardInterested).toBe(false)
       expect(validated.data.overageInterested).toBe(false)
+    }
+  })
+
+  it("sends optional receptionist questions for every pathway and rejects an oversized answer", async () => {
+    const question = "Ask whether the heating is on and the best time to call back."
+    for (const tier of ["", "basic", "growth", "pro", "custom"] as const) {
+      cleanup()
+      const fetchMock = vi.fn().mockResolvedValue({
+        json: async () => ({
+          ok: true,
+          enquiryRef: reference,
+          leadConversion: false,
+          receiptEmailStatus: "sent",
+        }),
+      })
+      vi.stubGlobal("fetch", fetchMock)
+      renderEnabled(tier)
+      if (tier === "custom") {
+        fireEvent.change(screen.getByRole("spinbutton", { name: /Monthly minutes needed/ }), { target: { value: "1000" } })
+        fireEvent.change(screen.getByRole("spinbutton", { name: /Phone numbers needed/ }), { target: { value: "2" } })
+        fireEvent.change(screen.getByRole("spinbutton", { name: /Number of locations/ }), { target: { value: "4" } })
+      }
+      fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+      const field = screen.getByRole("textbox", { name: /What would you like your receptionist to ask/ }) as HTMLTextAreaElement
+      expect(field).not.toBeRequired()
+      expect(screen.getByText(/questions, business information or enquiry details you would like covered/)).toBeInTheDocument()
+      fireEvent.change(field, { target: { value: `  ${question}  ` } })
+      fillContact()
+      fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
+      await screen.findByText("Our team will review your enquiry and get in touch using the details you provided.")
+      const body = JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>
+      expect(body.receptionistQuestions).toBe(question)
+      expect(body.requestIntent).toBeUndefined()
+      expect(body.planTier).toBe(tier || undefined)
+      const validated = validateTelloyaEnquiry(body)
+      expect(validated.valid).toBe(true)
+    }
+
+    cleanup()
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    renderEnabled("basic")
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+    fireEvent.change(screen.getByRole("textbox", { name: /What would you like your receptionist to ask/ }), {
+      target: { value: "q".repeat(2001) },
+    })
+    fillContact()
+    fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
+    expect(screen.getByRole("alert")).toHaveTextContent("Please keep this within 2,000 characters.")
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.queryByText(/Thank you for your enquiry/)).not.toBeInTheDocument()
+  })
+
+  it("keeps a personalised-demo request through both pathways and uses the demonstration acknowledgement", async () => {
+    for (const tier of ["", "pro"] as const) {
+      cleanup()
+      const fetchMock = vi.fn().mockResolvedValue({
+        json: async () => ({
+          ok: true,
+          enquiryRef: reference,
+          leadConversion: false,
+          receiptEmailStatus: "sent",
+        }),
+      })
+      vi.stubGlobal("fetch", fetchMock)
+      renderEnabled(tier, false, "personalised-demo")
+      expect(screen.getByRole("note")).toHaveTextContent("You are requesting a personalised live demonstration.")
+      fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+      expect(screen.getByRole("note")).toHaveTextContent("not a confirmed booking")
+      fireEvent.change(screen.getByRole("textbox", { name: /What would you like your receptionist to ask/ }), {
+        target: { value: "Ask for the postcode." },
+      })
+      fillContact()
+      fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
+      expect(await screen.findByText("Thank you for your enquiry. We'll review your business requirements and contact you to arrange a personalised Telloya demonstration.")).toBeInTheDocument()
+      expect(screen.getByText("This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically.")).toBeInTheDocument()
+      expect(screen.getByText(reference)).toBeInTheDocument()
+      expect(screen.getByText(/confirmation email has been accepted/)).toBeInTheDocument()
+      const body = JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>
+      expect(body.requestIntent).toBe("personalised-demo")
+      expect(body.receptionistQuestions).toBe("Ask for the postcode.")
+      expect(body.planTier).toBe(tier || undefined)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
     }
   })
 })

@@ -23,6 +23,8 @@ export type EnquiryPayload = {
   missedCallProblem?: string
   phoneSetup?: string
   contactPreference?: string
+  receptionistQuestions?: string
+  requestIntent?: string
   planTier?: string
   guardInterested?: boolean
   guardLocationCount?: number

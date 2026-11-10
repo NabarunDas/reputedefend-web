@@ -409,4 +409,27 @@ describe("Telloya payload contract - Combined scenarios", () => {
     expect(payload.product).toBe("telloya")
     expect(payload.planTier).toBe("basic")
   })
+
+  it("stores receptionist questions only when the customer provided them", () => {
+    const input: TelloyaEnquiryInput = {
+      planTier: "basic",
+      businessName: "Question Plumbing Ltd",
+      country: "United Kingdom",
+      trade: "Plumbing",
+      fullName: "Question Owner",
+      email: "owner@question-plumbing.co.uk",
+      phone: "+44 7700 900011",
+      privacyAccepted: true,
+      source: "telloya",
+      receptionistQuestions: "Ask whether they have a service plan.",
+    }
+    const payload = telloyaEnquiryToPayload(input)
+    expect(payload.receptionistQuestions).toBe("Ask whether they have a service plan.")
+    expect(payload.details).not.toContain("Receptionist questions:")
+    expect(payload.requestIntent).toBeUndefined()
+    const { receptionistQuestions: _omitted, ...withoutQuestion } = input
+    const blank = telloyaEnquiryToPayload(withoutQuestion)
+    expect(blank.receptionistQuestions).toBeUndefined()
+    expect(blank.details).not.toContain("Receptionist questions:")
+  })
 })

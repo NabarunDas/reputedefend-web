@@ -35,6 +35,7 @@ const payload: EnquiryPayload = {
   missedCallProblem: "Calls while on site",
   phoneSetup: "Mobile",
   contactPreference: "Weekday mornings",
+  receptionistQuestions: "Ask for the boiler make and whether they have a service plan.",
   privacyAccepted: true,
 }
 
@@ -42,6 +43,8 @@ describe("Telloya enquiry interest in Admin", () => {
   it("shows the selected plan, Guard interest and optional details without treating them as a purchase", () => {
     render(<TelloyaEnquiryInterest payload={payload} enquiryRef="TY-26-ABCDEF" />)
     expect(screen.getByText("TY-26-ABCDEF")).toBeTruthy()
+    expect(screen.getByText("General enquiry")).toBeTruthy()
+    expect(screen.getByText(/No personalised-demonstration request was recorded/)).toBeTruthy()
     expect(screen.getByText("Growth")).toBeTruthy()
     expect(screen.getByText(/not an approved offer/i)).toBeTruthy()
     expect(screen.getByText(/Yes, 2 locations requested/)).toBeTruthy()
@@ -58,6 +61,8 @@ describe("Telloya enquiry interest in Admin", () => {
     expect(screen.getByText("British")).toBeTruthy()
     expect(screen.getByText("English")).toBeTruthy()
     expect(screen.getByText("Weekday mornings")).toBeTruthy()
+    expect(screen.getByText("Ask for the boiler make and whether they have a service plan.")).toBeTruthy()
+    expect(screen.getByText(/does not book a demonstration or provision an agent/i)).toBeTruthy()
     expect(screen.getByText(/do not approve an offer, take payment, start Stripe/i)).toBeTruthy()
   })
 
@@ -82,6 +87,17 @@ describe("Telloya enquiry interest in Admin", () => {
     expect(screen.getByText("Night answering")).toBeTruthy()
     expect(screen.getByText("No Guard interest recorded")).toBeTruthy()
     expect(screen.queryByText(/Complete \(Telloya \+ Relaunch Guard\)/)).toBeNull()
+  })
+
+  it("shows a personalised demonstration request separately from the optional questions", () => {
+    render(<TelloyaEnquiryInterest payload={{
+      ...payload,
+      requestIntent: "personalised-demo",
+    }} enquiryRef="TY-26-DEMO01" />)
+    expect(screen.getByText("Personalised live demonstration")).toBeTruthy()
+    expect(screen.getByText(/not a confirmed booking and it does not provision an agent/i)).toBeTruthy()
+    expect(screen.getByText("Ask for the boiler make and whether they have a service plan.")).toBeTruthy()
+    expect(screen.queryByText("General enquiry")).toBeNull()
   })
 
   it("does not render for a ProfileRelaunch enquiry", () => {

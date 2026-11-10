@@ -6,6 +6,7 @@ import "@testing-library/jest-dom/vitest"
 import { afterEach, describe, expect, it } from "vitest"
 import HomePage from "@/app/page"
 import FeaturesPage from "@/app/features/page"
+import HowItWorksPage from "@/app/how-it-works/page"
 import { getEnquiryCapabilities } from "@/lib/enquiry-contract"
 import {
   featureStageLabels,
@@ -102,6 +103,45 @@ describe("benefit-first feature status", () => {
     expect(screen.getByText("Telloya asks useful questions and records the details the caller shares.")).toBeInTheDocument()
     expect(screen.getByText(/A customer dashboard is planned and is not live/i)).toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "Usage visibility" })).not.toBeInTheDocument()
+  })
+})
+
+describe("personalised enquiry questions", () => {
+  it("explains that questions are agreed during setup and are not a self-service editor", () => {
+    render(<HomePage />)
+    expect(screen.getByRole("heading", { name: "Questions tailored to your business" })).toBeInTheDocument()
+    expect(screen.getByText(/We agree the questions and information to collect during setup/)).toBeInTheDocument()
+    expect(screen.getByText("Can I choose what Telloya asks my customers?")).toBeInTheDocument()
+    const choice = homepageContent.faq.questions.find((item) => item.q === "Can I choose what Telloya asks my customers?")
+    expect(choice?.a).toMatch(/supported capabilities/)
+    expect(choice?.a).not.toMatch(/unlimited|dashboard|sensitive/i)
+    cleanup()
+
+    render(<FeaturesPage />)
+    expect(screen.getByRole("heading", { name: "Your receptionist, personalised for your business" })).toBeInTheDocument()
+    const feature = featuresContent.features.find((item) => item.kicker === "Feature 05")
+    expect(feature?.points).toEqual([
+      "Business greeting and service information",
+      "Questions relevant to the services offered",
+      "Details you want collected, such as job type, location, problem description and callback preferences",
+      "How the information is presented in the enquiry summary",
+    ])
+    expect(feature?.description).toMatch(/included with the standard plans/)
+    expect(feature?.description).toMatch(/quoted separately/)
+    expect(feature?.description).not.toMatch(/unlimited|only on Custom|Custom tier/i)
+    cleanup()
+
+    render(<HowItWorksPage />)
+    const collection = howItWorksContent.journey.steps.find((step) => step.title === "Information collection")
+    expect(collection?.description).toMatch(/agreed with you during setup/)
+    expect(collection?.description).toMatch(/differ between businesses/)
+    expect(screen.getByText(collection!.description)).toBeInTheDocument()
+    expect(`${collection?.description} ${collection?.detail}`).not.toMatch(/workflow editor|live dashboard|unlimited/i)
+
+    for (const plan of pricingContent.plans) {
+      if (plan.tier === "custom") continue
+      expect(plan.features).toContain("Business-specific configuration")
+    }
   })
 })
 

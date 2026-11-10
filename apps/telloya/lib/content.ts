@@ -79,8 +79,9 @@ export const homepageContent = {
         description: "Stay focused on the work without constant phone calls",
       },
       {
-        title: "Better enquiry collection",
-        description: "Capture useful details from missed calls",
+        title: "Questions tailored to your business",
+        description:
+          "Telloya can ask the questions that matter to your business — from the type of work needed and the caller's location to other relevant enquiry details. We agree the questions and information to collect during setup.",
       },
       {
         title: "Professional experience",
@@ -165,7 +166,11 @@ export const homepageContent = {
       },
       {
         q: "What information does Telloya collect?",
-        a: "Telloya asks for caller contact details, the service they need, their location, a description of the problem, and their preferred callback time. The exact conversation adapts to the enquiry.",
+        a: "Telloya can collect caller contact details and the enquiry details agreed for your business, such as the service needed, location, a description of the problem and a preferred callback time.",
+      },
+      {
+        q: "Can I choose what Telloya asks my customers?",
+        a: "Yes. During setup, we'll discuss your business, the services you provide and the details you'd like to collect. Telloya can be configured to ask relevant questions and prepare useful enquiry summaries. The final configuration is agreed based on your requirements and supported capabilities.",
       },
       {
         q: "Does Telloya confirm appointments?",
@@ -227,9 +232,9 @@ export const howItWorksContent = {
         number: "04",
         title: "Information collection",
         description:
-          "Telloya asks for their contact details, the service they need, their location, a description of the problem, and when they'd prefer a callback.",
+          "The questions are agreed with you during setup and can differ between businesses. Telloya then collects the details that help you assess the enquiry.",
         detail:
-          "The questions adapt to the enquiry. If something isn't clear, Telloya asks follow-up questions. If the caller needs to end the call, we save what we've captured.",
+          "That can include contact details, the type of work, location, a description of the problem and a preferred callback time. If something is unclear, Telloya asks a follow-up, and it saves what the caller has shared if they need to end the call.",
       },
       {
         number: "05",
@@ -258,7 +263,7 @@ export const howItWorksContent = {
       flow: [
         "If yes, Telloya continues: 'Great. Can I start with your name?'",
         "Then: 'And the best number to reach you on?'",
-        "Followed by service-specific questions based on your business type",
+        "Followed by the questions agreed for your services during setup",
         "Ending with: 'Thank you. I will pass on your preferred time. The business decides when to call you back. Is there anything else you would like me to pass on?'",
       ],
       note: "This is an illustrative example. The actual conversation adapts to how the caller responds.",
@@ -394,14 +399,15 @@ export const featuresContent = {
     },
     {
       kicker: "Feature 05",
-      title: "Business-specific configuration",
+      title: "Your receptionist, personalised for your business",
       description:
-        "Get questions that fit the work you do. Telloya can use your business name, your services and the details your customers usually need to share.",
+        "Every business works differently. Telloya can use your business greeting, ask questions relevant to your services, and collect the information you need to assess an enquiry. We agree this with you during setup. It is included with the standard plans. Work outside the supported configuration is quoted separately.",
       stage: "demonstrated",
       points: [
-        "Business name and service description",
-        "Industry-specific question flow",
-        "Custom greeting message",
+        "Business greeting and service information",
+        "Questions relevant to the services offered",
+        "Details you want collected, such as job type, location, problem description and callback preferences",
+        "How the information is presented in the enquiry summary",
       ],
     },
   ],

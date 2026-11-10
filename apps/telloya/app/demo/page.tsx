@@ -41,6 +41,7 @@ export default function DemoPage() {
             description={demoPageCopy.filmNote}
             descriptionPlacement="after"
             emphasizePlay
+            framed
           />
         </div>
         <div className={styles.heroActions}>

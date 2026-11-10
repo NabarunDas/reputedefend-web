@@ -34,6 +34,7 @@ describe("Telloya Stream player", () => {
     expect(screen.getByRole("link", { name: /Try the interactive sample/i })).toHaveAttribute("href", "/demo")
     expect(document.querySelector("img[src='/brand/telloya-cinematic-console.webp']")).toBeTruthy()
     expect(document.querySelector("img[src='/demo/telloya-film-poster.webp']")).toBeNull()
+    expect(screen.queryByText("Featured demonstration")).not.toBeInTheDocument()
     expect(document.querySelector("iframe")).toBeNull()
     unmount()
 
@@ -42,6 +43,8 @@ describe("Telloya Stream player", () => {
     expect(screen.getByRole("heading", { name: "Explore the conversation step by step" })).toBeInTheDocument()
     expect(document.querySelector("img[src='/demo/telloya-film-poster.webp']")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Start the sample" })).toBeEnabled()
+    expect(screen.getByText("Featured demonstration")).toBeInTheDocument()
+    expect(screen.getByText("Click to play the demonstration video")).toBeInTheDocument()
     expect(screen.getByText("Illustrative demonstration featuring fictional characters and enquiries.")).toBeInTheDocument()
     expect(document.querySelector("iframe")).toBeNull()
   })

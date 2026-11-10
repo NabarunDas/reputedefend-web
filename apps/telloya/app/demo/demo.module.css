@@ -16,21 +16,28 @@
 .hero {
   position: relative;
   isolation: isolate;
-  padding: clamp(116px, 13vh, 145px) 0 clamp(28px, 4vh, 42px);
+  padding: 112px 0 36px;
   text-align: center;
   background:
-    radial-gradient(ellipse 45% 35% at 50% 25%, rgba(5, 72, 42, .52), transparent 100%),
-    radial-gradient(ellipse 38% 42% at 5% 50%, rgba(42, 127, 81, .24), transparent 100%),
-    radial-gradient(ellipse 38% 42% at 95% 50%, rgba(19, 136, 81, .20), transparent 100%),
-    linear-gradient(180deg, #001c16 0%, #002820 50%, #001913 100%);
+    radial-gradient(ellipse 45% 35% at 50% 18%, rgba(5, 72, 42, .52), transparent 100%),
+    radial-gradient(ellipse 38% 42% at 5% 40%, rgba(42, 127, 81, .24), transparent 100%),
+    radial-gradient(ellipse 38% 42% at 95% 40%, rgba(19, 136, 81, .20), transparent 100%),
+    linear-gradient(180deg, #001c16 0%, #002820 42%, #001913 100%);
 }
 
-.heroContent {
+.heroCopy,
+.heroActions,
+.film {
   position: relative;
   z-index: 1;
-  width: min(860px, calc(100% - 36px));
   margin-inline: auto;
 }
+
+.heroCopy { width: min(760px, calc(100% - 40px)); }
+
+.film { width: min(1100px, calc(100% - 48px)); margin-top: 22px; }
+
+.heroActions { width: min(1100px, calc(100% - 48px)); margin-top: 22px; }
 
 .eyebrow {
   color: #b9ec8a;
@@ -45,7 +52,7 @@
   font-family: Georgia, "Times New Roman", serif;
   color: #fffdf6;
   font-weight: 400;
-  font-size: clamp(2.6rem, 4.4vw, 4.4rem);
+  font-size: clamp(2.35rem, 4vw, 3.6rem);
   letter-spacing: -.055em;
   line-height: 1.02;
   text-shadow: 0 4px 35px rgba(0, 0, 0, .44);
@@ -53,16 +60,21 @@
   text-wrap: balance;
 }
 
-.heroLead,
-.heroBoundary {
-  max-width: 680px;
-  margin-inline: auto;
-  color: rgba(244, 248, 239, .86);
-  font-size: clamp(.98rem, 1.12vw, 1.08rem);
-  line-height: 1.6;
+.heroLead {
+  max-width: 36rem;
+  margin: 0 auto;
+  color: rgba(244, 248, 239, .9);
+  font-size: clamp(1.05rem, 1.5vw, 1.28rem);
+  line-height: 1.45;
 }
 
-.heroBoundary { margin-top: 14px; color: #d5e7d4; }
+.ctaAssurance {
+  max-width: 36rem;
+  margin: 14px auto 0;
+  color: #c5d7c8;
+  font-size: .95rem;
+  line-height: 1.5;
+}
 
 .body {
   width: min(1100px, calc(100% - 48px));
@@ -80,15 +92,33 @@
   line-height: 1.5;
 }
 
-.film { margin: 28px 0 36px; min-width: 0; }
-.filmTitle {
+.walkthrough {
+  margin-top: 8px;
+  padding: 28px 22px 22px;
+  border: 1px solid rgba(198, 242, 188, .14);
+  border-radius: 28px;
+  background: rgba(0, 12, 10, .28);
+}
+
+.walkthroughTitle {
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  font-size: clamp(1.55rem, 2.2vw, 2.05rem);
   font-weight: 500;
   letter-spacing: -.03em;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
-.filmLead { color: #d5e7d4; line-height: 1.6; margin-bottom: 8px; max-width: 42rem; }
+
+.walkthroughLead {
+  max-width: 40rem;
+  margin-bottom: 14px;
+  color: #d5e7d4;
+  line-height: 1.55;
+}
+
+.walkthrough .player {
+  box-shadow: none;
+  background: rgba(4, 28, 22, .4);
+}
 
 .fiction {
   margin: 12px 2px 22px;
@@ -332,9 +362,10 @@
 }
 
 @media (max-width: 640px) {
-  .body { width: calc(100% - 28px); }
-  .hero { padding: 96px 0 18px; }
+  .body, .film, .heroActions { width: calc(100% - 28px); }
+  .hero { padding: 96px 0 24px; }
   .heroTitle { font-size: clamp(2.15rem, 9vw, 2.8rem); }
+  .walkthrough { padding: 20px 14px 16px; }
   .stages { display: flex; flex-wrap: wrap; }
   .stages li { padding: 6px 10px; }
   .summaryList div { grid-template-columns: 1fr; gap: 4px; }

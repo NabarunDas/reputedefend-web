@@ -2,11 +2,18 @@
   min-width: 0;
 }
 
-.description {
-  margin: 0 0 16px;
-  color: rgba(244, 248, 239, .78);
+.description,
+.descriptionAfter {
+  color: rgba(244, 248, 239, .82);
   font-size: .95rem;
   line-height: 1.55;
+}
+
+.description { margin: 0 0 16px; }
+
+.descriptionAfter {
+  margin: 14px 0 0;
+  text-align: center;
 }
 
 .shell {
@@ -69,6 +76,11 @@
   font-weight: 800;
   line-height: 1;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+}
+
+.playStrong {
+  border: 2px solid #f7fff1;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .55), 0 0 0 6px rgba(4, 20, 14, .42);
 }
 
 .visuallyHidden {

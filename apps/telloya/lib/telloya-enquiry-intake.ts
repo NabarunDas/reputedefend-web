@@ -48,6 +48,7 @@ type TelloyaPayload = EnquiryInput & {
   overageInterested: boolean
   overageMonthlyCapGbp?: number
   receptionistQuestions?: string
+  requestIntent?: "personalised-demo"
 }
 
 // Telloya-specific email builders that integrate with the shared infrastructure
@@ -90,6 +91,7 @@ const telloyaEmailBuilder: CustomEmailBuilder = {
       overageInterested: payload.overageInterested,
       overageMonthlyCapGbp: payload.overageMonthlyCapGbp,
       receptionistQuestions: payload.receptionistQuestions,
+      requestIntent: payload.requestIntent,
     }
 
     return {
@@ -105,6 +107,7 @@ const telloyaEmailBuilder: CustomEmailBuilder = {
   
   buildCustomerAck: (data: EnquiryInput, config: EnquiryEmailConfig, ref?: string): EnquiryEmailMessage => {
     if (!ref) throw new Error("Telloya enquiry must have a reference")
+    const requestIntent = (data as unknown as TelloyaPayload).requestIntent
     
     return {
       kind: "customer-ack",
@@ -112,8 +115,8 @@ const telloyaEmailBuilder: CustomEmailBuilder = {
       to: data.email,
       replyTo: config.fromEmail,
       subject: telloyaCustomerAcknowledgementSubject(ref),
-      text: telloyaCustomerAcknowledgementText(ref),
-      html: telloyaCustomerAcknowledgementHtml(ref),
+      text: telloyaCustomerAcknowledgementText(ref, requestIntent),
+      html: telloyaCustomerAcknowledgementHtml(ref, requestIntent),
     }
   },
 }

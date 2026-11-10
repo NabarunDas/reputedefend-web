@@ -26,14 +26,13 @@ export const demoPageCopy = {
   pricingCta: "Explore Pricing",
   pricingHref: "/pricing",
   videoEnquireCta: "Enquire about Telloya",
-  enquireCta: "Enquire About Telloya",
   enquireHref: "/enquire",
-  ctaTitle: "See whether Telloya fits the way you work",
   ctaLead:
     "Pricing explains the published plans. An enquiry asks for a conversation. Neither one starts the service or takes payment.",
   personalisedDemoTitle: "Request a personalised demo",
   personalisedDemoLead:
     "Tell us about your business and the questions you'd like your receptionist to ask. We'll arrange a personalised live demonstration so you can experience a real AI conversation configured for your business.",
+  personalisedDemoHref: "/enquire?intent=personalised-demo",
 } as const
 
 export const demoStages = [

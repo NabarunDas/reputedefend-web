@@ -1,9 +1,10 @@
--- Telloya Phase 01B: optional receptionistQuestions on the existing enquiry payload.
+-- Telloya Phase 01B: optional receptionistQuestions and requestIntent on the existing enquiry payload.
 -- Additive CREATE OR REPLACE of admin_private.valid_enquiry_v1 only.
 -- The existing enquiries row already stores a JSON payload, so a new table is not required.
 -- This file is not applied to hosted DEV. Do not apply it to Production.
 -- Do not replay 20261103200518. Signature, search_path, volatility and grants are unchanged.
 -- receptionistQuestions, when present, must be a string of at most 2000 characters.
+-- requestIntent, when present, must be the string personalised-demo.
 -- The ProfileRelaunch branch below stays the applied 20261102200000 branch, unchanged.
 
 CREATE OR REPLACE FUNCTION admin_private.valid_enquiry_v1(p_data jsonb, p_manual boolean)
@@ -41,7 +42,7 @@ BEGIN
       'customLanguages','customRequirements',
       'voicePreference','voiceAccent','primaryLanguage','speakingStyle','additionalLanguages',
       'overageInterested','overageMonthlyCapGbp',
-      'receptionistQuestions'
+      'receptionistQuestions','requestIntent'
     ])<>'{}'::jsonb THEN
       RETURN false;
     END IF;
@@ -176,6 +177,13 @@ BEGIN
       END IF;
     END IF;
 
+    IF p_data ? 'requestIntent' THEN
+      IF jsonb_typeof(p_data->'requestIntent') IS DISTINCT FROM 'string'
+        OR p_data->>'requestIntent' IS DISTINCT FROM 'personalised-demo' THEN
+        RETURN false;
+      END IF;
+    END IF;
+
     IF p_data ? 'additionalLanguages' THEN
       IF jsonb_typeof(p_data->'additionalLanguages') IS DISTINCT FROM 'string' OR length(p_data->>'additionalLanguages') > 500 THEN
         RETURN false;
@@ -254,4 +262,4 @@ END;
 $$;
 
 COMMENT ON FUNCTION admin_private.valid_enquiry_v1(jsonb, boolean) IS
-  'Validates enquiry JSON. Telloya branch extended 2026-11-10 with optional receptionistQuestions. Signature, search_path, volatility and grants are unchanged. Not applied to hosted DEV. Do not apply to Production.';
+  'Validates enquiry JSON. Telloya branch extended 2026-11-10 with optional receptionistQuestions and requestIntent. Signature, search_path, volatility and grants are unchanged. Not applied to hosted DEV. Do not apply to Production.';

@@ -87,6 +87,7 @@ export type TelloyaEnquiryInput = {
   phoneSetup?: string
   contactPreference?: string
   receptionistQuestions?: string
+  requestIntent?: "personalised-demo"
 
   // Consent
   privacyAccepted: boolean
@@ -137,6 +138,7 @@ const STRING_FIELDS = [
   "phoneSetup",
   "contactPreference",
   "receptionistQuestions",
+  "requestIntent",
   "source",
 ] as const
 const PHONE_PATTERN = /^[+]?[\d\s().-]{7,}$/
@@ -186,6 +188,14 @@ function isHttpUrl(value: string) {
 
 function firstError(errors: TelloyaEnquiryFieldErrors, fallback: string) {
   return Object.values(errors)[0] ?? fallback
+}
+
+function normalizeRequestIntent(value: unknown): "personalised-demo" | undefined | "invalid" {
+  if (value == null || value === "") return undefined
+  if (typeof value !== "string") return "invalid"
+  const normalized = normalizeTelloyaText(value)
+  if (!normalized) return undefined
+  return normalized === "personalised-demo" ? "personalised-demo" : "invalid"
 }
 
 export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
@@ -267,6 +277,11 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
     return { valid: false, error: PROCESS_ERROR }
   }
 
+  const requestIntent = normalizeRequestIntent(input.requestIntent)
+  if (requestIntent === "invalid") {
+    return { valid: false, error: PROCESS_ERROR }
+  }
+
   const data: TelloyaEnquiryInput = {
     fullName: normalizeTelloyaText(asString(input.fullName)),
     email: normalizeTelloyaText(asString(input.email)),
@@ -297,6 +312,7 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
     phoneSetup: input.phoneSetup ? normalizeTelloyaText(asString(input.phoneSetup)) : undefined,
     contactPreference: input.contactPreference ? normalizeTelloyaText(asString(input.contactPreference)) : undefined,
     receptionistQuestions: input.receptionistQuestions ? normalizeTelloyaText(asString(input.receptionistQuestions)) || undefined : undefined,
+    requestIntent,
     privacyAccepted: asAccepted(input.privacyAccepted),
     source: "telloya",
   }
@@ -348,7 +364,6 @@ function calculateDetailsLength(data: TelloyaEnquiryInput): number {
   if (data.missedCallProblem) parts.push(`Missed call requirements:\n${data.missedCallProblem}`)
   if (data.phoneSetup) parts.push(`Phone setup:\n${data.phoneSetup}`)
   if (data.contactPreference) parts.push(`Contact preference:\n${data.contactPreference}`)
-  if (data.receptionistQuestions) parts.push(`Receptionist questions:\n${data.receptionistQuestions}`)
   
   return parts.join("\n\n").length || "No additional details provided.".length
 }
@@ -591,10 +606,6 @@ export function telloyaEnquiryToPayload(data: TelloyaEnquiryInput) {
   if (data.contactPreference) {
     detailsParts.push(`Contact preference:\n${data.contactPreference}`)
   }
-
-  if (data.receptionistQuestions) {
-    detailsParts.push(`Receptionist questions:\n${data.receptionistQuestions}`)
-  }
   
   const details = detailsParts.join("\n\n") || "No additional details provided."
 
@@ -629,6 +640,7 @@ export function telloyaEnquiryToPayload(data: TelloyaEnquiryInput) {
     phoneSetup: data.phoneSetup || "",
     contactPreference: data.contactPreference || "",
     ...(data.receptionistQuestions ? { receptionistQuestions: data.receptionistQuestions } : {}),
+    ...(data.requestIntent ? { requestIntent: data.requestIntent } : {}),
     details,
     privacyAccepted: data.privacyAccepted,
     source: "telloya",

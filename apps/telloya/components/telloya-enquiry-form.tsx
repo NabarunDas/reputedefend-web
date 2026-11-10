@@ -141,16 +141,21 @@ const STEP_TITLES = {
   2: "Your business and contact details",
 } as const
 
+const RECEPTIONIST_QUESTIONS_HINT = "Describe the questions, business information or enquiry details you would like covered in the demonstration. We'll discuss them with you before preparing it."
+
 export function TelloyaEnquiryForm({ 
   capabilities, 
   initialPlanTier = "", 
-  initialGuardInterested = false 
+  initialGuardInterested = false,
+  initialRequestIntent = "",
 }: { 
   capabilities?: TelloyaEnquiryCapabilities; 
   initialPlanTier?: PlanTierInterest;
   initialGuardInterested?: boolean;
+  initialRequestIntent?: "personalised-demo" | "";
 }) {
   const submissionEnabled = capabilities?.submissionEnabled ?? false
+  const requestIntent = initialRequestIntent === "personalised-demo" ? "personalised-demo" : ""
   const [step, setStep] = useState<1 | 2>(1)
   const [optionalOpen, setOptionalOpen] = useState(false)
   const [pathway, setPathway] = useState<EnquiryPathway>(initialPlanTier || initialGuardInterested ? "detailed" : "advice")
@@ -412,6 +417,7 @@ export function TelloyaEnquiryForm({
       phoneSetup: values.phoneSetup,
       contactPreference: values.contactPreference,
       receptionistQuestions: values.receptionistQuestions.trim() || undefined,
+      ...(requestIntent ? { requestIntent } : {}),
       privacyAccepted: values.privacyAccepted,
       source: "telloya",
       submissionKey: "", // Will be set below
@@ -448,6 +454,7 @@ export function TelloyaEnquiryForm({
       phoneSetup: payload.phoneSetup,
       contactPreference: payload.contactPreference,
       receptionistQuestions: payload.receptionistQuestions,
+      requestIntent: payload.requestIntent,
       privacyAccepted: payload.privacyAccepted,
     })
 
@@ -550,12 +557,20 @@ export function TelloyaEnquiryForm({
             </div>
           </div>
         )}
-        <p className={styles.successBody}>
-          Thank you for your enquiry. We&apos;ll review your business requirements and contact you to arrange a personalised Telloya demonstration.
-        </p>
-        <p className={styles.successNote}>
-          This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically.
-        </p>
+        {requestIntent === "personalised-demo" ? (
+          <>
+            <p className={styles.successBody}>
+              Thank you for your enquiry. We&apos;ll review your business requirements and contact you to arrange a personalised Telloya demonstration.
+            </p>
+            <p className={styles.successNote}>
+              This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically.
+            </p>
+          </>
+        ) : (
+          <p className={styles.successBody}>
+            Our team will review your enquiry and get in touch using the details you provided.
+          </p>
+        )}
         <p className={styles.successNote}>
           Please keep this reference handy so we can find your enquiry quickly if you contact us.
         </p>
@@ -607,6 +622,12 @@ export function TelloyaEnquiryForm({
         </div>
         <h2 ref={headingRef} tabIndex={-1} className={styles.stepTitle}>{STEP_TITLES[step]}</h2>
       </div>
+
+      {requestIntent === "personalised-demo" && (
+        <p className={styles.sectionNote} role="note">
+          You are requesting a personalised live demonstration. We will review your requirements and contact you to arrange it. Submitting this form is not a confirmed booking.
+        </p>
+      )}
 
       {showSummary && (
         <div ref={summaryRef} tabIndex={-1} role="alert" className={styles.summary}>
@@ -946,7 +967,7 @@ export function TelloyaEnquiryForm({
               label="What would you like your receptionist to ask?"
               optional
               error={errors.receptionistQuestions}
-              hint="Tell us about the questions or information that matter to your business. We'll discuss the details with you before preparing your demonstration."
+              hint={RECEPTIONIST_QUESTIONS_HINT}
             >
               <textarea
                 name="receptionistQuestions"

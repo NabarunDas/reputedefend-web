@@ -24,6 +24,7 @@ export type EnquiryPayload = {
   phoneSetup?: string
   contactPreference?: string
   receptionistQuestions?: string
+  requestIntent?: string
   planTier?: string
   guardInterested?: boolean
   guardLocationCount?: number

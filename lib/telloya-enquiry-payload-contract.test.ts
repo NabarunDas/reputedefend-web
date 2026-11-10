@@ -425,7 +425,8 @@ describe("Telloya payload contract - Combined scenarios", () => {
     }
     const payload = telloyaEnquiryToPayload(input)
     expect(payload.receptionistQuestions).toBe("Ask whether they have a service plan.")
-    expect(payload.details).toContain("Receptionist questions:\nAsk whether they have a service plan.")
+    expect(payload.details).not.toContain("Receptionist questions:")
+    expect(payload.requestIntent).toBeUndefined()
     const { receptionistQuestions: _omitted, ...withoutQuestion } = input
     const blank = telloyaEnquiryToPayload(withoutQuestion)
     expect(blank.receptionistQuestions).toBeUndefined()

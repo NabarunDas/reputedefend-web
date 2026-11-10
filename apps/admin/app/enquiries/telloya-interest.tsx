@@ -42,6 +42,13 @@ export function TelloyaEnquiryInterest({ payload, enquiryRef }: { payload: Enqui
     <p>These details are what the customer asked for. They do not approve an offer, take payment, start Stripe, activate a live agent, or start Guard monitoring.</p>
     <dl>
       <Row label="Enquiry reference" value={enquiryRef || "Not recorded"} />
+      <Row
+        label="Request"
+        value={payload.requestIntent === "personalised-demo" ? "Personalised live demonstration" : "General enquiry"}
+        note={payload.requestIntent === "personalised-demo"
+          ? "The customer asked for a personalised demonstration. This is not a confirmed booking and it does not provision an agent."
+          : "No personalised-demonstration request was recorded."}
+      />
       <Row label="Selected plan" value={planLabel} note="Required customer interest. This is not an approved offer and it is not a subscription." />
       <Row
         label="Product field"

@@ -77,9 +77,12 @@ describe("Telloya enquiry handover", () => {
     expect(customer?.subject).toContain(reference)
     expect(customer?.text).toContain(reference)
     expect(customer?.text).toContain("ProfileRelaunch Ltd")
-    expect(customer?.text).toContain("We'll review your business requirements and contact you to arrange a personalised Telloya demonstration.")
-    expect(customer?.text).toContain("This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically.")
+    expect(customer?.text).toContain("Thank you for your interest in Telloya. We have received your enquiry")
+    expect(customer?.text).toContain("discuss how Telloya can help your business")
+    expect(customer?.text).not.toContain("personalised Telloya demonstration")
+    expect(customer?.text).not.toContain("confirmed demonstration booking")
     expect(customer?.text).toContain("does not, by itself, create a client relationship or activate any service")
+    expect(internal?.text).not.toContain("Personalised live demonstration")
     expect(internal?.subject).toContain(reference)
     expect(internal?.subject).not.toContain("Complete")
     expect(internal?.text).toContain(`Selected Plan: ${planTier[0].toUpperCase()}${planTier.slice(1)}`)
@@ -151,12 +154,15 @@ describe("Telloya enquiry handover", () => {
     expect(internal?.text).not.toContain("£120")
     expect(internal?.text).not.toContain("Help me choose")
     expect(customer?.text).toContain(reference)
-    expect(customer?.text).toContain("We'll review your business requirements and contact you to arrange a personalised Telloya demonstration.")
-    expect(customer?.text).toContain("This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically.")
+    expect(customer?.text).toContain("Thank you for your interest in Telloya. We have received your enquiry")
+    expect(customer?.text).toContain("discuss how Telloya can help your business")
+    expect(customer?.text).not.toContain("personalised Telloya demonstration")
+    expect(customer?.text).not.toContain("confirmed demonstration booking")
     expect(customer?.text).toContain("does not, by itself, create a client relationship or activate any service")
+    expect(internal?.text).not.toContain("Personalised live demonstration")
     expect(customer?.text).not.toContain("consultation required")
     expect(customer?.html).not.toContain("consultation required")
-    expect(customer?.text).not.toMatch(/Stripe|entitlement/i)
+    expect(customer?.text).not.toMatch(/subscription|payment|Stripe|entitlement/i)
   })
 
   it("keeps Guard interest and a full optional record without authorising a purchase", async () => {
@@ -268,13 +274,19 @@ describe("Telloya enquiry handover", () => {
       finish: async () => {},
       provider: { send: async (message: EnquiryEmailMessage) => { sent.push(message); return { ok: true as const, id: "msg" } } },
     }
-    const data = validated({ planTier: "pro", receptionistQuestions: "Ask for the postcode and whether anyone is at the property." })
+    const data = validated({
+      planTier: "pro",
+      receptionistQuestions: "Ask for the postcode and whether anyone is at the property.",
+      requestIntent: "personalised-demo",
+    })
     const first = await persistTelloyaEnquiry(data, key, overrides)
     const second = await persistTelloyaEnquiry(data, key, overrides)
     expect(first.enquiryRef).toBe(reference)
     expect(first.leadConversion).toBe(true)
     expect(sent.find((message) => message.kind === "internal")?.text).toContain("Ask for the postcode and whether anyone is at the property.")
+    expect(sent.find((message) => message.kind === "internal")?.text).toContain("Personalised live demonstration")
     expect(sent.find((message) => message.kind === "internal")?.text).toContain("This does not book a demonstration or provision an agent.")
+    expect(sent.find((message) => message.kind === "customer-ack")?.text).toContain("We'll review your business requirements and contact you to arrange a personalised Telloya demonstration.")
     expect(sent.find((message) => message.kind === "customer-ack")?.text).toContain("not a confirmed demonstration booking")
     expect(second.enquiryRef).toBe(reference)
     expect(second.leadConversion).toBe(false)
@@ -397,7 +409,8 @@ describe("Telloya enquiry handover", () => {
       if (!result.valid) continue
       const payload = telloyaEnquiryToPayload(result.data)
       expect(payload.receptionistQuestions).toBe(question)
-      expect(payload.details).toContain(`Receptionist questions:\n${question}`)
+      expect(payload.details).not.toContain("Receptionist questions:")
+      expect(payload.requestIntent).toBeUndefined()
     }
 
     const blank = validateTelloyaEnquiry(requestBody({ receptionistQuestions: "  \u0000  " }))
@@ -414,5 +427,26 @@ describe("Telloya enquiry handover", () => {
       expect(malformed.error).toBe("Unable to process this enquiry.")
       expect(malformed.errors).toBeUndefined()
     }
+
+    const demo = validateTelloyaEnquiry(requestBody({
+      requestIntent: "personalised-demo",
+      receptionistQuestions: "q".repeat(2000),
+      missedCallProblem: "m".repeat(4000),
+    }))
+    expect(demo.valid).toBe(true)
+    if (demo.valid) {
+      const payload = telloyaEnquiryToPayload(demo.data)
+      expect(payload.requestIntent).toBe("personalised-demo")
+      expect(payload.receptionistQuestions).toHaveLength(2000)
+      expect(payload.details).not.toContain("Receptionist questions:")
+      expect(payload.details.length).toBeLessThanOrEqual(5000)
+    }
+
+    const unknownIntent = validateTelloyaEnquiry(requestBody({ requestIntent: "instant-demo" }))
+    expect(unknownIntent.valid).toBe(false)
+    if (!unknownIntent.valid) expect(unknownIntent.errors).toBeUndefined()
+    const blankIntent = validateTelloyaEnquiry(requestBody({ requestIntent: "   " }))
+    expect(blankIntent.valid).toBe(true)
+    if (blankIntent.valid) expect(telloyaEnquiryToPayload(blankIntent.data).requestIntent).toBeUndefined()
   })
 })

@@ -343,6 +343,34 @@ SELECT telloya_phase_05a_02_test.assert_valid(
 );
 
 SELECT telloya_phase_05a_02_test.assert_valid(
+  'a personalised-demo request intent is accepted',
+  telloya_phase_05a_02_test.telloya('{"requestIntent":"personalised-demo"}'::jsonb),
+  false,
+  true
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
+  'an unknown request intent is rejected',
+  telloya_phase_05a_02_test.telloya('{"requestIntent":"instant-demo"}'::jsonb),
+  false,
+  false
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
+  'a blank request intent is rejected',
+  telloya_phase_05a_02_test.telloya('{"requestIntent":""}'::jsonb),
+  false,
+  false
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
+  'a non-string request intent is rejected',
+  telloya_phase_05a_02_test.telloya('{"requestIntent":true}'::jsonb),
+  false,
+  false
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
   'invalid voice preference is rejected',
   telloya_phase_05a_02_test.telloya('{"planTier":"pro","voicePreference":"robot"}'::jsonb),
   false,

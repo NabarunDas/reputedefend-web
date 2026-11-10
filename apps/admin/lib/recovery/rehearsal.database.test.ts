@@ -80,11 +80,11 @@ describe("rebuilding the whole schema from zero", () => {
     // Do not replay 20261101200000. Do not apply 20261101200000 to Production.
     // Production stays at SEC-08.
     expect(migrationHead.filename).toBe("20261110170000_telloya_enquiry_receptionist_questions_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
-    expect(appliedMigrationHead.filename).toBe("20261107120000_telloya_inbound_admission_reservation_v1.sql")
-    expect(appliedMigrationHead.version).toBe("20261107120000")
+    expect(appliedMigrationHead.filename).toBe("20261110170000_telloya_enquiry_receptionist_questions_v1.sql")
+    expect(appliedMigrationHead.version).toBe("20261110170000")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)

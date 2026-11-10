@@ -94,7 +94,7 @@ describe("upgrading a database that is already running", () => {
     // request 20261030200000 is applied on DEV and must not be replayed. This
     // disposable rebuild is not a live apply. Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261110170000_telloya_enquiry_receptionist_questions_v1.sql")
-    expect(pending.at(-1)?.appliedToDev).toBe(false)
+    expect(pending.at(-1)?.appliedToDev).toBe(true)
     expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261107120000_telloya_inbound_admission_reservation_v1.sql")

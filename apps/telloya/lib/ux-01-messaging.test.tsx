@@ -50,6 +50,30 @@ describe("approved homepage headline", () => {
   })
 })
 
+describe("how Telloya works section", () => {
+  it("keeps the heading, places the supporting line underneath, and limits the note", () => {
+    render(<HomePage />)
+    const heading = screen.getByRole("heading", { name: /A smarter way to stay in touch/i })
+    expect(heading).toHaveAttribute("id", "how-title")
+    expect(screen.getByText("How Telloya works")).toBeInTheDocument()
+    expect(screen.getByText("Built around your working day.")).toBeInTheDocument()
+    expect(screen.queryByText(/designed to fit around your working day/i)).not.toBeInTheDocument()
+    expect(screen.getByText("Telloya helps capture missed-call enquiries. Your team stays in control of appointments and follow-ups.")).toBeInTheDocument()
+    expect(screen.queryByText(/does not automatically confirm appointments or guarantee callbacks/i)).not.toBeInTheDocument()
+    for (const title of [
+      "Customer calls your business",
+      "Missed call forwarded to Telloya",
+      "Telloya speaks with the caller",
+      "You receive the details",
+    ]) {
+      expect(screen.getByRole("heading", { name: title })).toBeInTheDocument()
+    }
+    expect(homepageContent.howItWorks.lead).toBe("Built around your working day.")
+    expect(homepageContent.howItWorks.note).toMatch(/stays in control of appointments and follow-ups/i)
+    expect(homepageContent.howItWorks.note).not.toMatch(/guarantee callbacks|automatically confirm/i)
+  })
+})
+
 describe("benefit-first feature status", () => {
   it("labels demonstrated capabilities separately from planned work", () => {
     expect(featureStatusPresentation("demonstrated")).toEqual({

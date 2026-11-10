@@ -141,8 +141,9 @@ export default function Home() {
         </section>
 
         <section className={styles.process} aria-labelledby="how-title">
-          <div className={styles.sectionHeader}>
-            <div><Eyebrow>{howItWorks.eyebrow}</Eyebrow><h2 id="how-title">A smarter way to <em>stay in touch.</em></h2></div>
+          <div className={styles.processIntro}>
+            <Eyebrow>{howItWorks.eyebrow}</Eyebrow>
+            <h2 id="how-title">A smarter way to <em>stay in touch.</em></h2>
             <p>{howItWorks.lead}</p>
           </div>
           <ol className={styles.processSteps}>
@@ -154,7 +155,10 @@ export default function Home() {
               </li>
             ))}
           </ol>
-          <p className={styles.processNote}>{howItWorks.note}</p>
+          <p className={styles.processNote}>
+            <Check size={16} aria-hidden="true" />
+            <span>{howItWorks.note}</span>
+          </p>
         </section>
 
         <section className={styles.benefits} aria-labelledby="benefits-title">

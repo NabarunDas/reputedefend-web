@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { marketingContentSecurityPolicy } from "../../lib/security/content-security-policy.mjs"
+import { marketingContentSecurityPolicy, telloyaStreamFrameOrigin } from "../../lib/security/content-security-policy.mjs"
 
 const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url))
 
@@ -27,7 +27,7 @@ const config = {
         { key: "Strict-Transport-Security", value: "max-age=63072000" },
         { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         { key: "X-Frame-Options", value: "DENY" },
-        { key: "Content-Security-Policy", value: marketingContentSecurityPolicy() },
+        { key: "Content-Security-Policy", value: marketingContentSecurityPolicy({ frameSrc: telloyaStreamFrameOrigin }) },
       ],
     }]
   },

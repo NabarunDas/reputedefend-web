@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowUpRight } from "lucide-react"
+import { TelloyaStreamPlayer } from "@/components/telloya-stream-player"
 import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { DEMO_DISCLOSURE, demoPageCopy } from "@/lib/demo-script"
 import { DemoExperience } from "./demo-player"
@@ -37,6 +38,11 @@ export default function DemoPage() {
         </p>
         <p className={styles.fiction}>{demoPageCopy.fictionNote}</p>
         <DemoExperience />
+        <section className={styles.film} aria-labelledby="demo-film-title">
+          <h2 id="demo-film-title" className={styles.filmTitle}>Watch the illustrative film</h2>
+          <p className={styles.filmLead}>The film complements the interactive sample above. Neither one is a live call or a customer recording.</p>
+          <TelloyaStreamPlayer />
+        </section>
 
         <section className={styles.ctaSection} aria-labelledby="demo-cta-title">
           <h2 id="demo-cta-title" className={styles.ctaTitle}>

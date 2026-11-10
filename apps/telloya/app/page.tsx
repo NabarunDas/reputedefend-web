@@ -16,6 +16,7 @@ import {
   Wrench,
   Zap,
 } from "lucide-react"
+import { TelloyaStreamPlayer } from "@/components/telloya-stream-player"
 import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { homepageContent } from "@/lib/content"
 import styles from "./homepage.module.css"
@@ -194,6 +195,15 @@ export default function Home() {
             </dl>
             <p className={styles.exampleDisclaimer}>Illustrative example only — not a real customer record.</p>
           </div>
+        </section>
+
+        <section className={styles.film} aria-labelledby="film-title">
+          <div className={styles.sectionHeader}>
+            <div><Eyebrow>See Telloya in action</Eyebrow><h2 id="film-title">See Telloya <em>in action.</em></h2></div>
+            <p>See how Telloya helps businesses respond to missed-call enquiries while they stay focused on their work.</p>
+          </div>
+          <TelloyaStreamPlayer />
+          <Link href="/demo" className={styles.filmLink}>Try the interactive sample <ArrowUpRight size={17} aria-hidden="true" /></Link>
         </section>
 
         <section className={styles.industries} aria-labelledby="industries-title">

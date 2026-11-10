@@ -160,7 +160,7 @@
   linear-gradient(180deg, #00110e, #042219 38%, #001713 75%, #00110d); padding: 0 0 84px;
 }
 .cinematicBody::before { content:""; position:absolute; inset:0; pointer-events:none; opacity:.12; background: repeating-linear-gradient(0deg, transparent 0, transparent 149px, rgba(208,255,180,.15) 150px); }
-.valueRibbon, .challenge, .process, .benefits, .example, .industries, .plans, .faq, .finalCta { position:relative; z-index:1; width:var(--home-wrap); margin-inline:auto; }
+.valueRibbon, .challenge, .process, .benefits, .example, .film, .industries, .plans, .faq, .finalCta { position:relative; z-index:1; width:var(--home-wrap); margin-inline:auto; }
 .valueRibbon {
   display: grid; grid-template-columns: 1.6fr repeat(3,1fr); align-items:center;
   gap: 12px; margin-top: -15px; padding: 15px 28px; min-height: 76px;
@@ -219,6 +219,8 @@
 .leadCard dl div {display:grid; grid-template-columns:110px 1fr; padding-block:9px; border-top:1px solid rgba(199,250,190,.13); gap:18px; font-size:.9rem; }
 .leadCard dt {color:#b2c9b9;} .leadCard dd {margin:0;color:#eff9ed;}
 .exampleDisclaimer {color:#a8bdaf; font-size:.72rem; padding-top:18px; margin:0; }
+.film { padding-block: 96px; border-bottom: 1px solid rgba(198,242,188,.16); }
+.filmLink { display:inline-flex; align-items:center; gap:8px; margin-top:18px; color:#c9ff9a; font-weight:700; border-bottom:1px solid rgba(193,250,148,.38); padding-bottom:4px; }
 .industries {padding-block:96px; border-bottom:1px solid rgba(198,242,188,.16); }
 .industryGrid {display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; }
 .industryTile {min-height:184px; border:1px solid var(--glass-line); background:linear-gradient(145deg,#0d4832,#00271e); border-radius:21px; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; transition: transform .25s,border-color .25s; }
@@ -308,7 +310,7 @@
   .valueRibbon>div{justify-content:flex-start;font-size:.75rem;padding:8px;}
   .challenge{padding-block:65px 55px;gap:25px;} .challengeList{grid-template-columns:1fr;}
   .challengeList li{padding:13px 0;}
-  .process,.benefits,.example,.industries,.plans,.faq{padding-block:62px;}
+  .process,.benefits,.example,.film,.industries,.plans,.faq{padding-block:62px;}
   .processSteps{grid-template-columns:1fr;}.processSteps li{padding:21px;}
   .benefitGrid{grid-template-columns:1fr;}.benefitCard{min-height:unset;padding:24px;}.benefitIcon{margin-bottom:15px;}
   .leadCard{padding:22px;}.leadCard dl div{grid-template-columns:75px 1fr;font-size:.83rem;gap:12px;}

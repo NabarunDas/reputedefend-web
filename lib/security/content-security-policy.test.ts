@@ -1,7 +1,8 @@
+import { readFileSync } from "node:fs"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { customerEmailLogoUrl } from "../email/customer-message"
 import { renderEvidenceRequest } from "../email/evidence-request"
-import { adminContentSecurityPolicy, marketingContentSecurityPolicy, privateAppContentSecurityPolicy } from "./content-security-policy.mjs"
+import { adminContentSecurityPolicy, marketingContentSecurityPolicy, privateAppContentSecurityPolicy, telloyaStreamFrameOrigin } from "./content-security-policy.mjs"
 
 const marketingConfig = await import(/* @vite-ignore */ new URL("../../next.config.mjs", import.meta.url).href)
 
@@ -87,5 +88,24 @@ describe("content security policy", () => {
     expect(adminContentSecurityPolicy()).toBe(adminPolicy)
     expect(privateAppContentSecurityPolicy()).toBe(customerPolicy)
     expect(marketingContentSecurityPolicy()).not.toContain("https://profilerelaunch.com")
+  })
+
+  it("lets Telloya frame only the public Cloudflare Stream player", async () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const telloyaConfig = (await import(/* @vite-ignore */ new URL("../../apps/telloya/next.config.mjs", import.meta.url).href)).default
+    const rules = await telloyaConfig.headers()
+    const policy = rules[0].headers.find((header: { key: string }) => header.key === "Content-Security-Policy")?.value ?? ""
+    const parsed = directives(policy)
+    expect(parsed["frame-src"]).toBe(`frame-src ${telloyaStreamFrameOrigin}`)
+    expect(parsed["script-src"]).toBe("script-src 'self' 'unsafe-inline' https://www.googletagmanager.com")
+    expect(parsed["connect-src"]).toBe("connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com https://analytics.google.com")
+    expect(parsed["frame-ancestors"]).toBe("frame-ancestors 'none'")
+    expect(policy).not.toMatch(/youtube|vimeo|videodelivery|doubleclick|googlesyndication/)
+    expect(marketingContentSecurityPolicy()).toContain("frame-src 'none'")
+    expect(privateAppContentSecurityPolicy()).toContain("frame-src 'none'")
+    const player = readFileSync(new URL("../../apps/telloya/lib/telloya-stream.ts", import.meta.url), "utf8")
+    expect(player).toContain(telloyaStreamFrameOrigin)
+    expect(player).toContain("iframe?poster=")
+    expect(player).not.toMatch(/autoplay=true|loop=true|defaultTextTrack/)
   })
 })

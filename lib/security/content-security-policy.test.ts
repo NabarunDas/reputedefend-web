@@ -106,6 +106,7 @@ describe("content security policy", () => {
     const player = readFileSync(new URL("../../apps/telloya/lib/telloya-stream.ts", import.meta.url), "utf8")
     expect(player).toContain(telloyaStreamFrameOrigin)
     expect(player).toContain("iframe?poster=")
-    expect(player).not.toMatch(/autoplay=true|loop=true|defaultTextTrack/)
+    expect(player).toContain("&autoplay=true")
+    expect(player).not.toMatch(/loop=true|muted=true|defaultTextTrack/)
   })
 })

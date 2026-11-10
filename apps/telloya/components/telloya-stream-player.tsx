@@ -25,7 +25,7 @@ export function TelloyaStreamPlayer() {
           <iframe
             ref={frameRef}
             className={styles.frame}
-            src={telloyaStreamPlayer.iframeSrc}
+            src={telloyaStreamPlayer.playbackSrc}
             title={telloyaStreamPlayer.title}
             aria-describedby={descriptionId}
             allow={telloyaStreamPlayer.allow}

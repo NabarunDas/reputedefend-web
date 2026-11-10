@@ -35,6 +35,7 @@ const payload: EnquiryPayload = {
   missedCallProblem: "Calls while on site",
   phoneSetup: "Mobile",
   contactPreference: "Weekday mornings",
+  receptionistQuestions: "Ask for the boiler make and whether they have a service plan.",
   privacyAccepted: true,
 }
 
@@ -58,6 +59,8 @@ describe("Telloya enquiry interest in Admin", () => {
     expect(screen.getByText("British")).toBeTruthy()
     expect(screen.getByText("English")).toBeTruthy()
     expect(screen.getByText("Weekday mornings")).toBeTruthy()
+    expect(screen.getByText("Ask for the boiler make and whether they have a service plan.")).toBeTruthy()
+    expect(screen.getByText(/does not book a demonstration or provision an agent/i)).toBeTruthy()
     expect(screen.getByText(/do not approve an offer, take payment, start Stripe/i)).toBeTruthy()
   })
 

@@ -68,6 +68,18 @@ export default function DemoPage() {
           <DemoExperience />
         </section>
 
+        <section className={styles.ctaSection} aria-labelledby="personalised-demo-title">
+          <h2 id="personalised-demo-title" className={styles.ctaTitle}>
+            {demoPageCopy.personalisedDemoTitle}
+          </h2>
+          <p className={styles.invitationLead}>{demoPageCopy.personalisedDemoLead}</p>
+          <div className={styles.ctaRow}>
+            <Link className={styles.primaryLink} href={demoPageCopy.enquireHref}>
+              {demoPageCopy.personalisedDemoTitle} <ArrowUpRight size={18} aria-hidden="true" />
+            </Link>
+          </div>
+        </section>
+
         <section className={styles.ctaSection} aria-labelledby="demo-cta-title">
           <h2 id="demo-cta-title" className={styles.ctaTitle}>
             {demoPageCopy.ctaTitle}

@@ -36,6 +36,7 @@ export const telloyaEnquiryLimits = {
   missedCallProblem: 5000,
   phoneSetup: 5000,
   contactPreference: 100,
+  receptionistQuestions: 2000,
   source: 32,
 } as const
 
@@ -85,6 +86,7 @@ export type TelloyaEnquiryInput = {
   missedCallProblem?: string
   phoneSetup?: string
   contactPreference?: string
+  receptionistQuestions?: string
 
   // Consent
   privacyAccepted: boolean
@@ -134,6 +136,7 @@ const STRING_FIELDS = [
   "missedCallProblem",
   "phoneSetup",
   "contactPreference",
+  "receptionistQuestions",
   "source",
 ] as const
 const PHONE_PATTERN = /^[+]?[\d\s().-]{7,}$/
@@ -293,6 +296,7 @@ export function validateTelloyaEnquiry(raw: unknown): TelloyaEnquiryValidation {
     missedCallProblem: input.missedCallProblem ? normalizeTelloyaText(asString(input.missedCallProblem)) : undefined,
     phoneSetup: input.phoneSetup ? normalizeTelloyaText(asString(input.phoneSetup)) : undefined,
     contactPreference: input.contactPreference ? normalizeTelloyaText(asString(input.contactPreference)) : undefined,
+    receptionistQuestions: input.receptionistQuestions ? normalizeTelloyaText(asString(input.receptionistQuestions)) || undefined : undefined,
     privacyAccepted: asAccepted(input.privacyAccepted),
     source: "telloya",
   }
@@ -344,6 +348,7 @@ function calculateDetailsLength(data: TelloyaEnquiryInput): number {
   if (data.missedCallProblem) parts.push(`Missed call requirements:\n${data.missedCallProblem}`)
   if (data.phoneSetup) parts.push(`Phone setup:\n${data.phoneSetup}`)
   if (data.contactPreference) parts.push(`Contact preference:\n${data.contactPreference}`)
+  if (data.receptionistQuestions) parts.push(`Receptionist questions:\n${data.receptionistQuestions}`)
   
   return parts.join("\n\n").length || "No additional details provided.".length
 }
@@ -509,6 +514,10 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
     errors.contactPreference = `Please keep your preference within ${telloyaEnquiryLimits.contactPreference} characters.`
   }
 
+  if (data.receptionistQuestions && data.receptionistQuestions.length > telloyaEnquiryLimits.receptionistQuestions) {
+    errors.receptionistQuestions = `Please keep this within ${telloyaEnquiryLimits.receptionistQuestions.toLocaleString("en-GB")} characters.`
+  }
+
   // Privacy acceptance
   if (!data.privacyAccepted) {
     errors.privacyAccepted = "Please confirm that you have read the privacy notice."
@@ -582,6 +591,10 @@ export function telloyaEnquiryToPayload(data: TelloyaEnquiryInput) {
   if (data.contactPreference) {
     detailsParts.push(`Contact preference:\n${data.contactPreference}`)
   }
+
+  if (data.receptionistQuestions) {
+    detailsParts.push(`Receptionist questions:\n${data.receptionistQuestions}`)
+  }
   
   const details = detailsParts.join("\n\n") || "No additional details provided."
 
@@ -615,6 +628,7 @@ export function telloyaEnquiryToPayload(data: TelloyaEnquiryInput) {
     missedCallProblem: data.missedCallProblem || "",
     phoneSetup: data.phoneSetup || "",
     contactPreference: data.contactPreference || "",
+    ...(data.receptionistQuestions ? { receptionistQuestions: data.receptionistQuestions } : {}),
     details,
     privacyAccepted: data.privacyAccepted,
     source: "telloya",

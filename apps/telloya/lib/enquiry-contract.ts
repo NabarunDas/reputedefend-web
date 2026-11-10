@@ -54,6 +54,7 @@ export type TelloyaEnquiryRequest = {
   missedCallProblem?: string
   phoneSetup?: string
   contactPreference?: string
+  receptionistQuestions?: string
   
   // Consent
   privacyAccepted: boolean

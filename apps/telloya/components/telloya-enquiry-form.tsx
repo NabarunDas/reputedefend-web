@@ -51,6 +51,7 @@ type EnquiryValues = {
   missedCallProblem: string
   phoneSetup: string
   contactPreference: string
+  receptionistQuestions: string
   // Consent
   privacyAccepted: boolean
 }
@@ -84,6 +85,7 @@ const INITIAL_VALUES: EnquiryValues = {
   missedCallProblem: "",
   phoneSetup: "",
   contactPreference: "",
+  receptionistQuestions: "",
   privacyAccepted: false,
 }
 
@@ -279,6 +281,9 @@ export function TelloyaEnquiryForm({
       if (!values.email || !/^\S+@\S+\.\S+$/.test(values.email)) stepErrors.email = "Please enter a valid email address."
       if (!values.phone || !/^[+]?[\d\s().-]{7,}$/.test(values.phone)) stepErrors.phone = "Please enter a valid phone number."
       if (!values.privacyAccepted) stepErrors.privacyAccepted = "Please confirm you have read the privacy notice."
+      if (values.receptionistQuestions.trim().length > 2000) {
+        stepErrors.receptionistQuestions = "Please keep this within 2,000 characters."
+      }
       if (!advising && values.overageInterested) {
         const cap = strictAmount(values.overageMonthlyCapGbp, 1, 100000)
         if (cap === undefined) stepErrors.overageMonthlyCapGbp = "Please enter a monthly spending cap."
@@ -406,6 +411,7 @@ export function TelloyaEnquiryForm({
       missedCallProblem: values.missedCallProblem,
       phoneSetup: values.phoneSetup,
       contactPreference: values.contactPreference,
+      receptionistQuestions: values.receptionistQuestions.trim() || undefined,
       privacyAccepted: values.privacyAccepted,
       source: "telloya",
       submissionKey: "", // Will be set below
@@ -441,6 +447,7 @@ export function TelloyaEnquiryForm({
       missedCallProblem: payload.missedCallProblem,
       phoneSetup: payload.phoneSetup,
       contactPreference: payload.contactPreference,
+      receptionistQuestions: payload.receptionistQuestions,
       privacyAccepted: payload.privacyAccepted,
     })
 
@@ -544,7 +551,10 @@ export function TelloyaEnquiryForm({
           </div>
         )}
         <p className={styles.successBody}>
-          Our team will review your enquiry and get in touch using the details you provided.
+          Thank you for your enquiry. We&apos;ll review your business requirements and contact you to arrange a personalised Telloya demonstration.
+        </p>
+        <p className={styles.successNote}>
+          This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically.
         </p>
         <p className={styles.successNote}>
           Please keep this reference handy so we can find your enquiry quickly if you contact us.
@@ -931,6 +941,21 @@ export function TelloyaEnquiryForm({
                 <input name="phone" type="tel" value={values.phone} onChange={(e) => update("phone", e.target.value)} maxLength={40} autoComplete="tel" inputMode="tel" required />
               </Field>
             </div>
+            <Field
+              id={`${formId}-receptionistQuestions`}
+              label="What would you like your receptionist to ask?"
+              optional
+              error={errors.receptionistQuestions}
+              hint="Tell us about the questions or information that matter to your business. We'll discuss the details with you before preparing your demonstration."
+            >
+              <textarea
+                name="receptionistQuestions"
+                value={values.receptionistQuestions}
+                onChange={(e) => update("receptionistQuestions", e.target.value)}
+                maxLength={2000}
+                rows={4}
+              />
+            </Field>
             <button
               type="button"
               className={styles.optionalToggle}

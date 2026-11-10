@@ -80,6 +80,11 @@ export function TelloyaEnquiryInterest({ payload, enquiryRef }: { payload: Enqui
     </dl>
     <h3>Optional details</h3>
     <dl>
+      <Row
+        label="Receptionist questions"
+        value={provided(payload.receptionistQuestions) || "Not provided"}
+        note="Optional. This does not book a demonstration or provision an agent."
+      />
       {optional.map(([label, value]) => <Row key={label} label={label} value={value || "Not provided"} note="Optional." />)}
     </dl>
   </section>

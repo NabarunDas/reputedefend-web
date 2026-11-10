@@ -31,6 +31,9 @@ export const demoPageCopy = {
   ctaTitle: "See whether Telloya fits the way you work",
   ctaLead:
     "Pricing explains the published plans. An enquiry asks for a conversation. Neither one starts the service or takes payment.",
+  personalisedDemoTitle: "Request a personalised demo",
+  personalisedDemoLead:
+    "Tell us about your business and the questions you'd like your receptionist to ask. We'll arrange a personalised live demonstration so you can experience a real AI conversation configured for your business.",
 } as const
 
 export const demoStages = [

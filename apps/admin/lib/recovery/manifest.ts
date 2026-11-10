@@ -1811,6 +1811,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya inbound admission reservation", probe: "public.commercial_usage_reserve_inbound_v1" },
   },
+  {
+    // Optional receptionist questions on the existing enquiry payload.
+    // Not applied to hosted DEV. Do not apply 20261110170000 to Production.
+    // Do not replay 20261103200518. No new table. containsDataChange stays false.
+    version: "20261110170000",
+    filename: "20261110170000_telloya_enquiry_receptionist_questions_v1.sql",
+    step: "Telloya enquiry receptionist questions",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya enquiry receptionist questions", probe: "admin_private.valid_enquiry_v1" },
+  },
 ]
 
 /**
@@ -1959,7 +1972,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` is empty.
+ * `pendingMigrations()` contains only `20261110170000_telloya_enquiry_receptionist_questions_v1.sql`.
+ * That file is not applied to hosted DEV. Do not apply `20261110170000` to Production.
  * `20261107120000` was applied once to DEV. Do not replay `20261107120000`.
  * Do not apply `20261107120000` to Production. Admission records are zero.
  * `20261107110000` was applied once to DEV. Do not replay `20261107110000`.

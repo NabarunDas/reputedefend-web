@@ -319,10 +319,15 @@
   margin-bottom: 10px;
 }
 
-.ctaLead {
+.ctaLead,
+.invitationLead {
   max-width: 560px;
   margin: 0 auto 18px;
   color: #d5e7d4;
+}
+
+.invitationLead {
+  max-width: 720px;
 }
 
 .ctaRow {

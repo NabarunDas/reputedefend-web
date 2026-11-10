@@ -47,6 +47,7 @@ type TelloyaPayload = EnquiryInput & {
   additionalLanguages?: string
   overageInterested: boolean
   overageMonthlyCapGbp?: number
+  receptionistQuestions?: string
 }
 
 // Telloya-specific email builders that integrate with the shared infrastructure
@@ -88,6 +89,7 @@ const telloyaEmailBuilder: CustomEmailBuilder = {
       additionalLanguages: payload.additionalLanguages,
       overageInterested: payload.overageInterested,
       overageMonthlyCapGbp: payload.overageMonthlyCapGbp,
+      receptionistQuestions: payload.receptionistQuestions,
     }
 
     return {

@@ -125,7 +125,7 @@ export function DemoExperience() {
           <article className={`${styles.beat} ${beat.speaker === "caller" ? styles.callerBeat : styles.telloyaBeat}`}>
             <p className={styles.speaker}>
               {beat.speaker === "telloya" ? "Telloya" : "Alex Rowan"}
-              <span>{beat.speaker === "telloya" ? "AI receptionist in this example" : "Fictional caller"}</span>
+              <span>{beat.speaker === "telloya" ? "Virtual receptionist in this example" : "Fictional caller"}</span>
             </p>
             <p className={styles.line}>{beat.text}</p>
           </article>

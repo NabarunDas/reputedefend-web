@@ -21,7 +21,7 @@ export const demoPageCopy = {
   walkthroughLead:
     "Follow a fictional customer conversation and see how Telloya prepares an enquiry summary.",
   fictionNote:
-    "Alex Rowan, Hartley Plumbing, Larkspur Close and Fernwick are fictional. No telephone number is shown, and no visit is booked.",
+    "Alex Rowan, Hartley Plumbing, Larkspur Close and Fernwick are fictional. In this interactive example, no telephone number is shown and no visit is booked. This note is about the walkthrough, not the film above.",
   playerTitle: "Sample conversation",
   pricingCta: "Explore Pricing",
   pricingHref: "/pricing",
@@ -80,7 +80,7 @@ export const demoBeats = [
     stage: "greeting",
     kind: "line",
     speaker: "telloya",
-    text: "Hello, you've reached Hartley Plumbing. I'm an AI receptionist. The owner is on a job and can't take your call. I can collect an enquiry so they can decide whether to call you back. Would you like to continue?",
+    text: "Hello, you've reached Hartley Plumbing. I'm the team's virtual receptionist. The owner is on a job and can't take your call. I can take your details and pass your message along. Would you like to continue?",
   },
   {
     id: "accept",

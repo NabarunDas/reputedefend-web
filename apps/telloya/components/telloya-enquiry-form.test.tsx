@@ -200,7 +200,7 @@ describe("Telloya short enquiry journey", () => {
     expect(screen.getByText(reference)).toBeInTheDocument()
     expect(screen.getByText("Our team will review your enquiry and get in touch using the details you provided.")).toBeInTheDocument()
     expect(screen.queryByText(/Admin will review it/)).not.toBeInTheDocument()
-    expect(screen.getByText(/confirmation email has been accepted/)).toBeInTheDocument()
+    expect(screen.getByText(/does not confirm the message has arrived in your inbox/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Copy reference" }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(reference))
   })

@@ -7,10 +7,10 @@ import { relaunchGuardAddon, telloyaPlans, overagePolicy } from "@/lib/pricing"
 describe("Telloya capability claims", () => {
   it("does not present the customer dashboard as operational", () => {
     const delivered = howItWorksContent.journey.steps.find((step) => step.number === "05")
-    expect(delivered?.description).toMatch(/agreed/i)
-    expect(delivered?.detail).toMatch(/planned/i)
-    expect(delivered?.detail).toMatch(/not operational/i)
-    expect(`${delivered?.description} ${delivered?.detail}`).not.toMatch(/appears in your dashboard/i)
+    expect(delivered?.description).toMatch(/agreed during setup/i)
+    expect(`${delivered?.description} ${delivered?.detail}`).not.toMatch(/dashboard/i)
+    const journey = howItWorksContent.journey.steps.map((step) => `${step.description} ${step.detail}`).join(" ")
+    expect(journey).not.toMatch(/dashboard is available|appears in your dashboard/i)
 
     expect(featuresContent.features.map((feature) => feature.title as string)).not.toContain("Usage visibility")
     expect(featuresContent.features.every((feature) => feature.stage === "demonstrated")).toBe(true)

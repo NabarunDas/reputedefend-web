@@ -11,7 +11,7 @@ export const relaunchGuardOverview = {
   hero: {
     eyebrow: "Optional ProfileRelaunch service",
     title: "Relaunch Guard",
-    lead: "Telloya answers missed calls. Relaunch Guard is a separate ProfileRelaunch service that checks a Google Business Profile. It is optional for Telloya customers.",
+    lead: "Telloya helps with missed-call enquiries. Relaunch Guard is a separate ProfileRelaunch service that checks a Google Business Profile. It is optional for Telloya customers.",
   },
   difference: {
     title: "Two different services",

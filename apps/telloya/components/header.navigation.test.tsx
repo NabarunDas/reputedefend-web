@@ -20,7 +20,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const primaryLabels = ["How It Works", "Features", "Industries", "Pricing", "Relaunch Guard", "See Example"]
+const primaryLabels = ["How It Works", "Features", "Industries", "Pricing", "Relaunch Guard", "Watch Demo"]
 const primaryHrefs = ["/how-it-works", "/features", "/industries", "/pricing", "/relaunch-guard", "/demo"]
 
 describe("Telloya navigation", () => {
@@ -32,7 +32,7 @@ describe("Telloya navigation", () => {
     expect(primary).toHaveLength(6)
     expect(primary[4]).toHaveTextContent("Relaunch Guard")
     expect(primary[4]).toHaveAttribute("href", "/relaunch-guard")
-    expect(primary[5]).toHaveTextContent("See Example")
+    expect(primary[5]).toHaveTextContent("Watch Demo")
     expect(primary[5]).toHaveAttribute("href", "/demo")
     expect(primary[5]).toHaveAttribute("aria-current", "page")
     expect(primary.slice(0, 5).every((link) => link.getAttribute("aria-current") === null)).toBe(true)
@@ -88,7 +88,7 @@ describe("Telloya navigation", () => {
       link.focus()
       expect(link).toHaveFocus()
     }
-    expect(within(menu as HTMLElement).getByRole("link", { name: "See Example" })).toHaveAttribute("aria-current", "page")
+    expect(within(menu as HTMLElement).getByRole("link", { name: "Watch Demo" })).toHaveAttribute("aria-current", "page")
     expect(within(menu as HTMLElement).getByRole("link", { name: "Customer Login" })).toHaveAttribute("href", getCustomerPortalHref())
 
     const opener = screen.getByRole("button", { name: "Open menu" })

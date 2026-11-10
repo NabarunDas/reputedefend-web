@@ -189,13 +189,17 @@
 .sectionHeader h2 { max-width:670px; }
 .sectionHeader > p { max-width:350px; color:#bbd0c0; line-height:1.7; margin-bottom:3px; }
 .process { padding-block: 100px 85px; border-bottom:1px solid rgba(198,242,188,.16); }
+.processIntro { max-width: min(40rem, 100%); margin-bottom: 40px; }
+.processIntro h2 { margin-bottom: 0; }
+.processIntro > p { max-width: min(24rem, 100%); margin: 16px 0 0; color: #e7f4e4; font-size: clamp(1.12rem, 1.6vw, 1.4rem); line-height: 1.35; letter-spacing: -.02em; }
 .processSteps { list-style:none; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:13px; padding:0; margin:0; }
 .processSteps li { border: 1px solid var(--glass-line); padding:28px 24px; border-radius:22px; background:linear-gradient(145deg,rgba(11,82,54,.46),rgba(4,36,28,.70)); box-shadow:inset 0 1px rgba(255,255,255,.07); transition: transform .25s, border-color .25s; }
 .processSteps li:hover, .benefitCard:hover, .industryTile:hover { transform: translateY(-4px); border-color:rgba(208,255,177,.44); }
 .stepNum { display:flex; align-items:center; justify-content:center; border:1px solid rgba(171,251,123,.34); width:42px; height:42px; border-radius:13px; margin-bottom:25px; background:rgba(123,236,104,.09); }
 .processSteps h3 {font-size:1.06rem; color:#eaf9e7; margin-bottom:12px; }
 .processSteps p {font-size:.86rem; color:#adc9b7; line-height:1.65; margin:0; }
-.processNote {font-size:.82rem; color:#bdd0c1; margin-top:22px; }
+.processNote { display:flex; align-items:flex-start; gap:10px; width:min(100%, 42rem); margin:22px 0 0; padding:13px 16px; border:1px solid rgba(198,242,188,.24); border-radius:16px; background:rgba(8,42,30,.55); color:#d7e8dc; font-size:.9rem; line-height:1.5; }
+.processNote svg { flex:none; margin-top:2px; color:#c0fc81; }
 .benefits { padding-block:95px; }
 .benefitGrid {display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
 .benefitCard { position:relative; min-height:212px; padding:26px; border:1px solid var(--glass-line); border-radius:22px; background:linear-gradient(135deg,rgba(17,82,53,.55),rgba(4,41,30,.57)); box-shadow: inset 0 1px rgba(241,255,226,.09); transition: transform .25s,border-color .25s; }

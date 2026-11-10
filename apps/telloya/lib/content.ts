@@ -44,7 +44,7 @@ export const homepageContent = {
   howItWorks: {
     eyebrow: "How Telloya works",
     title: "Four simple steps",
-    lead: "Telloya is designed to fit around your working day",
+    lead: "Built around your working day.",
     steps: [
       {
         number: "01",
@@ -68,7 +68,7 @@ export const homepageContent = {
       },
     ],
     note:
-      "Telloya is designed to help with missed-call enquiries. It does not automatically confirm appointments or guarantee callbacks.",
+      "Telloya helps capture missed-call enquiries. Your team stays in control of appointments and follow-ups.",
   },
   benefits: {
     eyebrow: "Benefits",

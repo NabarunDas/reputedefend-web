@@ -64,6 +64,7 @@ type ReserveResult = {
   agentRef?: string
   providerCallRef?: string | null
   released?: number
+  periodStart?: string
 }
 
 function hashFor(label: string): string {
@@ -547,11 +548,278 @@ describe("inbound admission reservation", () => {
           'commercial_usage_events',
           'commercial_usage_reservations',
           'commercial_usage_admissions',
-          'commercial_usage_admission_conflicts'
+          'commercial_usage_admission_conflicts',
+          'commercial_usage_ingest_diagnostics'
         )
     `)
     const names = columns.map(column => column.column_name).join(" ")
     expect(names).not.toMatch(/transcript|recording|access_token|raw_body|payload/)
+  })
+
+  function ingestCommand(seatKey: string, eventType: "call_started" | "call_ended" | "call_analyzed", callRef: string, admissionRef: string | null, overrides: Record<string, unknown> = {}) {
+    const label = String(overrides.bodyLabel ?? eventType)
+    const rest = { ...overrides }
+    delete rest.bodyLabel
+    return {
+      environment: "dev",
+      eventType,
+      providerCallRef: callRef,
+      toNumber: seat(seatKey)[6],
+      admissionRef,
+      bodySha256: hashFor(`${seatKey}:${callRef}:${label}`),
+      durationQuality: eventType === "call_ended" ? "confirmed" : null,
+      durationSeconds: eventType === "call_ended" ? 42 : null,
+      endedAt: eventType === "call_ended" ? NOW : null,
+      ...rest,
+    }
+  }
+
+  async function ingest(body: Record<string, unknown>): Promise<ReserveResult> {
+    return callSql("commercial_usage_ingest_inbound_admission_v1", body)
+  }
+
+  it("binds a later provider call to the admitted minute and does not bill an unmatched call", async () => {
+    const held = await reserve(command("A", { bodyLabel: "ingest-hold" }))
+    expect(held).toMatchObject({ status: "admitted", providerCallRef: null, billable: true })
+    const started = ingestCommand("A", "call_started", "call_ingest_hold", held.admissionRef ?? null)
+    expect(await ingest(started)).toMatchObject({
+      status: "accepted",
+      billable: true,
+      admissionRef: held.admissionRef,
+      reserveSeconds: 60,
+    })
+    expect(await ingest(started)).toMatchObject({ status: "replay", billable: false, reason: "duplicate_delivery", admissionRef: held.admissionRef })
+    const ended = ingestCommand("A", "call_ended", "call_ingest_hold", held.admissionRef ?? null)
+    expect(await ingest(ended)).toMatchObject({ status: "accepted", billable: true, admissionRef: held.admissionRef })
+    expect(await ingest(ended)).toMatchObject({ status: "replay", billable: false, admissionRef: held.admissionRef })
+    expect(await ingest({ ...ended, bodySha256: HASH_B })).toMatchObject({ status: "conflict", billable: false, admissionRef: held.admissionRef })
+    expect(await reservations("call_ingest_hold")).toBe(1)
+    const stored = (await rows<{ state: string; period_start: string; seconds: number; events: number }>(
+      `select reservation.state, event.period_start::text, event.duration_seconds as seconds,
+              (select count(*)::int from admin_private.commercial_usage_events where provider_call_ref = 'call_ingest_hold') as events
+       from admin_private.commercial_usage_reservations reservation
+       join admin_private.commercial_usage_events event on event.provider_call_ref = reservation.provider_call_ref
+       where reservation.provider_call_ref = 'call_ingest_hold'`,
+    ))[0]
+    expect(stored?.state).toBe("consumed")
+    expect(stored?.period_start.startsWith("2026-11-01")).toBe(true)
+    expect(stored?.seconds).toBe(42)
+    expect(stored?.events).toBe(1)
+    const unmatched = await ingest(ingestCommand("A", "call_started", "call_unmatched", null, { bodyLabel: "missing-metadata" }))
+    expect(unmatched).toMatchObject({ status: "denied", reason: "unmatched_admission", billable: false })
+    expect(await reservations("call_unmatched")).toBe(0)
+    expect((await rows<{ n: number }>("select count(*)::int as n from admin_private.commercial_usage_events where provider_call_ref = 'call_unmatched'"))[0]?.n).toBe(0)
+    expect((await rows<{ n: number }>("select count(*)::int as n from admin_private.commercial_usage_ingest_diagnostics where provider_call_ref = 'call_unmatched'"))[0]?.n).toBe(1)
+    expect(await ingest(ingestCommand("A", "call_started", "call_unmatched", null, { bodyLabel: "missing-metadata" }))).toMatchObject({
+      status: "replay",
+      reason: "unmatched_admission",
+      billable: false,
+    })
+  })
+
+  it("accepts call_ended before call_started and keeps one reservation and one duration", async () => {
+    const held = await reserve(command("A", { bodyLabel: "ended-first" }))
+    expect(held.status).toBe("admitted")
+    expect(await ingest(ingestCommand("A", "call_ended", "call_ended_first", held.admissionRef ?? null))).toMatchObject({
+      status: "accepted",
+      billable: true,
+      admissionRef: held.admissionRef,
+    })
+    expect(await ingest(ingestCommand("A", "call_started", "call_ended_first", null))).toMatchObject({
+      status: "accepted",
+      billable: true,
+      admissionRef: held.admissionRef,
+    })
+    expect(await reservations("call_ended_first")).toBe(1)
+    expect((await rows<{ n: number; seconds: number }>(
+      "select count(*)::int as n, coalesce(sum(duration_seconds), 0)::int as seconds from admin_private.commercial_usage_events where provider_call_ref = 'call_ended_first'",
+    ))[0]).toEqual({ n: 1, seconds: 42 })
+    expect((await rows<{ state: string }>("select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_ended_first'"))[0]?.state).toBe("consumed")
+  })
+
+  it("rejects a conflicting tenant, number, expired hold, and disconnected admission without usage", async () => {
+    const known = await reserve(command("A", { providerCallRef: "call_known_meta", bodyLabel: "known-meta" }))
+    expect(known.status).toBe("admitted")
+    expect(await ingest(ingestCommand("A", "call_started", "call_known_meta", null))).toMatchObject({
+      status: "accepted",
+      billable: true,
+      admissionRef: known.admissionRef,
+    })
+    const conflicted = await reserve(command("A", { bodyLabel: "cross-ingest" }))
+    expect(await ingest(ingestCommand("A", "call_started", "call_cross_ingest", conflicted.admissionRef ?? null, {
+      assertedSubscriptionId: seat("B")[3],
+    }))).toMatchObject({ status: "denied", reason: "cross_tenant", billable: false })
+    expect(await ingest(ingestCommand("A", "call_started", "call_wrong_number", conflicted.admissionRef ?? null, {
+      toNumber: seat("B")[6],
+      bodyLabel: "wrong-number",
+    }))).toMatchObject({ status: "denied", reason: "cross_tenant", billable: false })
+    expect(await ingest(ingestCommand("A", "call_started", "call_altered_ref", "adm_" + "c".repeat(32)))).toMatchObject({
+      status: "denied",
+      reason: "unmatched_admission",
+      billable: false,
+    })
+    expect(await ingest({ ...ingestCommand("A", "call_started", "call_bad_ref", conflicted.admissionRef ?? null), admissionRef: "not-an-admission" })).toMatchObject({
+      status: "rejected",
+      reason: "rejected_payload",
+      billable: false,
+    })
+    expect(await reservations("call_cross_ingest") + await reservations("call_wrong_number") + await reservations("call_altered_ref")).toBe(0)
+
+    const expiring = await reserve(command("A", { providerCallRef: "call_ingest_expired", bodyLabel: "ingest-expired" }))
+    await db.exec("set session_replication_role = replica")
+    await db.query(
+      "update admin_private.commercial_usage_admissions set expires_at = clock_timestamp() - interval '1 minute' where admission_ref = $1",
+      [expiring.admissionRef],
+    )
+    await db.exec("set session_replication_role = origin")
+    expect(await ingest(ingestCommand("A", "call_ended", "call_ingest_expired", expiring.admissionRef ?? null))).toMatchObject({
+      status: "denied",
+      reason: "admission_expired",
+      billable: false,
+    })
+    expect((await rows<{ n: number }>("select count(*)::int as n from admin_private.commercial_usage_events where provider_call_ref = 'call_ingest_expired'"))[0]?.n).toBe(0)
+    expect((await rows<{ state: string }>("select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_ingest_expired'"))[0]?.state).toBe("released")
+
+    const dropped = await reserve(command("A", { bodyLabel: "ingest-disconnect" }))
+    expect(await callSql("commercial_usage_release_inbound_admissions_v1", {
+      environment: "dev",
+      mode: "disconnect",
+      admissionRef: dropped.admissionRef,
+      now: NOW,
+    })).toMatchObject({ status: "disconnected", billable: false })
+    expect(await ingest(ingestCommand("A", "call_ended", "call_ingest_disconnect", dropped.admissionRef ?? null))).toMatchObject({
+      status: "denied",
+      reason: "admission_disconnected",
+      billable: false,
+    })
+    expect((await rows<{ n: number }>("select count(*)::int as n from admin_private.commercial_usage_events where provider_call_ref = 'call_ingest_disconnect'"))[0]?.n).toBe(0)
+  })
+
+  it("keeps the admitted period when the subscription has already renewed and stores only the structured lead", async () => {
+    const admissionRef = (await rows<{ admission_ref: string }>(
+      "select admission_ref from admin_private.commercial_usage_admissions where body_sha256 = $1",
+      [hashFor("R:renew-open")],
+    ))[0]?.admission_ref
+    expect(admissionRef).toMatch(/^adm_[0-9a-f]{32}$/)
+    const ended = await ingest(ingestCommand("R", "call_ended", "call_renewed_ingest", admissionRef ?? null, { bodyLabel: "renewed-ingest" }))
+    expect(ended).toMatchObject({ status: "accepted", billable: true, admissionRef })
+    expect(String(ended.periodStart ?? "")).toContain("2026-11-01")
+    const analyzed = await ingest(ingestCommand("R", "call_analyzed", "call_renewed_ingest", admissionRef ?? null, {
+      bodyLabel: "renewed-analysis",
+      summary: "Boiler repair tomorrow morning",
+      callerName: "Ada",
+      callbackNumber: "+447700900222",
+    }))
+    expect(analyzed).toMatchObject({ status: "accepted", billable: true, admissionRef })
+    const lead = (await rows<{ summary: string; business_id: string; n: number }>(
+      `select summary, business_id::text, (select count(*)::int from public.telloya_voice_leads where provider_call_ref = 'call_renewed_ingest') as n
+       from public.telloya_voice_leads where provider_call_ref = 'call_renewed_ingest'`,
+    ))[0]
+    expect(lead).toMatchObject({ summary: "Boiler repair tomorrow morning", business_id: seat("R")[1], n: 1 })
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from public.telloya_voice_notification_outbox where lead_id in (select id from public.telloya_voice_leads where provider_call_ref = 'call_renewed_ingest')",
+    ))[0]?.n).toBe(0)
+    expect(await reservations("call_renewed_ingest")).toBe(1)
+    expect((await rows<{ n: number }>("select count(*)::int as n from admin_private.commercial_usage_events where provider_call_ref = 'call_renewed_ingest'"))[0]?.n).toBe(1)
+  })
+
+  it("refuses to bind an admission to a usage event or reservation it does not own", async () => {
+    const otherPlan = "33333333-3333-4333-8333-333333333332"
+    await db.exec(`
+      insert into public.plan_versions(
+        id, product_code, version_number, status, effective_from, billing_cadence, currency,
+        amount_minor, tax_behaviour, terms_ref
+      ) values (
+        '${otherPlan}', 'TELLOYA', 2, 'DRAFT', '2026-10-01 00:00:00+00', 'MONTH', 'GBP',
+        4900, 'NOT_APPLICABLE', 'TELLOYA-USAGE-LEDGER'
+      );
+      insert into admin_private.commercial_usage_events(
+        environment, provider_call_ref, call_scope, subscription_id, business_id, location_id,
+        period_start, period_end, duration_seconds, duration_quality, body_sha256, plan_version_id,
+        included_minutes_snapshot, minutes_rollover_snapshot, overage_opt_in_snapshot,
+        overage_rate_minor_snapshot, overage_cap_minor_snapshot, overage_consent_at
+      ) values (
+        'dev', 'call_other_tenant_event', 'customer_phone', '${seat("B")[3]}', '${seat("B")[1]}', '${seat("B")[2]}',
+        '${PERIOD_START}', '${PERIOD_END}', 15, 'confirmed', '${HASH_B}', '${PLAN}',
+        120, false, true, 25, 25, '${CONSENT_AT}'
+      ), (
+        'dev', 'call_other_period_event', 'customer_phone', '${seat("A")[3]}', '${seat("A")[1]}', '${seat("A")[2]}',
+        '${PERIOD_END}', '${NEXT_END}', 15, 'confirmed', '${HASH_A}', '${PLAN}',
+        120, false, false, 25, null, null
+      );
+      insert into admin_private.commercial_usage_reservations(
+        environment, provider_call_ref, subscription_id, location_id, business_id,
+        period_start, period_end, reserved_seconds, state, plan_version_id,
+        included_minutes_snapshot, minutes_rollover_snapshot, overage_opt_in_snapshot,
+        overage_rate_minor_snapshot, overage_cap_minor_snapshot, overage_consent_at
+      ) values (
+        'dev', 'call_bad_terms', '${seat("A")[3]}', '${seat("A")[2]}', '${seat("A")[1]}',
+        '${PERIOD_START}', '${PERIOD_END}', 60, 'open', '${otherPlan}',
+        120, false, true, 99, 10, '${CONSENT_AT}'
+      );
+    `)
+    const tenantHold = await reserve(command("A", { bodyLabel: "other-tenant-event" }))
+    const periodHold = await reserve(command("A", { bodyLabel: "other-period-event" }))
+    const termsHold = await reserve(command("A", { bodyLabel: "bad-terms" }))
+    expect(tenantHold.status).toBe("admitted")
+    expect(periodHold.status).toBe("admitted")
+    expect(termsHold.status).toBe("admitted")
+    expect(await ingest(ingestCommand("A", "call_started", "call_other_tenant_event", tenantHold.admissionRef ?? null))).toMatchObject({
+      status: "denied",
+      reason: "usage_event_conflict",
+      billable: false,
+    })
+    expect(await ingest(ingestCommand("A", "call_ended", "call_other_period_event", periodHold.admissionRef ?? null))).toMatchObject({
+      status: "denied",
+      reason: "usage_event_conflict",
+      billable: false,
+    })
+    expect(await ingest(ingestCommand("A", "call_started", "call_bad_terms", termsHold.admissionRef ?? null))).toMatchObject({
+      status: "denied",
+      reason: "call_conflict",
+      billable: false,
+    })
+    const owned = (await rows<{ call_ref: string; subscription_id: string; seconds: number; period_start: string }>(
+      `select provider_call_ref as call_ref, subscription_id::text, duration_seconds as seconds, period_start::text
+       from admin_private.commercial_usage_events
+       where provider_call_ref in ('call_other_tenant_event', 'call_other_period_event')
+       order by provider_call_ref`,
+    ))
+    expect(owned).toEqual([
+      { call_ref: "call_other_period_event", subscription_id: seat("A")[3], seconds: 15, period_start: expect.stringContaining("2026-12-01") },
+      { call_ref: "call_other_tenant_event", subscription_id: seat("B")[3], seconds: 15, period_start: expect.stringContaining("2026-11-01") },
+    ])
+    expect(await reservations("call_other_tenant_event") + await reservations("call_other_period_event")).toBe(0)
+    expect(await reservations("call_bad_terms")).toBe(1)
+    expect((await rows<{ state: string; plan_version_id: string; rate: number }>(
+      "select state, plan_version_id::text, overage_rate_minor_snapshot as rate from admin_private.commercial_usage_reservations where provider_call_ref = 'call_bad_terms'",
+    ))[0]).toMatchObject({ state: "open", plan_version_id: otherPlan, rate: 99 })
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from admin_private.commercial_usage_admissions where admission_ref in ($1, $2, $3) and state = 'bound'",
+      [tenantHold.admissionRef, periodHold.admissionRef, termsHold.admissionRef],
+    ))[0]?.n).toBe(0)
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from admin_private.commercial_usage_receipts where provider_call_ref in ('call_other_tenant_event', 'call_other_period_event', 'call_bad_terms')",
+    ))[0]?.n).toBe(0)
+
+    const released = await reserve(command("A", { providerCallRef: "call_released_hold", bodyLabel: "released-hold" }))
+    expect(released.status).toBe("admitted")
+    await db.exec("update admin_private.commercial_usage_reservations set state = 'released' where provider_call_ref = 'call_released_hold'")
+    expect(await ingest(ingestCommand("A", "call_ended", "call_released_hold", released.admissionRef ?? null))).toMatchObject({
+      status: "denied",
+      reason: "reservation_released",
+      billable: false,
+    })
+    expect((await rows<{ state: string }>(
+      "select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_released_hold'",
+    ))[0]?.state).toBe("released")
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from admin_private.commercial_usage_events where provider_call_ref = 'call_released_hold'",
+    ))[0]?.n).toBe(0)
+    expect((await rows<{ state: string }>(
+      "select state from admin_private.commercial_usage_admissions where admission_ref = $1",
+      [released.admissionRef],
+    ))[0]?.state).toBe("reserved")
   })
 
   it("lets only the server role execute the public reservation command", async () => {
@@ -571,7 +839,11 @@ describe("inbound admission reservation", () => {
         has_function_privilege('service_role', 'public.commercial_usage_bind_inbound_admission_v1(jsonb)', 'EXECUTE') as service_bind,
         has_function_privilege('anon', 'public.commercial_usage_release_inbound_admissions_v1(jsonb)', 'EXECUTE') as anon_release,
         has_function_privilege('service_role', 'admin_private.commercial_usage_reserve_inbound_v1(jsonb)', 'EXECUTE') as service_private,
-        has_schema_privilege('service_role', 'admin_private', 'USAGE') as service_schema
+        has_schema_privilege('service_role', 'admin_private', 'USAGE') as service_schema,
+        has_function_privilege('service_role', 'public.commercial_usage_ingest_inbound_admission_v1(jsonb)', 'EXECUTE') as service_ingest,
+        has_function_privilege('anon', 'public.commercial_usage_ingest_inbound_admission_v1(jsonb)', 'EXECUTE') as anon_ingest,
+        has_function_privilege('authenticated', 'public.commercial_usage_ingest_inbound_admission_v1(jsonb)', 'EXECUTE') as auth_ingest,
+        has_function_privilege('service_role', 'admin_private.commercial_usage_ingest_inbound_admission_v1(jsonb)', 'EXECUTE') as service_private_ingest
     `))[0]
     expect(privileges).toEqual({
       service_public: true,
@@ -581,6 +853,10 @@ describe("inbound admission reservation", () => {
       anon_release: false,
       service_private: false,
       service_schema: false,
+      service_ingest: true,
+      anon_ingest: false,
+      auth_ingest: false,
+      service_private_ingest: false,
     })
     await db.exec("SET ROLE service_role")
     try {
@@ -590,6 +866,8 @@ describe("inbound admission reservation", () => {
       ))[0]?.result
       expect(recorded?.status).toBe("admitted")
       await expect(db.query("select admin_private.commercial_usage_reserve_inbound_v1('{}'::jsonb)")).rejects.toThrow(/permission denied/i)
+      await expect(db.query("select public.commercial_usage_ingest_inbound_admission_v1('{}'::jsonb)")).resolves.toBeTruthy()
+      await expect(db.query("select admin_private.commercial_usage_ingest_inbound_admission_v1('{}'::jsonb)")).rejects.toThrow(/permission denied/i)
     } finally {
       await db.exec("RESET ROLE")
     }
@@ -733,9 +1011,97 @@ describe.skipIf(!pgBin)("concurrent inbound reservation", () => {
       expect(denied.stderr + denied.stdout).toContain("allowance_exhausted")
       expect(await psql("select count(*) from admin_private.commercial_usage_admissions where state = 'reserved' and subscription_id = '" + seat("A")[3] + "'")).toBe("1")
       expect(await psql("select count(*) from admin_private.commercial_usage_reservations where provider_call_ref in ('call_race_1', 'call_race_2')")).toBe("0")
+      const winner = (admitted.stdout.match(/adm_[0-9a-f]{32}/) ?? [])[0]
+      expect(winner).toBeTruthy()
+      const started = await psql(jsonCall("commercial_usage_ingest_inbound_admission_v1", {
+        environment: "dev",
+        eventType: "call_started",
+        providerCallRef: "call_race_winner",
+        toNumber: seat("A")[6],
+        admissionRef: winner,
+        bodySha256: hashFor("race-winner-start"),
+      }))
+      const ended = await psql(jsonCall("commercial_usage_ingest_inbound_admission_v1", {
+        environment: "dev",
+        eventType: "call_ended",
+        providerCallRef: "call_race_winner",
+        toNumber: seat("A")[6],
+        admissionRef: winner,
+        bodySha256: hashFor("race-winner-end"),
+        durationQuality: "confirmed",
+        durationSeconds: 42,
+        endedAt: NOW,
+      }))
+      expect(started).toContain("\"billable\": true")
+      expect(ended).toContain("\"billable\": true")
+      const loser = await psql(jsonCall("commercial_usage_ingest_inbound_admission_v1", {
+        environment: "dev",
+        eventType: "call_ended",
+        providerCallRef: "call_race_loser",
+        toNumber: seat("A")[6],
+        admissionRef: null,
+        bodySha256: hashFor("race-loser"),
+        durationQuality: "confirmed",
+        durationSeconds: 42,
+        endedAt: NOW,
+      }))
+      expect(loser).toContain("unmatched_admission")
+      expect(loser).toContain("\"billable\": false")
+      expect(await psql("select count(*) from admin_private.commercial_usage_reservations where provider_call_ref = 'call_race_winner'")).toBe("1")
+      expect(await psql("select count(*) from admin_private.commercial_usage_events where provider_call_ref in ('call_race_winner', 'call_race_loser')")).toBe("1")
     } finally {
       first.end()
       second.end()
+    }
+  })
+
+  it("binds and records call_started and call_ended together without a second reservation or a deadlock", async () => {
+    const opened = JSON.parse(await psql(jsonCall("commercial_usage_reserve_inbound_v1", command("R", { bodyLabel: "ingest-race" })))) as ReserveResult
+    expect(opened).toMatchObject({ status: "admitted", providerCallRef: null, billable: true })
+    const holder = heldSession()
+    const started = heldSession()
+    const ended = heldSession()
+    try {
+      await holder.query("BEGIN;")
+      expect((await holder.query(periodLockSql(opened.admissionRef!))).stderr).toBe("")
+      const pendingStart = started.query(jsonCall("commercial_usage_ingest_inbound_admission_v1", {
+        environment: "dev",
+        eventType: "call_started",
+        providerCallRef: "call_ingest_race",
+        toNumber: seat("R")[6],
+        admissionRef: opened.admissionRef,
+        bodySha256: hashFor("ingest-race-start"),
+      }))
+      const pendingEnd = ended.query(jsonCall("commercial_usage_ingest_inbound_admission_v1", {
+        environment: "dev",
+        eventType: "call_ended",
+        providerCallRef: "call_ingest_race",
+        toNumber: seat("R")[6],
+        admissionRef: opened.admissionRef,
+        bodySha256: hashFor("ingest-race-end"),
+        durationQuality: "confirmed",
+        durationSeconds: 42,
+        endedAt: NOW,
+      }))
+      await new Promise(resolve => setTimeout(resolve, 400))
+      expect(await activityCount("a.query like '%call_ingest_race%' and a.wait_event_type = 'Lock' and a.wait_event = 'advisory'")).toBe("2")
+      expect(await grantedTupleLocks("call_ingest_race")).toBe("0")
+      await holder.query("COMMIT;")
+      const startText = (await pendingStart).stderr + (await pendingStart).stdout
+      const endText = (await pendingEnd).stderr + (await pendingEnd).stdout
+      expect(startText.toLowerCase()).not.toContain("deadlock")
+      expect(endText.toLowerCase()).not.toContain("deadlock")
+      expect(startText).toContain("\"billable\": true")
+      expect(endText).toContain("\"billable\": true")
+      expect(await psql("select count(*) from admin_private.commercial_usage_reservations where provider_call_ref = 'call_ingest_race'")).toBe("1")
+      expect(await psql("select count(*) from admin_private.commercial_usage_events where provider_call_ref = 'call_ingest_race'")).toBe("1")
+      expect(await psql("select coalesce(sum(duration_seconds), 0) from admin_private.commercial_usage_events where provider_call_ref = 'call_ingest_race'")).toBe("42")
+      expect(await psql("select period_start::text from admin_private.commercial_usage_events where provider_call_ref = 'call_ingest_race'")).toContain("2026-11-01")
+    } finally {
+      await holder.query("ROLLBACK;").catch(() => undefined)
+      holder.end()
+      started.end()
+      ended.end()
     }
   })
 
@@ -907,7 +1273,7 @@ describe.skipIf(!pgBin)("concurrent inbound reservation", () => {
       expect(await psql("select state from admin_private.commercial_usage_admissions where admission_ref = '" + opened.admissionRef + "'")).toBe("expired")
       expect(await psql("select count(*) from admin_private.commercial_usage_admissions where body_sha256 = '" + replayHash + "'")).toBe("1")
       expect(await psql("select reservation_id is null from admin_private.commercial_usage_admissions where admission_ref = '" + opened.admissionRef + "'")).toBe("t")
-      expect(await psql("select count(*) from admin_private.commercial_usage_reservations where subscription_id = '" + seat("R")[3] + "'")).toBe("2")
+      expect(await psql("select count(*) from admin_private.commercial_usage_reservations where subscription_id = '" + seat("R")[3] + "'")).toBe("3")
     } finally {
       await holder.query("ROLLBACK;").catch(() => undefined)
       holder.end()
@@ -938,6 +1304,22 @@ describe.skipIf(!pgBin)("concurrent inbound reservation", () => {
     }
     expect(await psql("select period_start::text from admin_private.commercial_usage_admissions where body_sha256 = '" + hashFor("R:renew-race") + "'")).toContain("2026-11-01")
     expect(await psql("select current_period_start::text from public.commercial_subscriptions where id = '" + seat("R")[3] + "'")).toContain("2026-12-01")
+    const renewedAdmission = await psql("select admission_ref from admin_private.commercial_usage_admissions where body_sha256 = '" + hashFor("R:renew-race") + "'")
+    const renewedIngest = await psql(jsonCall("commercial_usage_ingest_inbound_admission_v1", {
+      environment: "dev",
+      eventType: "call_ended",
+      providerCallRef: "call_renew_race_end",
+      toNumber: seat("R")[6],
+      admissionRef: renewedAdmission,
+      bodySha256: hashFor("renew-race-end"),
+      durationQuality: "confirmed",
+      durationSeconds: 30,
+      endedAt: "2026-12-15T12:00:00.000Z",
+    }))
+    expect(renewedIngest).toContain("\"billable\": true")
+    expect(await psql("select period_start::text from admin_private.commercial_usage_events where provider_call_ref = 'call_renew_race_end'")).toContain("2026-11-01")
+    expect(await psql("select count(*) from admin_private.commercial_usage_reservations where provider_call_ref = 'call_renew_race_end'")).toBe("1")
+    expect(await psql("select state from admin_private.commercial_usage_reservations where provider_call_ref = 'call_renew_race_end'")).toBe("consumed")
 
     const canceller = heldSession()
     const holder = heldSession()

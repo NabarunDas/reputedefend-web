@@ -1811,6 +1811,24 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya inbound admission reservation", probe: "public.commercial_usage_reserve_inbound_v1" },
   },
+  {
+    // Inbound admission usage ingest. Not applied to hosted DEV or Production.
+    // The verified DEV ledger still contains 117 entries and ends at
+    // 20261107120000. Do not apply 20261107130000 to hosted DEV. Do not apply
+    // 20261107130000 to Production. Do not replay 20261107120000. Do not replay
+    // 20261107110000. The command binds an admitted call and records its later
+    // provider event in one transaction. An unmatched call stores a
+    // non-personal diagnostic and no billable usage. containsDataChange stays
+    // false. safeToReplay stays false. Both usage flags stay off.
+    version: "20261107130000",
+    filename: "20261107130000_telloya_inbound_admission_usage_ingest_v1.sql",
+    step: "Telloya inbound admission usage ingest",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya inbound admission usage ingest", probe: "public.commercial_usage_ingest_inbound_admission_v1" },
+  },
 ]
 
 /**
@@ -1959,7 +1977,7 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` is empty.
+ * `pendingMigrations()` contains only `20261107130000`. Do not apply it to hosted DEV or Production.
  * `20261107120000` was applied once to DEV. Do not replay `20261107120000`.
  * Do not apply `20261107120000` to Production. Admission records are zero.
  * `20261107110000` was applied once to DEV. Do not replay `20261107110000`.

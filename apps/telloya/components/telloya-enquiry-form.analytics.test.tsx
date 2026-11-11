@@ -64,7 +64,7 @@ describe("Telloya enquiry analytics", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
     fillAndSubmit(true)
-    await screen.findByRole("heading", { name: /we have received your enquiry/i })
+    await screen.findByRole("heading", { name: /Your enquiry is in!/i })
     expect(sendTelloyaLeadConversion).toHaveBeenCalledTimes(1)
     expect(sendTelloyaLeadConversion).toHaveBeenCalledWith({
       planTier: "growth",
@@ -102,19 +102,19 @@ describe("Telloya enquiry analytics", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     fillAndSubmit(false)
-    await screen.findByRole("heading", { name: /we have received your enquiry/i })
+    await screen.findByRole("heading", { name: /Your enquiry is in!/i })
     expect(sendTelloyaLeadConversion).not.toHaveBeenCalled()
 
     cleanup()
     fillAndSubmit(false)
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Unable to process this enquiry right now."))
-    expect(screen.queryByRole("heading", { name: /we have received your enquiry/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: /Your enquiry is in!/i })).not.toBeInTheDocument()
     expect(sendTelloyaLeadConversion).not.toHaveBeenCalled()
 
     cleanup()
     fillAndSubmit(false)
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Unable to process this enquiry right now."))
-    expect(screen.queryByRole("heading", { name: /we have received your enquiry/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: /Your enquiry is in!/i })).not.toBeInTheDocument()
     expect(sendTelloyaLeadConversion).not.toHaveBeenCalled()
   })
 })

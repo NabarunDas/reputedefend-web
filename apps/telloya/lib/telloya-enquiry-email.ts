@@ -11,8 +11,9 @@ function brandedSubject(rest: string) {
   return `[${brandName}] ${rest}`
 }
 
-export function telloyaCustomerAcknowledgementSubject(ref: string) {
-  return brandedSubject(`Your Telloya enquiry (${ref})`)
+export function telloyaCustomerAcknowledgementSubject(ref: string, requestIntent?: string) {
+  const title = isPersonalisedDemo(requestIntent) ? "Your demo request is in" : "Your enquiry is in"
+  return brandedSubject(`${title} — ${ref}`)
 }
 
 function isPersonalisedDemo(requestIntent: string | undefined) {
@@ -24,39 +25,28 @@ const personalisedDemoBoundary = "Requesting a demonstration does not confirm an
 export function telloyaCustomerAcknowledgement(ref: string, requestIntent?: string) {
   const personalisedDemo = isPersonalisedDemo(requestIntent)
   return renderCustomerEmail({
-    title: `Your Telloya enquiry reference: ${ref}`,
-    blocks: [
-      { type: "paragraph", text: "Hello," },
-      { 
-        type: "paragraph", 
-        text: personalisedDemo
-          ? `Thank you for your enquiry. We'll review your requirements and contact you to arrange a time for you to call our demonstration number. We have saved it as reference ${ref}.`
-          : `Thank you for your interest in Telloya. We have received your enquiry and saved it as reference ${ref}.`
-      },
-      { 
-        type: "paragraph", 
-        text: "Telloya is our AI receptionist service designed for busy tradespeople and local service businesses. When you cannot answer calls, Telloya helps capture missed enquiries and the details you need to follow up." 
-      },
-      { 
-        type: "paragraph", 
-        text: personalisedDemo
-          ? personalisedDemoBoundary
-          : "A member of our team will review your enquiry and contact you at the email address or phone number you provided to discuss how Telloya can help your business."
-      },
-      { 
-        type: "paragraph", 
-        text: "Submitting this form does not, by itself, create a client relationship or activate any service. We will discuss your requirements, pricing, and next steps when we reach out." 
-      },
-      { type: "paragraph", text: "Kind regards," },
-      { type: "paragraph", text: "Telloya — a service operated by ProfileRelaunch Ltd" },
-    ],
+    title: personalisedDemo ? "Your demo request is in!" : "Your enquiry is in!",
+    blocks: personalisedDemo
+      ? [
+          { type: "paragraph", text: "Hello," },
+          { type: "paragraph", text: "We've received your request for a personalised Telloya demonstration." },
+          { type: "heading", text: "What happens next?" },
+          { type: "paragraph", text: "We'll review your requirements and get in touch to arrange your personalised demo call." },
+          { type: "paragraph", text: personalisedDemoBoundary },
+          { type: "paragraph", text: "Kind regards," },
+        ]
+      : [
+          { type: "paragraph", text: "Hello," },
+          { type: "paragraph", text: "Thanks for your interest in Telloya. We've received your enquiry and will review your requirements. Our team will get in touch to discuss the next steps." },
+          { type: "paragraph", text: "Kind regards," },
+        ],
     caseRef: ref,
     brand: {
       name: "Telloya",
       tagline: "AI Receptionist — operated by ProfileRelaunch Ltd",
       siteUrl: "https://telloya.com",
       logoUrl: null,
-      referenceLabel: "Enquiry reference",
+      referenceLabel: "Your reference",
     },
   })
 }

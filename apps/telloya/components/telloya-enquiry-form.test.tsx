@@ -596,6 +596,7 @@ describe("Telloya progressive enquiry journey", () => {
 describe("Telloya enquiry text entry", () => {
   afterEach(() => {
     cleanup()
+    vi.unstubAllGlobals()
   })
 
   it("keeps focus and the typed value on each character", () => {
@@ -649,6 +650,44 @@ describe("Telloya enquiry text entry", () => {
     expect(name).toHaveValue("A")
     expect(screen.queryByRole("radio", { name: /^Basic/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument()
+  })
+
+  it("submits an optional Custom preference without quotation fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => ({
+        ok: true,
+        enquiryRef: reference,
+        leadConversion: false,
+        receiptEmailStatus: "sent",
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    renderEnabled("", false, "personalised-demo")
+    fireEvent.change(screen.getByRole("combobox", { name: /Plan preference/ }), { target: { value: "custom" } })
+    expect(screen.queryByRole("spinbutton", { name: /Monthly minutes needed/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("spinbutton", { name: /Phone numbers needed/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("spinbutton", { name: /Operating locations needed/ })).not.toBeInTheDocument()
+    fillContact()
+    fireEvent.click(screen.getByRole("button", { name: "Request demonstration" }))
+    await screen.findByRole("heading", { name: /we have received your enquiry/i })
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>
+    expect(body.planTier).toBe("custom")
+    expect(body.requestIntent).toBe("personalised-demo")
+    expect(body.customMonthlyMinutes).toBeUndefined()
+    expect(body.customPhoneNumbers).toBeUndefined()
+    expect(body.customLocations).toBeUndefined()
+    expect(validateTelloyaEnquiry(body).valid).toBe(true)
+  })
+
+  it("focuses the visible custom trade field from the error summary", () => {
+    renderEnabled("", false, "personalised-demo")
+    fireEvent.change(screen.getByRole("combobox", { name: /Business type or trade/ }), { target: { value: "other" } })
+    fireEvent.click(screen.getByRole("button", { name: "Request demonstration" }))
+    const summary = screen.getByRole("alert")
+    expect(summary).toHaveTextContent("Please tell us what your business does.")
+    fireEvent.click(screen.getByRole("button", { name: "Please tell us what your business does." }))
+    expect(document.activeElement).toHaveAttribute("name", "trade")
+    expect(document.activeElement?.id).toMatch(/tradeOther$/)
   })
 
   it("keeps fields editable after validation errors", () => {

@@ -258,6 +258,18 @@ describe("Telloya enquiry handover", () => {
     const missingMinutes = validateTelloyaEnquiry(requestBody({ planTier: "custom", customPhoneNumbers: 2, customLocations: 4 }))
     expect(missingMinutes.valid).toBe(false)
     if (!missingMinutes.valid) expect(missingMinutes.errors?.customMonthlyCalls).toBeUndefined()
+    const demoPreference = validateTelloyaEnquiry(requestBody({
+      planTier: "custom",
+      requestIntent: "personalised-demo",
+    }))
+    expect(demoPreference.valid).toBe(true)
+    if (demoPreference.valid) {
+      expect(demoPreference.data.planTier).toBe("custom")
+      expect(demoPreference.data.customMonthlyMinutes).toBeUndefined()
+      expect(demoPreference.data.customPhoneNumbers).toBeUndefined()
+      expect(demoPreference.data.customLocations).toBeUndefined()
+      expect(demoPreference.data.requestIntent).toBe("personalised-demo")
+    }
   })
 
   it("reuses one TY reference when the same submission key is retried", async () => {

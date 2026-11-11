@@ -419,6 +419,7 @@ describe("CaseIntakeForm", () => {
     fireEvent.change(country, { target: { value: "UK" } })
     fireEvent.blur(country)
     expect(country).toHaveValue("United Kingdom")
+    expect(screen.queryByRole("button", { name: "Clear country" })).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Alex Morgan-Jones" } })
     continueStep()
     continueStep()

@@ -297,7 +297,7 @@ export function TelloyaEnquiryForm({
         else if (guardCount === "invalid") stepErrors.guardLocationCount = "Please enter a whole number between 1 and 999."
       }
 
-      if (values.planTier === "custom") {
+      if (!demoRequest && values.planTier === "custom") {
         const minutes = strictWholeNumber(values.customMonthlyMinutes, 1, 1000000)
         if (minutes === undefined) stepErrors.customMonthlyMinutes = "Please enter monthly minutes required."
         else if (minutes === "invalid") stepErrors.customMonthlyMinutes = "Please enter a whole number between 1 and 1,000,000."
@@ -676,7 +676,8 @@ export function TelloyaEnquiryForm({
                     <button
                       type="button"
                       onClick={() => {
-                        const focus = () => document.getElementById(`${formId}-${field}`)?.focus()
+                        const focusId = field === "trade" && tradeChoice === OTHER_TRADE ? `${formId}-tradeOther` : `${formId}-${field}`
+                        const focus = () => document.getElementById(focusId)?.focus()
                         if (OPTIONAL_FIELDS.has(field)) {
                           setOptionalOpen(true)
                           window.setTimeout(focus, 0)
@@ -991,6 +992,7 @@ export function TelloyaEnquiryForm({
                   value={values.country}
                   onChange={(next) => update("country", next)}
                   appearance={countryAppearance}
+                  clearable
                   required
                 />
               </Field>
@@ -1048,21 +1050,6 @@ export function TelloyaEnquiryForm({
                   ))}
                 </select>
               </Field>
-            )}
-            {demoRequest && values.planTier === "custom" && (
-              <div className={styles.fields}>
-                <div className={styles.twoCol}>
-                  <Field id={`${formId}-customMonthlyMinutes`} label="Monthly minutes needed" error={errors.customMonthlyMinutes}>
-                    <input name="customMonthlyMinutes" type="number" min="1" value={values.customMonthlyMinutes} onChange={(e) => update("customMonthlyMinutes", e.target.value)} required />
-                  </Field>
-                  <Field id={`${formId}-customPhoneNumbers`} label="Phone numbers needed" error={errors.customPhoneNumbers}>
-                    <input name="customPhoneNumbers" type="number" min="1" value={values.customPhoneNumbers} onChange={(e) => update("customPhoneNumbers", e.target.value)} required />
-                  </Field>
-                </div>
-                <Field id={`${formId}-customLocations`} label="Operating locations needed" error={errors.customLocations}>
-                  <input name="customLocations" type="number" min="1" value={values.customLocations} onChange={(e) => update("customLocations", e.target.value)} required />
-                </Field>
-              </div>
             )}
             <button
               type="button"

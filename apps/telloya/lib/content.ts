@@ -834,10 +834,7 @@ export const pricingContent = {
   international: {
     title: "International availability",
     points: [
-      "Published prices are in GBP",
-      "Settlement currency and payment terms are confirmed before proceeding",
       commercialCopy.international,
-      "This page does not offer local-currency checkout or currency conversion",
       "This page does not list countries, carriers or languages as currently available",
     ],
     note:
@@ -876,7 +873,7 @@ export const pricingContent = {
       },
       {
         q: "What currencies are supported?",
-        a: `Published plan prices are in GBP. ${vatStatement} Settlement currency and payment terms are confirmed before you proceed. This website does not offer local-currency checkout or conversion.`,
+        a: `Published plan prices are in GBP. ${vatStatement}`,
       },
       {
         q: "Can I choose a voice, accent or language?",

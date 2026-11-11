@@ -139,14 +139,12 @@ export default async function EnquirePage({
                 )}
               </ol>
             </section>
-            <section className={styles.info} aria-labelledby="info-title">
-              <h2 id="info-title">{demoRequest ? "Your demonstration" : "Before you enquire"}</h2>
-              <p>
-                {demoRequest
-                  ? "We'll contact you to arrange a suitable time and give you our demonstration telephone number."
-                  : "No payment is needed to enquire. We'll confirm the advertised price and your telephone setup before you decide."}
-              </p>
-            </section>
+            {!demoRequest && (
+              <section className={styles.info} aria-labelledby="info-title">
+                <h2 id="info-title">Before you enquire</h2>
+                <p>No payment is needed to enquire. We&apos;ll confirm the advertised price and your telephone setup before you decide.</p>
+              </section>
+            )}
           </aside>
         </div>
       </div>

@@ -21,6 +21,7 @@ type CountryComboboxProps = {
   className?: string
   required?: boolean
   appearance?: CountryComboboxAppearance
+  clearable?: boolean
   "aria-invalid"?: boolean
   "aria-describedby"?: string
 }
@@ -33,6 +34,7 @@ export function CountryCombobox({
   className,
   required,
   appearance,
+  clearable = false,
   "aria-invalid": ariaInvalid,
   "aria-describedby": ariaDescribedBy,
 }: CountryComboboxProps) {
@@ -136,8 +138,8 @@ export function CountryCombobox({
         }}
         onKeyDown={onKeyDown}
       />
-      {selectedCode && !editing ? (
-        <button type="button" className={appearance?.clear ?? styles.clearCountry} onClick={clearCountry}>
+      {clearable && selectedCode && !editing ? (
+        <button type="button" className={appearance?.clear} onClick={clearCountry}>
           Clear country
         </button>
       ) : null}

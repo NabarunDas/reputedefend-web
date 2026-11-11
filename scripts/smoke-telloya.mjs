@@ -83,7 +83,7 @@ async function testLaunchState(launched, description) {
     assert.ok(ready, `Telloya production server did not become ready\n${serverLog}`)
 
     // Test homepage, robots.txt, and sitemap
-    for (const path of ["/", "/demo", "/robots.txt", "/sitemap.xml"]) {
+    for (const path of ["/", "/demo", "/industries", "/robots.txt", "/sitemap.xml"]) {
       const response = await fetch(`${origin}${path}`, { redirect: "manual" })
       assert.equal(response.headers.get("content-security-policy-report-only"), null, path)
       const csp = response.headers.get("content-security-policy") ?? ""
@@ -106,6 +106,8 @@ async function testLaunchState(launched, description) {
       if (path === "/") {
         assert.match(content, /_next\/static\//, path)
         assert.match(content, /Telloya/, path)
+        assert.match(content, /Experience Telloya answering calls for your business/)
+        assert.match(content, /\/enquire\?intent=personalised-demo/)
         assert.match(content, /Don(?:'|&#0?39;|&#x27;)t Let Missed Calls/, "Homepage should have hero headline")
         assert.match(content, /Cost You Customers/, "Homepage should have headline emphasis")
         assert.doesNotMatch(content, /Never Misses a Call/, "Homepage should not use the retired absolute claim")
@@ -126,10 +128,28 @@ async function testLaunchState(launched, description) {
         assert.match(content, /Illustrative demonstration featuring fictional characters and enquiries/)
         assert.match(content, /See how Telloya works/)
         assert.match(content, /Explore Pricing/)
-        assert.match(content, /Enquire About Telloya/)
+        assert.match(content, /Experience Telloya answering calls for your business/)
+        assert.match(content, /No payment details required/)
+        assert.match(content, /Request a personalised demo/)
+        assert.match(content, /\/enquire\?intent=personalised-demo/)
+        assert.doesNotMatch(content, /\bfree demo\b/i)
+        assert.match(content, /Enquire about Telloya/)
+        assert.doesNotMatch(content, /See whether Telloya fits the way you work/)
         assert.match(content, /Hartley Plumbing/)
         assert.match(content, /See Telloya in Action/)
         assert.doesNotMatch(content, /Retell|Twilio|Stripe/)
+      }
+
+      if (path === "/industries") {
+        assert.match(content, /Illustrative example/)
+        assert.match(content, /Leaking kitchen tap/)
+        assert.match(content, /Heating repair enquiry/)
+        assert.match(content, /Additional sockets/)
+        assert.match(content, /Routine tenant repair/)
+        assert.match(content, /not a real customer conversation or a testimonial/)
+        assert.match(content, /\/enquire\?intent=personalised-demo/)
+        assert.match(content, /Enquire now/)
+        assert.doesNotMatch(content, /customers say|read our testimonials|success stories/i)
       }
 
       if (path === "/robots.txt") {

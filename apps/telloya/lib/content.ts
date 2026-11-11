@@ -8,6 +8,30 @@
  */
 
 import { brandName } from "@/lib/brand"
+
+/** Approved personalised-demonstration offer. A request is not a booking. */
+export const personalisedDemoOffer = {
+  heading: "Experience Telloya answering calls for your business",
+  description:
+    "Tell us about your business and what you'd like your AI receptionist to say. We'll prepare a personalised demonstration and arrange a time for you to call our demo number.",
+  decision: "Experience a real AI conversation before deciding whether Telloya is right for you.",
+  reassurance: "No payment details required. No obligation to subscribe.",
+  boundary:
+    "Submitting the form is a demonstration request, not a confirmed appointment. We arrange it manually after reviewing your requirements. No subscription starts automatically, and no agent is provisioned for you.",
+  support:
+    "We confirm what can be supported before arranging the demonstration. A particular time is not guaranteed.",
+  distinction:
+    "The film and walkthrough are illustrative examples. A personalised demonstration is a real AI telephone conversation, using our demonstration number, arranged after your enquiry.",
+  steps: [
+    "Tell us about your business and what you would like the receptionist to say or ask.",
+    "We review your requirements and prepare a demonstration for your business.",
+    "We arrange a suitable time and give you our demonstration telephone number.",
+    "You call that number and experience a real AI conversation configured for your business.",
+    "You decide whether you would like to proceed.",
+  ],
+  cta: "Request a personalised demo",
+  href: "/enquire?intent=personalised-demo",
+} as const
 import { getCustomerPortalHref } from "@/lib/customer-portal"
 import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes, standardEntitlement, commercialCopy, coreTelloyaCapabilities } from "./pricing"
 
@@ -182,6 +206,7 @@ export const homepageContent = {
       },
     ],
   },
+  personalisedDemo: personalisedDemoOffer,
   finalCta: {
     title: "Stay focused on your work. Let Telloya help with missed calls.",
     cta: "Enquire about Telloya",
@@ -256,7 +281,7 @@ export const howItWorksContent = {
     eyebrow: "Customer experience",
     title: "What the caller hears",
     lead:
-      "We've designed Telloya to feel professional and helpful, not robotic. Here's an illustrative example of how a call might sound.",
+      "We've designed Telloya to feel professional and helpful. Here's an illustrative example of what a caller might hear from the AI receptionist.",
     example: {
       greeting: "Thank you for calling [Business Name]. I'm the team's virtual receptionist. The team can't answer right now, but I'd be happy to take your details and pass your message along. How can I help you today?",
       flow: [
@@ -309,10 +334,13 @@ export const howItWorksContent = {
     ],
   },
   cta: {
-    title: "Ready to see if Telloya fits your business?",
-    description: "Enquire about the service and we'll help you understand if it's right for your setup.",
-    cta: "Enquire now",
-    href: "/enquire",
+    title: personalisedDemoOffer.heading,
+    description: personalisedDemoOffer.description,
+    reassurance: personalisedDemoOffer.reassurance,
+    cta: personalisedDemoOffer.cta,
+    href: personalisedDemoOffer.href,
+    secondaryCta: "Enquire now",
+    secondaryHref: "/enquire",
   },
 } as const
 
@@ -451,9 +479,13 @@ export const featuresContent = {
     note: "These items are not current features and are not included in a plan price.",
   },
   cta: {
-    title: "Want to see how Telloya could work for you?",
-    cta: "Get in touch",
-    href: "/enquire",
+    title: personalisedDemoOffer.heading,
+    description: personalisedDemoOffer.description,
+    reassurance: personalisedDemoOffer.reassurance,
+    cta: personalisedDemoOffer.cta,
+    href: personalisedDemoOffer.href,
+    secondaryCta: "Get in touch",
+    secondaryHref: "/enquire",
   },
 } as const
 
@@ -470,12 +502,20 @@ export const industriesContent = {
     lead:
       "Telloya is for local service businesses where a missed call can mean a missed job. These examples show details a caller can share. Telloya records what they report. You assess the enquiry and decide what happens next.",
   },
+  exampleNotice:
+    "Each conversation below is an illustration, not a real customer conversation or a testimonial. The questions can be configured during setup and depend on the capabilities you agree. Telloya records what the caller reports. It does not book a visit, send an engineer, diagnose a fault, make a safety decision, or promise a callback.",
   industries: [
     {
       name: "Plumbing",
       tagline: "Collect the job details callers describe while you are on site",
       description:
-        "When you are already with a customer, Telloya can help collect what the next caller describes. For example, the questions might cover the type of problem, the property location, a description of the leak and a preferred callback time. These are examples, not a fixed script. Telloya does not send an engineer or provide an emergency response.",
+        "When you are already with a customer, Telloya can help collect what the next caller describes. It does not send an engineer or provide an emergency response.",
+      example: {
+        title: "Leaking kitchen tap",
+        caller: "The kitchen tap has been dripping for a few days. We would like someone to look at it.",
+        questions: "Which tap is it, is the drip constant, and when would you like the business to call you?",
+        summary: "Kitchen tap dripping for a few days. Caller would like it looked at. Preferred callback time noted for the business to review.",
+      },
       scenarios: [
         {
           title: "Emergency burst pipe",
@@ -506,7 +546,13 @@ export const industriesContent = {
       name: "Heating Engineers",
       tagline: "Collect boiler callout details while you are on another job",
       description:
-        "Heating problems are often time-sensitive. Telloya can help collect the details the caller gives, so you can decide which jobs to follow up. For example, the questions might cover the boiler type, the symptoms, any error code the caller can see and a preferred callback time. Telloya does not provide an emergency response.",
+        "Heating problems are often time-sensitive. Telloya can help collect the details the caller gives, so you can decide which jobs to follow up. It does not provide an emergency response.",
+      example: {
+        title: "Heating repair enquiry",
+        caller: "The boiler has started banging when the heating comes on. We would like it checked.",
+        questions: "What make is the boiler, when did the noise start, and is there still hot water?",
+        summary: "Boiler banging when the heating comes on. Make, timing and hot-water answer recorded for the business to review. No fault is diagnosed and no visit is booked.",
+      },
       scenarios: [
         {
           title: "No heating in winter",
@@ -538,6 +584,12 @@ export const industriesContent = {
       tagline: "Review callout enquiries with useful details.",
       description:
         "Electrical work ranges from safety concerns to planned installations. Telloya records what the caller describes so you can decide the next step.",
+      example: {
+        title: "Additional sockets",
+        caller: "We need two extra sockets fitted in the home office.",
+        questions: "Which room is it, how many sockets, and do you know whether they would be on an existing circuit?",
+        summary: "Two extra sockets requested for a home office. Circuit details unknown. Ready for the business to review. No safety decision or price is given.",
+      },
       scenarios: [
         {
           title: "Power cut",
@@ -568,7 +620,13 @@ export const industriesContent = {
       name: "Property Maintenance",
       tagline: "Manage multiple enquiry types efficiently",
       description:
-        "Property maintenance covers everything from leaks to lockouts. Telloya collects what the caller reports, so you can tell an urgent description from routine work. For example, the questions might cover the property location, a description of the issue and any access information the caller can share. Telloya does not dispatch anyone.",
+        "Property maintenance covers everything from leaks to lockouts. Telloya collects what the caller reports, so you can tell an urgent description from routine work.",
+      example: {
+        title: "Routine tenant repair",
+        caller: "The bedroom window latch is loose. The tenant says it is routine and would like it repaired.",
+        questions: "What is the property address, who should the business contact, and when can someone get in?",
+        summary: "Loose bedroom window latch, described by the tenant as routine. Address, contact and access notes recorded for the business to follow up.",
+      },
       scenarios: [
         {
           title: "Landlord emergency",
@@ -613,9 +671,13 @@ export const industriesContent = {
     ],
   },
   cta: {
-    title: "See how Telloya works for your trade",
-    cta: "Enquire now",
-    href: "/enquire",
+    title: "Experience an AI receptionist configured for your business",
+    description: personalisedDemoOffer.description,
+    reassurance: personalisedDemoOffer.reassurance,
+    cta: personalisedDemoOffer.cta,
+    href: personalisedDemoOffer.href,
+    secondaryCta: "Enquire now",
+    secondaryHref: "/enquire",
   },
 } as const
 
@@ -630,10 +692,10 @@ export const pricingContent = {
     eyebrow: "Pricing",
     title: "Choose your plan",
     lead:
-      "Standard plans share the same core capabilities. They differ mainly by how many call minutes are included each month.",
+      `Standard plans share the same core capabilities and differ mainly by included monthly minutes. A standard plan covers one operating location and one receptionist telephone number. Custom is for requirements outside a standard plan. ${commercialCopy.extraReceptionist}`,
   },
   currency: {
-    note: "Prices are shown in GBP. We'll confirm payment currency and terms before you proceed. Currency conversion is not available on this website.",
+    note: "Published prices are in GBP. Settlement currency and other payment terms are confirmed before you proceed. This page does not offer local-currency checkout or conversion.",
   },
   plans: telloyaPlans.map((plan) => ({
     tier: plan.tier,
@@ -775,7 +837,7 @@ export const pricingContent = {
       "Published prices are in GBP",
       "Settlement currency and payment terms are confirmed before proceeding",
       commercialCopy.international,
-      "Currency conversion is not available on this website",
+      "This page does not offer local-currency checkout or currency conversion",
       "This page does not list countries, carriers or languages as currently available",
     ],
     note:
@@ -814,7 +876,7 @@ export const pricingContent = {
       },
       {
         q: "What currencies are supported?",
-        a: "Prices are shown in GBP. We'll confirm payment currency and terms before you proceed. Currency conversion is not available on this website.",
+        a: "Published plan prices are in GBP. Settlement currency and payment terms are confirmed before you proceed. This website does not offer local-currency checkout or conversion.",
       },
       {
         q: "Can I choose a voice, accent or language?",
@@ -840,7 +902,7 @@ export const navigationContent = {
     { label: "Industries", href: "/industries" },
     { label: "Pricing", href: "/pricing" },
     { label: "Relaunch Guard", href: "/relaunch-guard" },
-    { label: "Watch Demo", href: "/demo" },
+    { label: "See Example", href: "/demo" },
   ],
   account: {
     label: "Customer Login",

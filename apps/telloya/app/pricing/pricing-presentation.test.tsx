@@ -64,9 +64,9 @@ describe("homepage pricing period", () => {
       ["Industries", "/industries"],
       ["Pricing", "/pricing"],
       ["Relaunch Guard", "/relaunch-guard"],
-      ["Watch Demo", "/demo"],
+      ["See Example", "/demo"],
     ])
-    expect(screen.getAllByRole("link", { name: "Watch Demo" }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole("link", { name: "See Example" }).length).toBeGreaterThan(0)
     expect(screen.getAllByRole("link", { name: "Customer Login" }).length).toBeGreaterThan(0)
     expect(screen.getAllByRole("link", { name: "Enquire about Telloya" }).every((link) => link.getAttribute("href") === "/enquire")).toBe(true)
   })

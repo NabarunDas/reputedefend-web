@@ -54,6 +54,9 @@ export type TelloyaEnquiryRequest = {
   missedCallProblem?: string
   phoneSetup?: string
   contactPreference?: string
+  receptionistQuestions?: string
+  /** Present only when the visitor asked for a personalised demonstration. */
+  requestIntent?: "personalised-demo"
   
   // Consent
   privacyAccepted: boolean

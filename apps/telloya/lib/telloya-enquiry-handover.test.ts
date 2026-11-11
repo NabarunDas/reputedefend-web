@@ -6,7 +6,7 @@ import type { EnquiryInput } from "@shared/enquiry"
 import type { EnquiryEmailMessage } from "@shared/enquiry-provider"
 import { POST } from "@/app/api/telloya/enquiry/route"
 import { persistTelloyaEnquiry } from "./telloya-enquiry-intake"
-import { validateTelloyaEnquiry, type TelloyaEnquiryInput } from "./telloya-enquiry"
+import { telloyaEnquiryToPayload, validateTelloyaEnquiry, type TelloyaEnquiryInput } from "./telloya-enquiry"
 
 const reference = "TY-26-ABCDEF"
 const key = "11111111-1111-4111-8111-111111111111"
@@ -77,7 +77,12 @@ describe("Telloya enquiry handover", () => {
     expect(customer?.subject).toContain(reference)
     expect(customer?.text).toContain(reference)
     expect(customer?.text).toContain("ProfileRelaunch Ltd")
+    expect(customer?.text).toContain("Thank you for your interest in Telloya. We have received your enquiry")
+    expect(customer?.text).toContain("discuss how Telloya can help your business")
+    expect(customer?.text).not.toContain("personalised Telloya demonstration")
+    expect(customer?.text).not.toContain("confirmed demonstration booking")
     expect(customer?.text).toContain("does not, by itself, create a client relationship or activate any service")
+    expect(internal?.text).not.toContain("Personalised live demonstration")
     expect(internal?.subject).toContain(reference)
     expect(internal?.subject).not.toContain("Complete")
     expect(internal?.text).toContain(`Selected Plan: ${planTier[0].toUpperCase()}${planTier.slice(1)}`)
@@ -149,7 +154,12 @@ describe("Telloya enquiry handover", () => {
     expect(internal?.text).not.toContain("£120")
     expect(internal?.text).not.toContain("Help me choose")
     expect(customer?.text).toContain(reference)
+    expect(customer?.text).toContain("Thank you for your interest in Telloya. We have received your enquiry")
+    expect(customer?.text).toContain("discuss how Telloya can help your business")
+    expect(customer?.text).not.toContain("personalised Telloya demonstration")
+    expect(customer?.text).not.toContain("confirmed demonstration booking")
     expect(customer?.text).toContain("does not, by itself, create a client relationship or activate any service")
+    expect(internal?.text).not.toContain("Personalised live demonstration")
     expect(customer?.text).not.toContain("consultation required")
     expect(customer?.html).not.toContain("consultation required")
     expect(customer?.text).not.toMatch(/subscription|payment|Stripe|entitlement/i)
@@ -264,14 +274,24 @@ describe("Telloya enquiry handover", () => {
       finish: async () => {},
       provider: { send: async (message: EnquiryEmailMessage) => { sent.push(message); return { ok: true as const, id: "msg" } } },
     }
-    const data = validated({ planTier: "pro" })
+    const data = validated({
+      planTier: "pro",
+      receptionistQuestions: "Ask for the postcode and whether anyone is at the property.",
+      requestIntent: "personalised-demo",
+    })
     const first = await persistTelloyaEnquiry(data, key, overrides)
     const second = await persistTelloyaEnquiry(data, key, overrides)
     expect(first.enquiryRef).toBe(reference)
     expect(first.leadConversion).toBe(true)
+    expect(sent.find((message) => message.kind === "internal")?.text).toContain("Ask for the postcode and whether anyone is at the property.")
+    expect(sent.find((message) => message.kind === "internal")?.text).toContain("Personalised live demonstration")
+    expect(sent.find((message) => message.kind === "internal")?.text).toContain("This does not book a demonstration or provision an agent.")
+    expect(sent.find((message) => message.kind === "customer-ack")?.text).toContain("We'll review your requirements and contact you to arrange a time for you to call our demonstration number.")
+    expect(sent.find((message) => message.kind === "customer-ack")?.text).toContain("not a confirmed demonstration booking")
     expect(second.enquiryRef).toBe(reference)
     expect(second.leadConversion).toBe(false)
     expect(sent).toHaveLength(2)
+    expect(sent.filter((message) => message.text.includes("Ask for the postcode"))).toHaveLength(1)
     expect(new Set(sent.map((message) => message.text.match(/TY-\d\d-[A-HJ-NP-Z2-9]{6}/g)?.[0]))).toEqual(new Set([reference]))
   })
 
@@ -373,5 +393,60 @@ describe("Telloya enquiry handover", () => {
       expect(message.subject).not.toContain("Telloya")
       expect(message.text).not.toContain(reference)
     }
+  })
+
+  it("accepts a bounded receptionist question, and rejects an empty-looking, oversized or malformed one", () => {
+    const question = "Ask for the boiler make. Do not collect account passwords."
+    for (const extra of [
+      { planTier: "basic" },
+      { planTier: "growth" },
+      { planTier: "pro" },
+      { planTier: "custom", customMonthlyMinutes: 800, customPhoneNumbers: 1, customLocations: 1 },
+      { planTier: undefined },
+    ]) {
+      const result = validateTelloyaEnquiry(requestBody({ ...extra, receptionistQuestions: question }))
+      expect(result.valid).toBe(true)
+      if (!result.valid) continue
+      const payload = telloyaEnquiryToPayload(result.data)
+      expect(payload.receptionistQuestions).toBe(question)
+      expect(payload.details).not.toContain("Receptionist questions:")
+      expect(payload.requestIntent).toBeUndefined()
+    }
+
+    const blank = validateTelloyaEnquiry(requestBody({ receptionistQuestions: "  \u0000  " }))
+    expect(blank.valid).toBe(true)
+    if (blank.valid) expect(telloyaEnquiryToPayload(blank.data).receptionistQuestions).toBeUndefined()
+
+    const oversized = validateTelloyaEnquiry(requestBody({ receptionistQuestions: "q".repeat(2001) }))
+    expect(oversized.valid).toBe(false)
+    if (!oversized.valid) expect(oversized.errors?.receptionistQuestions).toContain("2,000")
+
+    const malformed = validateTelloyaEnquiry(requestBody({ receptionistQuestions: { password: "secret" } }))
+    expect(malformed.valid).toBe(false)
+    if (!malformed.valid) {
+      expect(malformed.error).toBe("Unable to process this enquiry.")
+      expect(malformed.errors).toBeUndefined()
+    }
+
+    const demo = validateTelloyaEnquiry(requestBody({
+      requestIntent: "personalised-demo",
+      receptionistQuestions: "q".repeat(2000),
+      missedCallProblem: "m".repeat(4000),
+    }))
+    expect(demo.valid).toBe(true)
+    if (demo.valid) {
+      const payload = telloyaEnquiryToPayload(demo.data)
+      expect(payload.requestIntent).toBe("personalised-demo")
+      expect(payload.receptionistQuestions).toHaveLength(2000)
+      expect(payload.details).not.toContain("Receptionist questions:")
+      expect(payload.details.length).toBeLessThanOrEqual(5000)
+    }
+
+    const unknownIntent = validateTelloyaEnquiry(requestBody({ requestIntent: "instant-demo" }))
+    expect(unknownIntent.valid).toBe(false)
+    if (!unknownIntent.valid) expect(unknownIntent.errors).toBeUndefined()
+    const blankIntent = validateTelloyaEnquiry(requestBody({ requestIntent: "   " }))
+    expect(blankIntent.valid).toBe(true)
+    if (blankIntent.valid) expect(telloyaEnquiryToPayload(blankIntent.data).requestIntent).toBeUndefined()
   })
 })

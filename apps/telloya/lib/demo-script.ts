@@ -1,3 +1,5 @@
+import { personalisedDemoOffer } from "@/lib/content"
+
 /**
  * Fixed script for the Telloya marketing illustration.
  * Rendered entirely in the browser. It is not a call, a recording, or a lead.
@@ -26,11 +28,19 @@ export const demoPageCopy = {
   pricingCta: "Explore Pricing",
   pricingHref: "/pricing",
   videoEnquireCta: "Enquire about Telloya",
-  enquireCta: "Enquire About Telloya",
   enquireHref: "/enquire",
-  ctaTitle: "See whether Telloya fits the way you work",
   ctaLead:
     "Pricing explains the published plans. An enquiry asks for a conversation. Neither one starts the service or takes payment.",
+  personalisedDemoTitle: personalisedDemoOffer.heading,
+  personalisedDemoLead: personalisedDemoOffer.description,
+  personalisedDemoDecision: personalisedDemoOffer.decision,
+  personalisedDemoReassurance: personalisedDemoOffer.reassurance,
+  personalisedDemoBoundary: personalisedDemoOffer.boundary,
+  personalisedDemoSupport: personalisedDemoOffer.support,
+  personalisedDemoDistinction: personalisedDemoOffer.distinction,
+  personalisedDemoSteps: personalisedDemoOffer.steps,
+  personalisedDemoCta: personalisedDemoOffer.cta,
+  personalisedDemoHref: personalisedDemoOffer.href,
 } as const
 
 export const demoStages = [

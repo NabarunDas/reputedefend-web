@@ -89,8 +89,7 @@ describe("international and voice wording", () => {
   it("does not present Telloya as UK-only or as supported by every carrier", () => {
     expect(marketing).not.toMatch(/Most UK providers|UK telephone providers|UK-only|outside the UK/i)
     expect(marketing).toContain(commercialCopy.international)
-    expect(pricingContent.currency.note).toMatch(/Currency conversion is not available on this website/)
-    expect(pricingContent.currency.note).not.toMatch(/local-currency checkout/i)
+    expect(pricingContent.currency.note).toMatch(/does not offer local-currency checkout or conversion/i)
     expect(pricingContent.international.points.join(" ")).toMatch(/does not list countries, carriers or languages/i)
     expect(marketing).not.toMatch(/local currency|exchange rate|at checkout/i)
   })

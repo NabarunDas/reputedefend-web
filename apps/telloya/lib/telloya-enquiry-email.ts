@@ -15,14 +15,23 @@ export function telloyaCustomerAcknowledgementSubject(ref: string) {
   return brandedSubject(`Your Telloya enquiry (${ref})`)
 }
 
-export function telloyaCustomerAcknowledgement(ref: string) {
+function isPersonalisedDemo(requestIntent: string | undefined) {
+  return requestIntent === "personalised-demo"
+}
+
+const personalisedDemoBoundary = "This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically. No payment details are required, and there is no obligation to subscribe."
+
+export function telloyaCustomerAcknowledgement(ref: string, requestIntent?: string) {
+  const personalisedDemo = isPersonalisedDemo(requestIntent)
   return renderCustomerEmail({
     title: `Your Telloya enquiry reference: ${ref}`,
     blocks: [
       { type: "paragraph", text: "Hello," },
       { 
         type: "paragraph", 
-        text: `Thank you for your interest in Telloya. We have received your enquiry and saved it as reference ${ref}.` 
+        text: personalisedDemo
+          ? `Thank you for your enquiry. We'll review your requirements and contact you to arrange a time for you to call our demonstration number. We have saved it as reference ${ref}.`
+          : `Thank you for your interest in Telloya. We have received your enquiry and saved it as reference ${ref}.`
       },
       { 
         type: "paragraph", 
@@ -30,7 +39,9 @@ export function telloyaCustomerAcknowledgement(ref: string) {
       },
       { 
         type: "paragraph", 
-        text: "A member of our team will review your enquiry and contact you at the email address or phone number you provided to discuss how Telloya can help your business." 
+        text: personalisedDemo
+          ? personalisedDemoBoundary
+          : "A member of our team will review your enquiry and contact you at the email address or phone number you provided to discuss how Telloya can help your business."
       },
       { 
         type: "paragraph", 
@@ -50,12 +61,12 @@ export function telloyaCustomerAcknowledgement(ref: string) {
   })
 }
 
-export function telloyaCustomerAcknowledgementText(ref: string) {
-  return telloyaCustomerAcknowledgement(ref)?.text ?? ""
+export function telloyaCustomerAcknowledgementText(ref: string, requestIntent?: string) {
+  return telloyaCustomerAcknowledgement(ref, requestIntent)?.text ?? ""
 }
 
-export function telloyaCustomerAcknowledgementHtml(ref: string) {
-  return telloyaCustomerAcknowledgement(ref)?.html ?? ""
+export function telloyaCustomerAcknowledgementHtml(ref: string, requestIntent?: string) {
+  return telloyaCustomerAcknowledgement(ref, requestIntent)?.html ?? ""
 }
 
 interface TelloyaEnquiryData {
@@ -87,6 +98,8 @@ interface TelloyaEnquiryData {
   missedCallProblem?: string
   phoneSetup?: string
   contactPreference?: string
+  receptionistQuestions?: string
+  requestIntent?: string
 }
 
 export function telloyaInternalNotificationSubject(data: TelloyaEnquiryData, ref: string) {
@@ -119,6 +132,10 @@ export function telloyaInternalNotificationText(data: TelloyaEnquiryData, ref: s
     `Source: Telloya Marketing`,
     `Product Interest: ${productLabel(data.product)}`,
   ]
+
+  if (isPersonalisedDemo(data.requestIntent)) {
+    lines.push(`Request: Personalised live demonstration. The team reviews the requirements, arranges a time and provides the demonstration telephone number. ${personalisedDemoBoundary}`)
+  }
 
   if (data.planTier) {
     lines.push(`Selected Plan: ${planTierLabel(data.planTier)}. Customer interest only. This is not an approved offer.`)
@@ -198,6 +215,12 @@ export function telloyaInternalNotificationText(data: TelloyaEnquiryData, ref: s
     lines.push("")
   }
 
+  if (data.receptionistQuestions) {
+    lines.push(`Receptionist questions:\n${data.receptionistQuestions}`)
+    lines.push("This does not book a demonstration or provision an agent.")
+    lines.push("")
+  }
+
   lines.push(`Submitted: ${submittedAt.toISOString()}`)
 
   return lines.join("\n")
@@ -209,6 +232,10 @@ export function telloyaInternalNotificationHtml(data: TelloyaEnquiryData, ref: s
     { label: "Source", value: "Telloya Marketing" },
     { label: "Product Interest", value: productLabel(data.product) },
   ]
+
+  if (isPersonalisedDemo(data.requestIntent)) {
+    rows.push({ label: "Request", value: `Personalised live demonstration. ${personalisedDemoBoundary}` })
+  }
 
   if (data.planTier) {
     rows.push({ label: "Selected Plan", value: `${planTierLabel(data.planTier)}. Customer interest only. This is not an approved offer.` })
@@ -280,6 +307,13 @@ export function telloyaInternalNotificationHtml(data: TelloyaEnquiryData, ref: s
 
   if (data.contactPreference) {
     rows.push({ label: "Contact Preference", value: data.contactPreference })
+  }
+
+  if (data.receptionistQuestions) {
+    rows.push({
+      label: "Receptionist questions",
+      value: `${data.receptionistQuestions}\nThis does not book a demonstration or provision an agent.`,
+    })
   }
 
   rows.push({ label: "Submitted", value: submittedAt.toISOString() })

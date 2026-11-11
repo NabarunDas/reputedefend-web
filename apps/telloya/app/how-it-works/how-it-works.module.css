@@ -425,10 +425,25 @@
 }
 
 .ctaDescription {
-  font-size: .88rem;
-  color: #bdd3c1;
-  max-width: 580px;
-  margin-bottom: 6px;
+  font-size: 1rem;
+  color: #d5e7d4;
+  line-height: 1.55;
+  max-width: 640px;
+  margin-bottom: 8px;
+}
+
+.ctaReassurance {
+  color: #d7ff9d;
+  font-weight: 750;
+  margin: 0;
+}
+
+.ctaActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
 }
 
 .ctaButton {
@@ -454,6 +469,25 @@
 .ctaButton:hover {
   transform: translateY(-3px);
   box-shadow: 0 0 48px rgba(188,250,119,.48), 0 17px 36px rgba(0,0,0,.26);
+}
+
+.ctaSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 52px;
+  border-radius: 99px;
+  padding: 13px 27px;
+  font-size: .92rem;
+  line-height: 1.2;
+  font-weight: 760;
+  text-decoration: none;
+  color: #f4ffe8;
+  border: 1px solid rgba(218, 255, 198, .45);
+  background: rgba(0, 0, 0, .18);
+  white-space: normal;
+  text-align: center;
 }
 
 .page :is(a,button,summary):focus-visible {
@@ -502,6 +536,7 @@
   .section { padding-block: clamp(55px, 8vh, 70px); }
   .ctaSection { padding: 26px 22px; border-radius: 24px; min-height: 180px; margin-top: 60px; }
   .ctaTitle { font-size: clamp(1.65rem, 7vw, 2.4rem); }
+  .ctaButton, .ctaSecondary { width: 100%; white-space: normal; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -315,6 +315,62 @@ SELECT telloya_phase_05a_02_test.assert_valid(
 );
 
 SELECT telloya_phase_05a_02_test.assert_valid(
+  'receptionist questions within 2000 characters are accepted',
+  telloya_phase_05a_02_test.telloya(jsonb_build_object('receptionistQuestions', repeat('q', 2000))),
+  false,
+  true
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
+  'receptionist questions over 2000 characters are rejected',
+  telloya_phase_05a_02_test.telloya(jsonb_build_object('receptionistQuestions', repeat('q', 2001))),
+  false,
+  false
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
+  'a non-string receptionist question value is rejected',
+  telloya_phase_05a_02_test.telloya('{"receptionistQuestions":{"password":"secret"}}'::jsonb),
+  false,
+  false
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
+  'a Telloya enquiry without receptionist questions remains valid',
+  telloya_phase_05a_02_test.telloya(),
+  false,
+  true
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
+  'a personalised-demo request intent is accepted',
+  telloya_phase_05a_02_test.telloya('{"requestIntent":"personalised-demo"}'::jsonb),
+  false,
+  true
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
+  'an unknown request intent is rejected',
+  telloya_phase_05a_02_test.telloya('{"requestIntent":"instant-demo"}'::jsonb),
+  false,
+  false
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
+  'a blank request intent is rejected',
+  telloya_phase_05a_02_test.telloya('{"requestIntent":""}'::jsonb),
+  false,
+  false
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
+  'a non-string request intent is rejected',
+  telloya_phase_05a_02_test.telloya('{"requestIntent":true}'::jsonb),
+  false,
+  false
+);
+
+SELECT telloya_phase_05a_02_test.assert_valid(
   'invalid voice preference is rejected',
   telloya_phase_05a_02_test.telloya('{"planTier":"pro","voicePreference":"robot"}'::jsonb),
   false,

@@ -22,6 +22,7 @@ describe("Telloya Phase 05A-02 database proposal", () => {
       readdirSync(migrations).find((name) => name.endsWith("_admin_enquiry_triage_v1.sql"))!,
       "20261102200000_telloya_enquiry_infrastructure_v1.sql",
       "20261103200518_telloya_enquiry_phase_05a_02_validation.sql",
+      "20261110170000_telloya_enquiry_receptionist_questions_v1.sql",
     ]) {
       await db.exec(read(name))
     }

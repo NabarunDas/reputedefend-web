@@ -1811,6 +1811,24 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya inbound admission reservation", probe: "public.commercial_usage_reserve_inbound_v1" },
   },
+  {
+    // Optional receptionist questions and request intent on the existing
+    // enquiry payload. Applied once to DEV. The verified DEV ledger contains
+    // 118 entries and ends at 20261110170000. The previous ledger contained
+    // 117 entries and ended at 20261107120000. CREATE OR REPLACE replaces
+    // admin_private.valid_enquiry_v1 only. No new table. No enquiry row was
+    // created. Production is unchanged. Do not replay 20261110170000. Do not
+    // apply 20261110170000 to Production. Do not replay 20261103200518.
+    // containsDataChange stays false. safeToReplay stays false.
+    version: "20261110170000",
+    filename: "20261110170000_telloya_enquiry_receptionist_questions_v1.sql",
+    step: "Telloya enquiry receptionist questions",
+    kind: "additive",
+    appliedToDev: true,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya enquiry receptionist questions", probe: "admin_private.valid_enquiry_v1" },
+  },
 ]
 
 /**
@@ -1822,8 +1840,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261107120000`. The live DEV ledger contains 117 entries. The previous
- * ledger contained 116 entries and ended at `20261107110000`. The ledger
+ * `20261110170000`. The live DEV ledger contains 118 entries. The previous
+ * ledger contained 117 entries and ended at `20261107120000`. The ledger
+ * before that contained 116 entries and ended at `20261107110000`. The ledger
  * before that contained 115 entries and ended at `20261106200000`. The ledger
  * before that contained 114 entries and ended at `20261106140000`. The ledger
  * before that contained 112 entries and ended at `20261106003939`.
@@ -1959,7 +1978,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` is empty.
+ * `pendingMigrations()` is empty. `20261110170000` was applied once to DEV.
+ * Do not replay `20261110170000`. Do not apply `20261110170000` to Production.
  * `20261107120000` was applied once to DEV. Do not replay `20261107120000`.
  * Do not apply `20261107120000` to Production. Admission records are zero.
  * `20261107110000` was applied once to DEV. Do not replay `20261107110000`.

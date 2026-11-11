@@ -19,7 +19,7 @@ function isPersonalisedDemo(requestIntent: string | undefined) {
   return requestIntent === "personalised-demo"
 }
 
-const personalisedDemoBoundary = "This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically. No payment details are required, and there is no obligation to subscribe."
+const personalisedDemoBoundary = "Requesting a demonstration does not confirm an appointment."
 
 export function telloyaCustomerAcknowledgement(ref: string, requestIntent?: string) {
   const personalisedDemo = isPersonalisedDemo(requestIntent)

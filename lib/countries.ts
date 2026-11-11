@@ -97,5 +97,8 @@ export function filterCountries(query: string) {
     else if (name.includes(q) || aliasHit) ranked.push({ country, rank: 1 })
   }
   ranked.sort((a, b) => a.rank - b.rank || a.country.name.localeCompare(b.country.name))
-  return ranked.map((item) => item.country)
+  const matches = ranked.map((item) => item.country)
+  const exact = canonicalBusinessCountry(query)
+  if (!exact) return matches
+  return [matches.find((country) => country.code === exact), ...matches.filter((country) => country.code !== exact)].filter((country): country is CountryOption => Boolean(country))
 }

@@ -361,6 +361,18 @@ textarea.control {
   position: relative;
 }
 
+.clearCountry {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--green-dark, #14532d);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .listbox {
   position: absolute;
   z-index: 5;

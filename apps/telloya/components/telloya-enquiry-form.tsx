@@ -3,6 +3,8 @@
 import Link from "next/link"
 import { cloneElement, useEffect, useId, useRef, useState, type FormEvent, type MouseEvent, type ReactElement, type ReactNode } from "react"
 import { ArrowLeft, ArrowRight, Check, Mail } from "lucide-react"
+import { CountryCombobox } from "../../../components/country-combobox"
+import { canonicalBusinessCountry } from "@shared/countries"
 import styles from "./telloya-enquiry-form.module.css"
 import type { TelloyaEnquiryRequest, TelloyaEnquiryResponse, TelloyaEnquiryCapabilities } from "@/lib/enquiry-contract"
 import { legalIdentity } from "@/lib/legal"
@@ -141,7 +143,34 @@ const STEP_TITLES = {
   2: "Your business and contact details",
 } as const
 
-const RECEPTIONIST_QUESTIONS_HINT = "Describe the questions, business information or enquiry details you would like covered in the demonstration. We'll discuss them with you before preparing it."
+const RECEPTIONIST_QUESTIONS_HINT = "Tell us what you would like your receptionist to say, and which questions or details matter. We'll discuss this with you before preparing anything."
+
+const DEMO_APPOINTMENT_NOTE = "Requesting a demonstration does not confirm an appointment."
+
+const TRADE_CHOICES = [
+  "Plumbing",
+  "Heating",
+  "Electrical",
+  "Property maintenance",
+  "Cleaning",
+  "Roofing",
+  "Carpentry",
+  "Decorating",
+  "Garden maintenance",
+  "Appliance repair",
+  "Locksmith",
+] as const
+
+const OTHER_TRADE = "other"
+
+const countryAppearance = {
+  combo: styles.combo,
+  listbox: styles.listbox,
+  option: styles.countryOption,
+  optionActive: styles.countryOptionActive,
+  optionEmpty: styles.countryOptionEmpty,
+  clear: styles.clearCountry,
+}
 
 export function TelloyaEnquiryForm({ 
   capabilities, 
@@ -156,7 +185,9 @@ export function TelloyaEnquiryForm({
 }) {
   const submissionEnabled = capabilities?.submissionEnabled ?? false
   const requestIntent = initialRequestIntent === "personalised-demo" ? "personalised-demo" : ""
+  const demoRequest = requestIntent === "personalised-demo"
   const [step, setStep] = useState<1 | 2>(1)
+  const [tradeChoice, setTradeChoice] = useState("")
   const [optionalOpen, setOptionalOpen] = useState(false)
   const [pathway, setPathway] = useState<EnquiryPathway>(initialPlanTier || initialGuardInterested ? "detailed" : "advice")
   const [values, setValues] = useState<EnquiryValues>({ 
@@ -245,11 +276,17 @@ export function TelloyaEnquiryForm({
     }
   }
 
+  function chooseTrade(next: string) {
+    setTradeChoice(next)
+    update("trade", next === OTHER_TRADE ? "" : next)
+  }
+
   function validateStep(nextStep: 1 | 2): EnquiryFieldErrors {
     const stepErrors: EnquiryFieldErrors = {}
-    const advising = pathway === "advice"
+    const advising = !demoRequest && pathway === "advice"
+    const planChosen = Boolean(values.planTier)
 
-    if (nextStep >= 1 && !advising) {
+    if (nextStep >= 1 && (!advising && !demoRequest || demoRequest && planChosen)) {
       if (!values.planTier) {
         stepErrors.planTier = "Please select a plan."
       }
@@ -280,8 +317,8 @@ export function TelloyaEnquiryForm({
 
     if (nextStep >= 2) {
       if (!values.businessName) stepErrors.businessName = "Please enter your business name."
-      if (!values.country) stepErrors.country = "Please enter your country."
-      if (!values.trade) stepErrors.trade = "Please describe your trade or service."
+      if (!canonicalBusinessCountry(values.country)) stepErrors.country = "Please choose the country where your business is located."
+      if (!values.trade.trim()) stepErrors.trade = tradeChoice === OTHER_TRADE ? "Please tell us what your business does." : "Please choose your business type."
       if (!values.fullName) stepErrors.fullName = "Please enter your name."
       if (!values.email || !/^\S+@\S+\.\S+$/.test(values.email)) stepErrors.email = "Please enter a valid email address."
       if (!values.phone || !/^[+]?[\d\s().-]{7,}$/.test(values.phone)) stepErrors.phone = "Please enter a valid phone number."
@@ -334,7 +371,7 @@ export function TelloyaEnquiryForm({
   async function submitEnquiry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (submittingRef.current) return
-    if (step < 2) {
+    if (!demoRequest && step < 2) {
       continueToNext()
       return
     }
@@ -349,13 +386,14 @@ export function TelloyaEnquiryForm({
       return
     }
 
-    const advising = pathway === "advice"
-    const guardLocationCount = !advising && values.guardInterested ? strictWholeNumber(values.guardLocationCount, 1, 999) : undefined
-    const customMonthlyMinutes = !advising && values.planTier === "custom" ? strictWholeNumber(values.customMonthlyMinutes, 1, 1000000) : undefined
-    const customMonthlyCalls = !advising && values.planTier === "custom" ? strictWholeNumber(values.customMonthlyCalls, 1, 100000) : undefined
-    const customPhoneNumbers = !advising && values.planTier === "custom" ? strictWholeNumber(values.customPhoneNumbers, 1, 999) : undefined
-    const customLocations = !advising && values.planTier === "custom" ? strictWholeNumber(values.customLocations, 1, 9999) : undefined
-    const overageMonthlyCapGbp = !advising && values.overageInterested ? strictAmount(values.overageMonthlyCapGbp, 1, 100000) : undefined
+    const advising = !demoRequest && pathway === "advice"
+    const omitPlan = advising || (demoRequest && !values.planTier)
+    const guardLocationCount = !omitPlan && values.guardInterested ? strictWholeNumber(values.guardLocationCount, 1, 999) : undefined
+    const customMonthlyMinutes = !omitPlan && values.planTier === "custom" ? strictWholeNumber(values.customMonthlyMinutes, 1, 1000000) : undefined
+    const customMonthlyCalls = !omitPlan && values.planTier === "custom" ? strictWholeNumber(values.customMonthlyCalls, 1, 100000) : undefined
+    const customPhoneNumbers = !omitPlan && values.planTier === "custom" ? strictWholeNumber(values.customPhoneNumbers, 1, 999) : undefined
+    const customLocations = !omitPlan && values.planTier === "custom" ? strictWholeNumber(values.customLocations, 1, 9999) : undefined
+    const overageMonthlyCapGbp = !omitPlan && values.overageInterested ? strictAmount(values.overageMonthlyCapGbp, 1, 100000) : undefined
     const numericErrors: EnquiryFieldErrors = {}
     if (guardLocationCount === "invalid") numericErrors.guardLocationCount = "Please enter a whole number between 1 and 999."
     if (customMonthlyMinutes === "invalid") numericErrors.customMonthlyMinutes = "Please enter a whole number between 1 and 1,000,000."
@@ -388,9 +426,9 @@ export function TelloyaEnquiryForm({
 
     // Create payload to check if it has changed. Inactive conditional numbers are omitted.
     const payload: TelloyaEnquiryRequest = {
-      product: advising ? "telloya" : values.product || "telloya",
-      ...(advising ? {} : { planTier: values.planTier }),
-      guardInterested: advising ? false : values.guardInterested,
+      product: omitPlan ? "telloya" : values.product || "telloya",
+      ...(omitPlan ? {} : { planTier: values.planTier }),
+      guardInterested: omitPlan ? false : values.guardInterested,
       guardLocationCount,
       customMonthlyMinutes,
       customMonthlyCalls,
@@ -403,7 +441,7 @@ export function TelloyaEnquiryForm({
       primaryLanguage: values.primaryLanguage || undefined,
       speakingStyle: values.speakingStyle || undefined,
       additionalLanguages: values.additionalLanguages || undefined,
-      overageInterested: advising ? false : values.overageInterested,
+      overageInterested: omitPlan ? false : values.overageInterested,
       overageMonthlyCapGbp,
       businessName: values.businessName,
       country: values.country,
@@ -485,8 +523,8 @@ export function TelloyaEnquiryForm({
           setStatusText("Your enquiry has been received.")
           if (json.leadConversion === true) {
             sendTelloyaLeadConversion({
-              planTier: advising ? undefined : values.planTier,
-              guardInterested: advising ? false : values.guardInterested,
+              planTier: omitPlan ? undefined : values.planTier,
+              guardInterested: omitPlan ? false : values.guardInterested,
             })
           }
           requestFocus("success")
@@ -560,10 +598,7 @@ export function TelloyaEnquiryForm({
         {requestIntent === "personalised-demo" ? (
           <>
             <p className={styles.successBody}>
-              Thank you for your enquiry. We&apos;ll review your requirements and contact you to arrange a time for you to call our demonstration number.
-            </p>
-            <p className={styles.successNote}>
-              This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically. No payment details are required, and there is no obligation to subscribe.
+              Thank you. We&apos;ll review what you would like your receptionist to say, then contact you with a suitable time and our demonstration number.
             </p>
           </>
         ) : (
@@ -615,17 +650,17 @@ export function TelloyaEnquiryForm({
 
   return (
     <form className={styles.form} onSubmit={submitEnquiry} noValidate aria-busy={status === "loading"}>
-      <div className={styles.progress}>
+      {!demoRequest && <div className={styles.progress}>
         <p className={styles.progressLabel} id={`${formId}-progress`}>Step {step} of 2</p>
         <div className={styles.progressTrack} role="progressbar" aria-valuemin={1} aria-valuemax={2} aria-valuenow={step} aria-labelledby={`${formId}-progress`}>
           <span style={{ width: `${(step / 2) * 100}%` }} />
         </div>
         <h2 ref={headingRef} tabIndex={-1} className={styles.stepTitle}>{STEP_TITLES[step]}</h2>
-      </div>
+      </div>}
 
-      {requestIntent === "personalised-demo" && (
+      {demoRequest && (
         <p className={styles.sectionNote} role="note">
-          You are requesting a personalised live demonstration. We will review your requirements, then contact you to arrange a suitable time and give you our demonstration telephone number. Submitting this form is not a confirmed appointment. No payment details are required, and there is no obligation to subscribe.
+          Tell us about your business and what you would like your AI receptionist to say. {DEMO_APPOINTMENT_NOTE}
         </p>
       )}
 
@@ -661,7 +696,7 @@ export function TelloyaEnquiryForm({
       )}
 
       <div className={styles.panel}>
-        {step === 1 && (
+        {!demoRequest && step === 1 && (
           <div className={styles.fields}>
             <fieldset className={styles.options}>
               <legend className={styles.visuallyHidden}>How would you like to enquire?</legend>
@@ -791,7 +826,7 @@ export function TelloyaEnquiryForm({
                 )}
                 {indicativeMonthlyTotal && selectedPlan?.monthlyPriceGbp != null && (
                   <p className={styles.sectionNote}>
-                    Indicative monthly total: {formatGbpPrice(indicativeMonthlyTotal)} ({selectedPlan.name} {formatGbpPrice(selectedPlan.monthlyPriceGbp)} + Guard {formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {Number(values.guardLocationCount)}). {commercialCopy.guardOnly} This estimate is not a final approved offer and does not authorise billing. Guard interest is not a purchase.
+                    Advertised monthly total: {formatGbpPrice(indicativeMonthlyTotal)} ({selectedPlan.name} {formatGbpPrice(selectedPlan.monthlyPriceGbp)} + Guard {formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {Number(values.guardLocationCount)}). {commercialCopy.guardOnly}
                   </p>
                 )}
               </div>
@@ -892,7 +927,7 @@ export function TelloyaEnquiryForm({
                 )}
                 {values.guardInterested && typeof guardLocations === "number" && (
                   <p className={styles.sectionNote}>
-                    Indicative Guard amount: {formatGbpPrice(Math.round(relaunchGuardAddon.pricePerLocationGbp * guardLocations * 100) / 100)} ({formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {guardLocations} locations). {commercialCopy.guardOnly} This is separate from the custom quotation, is not a final approved offer, and does not authorise billing.
+                    Advertised Guard amount: {formatGbpPrice(Math.round(relaunchGuardAddon.pricePerLocationGbp * guardLocations * 100) / 100)} ({formatGbpPrice(relaunchGuardAddon.pricePerLocationGbp)} × {guardLocations} locations). {commercialCopy.guardOnly}
                   </p>
                 )}
               </div>
@@ -902,8 +937,11 @@ export function TelloyaEnquiryForm({
           </div>
         )}
 
-        {step === 2 && (
+        {(demoRequest || step === 2) && (
           <div className={styles.fields}>
+            {demoRequest ? (
+              <h2 ref={headingRef} tabIndex={-1} className={styles.stepTitle}>Your demonstration enquiry</h2>
+            ) : (
             <ReviewBlock title="Your service" onEdit={() => goToStep(1)}>
               {pathway === "advice" ? (
                 <ReviewItem label="Plan" value="Help me choose" />
@@ -911,7 +949,7 @@ export function TelloyaEnquiryForm({
                 <>
                   <ReviewItem label="Plan" value={selectedPlan?.name || "Not selected"} />
                   {selectedPlan?.monthlyPriceGbp != null && (
-                    <ReviewItem label="Price" value={`${formatGbpPrice(selectedPlan.monthlyPriceGbp)} per month, indicative`} />
+                    <ReviewItem label="Price" value={`${formatGbpPrice(selectedPlan.monthlyPriceGbp)} per month, advertised price`} />
                   )}
                   {selectedPlan?.minutesPerMonth != null && (
                     <ReviewItem label="Included minutes" value={formatMinutes(selectedPlan.minutesPerMonth)} />
@@ -920,7 +958,7 @@ export function TelloyaEnquiryForm({
                     <ReviewItem label="Relaunch Guard" value={`Yes (${values.guardLocationCount || 0} locations)`} />
                   )}
                   {indicativeMonthlyTotal != null && (
-                    <ReviewItem label="Indicative monthly total" value={`${formatGbpPrice(indicativeMonthlyTotal)} estimate, not a charge`} />
+                    <ReviewItem label="Advertised monthly total" value={formatGbpPrice(indicativeMonthlyTotal)} />
                   )}
                   {values.planTier === "custom" && (
                     <>
@@ -933,24 +971,42 @@ export function TelloyaEnquiryForm({
                 </>
               )}
             </ReviewBlock>
+            )}
 
+            {!demoRequest && (
             <p className={styles.sectionNote}>
               {pathway === "advice"
                 ? "Our team will discuss your requirements and help you choose a suitable plan."
-                : "Review your selected plan, then provide your business and contact details so we can discuss the next steps."}
+                : "Review your selected plan, then tell us how to contact you."}
             </p>
+            )}
 
             <Field id={`${formId}-businessName`} label="Business name" error={errors.businessName}>
               <input name="businessName" value={values.businessName} onChange={(e) => update("businessName", e.target.value)} maxLength={160} autoComplete="organization" required />
             </Field>
             <div className={styles.twoCol}>
               <Field id={`${formId}-country`} label="Country" error={errors.country}>
-                <input name="country" value={values.country} onChange={(e) => update("country", e.target.value)} maxLength={80} autoComplete="country-name" required />
+                <CountryCombobox
+                  name="country"
+                  value={values.country}
+                  onChange={(next) => update("country", next)}
+                  appearance={countryAppearance}
+                  required
+                />
               </Field>
-              <Field id={`${formId}-trade`} label="Business type or trade" error={errors.trade}>
-                <input name="trade" value={values.trade} onChange={(e) => update("trade", e.target.value)} maxLength={100} required />
+              <Field id={`${formId}-trade`} label="Business type or trade" error={tradeChoice === OTHER_TRADE ? undefined : errors.trade}>
+                <select name="tradeChoice" value={tradeChoice} onChange={(e) => chooseTrade(e.target.value)} required>
+                  <option value="">Choose a business type</option>
+                  {TRADE_CHOICES.map((trade) => <option key={trade} value={trade}>{trade}</option>)}
+                  <option value={OTHER_TRADE}>Other — please specify</option>
+                </select>
               </Field>
             </div>
+            {tradeChoice === OTHER_TRADE && (
+              <Field id={`${formId}-tradeOther`} label="Please specify your business type" error={errors.trade}>
+                <input name="trade" value={values.trade} onChange={(e) => update("trade", e.target.value)} maxLength={100} required />
+              </Field>
+            )}
             <Field id={`${formId}-fullName`} label="Contact name" error={errors.fullName}>
               <input name="fullName" value={values.fullName} onChange={(e) => update("fullName", e.target.value)} maxLength={100} autoComplete="name" required />
             </Field>
@@ -977,6 +1033,37 @@ export function TelloyaEnquiryForm({
                 rows={4}
               />
             </Field>
+            {demoRequest && (
+              <Field id={`${formId}-planPreference`} label="Plan preference" optional hint="Optional. Choose a plan only if you already know which one you want to discuss.">
+                <select
+                  name="planPreference"
+                  value={values.planTier}
+                  onChange={(e) => update("planTier", e.target.value as PlanTierInterest)}
+                >
+                  <option value="">No plan selected</option>
+                  {telloyaPlans.map((plan) => (
+                    <option key={plan.tier} value={plan.tier}>
+                      {plan.name}{plan.monthlyPriceGbp != null ? ` — ${formatGbpPrice(plan.monthlyPriceGbp)}/month advertised` : " — quoted individually"}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            {demoRequest && values.planTier === "custom" && (
+              <div className={styles.fields}>
+                <div className={styles.twoCol}>
+                  <Field id={`${formId}-customMonthlyMinutes`} label="Monthly minutes needed" error={errors.customMonthlyMinutes}>
+                    <input name="customMonthlyMinutes" type="number" min="1" value={values.customMonthlyMinutes} onChange={(e) => update("customMonthlyMinutes", e.target.value)} required />
+                  </Field>
+                  <Field id={`${formId}-customPhoneNumbers`} label="Phone numbers needed" error={errors.customPhoneNumbers}>
+                    <input name="customPhoneNumbers" type="number" min="1" value={values.customPhoneNumbers} onChange={(e) => update("customPhoneNumbers", e.target.value)} required />
+                  </Field>
+                </div>
+                <Field id={`${formId}-customLocations`} label="Operating locations needed" error={errors.customLocations}>
+                  <input name="customLocations" type="number" min="1" value={values.customLocations} onChange={(e) => update("customLocations", e.target.value)} required />
+                </Field>
+              </div>
+            )}
             <button
               type="button"
               className={styles.optionalToggle}
@@ -1111,25 +1198,21 @@ export function TelloyaEnquiryForm({
       </div>
 
       <div className={styles.actions}>
-        {step > 1 ? (
+        {!demoRequest && step > 1 ? (
           <button type="button" className={styles.back} onClick={goBack} disabled={status === "loading"}>
             <ArrowLeft size={16} aria-hidden="true" /> Back
           </button>
         ) : <span />}
-        {step < 2 ? (
+        {!demoRequest && step < 2 ? (
           <button key="continue" type="button" className={styles.next} onClick={continueToNext}>
             Continue <ArrowRight size={16} aria-hidden="true" />
           </button>
         ) : (
           <button key="submit" type="submit" className={styles.next} disabled={status === "loading"}>
-            {status === "loading" ? "Submitting…" : "Submit enquiry"}
+            {status === "loading" ? "Submitting…" : demoRequest ? "Request demonstration" : "Submit enquiry"}
           </button>
         )}
       </div>
-
-      {step === 2 && (
-        <p className={styles.submitNote}>We will contact you to discuss your requirements. Submitting this enquiry does not take payment, activate the service, or authorise a recurring charge.</p>
-      )}
 
       <p className={styles.visuallyHidden} aria-live="polite">{statusText}</p>
     </form>

@@ -25,6 +25,7 @@ export default async function EnquirePage({
   const params = await searchParams
   const intentParam = Array.isArray(params.intent) ? params.intent[0] : params.intent
   const initialRequestIntent = intentParam === "personalised-demo" ? "personalised-demo" : ""
+  const demoRequest = initialRequestIntent === "personalised-demo"
   
   // Parse plan preselection from URL
   // NEW: ?plan=basic|growth|pro|custom (Phase 05A-02)
@@ -54,22 +55,39 @@ export default async function EnquirePage({
         <div className={styles.heroContent}>
           <p className={styles.eyebrow}>Get started</p>
           <h1 id="enquire-title" className={styles.heroTitle}>
-            <span className={styles.titleMain}>Enquire about Telloya</span>
+            <span className={styles.titleMain}>{demoRequest ? "Request a personalised demonstration" : "Enquire about Telloya"}</span>
             <span>for your business</span>
           </h1>
           <p className={styles.heroLead}>
-            Tell us about your business. We can discuss your preferred greeting, the questions you&apos;d like asked and the enquiry details you want collected.
+            {demoRequest
+              ? "Tell us about your business and what you would like your AI receptionist to say. We'll prepare a demonstration and arrange a time for you to call."
+              : "Tell us about your business. We'll discuss your calls, the questions you'd like asked, and which Telloya plan fits."}
           </p>
-          <p className={styles.heroNote}>This is a no-obligation conversation. No payment is taken, and nothing starts until you decide to go ahead.</p>
+          <p className={styles.heroNote}>
+            {demoRequest
+              ? "A short form about your business and the calls you want handled."
+              : "Tell us how you work. We'll talk through the advertised plans with you."}
+          </p>
         </div>
       </section>
 
       <section className={styles.trustStrip} aria-label="How the enquiry process works">
         <ul>
-          <li>Quick enquiry form</li>
-          <li>Personal consultation</li>
-          <li>No payment required</li>
-          <li>No obligation to proceed</li>
+          {demoRequest ? (
+            <>
+              <li>Your business details</li>
+              <li>A demonstration we prepare</li>
+              <li>A time we arrange with you</li>
+              <li>A real AI conversation</li>
+            </>
+          ) : (
+            <>
+              <li>Your business details</li>
+              <li>A conversation about your calls</li>
+              <li>Advertised prices</li>
+              <li>You decide whether to proceed</li>
+            </>
+          )}
         </ul>
       </section>
 
@@ -80,28 +98,54 @@ export default async function EnquirePage({
             <section className={styles.process} aria-labelledby="next-title">
               <h2 id="next-title">What happens next</h2>
               <ol>
-                <li>
-                  <span className={styles.step} aria-hidden="true">1</span>
-                  <p>We review your enquiry</p>
-                </li>
-                <li>
-                  <span className={styles.step} aria-hidden="true">2</span>
-                  <p>We contact you to discuss your requirements</p>
-                </li>
-                <li>
-                  <span className={styles.step} aria-hidden="true">3</span>
-                  <p>We explain pricing and help you decide if Telloya is right for you</p>
-                </li>
-                <li>
-                  <span className={styles.step} aria-hidden="true">4</span>
-                  <p>If you proceed, we agree your greeting and questions, then help you test call forwarding</p>
-                </li>
+                {demoRequest ? (
+                  <>
+                    <li>
+                      <span className={styles.step} aria-hidden="true">1</span>
+                      <p>Tell us about your business — Share what you would like your AI receptionist to say and ask.</p>
+                    </li>
+                    <li>
+                      <span className={styles.step} aria-hidden="true">2</span>
+                      <p>We prepare your personalised demo — We&apos;ll configure an example around your requirements.</p>
+                    </li>
+                    <li>
+                      <span className={styles.step} aria-hidden="true">3</span>
+                      <p>We arrange your demo call — We&apos;ll contact you with a suitable time and our demonstration telephone number.</p>
+                    </li>
+                    <li>
+                      <span className={styles.step} aria-hidden="true">4</span>
+                      <p>Experience Telloya yourself — Call the number, have a real AI conversation and decide whether you&apos;d like to proceed.</p>
+                    </li>
+                  </>
+                ) : (
+                  <>
+                    <li>
+                      <span className={styles.step} aria-hidden="true">1</span>
+                      <p>Tell us about your business — Share how you work and what you need from an AI receptionist.</p>
+                    </li>
+                    <li>
+                      <span className={styles.step} aria-hidden="true">2</span>
+                      <p>We talk it through — We&apos;ll contact you to understand your calls and your telephone setup.</p>
+                    </li>
+                    <li>
+                      <span className={styles.step} aria-hidden="true">3</span>
+                      <p>You decide — We&apos;ll explain the advertised plans and whether Telloya fits.</p>
+                    </li>
+                    <li>
+                      <span className={styles.step} aria-hidden="true">4</span>
+                      <p>If you go ahead — We agree your greeting and questions, then help you test call forwarding.</p>
+                    </li>
+                  </>
+                )}
               </ol>
             </section>
             <section className={styles.info} aria-labelledby="info-title">
-              <h2 id="info-title">Important to know</h2>
-              <p>Telloya is not currently available for self-service purchase. Published plan prices are indicative, and this enquiry does not take payment or start a subscription.</p>
-              <p>This enquiry helps us understand your requirements and determine if Telloya is a good fit for your business setup.</p>
+              <h2 id="info-title">{demoRequest ? "Your demonstration" : "Before you enquire"}</h2>
+              <p>
+                {demoRequest
+                  ? "We'll contact you to arrange a suitable time and give you our demonstration telephone number."
+                  : "No payment is needed to enquire. We'll confirm the advertised price and your telephone setup before you decide."}
+              </p>
             </section>
           </aside>
         </div>

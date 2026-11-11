@@ -129,7 +129,7 @@ async function testLaunchState(launched, description) {
         assert.match(content, /See how Telloya works/)
         assert.match(content, /Explore Pricing/)
         assert.match(content, /Experience Telloya answering calls for your business/)
-        assert.match(content, /No payment details required/)
+        assert.match(content, /We'll contact you with a suitable time and our demonstration number/)
         assert.match(content, /Request a personalised demo/)
         assert.match(content, /\/enquire\?intent=personalised-demo/)
         assert.doesNotMatch(content, /\bfree demo\b/i)

@@ -15,9 +15,8 @@ export const personalisedDemoOffer = {
   description:
     "Tell us about your business and what you'd like your AI receptionist to say. We'll prepare a personalised demonstration and arrange a time for you to call our demo number.",
   decision: "Experience a real AI conversation before deciding whether Telloya is right for you.",
-  reassurance: "No payment details required. No obligation to subscribe.",
-  boundary:
-    "Submitting the form is a demonstration request, not a confirmed appointment. We arrange it manually after reviewing your requirements. No subscription starts automatically, and no agent is provisioned for you.",
+  reassurance: "We'll contact you with a suitable time and our demonstration number.",
+  boundary: "Requesting a demonstration does not confirm an appointment.",
   support:
     "We confirm what can be supported before arranging the demonstration. A particular time is not guaranteed.",
   distinction:
@@ -331,7 +330,7 @@ export const howItWorksContent = {
       "A caller can decline to leave details, or choose to try again later.",
       "Telloya records what the caller reports. It does not decide whether a job is urgent, diagnose a fault, book an appointment or send an engineer.",
       "You decide whether and when to follow up.",
-      "Sending an enquiry does not start the service, take payment or create a subscription.",
+      "Sending an enquiry does not start the service.",
     ],
   },
   cta: {
@@ -887,7 +886,7 @@ export const pricingContent = {
   },
   cta: {
     title: "Ready to get started?",
-    description: "Choose a plan to preselect it on the enquiry form. Sending an enquiry does not take payment, create a subscription, or start the service.",
+    description: "Choose a plan to preselect it on the enquiry form. The prices on this page are the advertised prices. No payment is taken when you enquire.",
     cta: "Enquire now",
     href: "/enquire",
   },

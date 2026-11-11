@@ -74,7 +74,7 @@ describe("/demo illustrative sample", () => {
     expect(screen.getByRole("heading", { name: "Experience Telloya answering calls for your business" })).toBeInTheDocument()
     expect(screen.getByText("Tell us about your business and what you'd like your AI receptionist to say. We'll prepare a personalised demonstration and arrange a time for you to call our demo number.")).toBeInTheDocument()
     expect(screen.getByText("The film and walkthrough are illustrative examples. A personalised demonstration is a real AI telephone conversation, using our demonstration number, arranged after your enquiry.")).toBeInTheDocument()
-    expect(screen.getByText("No payment details required. No obligation to subscribe.")).toBeInTheDocument()
+    expect(screen.getByText("We'll contact you with a suitable time and our demonstration number.")).toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "Request a personalised demo" })).not.toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Request a personalised demo" })).toHaveAttribute("href", "/enquire?intent=personalised-demo")
     expect(screen.getByRole("link", { name: "Enquire about Telloya" })).toHaveAttribute("href", "/enquire")

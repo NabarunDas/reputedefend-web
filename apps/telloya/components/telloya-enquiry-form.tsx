@@ -560,10 +560,10 @@ export function TelloyaEnquiryForm({
         {requestIntent === "personalised-demo" ? (
           <>
             <p className={styles.successBody}>
-              Thank you for your enquiry. We&apos;ll review your business requirements and contact you to arrange a personalised Telloya demonstration.
+              Thank you for your enquiry. We&apos;ll review your requirements and contact you to arrange a time for you to call our demonstration number.
             </p>
             <p className={styles.successNote}>
-              This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically.
+              This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically. No payment details are required, and there is no obligation to subscribe.
             </p>
           </>
         ) : (
@@ -625,7 +625,7 @@ export function TelloyaEnquiryForm({
 
       {requestIntent === "personalised-demo" && (
         <p className={styles.sectionNote} role="note">
-          You are requesting a personalised live demonstration. We will review your requirements and contact you to arrange it. Submitting this form is not a confirmed booking.
+          You are requesting a personalised live demonstration. We will review your requirements, then contact you to arrange a suitable time and give you our demonstration telephone number. Submitting this form is not a confirmed appointment. No payment details are required, and there is no obligation to subscribe.
         </p>
       )}
 

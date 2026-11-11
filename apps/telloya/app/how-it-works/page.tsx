@@ -113,13 +113,17 @@ export default function HowItWorks() {
         {/* CTA */}
         <div className={styles.sectionWrap}>
           <section className={styles.ctaSection} aria-labelledby="cta-title">
-            <h2 id="cta-title" className={styles.ctaTitle}>
-              Ready to see how Telloya <em>works for you?</em>
-            </h2>
+            <h2 id="cta-title" className={styles.ctaTitle}>{cta.title}</h2>
             <p className={styles.ctaDescription}>{cta.description}</p>
-            <Link className={styles.ctaButton} href={cta.href}>
-              {cta.cta} <ArrowUpRight size={18} aria-hidden="true" />
-            </Link>
+            <p className={styles.ctaReassurance}>{cta.reassurance}</p>
+            <div className={styles.ctaActions}>
+              <Link className={styles.ctaButton} href={cta.href}>
+                {cta.cta} <ArrowUpRight size={18} aria-hidden="true" />
+              </Link>
+              <Link className={styles.ctaSecondary} href={cta.secondaryHref}>
+                {cta.secondaryCta}
+              </Link>
+            </div>
           </section>
         </div>
       </div>

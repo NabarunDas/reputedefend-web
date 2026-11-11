@@ -19,7 +19,7 @@ function isPersonalisedDemo(requestIntent: string | undefined) {
   return requestIntent === "personalised-demo"
 }
 
-const personalisedDemoBoundary = "This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically."
+const personalisedDemoBoundary = "This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically. No payment details are required, and there is no obligation to subscribe."
 
 export function telloyaCustomerAcknowledgement(ref: string, requestIntent?: string) {
   const personalisedDemo = isPersonalisedDemo(requestIntent)
@@ -30,7 +30,7 @@ export function telloyaCustomerAcknowledgement(ref: string, requestIntent?: stri
       { 
         type: "paragraph", 
         text: personalisedDemo
-          ? `Thank you for your enquiry. We'll review your business requirements and contact you to arrange a personalised Telloya demonstration. We have saved it as reference ${ref}.`
+          ? `Thank you for your enquiry. We'll review your requirements and contact you to arrange a time for you to call our demonstration number. We have saved it as reference ${ref}.`
           : `Thank you for your interest in Telloya. We have received your enquiry and saved it as reference ${ref}.`
       },
       { 
@@ -134,7 +134,7 @@ export function telloyaInternalNotificationText(data: TelloyaEnquiryData, ref: s
   ]
 
   if (isPersonalisedDemo(data.requestIntent)) {
-    lines.push(`Request: Personalised live demonstration. ${personalisedDemoBoundary}`)
+    lines.push(`Request: Personalised live demonstration. The team reviews the requirements, arranges a time and provides the demonstration telephone number. ${personalisedDemoBoundary}`)
   }
 
   if (data.planTier) {

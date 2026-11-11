@@ -572,14 +572,15 @@ describe("Telloya progressive enquiry journey", () => {
       renderEnabled(tier, false, "personalised-demo")
       expect(screen.getByRole("note")).toHaveTextContent("You are requesting a personalised live demonstration.")
       fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
-      expect(screen.getByRole("note")).toHaveTextContent("not a confirmed booking")
+      expect(screen.getByRole("note")).toHaveTextContent("not a confirmed appointment")
       fireEvent.change(screen.getByRole("textbox", { name: /What would you like your receptionist to ask/ }), {
         target: { value: "Ask for the postcode." },
       })
       fillContact()
       fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
-      expect(await screen.findByText("Thank you for your enquiry. We'll review your business requirements and contact you to arrange a personalised Telloya demonstration.")).toBeInTheDocument()
-      expect(screen.getByText("This enquiry is not a confirmed demonstration booking. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically.")).toBeInTheDocument()
+      expect(await screen.findByText("Thank you for your enquiry. We'll review your requirements and contact you to arrange a time for you to call our demonstration number.")).toBeInTheDocument()
+      expect(screen.getByText(/This enquiry is not a confirmed demonstration booking\. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically\./)).toBeInTheDocument()
+      expect(screen.getByText(/No payment details are required, and there is no obligation to subscribe\./)).toBeInTheDocument()
       expect(screen.getByText(reference)).toBeInTheDocument()
       expect(screen.getByText(/confirmation email has been accepted/)).toBeInTheDocument()
       const body = JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>

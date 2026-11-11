@@ -8,6 +8,30 @@
  */
 
 import { brandName } from "@/lib/brand"
+
+/** Approved personalised-demonstration offer. A request is not a booking. */
+export const personalisedDemoOffer = {
+  heading: "Experience Telloya answering calls for your business",
+  description:
+    "Tell us about your business and what you'd like your AI receptionist to say. We'll prepare a personalised demonstration and arrange a time for you to call our demo number.",
+  decision: "Experience a real AI conversation before deciding whether Telloya is right for you.",
+  reassurance: "No payment details required. No obligation to subscribe.",
+  boundary:
+    "Submitting the form is a demonstration request, not a confirmed appointment. We arrange it manually after reviewing your requirements. No subscription starts automatically, and no agent is provisioned for you.",
+  support:
+    "We confirm what can be supported before arranging the demonstration. A particular time is not guaranteed.",
+  distinction:
+    "The film and walkthrough are illustrative examples. A personalised demonstration is a real AI telephone conversation, using our demonstration number, arranged after your enquiry.",
+  steps: [
+    "Tell us about your business and what you would like the receptionist to say or ask.",
+    "We review your requirements and prepare a demonstration for your business.",
+    "We arrange a suitable time and give you our demonstration telephone number.",
+    "You call that number and experience a real AI conversation configured for your business.",
+    "You decide whether you would like to proceed.",
+  ],
+  cta: "Request a personalised demo",
+  href: "/enquire?intent=personalised-demo",
+} as const
 import { getCustomerPortalHref } from "@/lib/customer-portal"
 import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes, standardEntitlement, commercialCopy, coreTelloyaCapabilities } from "./pricing"
 
@@ -182,6 +206,7 @@ export const homepageContent = {
       },
     ],
   },
+  personalisedDemo: personalisedDemoOffer,
   finalCta: {
     title: "Spend more time on the job, less time worrying about missed calls",
     cta: "Enquire about Telloya",
@@ -310,10 +335,13 @@ export const howItWorksContent = {
     ],
   },
   cta: {
-    title: "Ready to see if Telloya fits your business?",
-    description: "Enquire about the service and we'll help you understand if it's right for your setup.",
-    cta: "Enquire now",
-    href: "/enquire",
+    title: personalisedDemoOffer.heading,
+    description: personalisedDemoOffer.description,
+    reassurance: personalisedDemoOffer.reassurance,
+    cta: personalisedDemoOffer.cta,
+    href: personalisedDemoOffer.href,
+    secondaryCta: "Enquire now",
+    secondaryHref: "/enquire",
   },
 } as const
 
@@ -453,9 +481,13 @@ export const featuresContent = {
       `These items are not current features. ${commercialCopy.voicePreference} ${commercialCopy.voiceProvider}`,
   },
   cta: {
-    title: "Want to see how Telloya could work for you?",
-    cta: "Get in touch",
-    href: "/enquire",
+    title: personalisedDemoOffer.heading,
+    description: personalisedDemoOffer.description,
+    reassurance: personalisedDemoOffer.reassurance,
+    cta: personalisedDemoOffer.cta,
+    href: personalisedDemoOffer.href,
+    secondaryCta: "Get in touch",
+    secondaryHref: "/enquire",
   },
 } as const
 
@@ -615,9 +647,13 @@ export const industriesContent = {
     ],
   },
   cta: {
-    title: "See how Telloya works for your trade",
-    cta: "Enquire now",
-    href: "/enquire",
+    title: "Experience an AI receptionist configured for your business",
+    description: personalisedDemoOffer.description,
+    reassurance: personalisedDemoOffer.reassurance,
+    cta: personalisedDemoOffer.cta,
+    href: personalisedDemoOffer.href,
+    secondaryCta: "Enquire now",
+    secondaryHref: "/enquire",
   },
 } as const
 

@@ -12,7 +12,7 @@ import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { industriesContent } from "@/lib/content"
 import styles from "./industries.module.css"
 
-const { seo, hero, industries, universal, cta } = industriesContent
+const { seo, hero, exampleNotice, industries, universal, cta } = industriesContent
 
 const industryIcons = [Wrench, Zap, Headphones, ShieldCheck, Sparkles] as const
 
@@ -38,9 +38,11 @@ export default function Industries() {
       </section>
 
       <div className={styles.body}>
+        <p className={styles.exampleNotice} role="note">{exampleNotice}</p>
         {/* Industries */}
         {industries.map((industry, index) => {
           const Icon = industryIcons[index] ?? Sparkles
+          const exampleId = `example-${industry.name.toLowerCase().replace(/\s+/g, "-")}`
           return (
             <section
               key={industry.name}
@@ -58,6 +60,28 @@ export default function Industries() {
                   <p className={styles.industryTagline}>{industry.tagline}</p>
                   <p className={styles.industryDescription}>{industry.description}</p>
                 </div>
+                <article className={styles.useCase} aria-labelledby={exampleId}>
+                  <p className={styles.useCaseKicker}>Illustrative example</p>
+                  <h3 id={exampleId}>{industry.example.title}</h3>
+                  <dl className={styles.useCaseGrid}>
+                    <div>
+                      <dt>What the caller says</dt>
+                      <dd>{industry.example.caller}</dd>
+                    </div>
+                    <div>
+                      <dt>What Telloya could ask</dt>
+                      <dd>{industry.example.questions}</dd>
+                    </div>
+                    <div>
+                      <dt>What the business receives</dt>
+                      <dd>{industry.example.summary}</dd>
+                    </div>
+                  </dl>
+                  <p className={styles.useCaseNext}>
+                    A personalised demonstration can use questions like these for your business.{" "}
+                    <Link href={cta.href}>{cta.cta}</Link>
+                  </p>
+                </article>
                 <div className={styles.industryDetails}>
                   {industry.scenarios.map((scenario) => (
                     <article key={scenario.title} className={styles.scenarioCard}>

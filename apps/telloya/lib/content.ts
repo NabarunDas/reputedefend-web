@@ -504,12 +504,20 @@ export const industriesContent = {
     lead:
       "Telloya is for local service businesses where a missed call can mean a missed job. These examples show details a caller can share. Telloya records what they report. You assess the enquiry and decide what happens next.",
   },
+  exampleNotice:
+    "Each conversation below is an illustration, not a real customer conversation or a testimonial. The questions can be configured during setup and depend on the capabilities you agree. Telloya records what the caller reports. It does not book a visit, send an engineer, diagnose a fault, make a safety decision, or promise a callback.",
   industries: [
     {
       name: "Plumbing",
       tagline: "Collect the job details callers describe while you are on site",
       description:
         "When you are already with a customer, Telloya can help collect what the next caller describes. It does not send an engineer or provide an emergency response.",
+      example: {
+        title: "Leaking kitchen tap",
+        caller: "The kitchen tap has been dripping for a few days. We would like someone to look at it.",
+        questions: "Which tap is it, is the drip constant, and when would you like the business to call you?",
+        summary: "Kitchen tap dripping for a few days. Caller would like it looked at. Preferred callback time noted for the business to review.",
+      },
       scenarios: [
         {
           title: "Emergency burst pipe",
@@ -541,6 +549,12 @@ export const industriesContent = {
       tagline: "Collect boiler callout details while you are on another job",
       description:
         "Heating problems are often time-sensitive. Telloya can help collect the details the caller gives, so you can decide which jobs to follow up. It does not provide an emergency response.",
+      example: {
+        title: "Heating repair enquiry",
+        caller: "The boiler has started banging when the heating comes on. We would like it checked.",
+        questions: "What make is the boiler, when did the noise start, and is there still hot water?",
+        summary: "Boiler banging when the heating comes on. Make, timing and hot-water answer recorded for the business to review. No fault is diagnosed and no visit is booked.",
+      },
       scenarios: [
         {
           title: "No heating in winter",
@@ -572,6 +586,12 @@ export const industriesContent = {
       tagline: "Review callout enquiries with useful details.",
       description:
         "Electrical work ranges from safety concerns to planned installations. Telloya records what the caller describes so you can decide the next step.",
+      example: {
+        title: "Additional sockets",
+        caller: "We need two extra sockets fitted in the home office.",
+        questions: "Which room is it, how many sockets, and do you know whether they would be on an existing circuit?",
+        summary: "Two extra sockets requested for a home office. Circuit details unknown. Ready for the business to review. No safety decision or price is given.",
+      },
       scenarios: [
         {
           title: "Power cut",
@@ -603,6 +623,12 @@ export const industriesContent = {
       tagline: "Manage multiple enquiry types efficiently",
       description:
         "Property maintenance covers everything from leaks to lockouts. Telloya collects what the caller reports, so you can tell an urgent description from routine work.",
+      example: {
+        title: "Routine tenant repair",
+        caller: "The bedroom window latch is loose. The tenant says it is routine and would like it repaired.",
+        questions: "What is the property address, who should the business contact, and when can someone get in?",
+        summary: "Loose bedroom window latch, described by the tenant as routine. Address, contact and access notes recorded for the business to follow up.",
+      },
       scenarios: [
         {
           title: "Landlord emergency",

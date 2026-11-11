@@ -152,13 +152,15 @@ describe("readiness model", () => {
   })
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
-    expect(pendingMigrations()).toEqual([])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
+      "20261111130000_telloya_marketing_enquiry_retention_v1.sql",
+    ])
     expect(appliedMigrationHead.version).toBe("20261110170000")
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261110170000_telloya_enquiry_receptionist_questions_v1.sql")
-    expect(migrationHead.version).toBe("20261110170000")
-    expect(migrationHead.appliedToDev).toBe(true)
+    expect(migrationHead.filename).toBe("20261111130000_telloya_marketing_enquiry_retention_v1.sql")
+    expect(migrationHead.version).toBe("20261111130000")
+    expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     const supabase = item("supabase.applied-head")
@@ -250,7 +252,7 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("Do not replay 20261105120000.")
     expect(supabase?.requirement).toContain("Do not apply 20261105120000 to Production.")
     expect(supabase?.requirement).not.toContain("Do not apply 20261105120000 to DEV")
-    expect(supabase?.requirement).toContain("pendingMigrations() is empty. 20261110170000 telloya_enquiry_receptionist_questions_v1 was applied once to DEV and must not be replayed. Do not apply 20261110170000 to Production. 20261107120000 telloya_inbound_admission_reservation_v1 was applied once to DEV and must not be replayed. Do not apply 20261107120000 to Production. The migration is registered once. The stored SQL matches the committed source. Two private tables have RLS enabled. Three public functions are service-role only. Three triggers were added. Admission records are zero. Retell live routing stays disabled. TELLOYA_INBOUND_ADMISSION_ENABLED and TELLOYA_USAGE_EVENTS_ENABLED stay off. 20261107110000 telloya_subscription_usage_ledger_v1 was applied once to DEV and must not be replayed. Do not apply 20261107110000 to Production. No usage events, reservations or legal holds were created. 20261106200000 admin_commercial_initiate_agent_test_call_v1 was applied once to DEV and must not be replayed. Do not apply 20261106200000 to Production. Zero test attempts were created. The controlled test-call flag remains off. 20261106120000 admin_commercial_verify_agent_test_call_v1 and 20261106140000 telloya_standard_location_cap_v1 are already applied on DEV and must not be replayed. Do not apply 20261106120000 or 20261106140000 to Production.")
+    expect(supabase?.requirement).toContain("pendingMigrations() contains only unapplied 20261111130000 telloya_marketing_enquiry_retention_v1. Do not apply 20261111130000 to DEV or Production. 20261110170000 telloya_enquiry_receptionist_questions_v1 was applied once to DEV and must not be replayed. Do not apply 20261110170000 to Production. 20261107120000 telloya_inbound_admission_reservation_v1 was applied once to DEV and must not be replayed. Do not apply 20261107120000 to Production. The migration is registered once. The stored SQL matches the committed source. Two private tables have RLS enabled. Three public functions are service-role only. Three triggers were added. Admission records are zero. Retell live routing stays disabled. TELLOYA_INBOUND_ADMISSION_ENABLED and TELLOYA_USAGE_EVENTS_ENABLED stay off. 20261107110000 telloya_subscription_usage_ledger_v1 was applied once to DEV and must not be replayed. Do not apply 20261107110000 to Production. No usage events, reservations or legal holds were created. 20261106200000 admin_commercial_initiate_agent_test_call_v1 was applied once to DEV and must not be replayed. Do not apply 20261106200000 to Production. Zero test attempts were created. The controlled test-call flag remains off. 20261106120000 admin_commercial_verify_agent_test_call_v1 and 20261106140000 telloya_standard_location_cap_v1 are already applied on DEV and must not be replayed. Do not apply 20261106120000 or 20261106140000 to Production.")
     expect(supabase?.requirement).not.toContain("Do not apply 20261107120000 to hosted DEV")
     expect(supabase?.requirement).not.toContain("Do not apply 20261106200000 to DEV")
     expect(supabase?.requirement).not.toContain("Do not apply 20261106120000 to DEV")

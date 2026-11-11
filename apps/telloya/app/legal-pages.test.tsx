@@ -26,20 +26,29 @@ describe("Telloya website terms and privacy notice", () => {
     expect(websiteTerms.sections.some((section) => section.id === "paid-service")).toBe(true)
   })
 
-  it("states verified enquiry handling and does not treat voice storage as established", () => {
+  it("states the concise demonstration position and links to Retell's published terms", () => {
     render(<PrivacyPage />)
     expect(screen.getByRole("heading", { level: 1, name: "Privacy notice" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Personalised demonstration calls" })).toBeInTheDocument()
     const text = document.body.textContent ?? ""
+    expect(text).toMatch(/Personalised telephone demonstrations use Retell AI/)
+    expect(text).toMatch(/Basic Attributes Only/)
+    expect(text).toMatch(/full call recordings and transcripts are not retained in its normal call history/)
+    expect(text).toMatch(/temporarily process conversation content and retain basic operational call information/)
+    expect(text).toMatch(/do not currently create a stored enquiry summary within Telloya/)
+    expect(text).toMatch(/model-improvement uses and international processing/)
+    expect(screen.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "https://www.retellai.com/legal/privacy-policy")
+    expect(screen.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "https://www.retellai.com/legal/terms-of-service")
+    expect(text).toMatch(/Destructive deletion is switched off/)
     expect(text).toMatch(/Automatic deletion after 90 days is not operating/)
-    expect(text).toMatch(/has not been verified/)
+    expect(text).toMatch(/does not describe a completed international-transfer arrangement/)
     expect(text).toMatch(/Supabase/)
     expect(text).toMatch(/Resend/)
     expect(text).toMatch(/Vercel/)
     expect(text).toMatch(/Cloudflare Stream/)
     expect(text).toMatch(/not a completed legal assessment/)
     expect(screen.getByRole("link", { name: "profilerelaunch.com/privacy" })).toHaveAttribute("href", "https://profilerelaunch.com/privacy")
-    expect(text).not.toMatch(/we do not record|recordings are not kept|this notice confirms that calls are not recorded/i)
+    expect(text).not.toMatch(/has not been verified|completely unverified|10 minutes|contractual opt-out|no-training|we do not record|deleted within|UK Addendum is the only/i)
   })
 
   it("links the footer to the Telloya notices and keeps the company privacy notice", () => {
@@ -56,8 +65,8 @@ describe("Telloya website terms and privacy notice", () => {
     expect(vatStatement).not.toMatch(/VAT-exempt|can never/i)
   })
 
-  it("keeps the demo explanation from presenting unverified recording behaviour as fact", () => {
-    expect(demonstrationPrivacyNote).toMatch(/has not been verified/)
-    expect(demonstrationPrivacyNote).not.toMatch(/no persistent audio|we do not record|not used for model training/i)
+  it("keeps the demo privacy sentence to one link and avoids an unverified-recording disclaimer", () => {
+    expect(demonstrationPrivacyNote).toBe("How that demonstration call is handled is explained in the privacy notice.")
+    expect(demonstrationPrivacyNote).not.toMatch(/has not been verified|completely unverified|no persistent audio|we do not record|not used for model training|10 minutes/i)
   })
 })

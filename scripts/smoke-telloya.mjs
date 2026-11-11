@@ -143,8 +143,11 @@ async function testLaunchState(launched, description) {
       if (path === "/privacy") {
         assert.match(content, /Draft for legal review/)
         assert.match(content, /Automatic deletion after 90 days is not operating/)
-        assert.match(content, /has not been verified/)
-        assert.doesNotMatch(content, /we do not record|recordings are not kept|this notice confirms that calls are not recorded/i)
+        assert.match(content, /Basic Attributes Only/)
+        assert.match(content, /full call recordings and transcripts are not retained in its normal call history/)
+        assert.match(content, /https:\/\/www\.retellai\.com\/legal\/privacy-policy/)
+        assert.match(content, /https:\/\/www\.retellai\.com\/legal\/terms-of-service/)
+        assert.doesNotMatch(content, /has not been verified|contractual opt-out|10 minutes|we do not record|recordings are not kept|this notice confirms that calls are not recorded/i)
         assert.match(content, /Supabase/)
         assert.match(content, /Resend/)
         assert.match(content, /Vercel/)

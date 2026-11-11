@@ -17,6 +17,7 @@ export type LegalBlock =
   | { kind: "p"; text: string }
   | { kind: "list"; items: readonly string[] }
   | { kind: "link"; before: string; href: string; label: string; after?: string }
+  | { kind: "links"; parts: readonly ({ text: string } | { href: string; label: string })[] }
 
 export type LegalSection = {
   id: string
@@ -185,9 +186,17 @@ export const privacyNotice = {
       id: "demonstrations",
       title: "Personalised demonstration calls",
       blocks: [
-        { kind: "p", text: "The film and the on-screen walkthrough do not place a telephone call. A personalised demonstration, if one is arranged, is a separate telephone conversation with an AI receptionist." },
-        { kind: "p", text: "The intended approach for that conversation is no persistent audio recording, no persistent transcript, and no use of the conversation for AI-model training. That approach has not been verified against the live voice-provider account or the demonstration configuration. This notice does not state it as current practice." },
-        { kind: "p", text: "Until that verification is complete, do not rely on this page for what happens to the speech on a demonstration call. We will explain the confirmed position before asking you to call." },
+        { kind: "p", text: "Personalised telephone demonstrations use Retell AI to process speech and respond during the conversation. Our demonstration agent uses Retell's Basic Attributes Only setting, so full call recordings and transcripts are not retained in its normal call history. Retell may temporarily process conversation content and retain basic operational call information." },
+        {
+          kind: "links",
+          parts: [
+            { text: "Demonstrations allow you to experience a real AI receptionist conversation. They do not currently create a stored enquiry summary within Telloya. Retell's own data handling, including model-improvement uses and international processing, is described in its published " },
+            { href: "https://www.retellai.com/legal/privacy-policy", label: "Privacy Policy" },
+            { text: " and " },
+            { href: "https://www.retellai.com/legal/terms-of-service", label: "Terms of Service" },
+            { text: "." },
+          ],
+        },
       ],
     },
     {
@@ -195,15 +204,15 @@ export const privacyNotice = {
       title: "How long an enquiry is kept",
       blocks: [
         { kind: "p", text: "The business target for an ordinary marketing enquiry is 90 days, unless the law requires it to be kept for longer or it is needed to deal with a request you have made." },
-        { kind: "p", text: "Automatic deletion after 90 days is not operating. The saved enquiry, its event history, and the record of whether an email was accepted may therefore remain for longer than 90 days. This notice does not claim that a copy held by the email provider, or a backup held by a provider, is deleted on that timetable." },
-        { kind: "p", text: "A separate retention rule for call summaries, audio or transcripts is not confirmed here, because the demonstration and paid-call configuration has not been verified." },
+        { kind: "p", text: "A deletion function for those enquiries has been prepared. Destructive deletion is switched off, and no scheduled job runs the function. Automatic deletion after 90 days is not operating. The saved enquiry, its event history, and the record of whether an email was accepted may therefore remain for longer than 90 days. This notice does not claim that a copy held by the email provider, or a backup held by a provider, is deleted on that timetable." },
+        { kind: "p", text: "This 90-day target covers an ordinary marketing enquiry on this website. It does not set retention for a future paid subscription, including call audio, transcripts, summaries or billing records." },
       ],
     },
     {
       id: "international",
       title: "Where information may be processed",
       blocks: [
-        { kind: "p", text: "The providers named above may process information in more than one country. This notice does not promise that every copy stays in the United Kingdom, and it does not describe a specific international-transfer mechanism. That remains for legal review." },
+        { kind: "p", text: "The providers named on this page may process information in more than one country. This notice does not promise that every copy stays in the United Kingdom, and it does not describe a completed international-transfer arrangement. That remains for legal review." },
       ],
     },
     {
@@ -226,4 +235,4 @@ export const privacyNotice = {
 } as const satisfies { eyebrow: string; title: string; lead: string; sections: readonly LegalSection[] }
 
 export const demonstrationPrivacyNote =
-  "How a personalised demonstration call is recorded or stored has not been verified against the live voice configuration. The privacy notice explains what is confirmed for this website, and it does not treat an unverified recording practice as fact."
+  "How that demonstration call is handled is explained in the privacy notice."

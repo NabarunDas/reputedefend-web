@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { pageSocialMetadata } from "@/lib/brand"
 import {
   cookiesAnalytics,
@@ -51,7 +52,8 @@ export default function CookiesPage() {
             <h2 id="cookies-operator" className={styles.sectionTitle}>{cookiesOperator.title}</h2>
             {cookiesOperator.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
             <p>
-              Read the operator&apos;s privacy notice at{" "}
+              Read the <Link href="/privacy">Telloya privacy notice</Link>.
+              The operator&apos;s company notice remains at{" "}
               <a href={operatorPrivacyHref} rel="noopener noreferrer">{operatorPrivacyHref}</a>.
             </p>
           </section>

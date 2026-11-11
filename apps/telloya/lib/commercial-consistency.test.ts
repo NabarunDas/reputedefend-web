@@ -154,8 +154,8 @@ describe("launch and legal controls", () => {
   it("separates company notices from unpublished Telloya service terms", () => {
     expect(footerContent.legal.map((item) => item.href)).toEqual([
       "/cookies",
-      "https://profilerelaunch.com/privacy",
-      "https://profilerelaunch.com/terms",
+      "/privacy",
+      "/terms",
     ])
     expect(footerContent.note).toMatch(/company-wide website notices/)
     expect(footerContent.note).toMatch(/not Telloya service terms/)

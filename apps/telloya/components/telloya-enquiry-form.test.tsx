@@ -164,6 +164,7 @@ describe("Telloya short enquiry journey", () => {
     expect(summary).toHaveTextContent("Please enter a valid email address.")
     expect(summary).toHaveTextContent("Please enter a valid phone number.")
     expect(summary).toHaveTextContent("Please confirm you have read the privacy notice.")
+    expect(screen.getByRole("link", { name: "privacy notice" })).toHaveAttribute("href", "/privacy")
     expect(summary).not.toHaveTextContent("phone setup")
     expect(screen.getByText("Review your selected plan, then provide your business and contact details so we can discuss the next steps.")).toBeInTheDocument()
     expect(screen.getAllByText(/does not take payment, activate the service, or authorise a recurring charge/)).toHaveLength(1)

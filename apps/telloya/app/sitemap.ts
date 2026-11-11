@@ -25,6 +25,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/relaunch-guard",
     "/enquire",
     "/cookies",
+    "/privacy",
+    "/terms",
   ]
 
   return routes.map((route) => ({

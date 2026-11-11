@@ -1,4 +1,5 @@
 import { personalisedDemoOffer } from "@/lib/content"
+import { demonstrationPrivacyNote } from "@/lib/legal-notices"
 
 /**
  * Fixed script for the Telloya marketing illustration.
@@ -41,6 +42,8 @@ export const demoPageCopy = {
   personalisedDemoSteps: personalisedDemoOffer.steps,
   personalisedDemoCta: personalisedDemoOffer.cta,
   personalisedDemoHref: personalisedDemoOffer.href,
+  demonstrationPrivacyNote,
+  demonstrationPrivacyHref: "/privacy#demonstrations",
 } as const
 
 export const demoStages = [

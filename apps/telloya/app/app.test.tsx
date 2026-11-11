@@ -373,7 +373,7 @@ describe("Pre-launch Behavior", () => {
     
     const result = sitemap()
     expect(Array.isArray(result)).toBe(true)
-    expect(result.length).toBe(9)
+    expect(result.length).toBe(11)
     expect(result[0].url).toBe("https://telloya.com")
     expect(result.map((entry) => entry.url)).toEqual([
       "https://telloya.com",
@@ -385,6 +385,8 @@ describe("Pre-launch Behavior", () => {
       "https://telloya.com/relaunch-guard",
       "https://telloya.com/enquire",
       "https://telloya.com/cookies",
+      "https://telloya.com/privacy",
+      "https://telloya.com/terms",
     ])
     expect(result.every((entry) => !("lastModified" in entry))).toBe(true)
     

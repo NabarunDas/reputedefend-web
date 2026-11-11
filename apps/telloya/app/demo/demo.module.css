@@ -385,6 +385,17 @@
   background: rgba(7, 40, 28, .45);
 }
 
+.distinction a {
+  color: #d7ff9d;
+  font-weight: 750;
+  text-underline-offset: 3px;
+}
+
+.distinction a:focus-visible {
+  outline: 3px solid #d7ff9d;
+  outline-offset: 3px;
+}
+
 .ctaLead,
 .invitationLead {
   max-width: 560px;

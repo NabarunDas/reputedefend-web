@@ -87,6 +87,10 @@ export default function DemoPage() {
           <p className={styles.ctaNote}>{demoPageCopy.personalisedDemoBoundary}</p>
           <p className={styles.ctaNote}>{demoPageCopy.personalisedDemoSupport}</p>
           <p className={styles.distinction}>{demoPageCopy.personalisedDemoDistinction}</p>
+          <p className={styles.distinction}>
+            {demoPageCopy.demonstrationPrivacyNote}{" "}
+            <Link href={demoPageCopy.demonstrationPrivacyHref}>Privacy notice</Link>
+          </p>
           <div className={styles.ctaRow}>
             <Link className={styles.primaryLink} href={demoPageCopy.personalisedDemoHref}>
               {demoPageCopy.personalisedDemoCta} <ArrowUpRight size={18} aria-hidden="true" />

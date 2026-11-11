@@ -286,7 +286,7 @@ describe("Telloya enquiry handover", () => {
     expect(sent.find((message) => message.kind === "internal")?.text).toContain("Ask for the postcode and whether anyone is at the property.")
     expect(sent.find((message) => message.kind === "internal")?.text).toContain("Personalised live demonstration")
     expect(sent.find((message) => message.kind === "internal")?.text).toContain("This does not book a demonstration or provision an agent.")
-    expect(sent.find((message) => message.kind === "customer-ack")?.text).toContain("We'll review your business requirements and contact you to arrange a personalised Telloya demonstration.")
+    expect(sent.find((message) => message.kind === "customer-ack")?.text).toContain("We'll review your requirements and contact you to arrange a time for you to call our demonstration number.")
     expect(sent.find((message) => message.kind === "customer-ack")?.text).toContain("not a confirmed demonstration booking")
     expect(second.enquiryRef).toBe(reference)
     expect(second.leadConversion).toBe(false)

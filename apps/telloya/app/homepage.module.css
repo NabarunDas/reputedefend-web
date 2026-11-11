@@ -160,7 +160,23 @@
   linear-gradient(180deg, #00110e, #042219 38%, #001713 75%, #00110d); padding: 0 0 84px;
 }
 .cinematicBody::before { content:""; position:absolute; inset:0; pointer-events:none; opacity:.12; background: repeating-linear-gradient(0deg, transparent 0, transparent 149px, rgba(208,255,180,.15) 150px); }
-.valueRibbon, .challenge, .process, .benefits, .example, .film, .industries, .plans, .faq, .finalCta { position:relative; z-index:1; width:var(--home-wrap); margin-inline:auto; }
+.valueRibbon, .demoInvite, .challenge, .process, .benefits, .example, .film, .industries, .plans, .faq, .finalCta { position:relative; z-index:1; width:var(--home-wrap); margin-inline:auto; }
+.demoInvite {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  margin-top: 22px;
+  padding: 28px 32px;
+  border: 1px solid rgba(196, 254, 162, .33);
+  border-radius: 28px;
+  background: linear-gradient(120deg, rgba(13, 87, 54, .69), rgba(7, 53, 37, .84));
+}
+.demoInviteCopy { max-width: 760px; }
+.demoInvite h2 { font-size: clamp(1.7rem, 3vw, 2.55rem); max-width: 18ch; margin-bottom: 10px; }
+.demoInvite p { color: #d5e7d4; line-height: 1.55; margin: 0 0 8px; }
+.demoInviteNote { color: #d7ff9d !important; font-weight: 750; margin-bottom: 0 !important; }
+.demoInvite .primaryCta { flex-shrink: 0; max-width: 100%; white-space: normal; text-align: center; }
 .valueRibbon {
   display: grid; grid-template-columns: 1.6fr repeat(3,1fr); align-items:center;
   gap: 12px; margin-top: -15px; padding: 15px 28px; min-height: 76px;
@@ -298,7 +314,7 @@
   .sectionHeader{display:block;} .sectionHeader>p{margin-top:16px;max-width:630px;}
   .processSteps{grid-template-columns:repeat(2,1fr);}
   .example{grid-template-columns:1fr;gap:34px;} .industryGrid{grid-template-columns:repeat(3,1fr);}
-  .faq{grid-template-columns:1fr;gap:18px;}.finalCta{flex-direction:column;align-items:flex-start;}
+  .faq{grid-template-columns:1fr;gap:18px;}.demoInvite,.finalCta{flex-direction:column;align-items:flex-start;}
 }
 @media (max-width:520px){
   .hero{height:890px;min-height:850px;}
@@ -320,7 +336,8 @@
   .leadCard{padding:22px;}.leadCard dl div{grid-template-columns:75px 1fr;font-size:.83rem;gap:12px;}
   .industryGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}.industryTile{min-height:150px;}.industryArt{height:105px;}
   .planGrid{grid-template-columns:1fr; max-width:600px;}.planCard{padding:28px;} .planGuard{padding:28px;}
-  .finalCta{padding:28px 24px;border-radius:23px;}
+  .demoInvite,.finalCta{padding:28px 24px;border-radius:23px;}
+  .demoInvite .primaryCta{width:100%;}
 }
 @media (prefers-reduced-motion:reduce){
   .page *, .page *::before, .page *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important;}

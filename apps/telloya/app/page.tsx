@@ -21,7 +21,7 @@ import { absolutePageTitle, pageSocialMetadata } from "@/lib/brand"
 import { homepageContent } from "@/lib/content"
 import styles from "./homepage.module.css"
 
-const { seo, hero, problem, howItWorks, benefits, example, audience, plans, faq, finalCta } = homepageContent
+const { seo, hero, problem, howItWorks, benefits, example, audience, plans, faq, personalisedDemo, finalCta } = homepageContent
 
 export const metadata: Metadata = {
   title: absolutePageTitle(seo.title),
@@ -117,6 +117,19 @@ export default function Home() {
           <div><Check size={18} aria-hidden="true" /> Missed-call assistance</div>
           <div><Check size={18} aria-hidden="true" /> Useful enquiry details</div>
           <div><Check size={18} aria-hidden="true" /> Easier follow-up</div>
+        </section>
+
+        <section className={styles.demoInvite} aria-labelledby="personalised-demo-title">
+          <div className={styles.demoInviteCopy}>
+            <Eyebrow>Personalised demonstration</Eyebrow>
+            <h2 id="personalised-demo-title">{personalisedDemo.heading}</h2>
+            <p>{personalisedDemo.description}</p>
+            <p>{personalisedDemo.decision}</p>
+            <p className={styles.demoInviteNote}>{personalisedDemo.reassurance}</p>
+          </div>
+          <Link href={personalisedDemo.href} className={styles.primaryCta}>
+            {personalisedDemo.cta} <ArrowUpRight size={19} aria-hidden="true" />
+          </Link>
         </section>
 
         <section className={styles.challenge} aria-labelledby="challenge-title">

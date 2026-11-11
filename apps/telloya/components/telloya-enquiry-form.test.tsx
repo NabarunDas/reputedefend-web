@@ -206,7 +206,7 @@ describe("Telloya short enquiry journey", () => {
     expect(screen.getByText("Our team will review your enquiry and get in touch using the details you provided.")).toBeInTheDocument()
     expect(screen.queryByText(/personalised Telloya demonstration/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Admin will review it/)).not.toBeInTheDocument()
-    expect(screen.getByText(/confirmation email has been accepted/)).toBeInTheDocument()
+    expect(screen.getByText(/does not confirm the message has arrived in your inbox/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Copy reference" }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(reference))
   })
@@ -582,7 +582,7 @@ describe("Telloya progressive enquiry journey", () => {
       expect(screen.getByText(/This enquiry is not a confirmed demonstration booking\. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically\./)).toBeInTheDocument()
       expect(screen.getByText(/No payment details are required, and there is no obligation to subscribe\./)).toBeInTheDocument()
       expect(screen.getByText(reference)).toBeInTheDocument()
-      expect(screen.getByText(/confirmation email has been accepted/)).toBeInTheDocument()
+      expect(screen.getByText(/does not confirm the message has arrived in your inbox/)).toBeInTheDocument()
       const body = JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>
       expect(body.requestIntent).toBe("personalised-demo")
       expect(body.receptionistQuestions).toBe("Ask for the postcode.")

@@ -12,6 +12,7 @@ import {
   DEMO_SUMMARY_INDEX,
   demoBeats,
   demoLead,
+  demoPageCopy,
   demoLiveStatus,
   nextDemoPosition,
   previousDemoPosition,
@@ -31,6 +32,20 @@ function renderedText() {
 }
 
 describe("demo script transitions", () => {
+  it("uses a business-first virtual receptionist and keeps the fiction note on the walkthrough", () => {
+    const greeting = demoBeats.find((beat) => beat.id === "greet")
+    expect(greeting?.kind).toBe("line")
+    if (greeting?.kind === "line") {
+      expect(greeting.text).toMatch(/virtual receptionist/)
+      expect(greeting.text).not.toMatch(/\bAI\b/)
+    }
+    const reply = demoBeats.find((beat) => beat.id === "accept")
+    expect(reply?.kind).toBe("line")
+    if (reply?.kind === "line") expect(reply.text).toBe("Yes, please.")
+    expect(demoPageCopy.fictionNote).toMatch(/interactive example/)
+    expect(demoPageCopy.fictionNote).toMatch(/not the film/)
+  })
+
   it("moves forward, back, and stops on the summary", () => {
     expect(nextDemoPosition(-1)).toBe(0)
     expect(previousDemoPosition(0)).toBe(0)

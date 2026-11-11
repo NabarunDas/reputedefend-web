@@ -110,11 +110,21 @@ describe("personalised enquiry questions", () => {
   it("explains that questions are agreed during setup and are not a self-service editor", () => {
     render(<HomePage />)
     expect(screen.getByRole("heading", { name: "Questions tailored to your business" })).toBeInTheDocument()
-    expect(screen.getByText(/We agree the questions and information to collect during setup/)).toBeInTheDocument()
+    expect(screen.getByText(/We'll agree the questions and information during setup/)).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Built for busy service businesses" })).toBeInTheDocument()
     expect(screen.getByText("Can I choose what Telloya asks my customers?")).toBeInTheDocument()
+    const collected = homepageContent.faq.questions.find((item) => item.q === "What information does Telloya collect?")
     const choice = homepageContent.faq.questions.find((item) => item.q === "Can I choose what Telloya asks my customers?")
-    expect(choice?.a).toMatch(/supported capabilities/)
-    expect(choice?.a).not.toMatch(/unlimited|dashboard|sensitive/i)
+    expect(collected?.a).toMatch(/You decide which enquiry details matter/)
+    expect(collected?.a).toMatch(/preferred callback time/)
+    expect(collected?.a).not.toMatch(/separate quotation/)
+    expect(screen.getByText(collected!.a)).toBeInTheDocument()
+    expect(choice?.a).toMatch(/questions you'd like asked/)
+    expect(choice?.a).toMatch(/relevant details you want captured/)
+    expect(choice?.a).toMatch(/Basic, Growth and Pro/)
+    expect(choice?.a).toMatch(/separate quotation/)
+    expect(screen.getByText(choice!.a)).toBeInTheDocument()
+    expect(`${collected?.a} ${choice?.a}`).not.toMatch(/unlimited|workflow editor|live dashboard|sensitive personal/i)
     cleanup()
 
     render(<FeaturesPage />)
@@ -126,8 +136,9 @@ describe("personalised enquiry questions", () => {
       "Details you want collected, such as job type, location, problem description and callback preferences",
       "How the information is presented in the enquiry summary",
     ])
-    expect(feature?.description).toMatch(/included with the standard plans/)
-    expect(feature?.description).toMatch(/quoted separately/)
+    expect(feature?.description).toMatch(/We'll agree the configuration with you during setup/)
+    expect(feature?.description).toMatch(/Basic, Growth and Pro/)
+    expect(feature?.description).toMatch(/separate quotation/)
     expect(feature?.description).not.toMatch(/unlimited|only on Custom|Custom tier/i)
     cleanup()
 

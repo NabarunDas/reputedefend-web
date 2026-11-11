@@ -116,7 +116,7 @@ export default function Industries() {
             <div className={styles.sectionHeader}>
               <p className={styles.eyebrow}>{universal.eyebrow}</p>
               <h2 id="universal-title" className={styles.sectionTitle}>
-                Built for <em>any service business.</em>
+                Designed for <em>more service businesses.</em>
               </h2>
               <p className={styles.sectionLead}>{universal.lead}</p>
             </div>

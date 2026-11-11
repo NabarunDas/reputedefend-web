@@ -6,7 +6,7 @@ import styles from "./enquire.module.css"
 
 const seo = {
   title: "Enquire About Telloya – AI Receptionist for Tradespeople",
-  description: "Get in touch to learn more about Telloya AI receptionist service. Fill out our enquiry form and we'll contact you to discuss your requirements.",
+  description: "Enquire about Telloya for missed-call enquiries. Tell us about your business, the questions you'd like asked and the details you want collected.",
 }
 
 export const metadata: Metadata = {
@@ -58,9 +58,9 @@ export default async function EnquirePage({
             <span>for your business</span>
           </h1>
           <p className={styles.heroLead}>
-            Tell us a bit about your business and requirements. We&apos;ll review your enquiry and get in touch to discuss how Telloya can help.
+            Tell us about your business. We can discuss your preferred greeting, the questions you&apos;d like asked and the enquiry details you want collected.
           </p>
-          <p className={styles.heroNote}>No payment is taken at this stage. Submitting this form does not activate the service or authorise a recurring charge. This is a no-obligation enquiry.</p>
+          <p className={styles.heroNote}>This is a no-obligation conversation. No payment is taken, and nothing starts until you decide to go ahead.</p>
         </div>
       </section>
 
@@ -94,7 +94,7 @@ export default async function EnquirePage({
                 </li>
                 <li>
                   <span className={styles.step} aria-hidden="true">4</span>
-                  <p>If you proceed, we help you set up call forwarding and test the service</p>
+                  <p>If you proceed, we agree your greeting and questions, then help you test call forwarding</p>
                 </li>
               </ol>
             </section>

@@ -67,7 +67,7 @@ describe("personalised demonstration messaging", () => {
   it("invites industry visitors to experience a receptionist configured for their business", () => {
     render(<Industries />)
     expect(screen.getByRole("heading", { name: "Experience an AI receptionist configured for your business" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: /Built for any service business/i })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: /Designed for more service businesses/i })).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Enquire now" })).toHaveAttribute("href", "/enquire")
   })
 

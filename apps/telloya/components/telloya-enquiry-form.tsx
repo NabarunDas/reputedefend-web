@@ -523,7 +523,7 @@ export function TelloyaEnquiryForm({
 
   if (status === "success") {
     const emailStatusMessage = receiptEmailStatus === "sent"
-      ? "A confirmation email has been accepted by the email provider. Please check your inbox and, if needed, your spam folder. Provider acceptance does not guarantee inbox delivery."
+      ? "We've sent a confirmation email for your enquiry. Please check your inbox and, if needed, your spam folder. This does not confirm the message has arrived in your inbox."
       : receiptEmailStatus === "suppressed"
         ? "No confirmation email was requested. Your enquiry is safely recorded."
         : receiptEmailStatus === "unavailable"
@@ -698,7 +698,7 @@ export function TelloyaEnquiryForm({
             </fieldset>
             {pathway === "advice" && (
               <p className={styles.sectionNote}>
-                We&apos;ll help you work out which Telloya plan suits your business. You don&apos;t need to know your monthly call minutes yet.
+                We&apos;ll help you work out which Telloya plan suits your business, including your greeting, questions and the details you want collected. You don&apos;t need to know your monthly call minutes yet.
               </p>
             )}
             {pathway === "detailed" && (
@@ -863,7 +863,7 @@ export function TelloyaEnquiryForm({
                     onChange={(e) => update("customRequirements", e.target.value)}
                     maxLength={2000}
                     rows={4}
-                    placeholder="Please describe any specific needs or integration requirements"
+                    placeholder="For a more complex greeting, question flow or setup than the standard plans include"
                   />
                 </Field>
                 <label className={styles.check} htmlFor={`${formId}-guardInterested-custom`}>

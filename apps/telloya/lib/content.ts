@@ -105,22 +105,22 @@ export const homepageContent = {
       {
         title: "Questions tailored to your business",
         description:
-          "Telloya can ask the questions that matter to your business — from the type of work needed and the caller's location to other relevant enquiry details. We agree the questions and information to collect during setup.",
+          "Telloya can ask the questions that matter to your business and collect the enquiry details you need. We'll agree the questions and information during setup.",
       },
       {
         title: "Professional experience",
         description: "Give more callers a helpful response when you're unavailable.",
       },
       {
-        title: "Designed for tradespeople",
-        description: "Built around the realities of working on site",
+        title: "Built for busy service businesses",
+        description: "Designed around businesses that can't always answer the phone while helping customers.",
       },
     ],
   },
   example: {
     eyebrow: "Illustrative example",
     title: "What you receive",
-    lead: "Telloya provides clear summaries of each enquiry",
+    lead: "An enquiry summary shows the details you asked Telloya to collect.",
     card: {
       label: "Illustrative example only",
       caller: "Sarah Mitchell",
@@ -148,7 +148,7 @@ export const homepageContent = {
     eyebrow: "Service plans",
     title: "Four plans to fit your business",
     lead:
-      `Choose from Basic, Growth, Pro or Custom. A standard plan includes one operating location and one receptionist telephone number. ${commercialCopy.extraReceptionist} Optional Relaunch Guard is priced separately.`,
+      "Basic, Growth and Pro share the same receptionist capabilities and differ by included minutes. Each standard plan includes one operating location and one receptionist number. Optional Relaunch Guard is priced separately.",
     tiers: telloyaPlans.map(p => ({
       name: p.name,
       price: p.monthlyPriceGbp !== null ? formatGbpPrice(p.monthlyPriceGbp) : "By quotation",
@@ -190,11 +190,11 @@ export const homepageContent = {
       },
       {
         q: "What information does Telloya collect?",
-        a: "Telloya can collect caller contact details and the enquiry details agreed for your business, such as the service needed, location, a description of the problem and a preferred callback time.",
+        a: "You decide which enquiry details matter to your business. During setup, we'll agree the information Telloya should collect — such as caller contact details, the service needed, location, a description of the problem and preferred callback time. The questions are tailored to your services and the capabilities we can support.",
       },
       {
         q: "Can I choose what Telloya asks my customers?",
-        a: "Yes. During setup, we'll discuss your business, the services you provide and the details you'd like to collect. Telloya can be configured to ask relevant questions and prepare useful enquiry summaries. The final configuration is agreed based on your requirements and supported capabilities.",
+        a: "Yes. Telloya doesn't have to follow the same script for every business. Tell us what questions you'd like asked and which relevant details you want captured. We'll work with you to configure and test the conversation during setup. Standard personalisation is included with Basic, Growth and Pro. More complex requirements may need a separate quotation.",
       },
       {
         q: "Does Telloya confirm appointments?",
@@ -208,7 +208,7 @@ export const homepageContent = {
   },
   personalisedDemo: personalisedDemoOffer,
   finalCta: {
-    title: "Spend more time on the job, less time worrying about missed calls",
+    title: "Stay focused on your work. Let Telloya help with missed calls.",
     cta: "Enquire about Telloya",
     href: "/enquire",
   },
@@ -219,7 +219,7 @@ export const howItWorksContent = {
   seo: {
     title: "How Telloya Works – AI Receptionist for Missed Calls",
     description:
-      "Learn how Telloya handles missed-call enquiries through call forwarding, natural conversation and clear lead summaries for tradespeople.",
+      "See how Telloya helps with missed-call enquiries, from conditional call forwarding to an enquiry summary you can follow up.",
   },
   hero: {
     eyebrow: "How it works",
@@ -249,9 +249,9 @@ export const howItWorksContent = {
         number: "03",
         title: "Telloya answers and engages",
         description:
-          "Our AI receptionist greets the caller, explains you're currently unavailable, and offers to help collect their enquiry details.",
+          "Telloya greets the caller for your business, explains the team cannot take the call, and offers to take the enquiry.",
         detail:
-          "The conversation is natural and conversational. Telloya adapts to how the customer explains their needs.",
+          "The caller hears your business name first.",
       },
       {
         number: "04",
@@ -265,16 +265,15 @@ export const howItWorksContent = {
         number: "05",
         title: "Lead summary delivered",
         description:
-          "You receive a clear summary of the information Telloya collected. Lead summaries are delivered through the method agreed for your service.",
+          "Telloya prepares a useful summary of the information collected, delivered through the method agreed during setup.",
         detail:
-          "A customer dashboard for reviewing summaries and usage is planned and is not operational. The summary is designed to give you what you need to follow up.",
+          "The enquiry summary gives you the agreed details so you can decide what happens next.",
       },
       {
         number: "06",
         title: "You follow up",
-        description:
-          "With the details the caller shared, you can decide how and when to follow up.",
-        detail: "Following up is still your responsibility. Telloya captures the enquiry — you close it.",
+        description: "You decide what happens next.",
+        detail: "Telloya captures the enquiry. You choose whether and when to follow up.",
       },
     ],
   },
@@ -282,16 +281,16 @@ export const howItWorksContent = {
     eyebrow: "Customer experience",
     title: "What the caller hears",
     lead:
-      "We've designed Telloya to feel professional and helpful, not robotic. Here's an illustrative example of how a call might sound.",
+      "We've designed Telloya to feel professional and helpful. Here's an illustrative example of what a caller might hear from the AI receptionist.",
     example: {
-      greeting: "Hello, thank you for calling. I'm the AI receptionist for [Business Name]. They're currently on a job and can't take your call right now. I can help collect some details so they can call you back — would that work for you?",
+      greeting: "Thank you for calling [Business Name]. I'm the team's virtual receptionist. The team can't answer right now, but I'd be happy to take your details and pass your message along. How can I help you today?",
       flow: [
-        "If yes, Telloya continues: 'Great. Can I start with your name?'",
-        "Then: 'And the best number to reach you on?'",
-        "Followed by the questions agreed for your services during setup",
-        "Ending with: 'Thank you. I will pass on your preferred time. The business decides when to call you back. Is there anything else you would like me to pass on?'",
+        "Telloya asks for the caller's name.",
+        "Then the best number to reach them.",
+        "Then the details the business wants for this kind of enquiry.",
+        "It confirms the message will be passed on, and that the business decides when to call back.",
       ],
-      note: "This is an illustrative example. The actual conversation adapts to how the caller responds.",
+      note: "This is an illustrative example of what a caller might hear. It is not a recording of a live call.",
     },
     demoLink: { label: "See a Sample Conversation", href: "/demo" },
   },
@@ -367,11 +366,11 @@ export const featuresContent = {
     eyebrow: "Features",
     title: "Every Missed Call Could Be a New Opportunity.",
     lead:
-      "When you're busy, Telloya helps speak with callers, capture what they need and prepare useful enquiry details so you can follow up.",
+      "Your business. Your questions. Your receptionist. Telloya helps with missed-call enquiries and can ask for the details you need.",
   },
   workflow: [
     { label: "Missed Call", description: "Customer calls while you're unavailable" },
-    { label: "AI Conversation", description: "Telloya asks useful questions and records the details the caller shares." },
+    { label: "Conversation", description: "Telloya asks useful questions and records the details the caller shares." },
     { label: "Lead Summary", description: "A summary can be prepared for follow-up" },
   ],
   features: [
@@ -379,12 +378,12 @@ export const featuresContent = {
       kicker: "Feature 01",
       title: "Missed-call assistance",
       description:
-        "Give callers a helpful response while you're busy. With supported call forwarding and an active service, Telloya can offer to collect their enquiry.",
+        "Give callers a helpful response while you're busy. When call forwarding is available and the service is active, Telloya can offer to take their enquiry.",
       stage: "demonstrated",
       points: [
-        "Natural greeting and explanation",
-        "Professional tone without sounding robotic",
-        "Adapts to how customers respond",
+        "A greeting in your business's name",
+        "A clear offer to take the enquiry",
+        "A professional, straightforward tone",
       ],
     },
     {
@@ -405,7 +404,7 @@ export const featuresContent = {
       kicker: "Feature 03",
       title: "Lead summaries",
       description:
-        "Get useful context for your follow-up. Details collected during a conversation can be prepared as a summary and shared through the agreed delivery method.",
+        "Receive an enquiry summary with the details you need for follow-up, delivered by the method agreed during setup.",
       stage: "demonstrated",
       points: [
         "Structured format for quick review",
@@ -429,7 +428,7 @@ export const featuresContent = {
       kicker: "Feature 05",
       title: "Your receptionist, personalised for your business",
       description:
-        "Every business works differently. Telloya can use your business greeting, ask questions relevant to your services, and collect the information you need to assess an enquiry. We agree this with you during setup. It is included with the standard plans. Work outside the supported configuration is quoted separately.",
+        "Every business works differently. Telloya can use your business greeting, ask questions relevant to your services and collect the details you need to assess each enquiry. We'll agree the configuration with you during setup. Standard personalisation is included with Basic, Growth and Pro. More complex configuration may need a separate quotation.",
       stage: "demonstrated",
       points: [
         "Business greeting and service information",
@@ -477,8 +476,7 @@ export const featuresContent = {
         timeline: "Under consideration",
       },
     ],
-    note:
-      `These items are not current features. ${commercialCopy.voicePreference} ${commercialCopy.voiceProvider}`,
+    note: "These items are not current features and are not included in a plan price.",
   },
   cta: {
     title: personalisedDemoOffer.heading,
@@ -660,7 +658,7 @@ export const industriesContent = {
     eyebrow: "Works for other trades too",
     title: "Local service businesses",
     lead:
-      "If your business involves on-site work and missed calls cost you enquiries, Telloya can help.",
+      "Telloya can also be considered for other service businesses that work on site. We'll review the business and the telephone setup before confirming it is suitable. That review does not mean every trade or every phone line is compatible.",
     examples: [
       "Locksmiths",
       "Glaziers",
@@ -694,7 +692,7 @@ export const pricingContent = {
     eyebrow: "Pricing",
     title: "Choose your plan",
     lead:
-      `Standard plans share the same core receptionist capabilities. The main difference is included monthly call minutes. A standard plan covers one operating location and one receptionist telephone number. Custom is for requirements outside a standard plan. ${commercialCopy.extraReceptionist}`,
+      `Standard plans share the same core capabilities and differ mainly by included monthly minutes. A standard plan covers one operating location and one receptionist telephone number. Custom is for requirements outside a standard plan. ${commercialCopy.extraReceptionist}`,
   },
   currency: {
     note: "Published prices are in GBP. Settlement currency and other payment terms are confirmed before you proceed. This page does not offer local-currency checkout or conversion.",
@@ -710,14 +708,14 @@ export const pricingContent = {
       : plan.tier === "growth"
       ? "For growing call volumes"
       : plan.tier === "pro"
-      ? "Maximum included usage"
+      ? "For higher call volumes"
       : "Tailored to your requirements",
     description: plan.tier === "basic"
-      ? "Everything you need to handle missed-call enquiries professionally while you're working on site."
+      ? "The same core capabilities as Growth and Pro, sized for a smaller monthly minute allowance."
       : plan.tier === "growth"
-      ? "Ideal for growing businesses with higher call volumes. Same core features with increased monthly minutes."
+      ? "The same core capabilities as Basic and Pro, with more included minutes."
       : plan.tier === "pro"
-      ? "For established businesses with consistent high call volumes. Same core features with substantial monthly minutes."
+      ? "The same core capabilities as Basic and Growth, for businesses with higher call volumes."
       : "A separate quotation for more than one operating location or receptionist number, or for a minute allowance outside the standard plans.",
     features: plan.tier === "custom"
       ? [

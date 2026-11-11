@@ -23,6 +23,13 @@ jobs:
       - run: npm ci
       - name: Install PostgreSQL and PostgREST for the intake mail claim test
         run: |
+          # The default runner resolver has failed to resolve the Ubuntu archive
+          # hosts before any test starts. Point the job at public resolvers, then
+          # install the same packages. This does not skip a test.
+          sudo systemctl stop systemd-resolved || true
+          sudo rm -f /etc/resolv.conf
+          printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf >/dev/null
+          getent hosts archive.ubuntu.com security.ubuntu.com azure.archive.ubuntu.com
           sudo apt-get update
           sudo apt-get install -y postgresql poppler-utils
           curl -fsSL -o /tmp/postgrest.tar.xz https://github.com/PostgREST/postgrest/releases/download/v16.5/postgrest-v16.5-linux-static-x86-64.tar.xz

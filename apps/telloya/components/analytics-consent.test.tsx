@@ -42,7 +42,7 @@ describe("TelloyaAnalyticsConsent", () => {
     expect(reject).toHaveClass(styles.reject)
     expect(accept.className.split(" ").sort()).not.toEqual(reject.className.split(" ").sort())
     expect(screen.getByRole("link", { name: "cookie notice" })).toHaveAttribute("href", "/cookies")
-    expect(screen.getByRole("link", { name: "privacy notice" })).toHaveAttribute("href", "https://profilerelaunch.com/privacy")
+    expect(screen.getByRole("link", { name: "privacy notice" })).toHaveAttribute("href", "/privacy")
     expect(window.localStorage.getItem(TELLOYA_ANALYTICS_CONSENT_KEY)).toBeNull()
     expect(document.querySelector("[data-testid='ga-external-script']")).toBeNull()
   })

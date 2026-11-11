@@ -1102,7 +1102,7 @@ export function TelloyaEnquiryForm({
               />
               <span>
                 I understand how Telloya handles this information, as described in the{" "}
-                <Link href="https://profilerelaunch.com/privacy" target="_blank" rel="noopener noreferrer">privacy notice</Link>.
+                <Link href="/privacy">privacy notice</Link>.
               </span>
             </label>
             {errors.privacyAccepted && <p id={`${formId}-privacyAccepted-error`} className={styles.error}>{errors.privacyAccepted}</p>}

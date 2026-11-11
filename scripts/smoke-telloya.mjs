@@ -83,7 +83,7 @@ async function testLaunchState(launched, description) {
     assert.ok(ready, `Telloya production server did not become ready\n${serverLog}`)
 
     // Test homepage, robots.txt, and sitemap
-    for (const path of ["/", "/demo", "/industries", "/robots.txt", "/sitemap.xml"]) {
+    for (const path of ["/", "/demo", "/industries", "/privacy", "/terms", "/robots.txt", "/sitemap.xml"]) {
       const response = await fetch(`${origin}${path}`, { redirect: "manual" })
       assert.equal(response.headers.get("content-security-policy-report-only"), null, path)
       const csp = response.headers.get("content-security-policy") ?? ""
@@ -138,6 +138,26 @@ async function testLaunchState(launched, description) {
         assert.match(content, /Hartley Plumbing/)
         assert.match(content, /See Telloya in Action/)
         assert.doesNotMatch(content, /Retell|Twilio|Stripe/)
+      }
+
+      if (path === "/privacy") {
+        assert.match(content, /Draft for legal review/)
+        assert.match(content, /Automatic deletion after 90 days is not operating/)
+        assert.match(content, /has not been verified/)
+        assert.doesNotMatch(content, /we do not record|recordings are not kept|this notice confirms that calls are not recorded/i)
+        assert.match(content, /Supabase/)
+        assert.match(content, /Resend/)
+        assert.match(content, /Vercel/)
+        assert.match(content, /Cloudflare Stream/)
+      }
+
+      if (path === "/terms") {
+        assert.match(content, /Draft for legal review/)
+        assert.match(content, /VAT is not charged on the published prices/)
+        assert.match(content, /does not confirm a demonstration appointment/)
+        assert.match(content, /not the agreement for a paid Telloya subscription/)
+        assert.match(content, /Governing law, jurisdiction, liability and service credits are not set out/)
+        assert.doesNotMatch(content, /VAT-exempt|courts of|liability cap|service credit of/i)
       }
 
       if (path === "/industries") {

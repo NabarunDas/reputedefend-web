@@ -33,6 +33,7 @@ export const personalisedDemoOffer = {
   href: "/enquire?intent=personalised-demo",
 } as const
 import { getCustomerPortalHref } from "@/lib/customer-portal"
+import { vatStatement } from "./legal-notices"
 import { telloyaPlans, relaunchGuardAddon, overagePolicy, calculateCombinedPrice, formatGbpPrice, formatMinutes, standardEntitlement, commercialCopy, coreTelloyaCapabilities } from "./pricing"
 
 // Homepage content
@@ -202,7 +203,7 @@ export const homepageContent = {
       },
       {
         q: "What happens to the call recordings?",
-        a: "Call handling, recording retention and data processing details will be covered in our service terms. These are being finalised before public launch.",
+        a: "The Privacy page explains what this website does with an enquiry. Recording and retention for a paid voice service are still being finalised before public launch.",
       },
     ],
   },
@@ -695,7 +696,7 @@ export const pricingContent = {
       `Standard plans share the same core capabilities and differ mainly by included monthly minutes. A standard plan covers one operating location and one receptionist telephone number. Custom is for requirements outside a standard plan. ${commercialCopy.extraReceptionist}`,
   },
   currency: {
-    note: "Published prices are in GBP. Settlement currency and other payment terms are confirmed before you proceed. This page does not offer local-currency checkout or conversion.",
+    note: `Published prices are in GBP. ${vatStatement} Settlement currency and other payment terms are confirmed before you proceed. This page does not offer local-currency checkout or conversion.`,
   },
   plans: telloyaPlans.map((plan) => ({
     tier: plan.tier,
@@ -876,7 +877,7 @@ export const pricingContent = {
       },
       {
         q: "What currencies are supported?",
-        a: "Published plan prices are in GBP. Settlement currency and payment terms are confirmed before you proceed. This website does not offer local-currency checkout or conversion.",
+        a: `Published plan prices are in GBP. ${vatStatement} Settlement currency and payment terms are confirmed before you proceed. This website does not offer local-currency checkout or conversion.`,
       },
       {
         q: "Can I choose a voice, accent or language?",
@@ -946,9 +947,9 @@ export const footerContent = {
   ],
   legal: [
     { label: "Cookies", href: "/cookies" },
-    { label: "Privacy", href: "https://profilerelaunch.com/privacy" },
-    { label: "Terms", href: "https://profilerelaunch.com/terms" },
+    { label: "Privacy", href: "/privacy" },
+    { label: "Terms", href: "/terms" },
   ],
   note:
-    "The Cookies link describes storage on this Telloya website. Privacy and Terms are ProfileRelaunch Ltd's existing company-wide website notices. They are not Telloya service terms. Telloya-specific terms for voice services, call recording, transcripts, retention, VAT, cancellation and refunds are not published on this site. They still await approval and will be published before public launch.",
+    "Cookies, Privacy and Terms on this website describe the Telloya marketing site. They are drafts for legal review. They are not Telloya service terms. Call recording, transcripts, automatic deletion, cancellation and refunds still await approval and will be published before public launch. The company-wide website notices remain on the ProfileRelaunch website.",
 } as const

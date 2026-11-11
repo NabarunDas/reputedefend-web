@@ -40,8 +40,8 @@ describe("unpublished Telloya legal drafts", () => {
     expect(appSource).not.toMatch(/TELLOYA-PROPOSED-2026-11-1/)
     expect(footerContent.legal.map((item) => item.href)).toEqual([
       "/cookies",
-      "https://profilerelaunch.com/privacy",
-      "https://profilerelaunch.com/terms",
+      "/privacy",
+      "/terms",
     ])
     expect(footerContent.note).toMatch(/not Telloya service terms/)
     expect(footerContent.note).toMatch(/still await approval/)

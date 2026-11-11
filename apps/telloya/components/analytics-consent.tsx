@@ -15,7 +15,7 @@ import {
 } from "@/lib/analytics"
 import styles from "./analytics-consent.module.css"
 
-const OPERATOR_PRIVACY_HREF = "https://profilerelaunch.com/privacy"
+const TELLOYA_PRIVACY_HREF = "/privacy"
 
 function focusAfterConsentChange(opener: HTMLElement | null) {
   window.requestAnimationFrame(() => {
@@ -166,7 +166,7 @@ export function TelloyaAnalyticsConsent({ measurementId }: { measurementId?: str
               <p>
                 Analytics helps Telloya understand how this website is used. It stays off until you accept it.
                 Read the <Link href="/cookies">cookie notice</Link> or the operator&apos;s{" "}
-                <a href={OPERATOR_PRIVACY_HREF} rel="noopener noreferrer">privacy notice</a>.
+                <Link href={TELLOYA_PRIVACY_HREF}>privacy notice</Link>.
               </p>
             </div>
             <div className={styles.actions}>

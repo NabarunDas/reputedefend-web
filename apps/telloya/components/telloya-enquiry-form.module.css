@@ -27,6 +27,16 @@
   padding: 36px 28px;
 }
 
+.success {
+  caret-color: transparent;
+  scroll-margin-top: 128px;
+}
+
+.success:focus,
+.success:focus-visible {
+  outline: none;
+}
+
 .prelaunch {
   text-align: center;
   display: flex;
@@ -643,36 +653,51 @@ textarea.control {
   opacity: .6;
 }
 
+.successHead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.successMark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(192, 252, 129, .4);
+  border-radius: 50%;
+  background: rgba(192, 252, 129, .14);
+  color: #c8ff8d;
+}
+
 .successTitle {
+  margin: 0;
   font-family: var(--font-display), Arial, sans-serif;
   font-size: clamp(26px, 3vw, 34px);
   line-height: 1.15;
   letter-spacing: -.04em;
   font-weight: 800;
   color: #fffdf6;
+  caret-color: transparent;
 }
 
-.successTitle:focus {
-  outline: 3px solid #d9ff94;
-  outline-offset: 4px;
-}
-
-.successTitle:focus-visible {
-  outline: 3px solid #d9ff94;
-  outline-offset: 4px;
+.refCard {
+  margin-top: 22px;
+  padding: 16px 18px;
+  border: 1px solid rgba(176, 244, 175, .22);
+  border-radius: 16px;
+  background: rgba(0, 17, 14, .38);
 }
 
 .refLabel {
-  margin-top: 22px;
-  font-size: 13px;
+  margin: 0;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: .08em;
+  letter-spacing: .12em;
   text-transform: uppercase;
   color: #b9ec8a;
-}
-
-.refGroup {
-  margin-top: 4px;
 }
 
 .refRow {
@@ -723,8 +748,16 @@ textarea.control {
   outline-offset: 3px;
 }
 
+.successNext {
+  margin: 22px 0 0;
+  color: #fffdf6;
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
 .successBody {
-  margin-top: 16px;
+  margin: 14px 0 0;
   color: #d2e4d8;
   font-size: 16px;
   line-height: 1.6;
@@ -786,6 +819,18 @@ textarea.control {
   .success {
     padding: 22px 16px;
     border-radius: 20px;
+  }
+  .successHead {
+    align-items: flex-start;
+  }
+  .successMark {
+    width: 36px;
+    height: 36px;
+    margin-top: 2px;
+  }
+  .refRow {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
   .option {
     padding: 14px;

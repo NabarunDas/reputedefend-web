@@ -114,7 +114,7 @@ const telloyaEmailBuilder: CustomEmailBuilder = {
       from: formattedFromAddress(config.fromEmail),
       to: data.email,
       replyTo: config.fromEmail,
-      subject: telloyaCustomerAcknowledgementSubject(ref),
+      subject: telloyaCustomerAcknowledgementSubject(ref, requestIntent),
       text: telloyaCustomerAcknowledgementText(ref, requestIntent),
       html: telloyaCustomerAcknowledgementHtml(ref, requestIntent),
     }

@@ -204,7 +204,7 @@ export function TelloyaEnquiryForm({
   const [receiptEmailStatus, setReceiptEmailStatus] = useState<"sent" | "suppressed" | "unavailable" | "">("")
   const headingRef = useRef<HTMLHeadingElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
-  const successRef = useRef<HTMLHeadingElement>(null)
+  const successRef = useRef<HTMLDivElement>(null)
   const formId = useId()
   const submissionKeyRef = useRef("")
   const lastPayloadRef = useRef("")
@@ -520,7 +520,7 @@ export function TelloyaEnquiryForm({
           setEnquiryRef(json.enquiryRef)
           setReceiptEmailStatus(json.receiptEmailStatus || "")
           setStatus("success")
-          setStatusText("Your enquiry has been received.")
+          setStatusText(demoRequest ? "Your demo request is in." : "Your enquiry is in.")
           if (json.leadConversion === true) {
             sendTelloyaLeadConversion({
               planTier: omitPlan ? undefined : values.planTier,
@@ -561,25 +561,42 @@ export function TelloyaEnquiryForm({
 
   if (status === "success") {
     const emailStatusMessage = receiptEmailStatus === "sent"
-      ? "We've sent a confirmation email for your enquiry. Please check your inbox and, if needed, your spam folder. This does not confirm the message has arrived in your inbox."
+      ? "A confirmation email is on its way. Please check your inbox or spam folder."
       : receiptEmailStatus === "suppressed"
         ? "No confirmation email was requested. Your enquiry is safely recorded."
         : receiptEmailStatus === "unavailable"
           ? "We could not send a confirmation email, but your enquiry is safely recorded. Please keep this reference."
           : ""
-    
+    const successTitleId = `${formId}-success-title`
+
     return (
-      <div className={styles.success} role="status">
-        <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>
-          Thank you — we have received your enquiry
-        </h2>
+      <div
+        ref={successRef}
+        tabIndex={-1}
+        className={styles.success}
+        role="status"
+        aria-labelledby={successTitleId}
+      >
+        <div className={styles.successHead}>
+          <span className={styles.successMark} aria-hidden="true">
+            <Check size={22} strokeWidth={2.6} />
+          </span>
+          <h2 id={successTitleId} className={styles.successTitle}>
+            {demoRequest ? "Your demo request is in!" : "Your enquiry is in!"}
+          </h2>
+        </div>
+        <p className={styles.successBody}>
+          {demoRequest
+            ? "We've received your request for a personalised Telloya demonstration."
+            : "We've received your enquiry. Our team will review the details and get in touch."}
+        </p>
         {enquiryRef && (
-          <div className={styles.refGroup}>
-            <p className={styles.refLabel}>Enquiry reference</p>
+          <div className={styles.refCard}>
+            <p className={styles.refLabel}>Your reference</p>
             <div className={styles.refRow}>
               <p className={styles.refValue}>{enquiryRef}</p>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={copyReference}
                 className={styles.copyButton}
                 aria-label={copySuccess ? "Reference copied" : "Copy reference"}
@@ -595,20 +612,14 @@ export function TelloyaEnquiryForm({
             </div>
           </div>
         )}
-        {requestIntent === "personalised-demo" ? (
+        {demoRequest && (
           <>
+            <h3 className={styles.successNext}>What happens next?</h3>
             <p className={styles.successBody}>
-              Thank you. We&apos;ll review what you would like your receptionist to say, then contact you with a suitable time and our demonstration number.
+              We&apos;ll review your requirements and get in touch to arrange your personalised demo call.
             </p>
           </>
-        ) : (
-          <p className={styles.successBody}>
-            Our team will review your enquiry and get in touch using the details you provided.
-          </p>
         )}
-        <p className={styles.successNote}>
-          Please keep this reference handy so we can find your enquiry quickly if you contact us.
-        </p>
         {emailStatusMessage && (
           <p className={styles.successNote}>{emailStatusMessage}</p>
         )}

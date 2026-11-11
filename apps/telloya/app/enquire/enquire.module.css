@@ -146,16 +146,17 @@
 }
 
 .process li {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: 16px;
+  align-items: baseline;
+  line-height: 1.58;
 }
 
 .step {
   width: 40px;
-  height: 40px;
   font-size: .78rem;
-  flex-shrink: 0;
+  line-height: 1.58;
 }
 
 .process li p {
@@ -163,7 +164,7 @@
   font-size: .92rem;
   line-height: 1.58;
   margin: 0;
-  padding-top: 8px;
+  padding-top: 0;
 }
 
 .info p {

@@ -10,10 +10,7 @@ permissions:
 
 jobs:
   verify:
-    # ubuntu-latest is Ubuntu 26, and its package hosts did not resolve on
-    # runs 43045006753 and 43050179848. Ubuntu 24.04 still provides PostgreSQL 16,
-    # which the real-database tests look for. This does not skip any test.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       NEXT_TELEMETRY_DISABLED: "1"

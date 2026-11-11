@@ -393,6 +393,70 @@
   border-radius: 12px;
   background: rgba(0,17,14,.65);
   color: #f4f8ef;
+  caret-color: #f4f8ef;
+  color-scheme: dark;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.control:-webkit-autofill,
+.control:-webkit-autofill:hover,
+.control:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f4f8ef;
+  caret-color: #f4f8ef;
+  box-shadow: 0 0 0 1000px #042219 inset;
+}
+
+.combo {
+  position: relative;
+}
+
+.listbox {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: min(240px, 40vh);
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid rgba(176, 244, 175, .28);
+  border-radius: 12px;
+  background: #042219;
+  color: #f4f8ef;
+}
+
+.countryOption,
+.countryOptionActive,
+.countryOptionEmpty {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.countryOptionActive {
+  background: rgba(192, 252, 129, .16);
+}
+
+.countryOptionEmpty {
+  cursor: default;
+  color: #b6d0bd;
+}
+
+.clearCountry {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #c0fc81;
+  font: inherit;
+  font-size: 14px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 select.control {

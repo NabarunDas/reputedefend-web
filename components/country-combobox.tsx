@@ -1,8 +1,17 @@
 "use client"
 
 import { useEffect, useId, useState, type KeyboardEvent } from "react"
-import { canonicalBusinessCountry, filterCountries, countryName, type CountryOption } from "@/lib/countries"
+import { canonicalBusinessCountry, filterCountries, countryName, type CountryOption } from "../lib/countries"
 import styles from "./case-intake.module.css"
+
+export type CountryComboboxAppearance = {
+  combo?: string
+  listbox?: string
+  option?: string
+  optionActive?: string
+  optionEmpty?: string
+  clear?: string
+}
 
 type CountryComboboxProps = {
   id?: string
@@ -11,6 +20,8 @@ type CountryComboboxProps = {
   onChange: (value: string) => void
   className?: string
   required?: boolean
+  appearance?: CountryComboboxAppearance
+  clearable?: boolean
   "aria-invalid"?: boolean
   "aria-describedby"?: string
 }
@@ -22,6 +33,8 @@ export function CountryCombobox({
   onChange,
   className,
   required,
+  appearance,
+  clearable = false,
   "aria-invalid": ariaInvalid,
   "aria-describedby": ariaDescribedBy,
 }: CountryComboboxProps) {
@@ -91,8 +104,17 @@ export function CountryCombobox({
     }
   }
 
+  const selectedCode = canonicalBusinessCountry(value)
+  function clearCountry() {
+    onChange("")
+    setEditing(false)
+    setQuery("")
+    setOpen(false)
+    setActive(0)
+  }
+
   return (
-    <div className={styles.combo}>
+    <div className={appearance?.combo ?? styles.combo}>
       <input
         id={inputId}
         name={name}
@@ -116,8 +138,13 @@ export function CountryCombobox({
         }}
         onKeyDown={onKeyDown}
       />
+      {clearable && selectedCode && !editing ? (
+        <button type="button" className={appearance?.clear} onClick={clearCountry}>
+          Clear country
+        </button>
+      ) : null}
       {open ? (
-        <ul id={listId} role="listbox" aria-label="Countries" className={styles.listbox}>
+        <ul id={listId} role="listbox" aria-label="Countries" className={appearance?.listbox ?? styles.listbox}>
           {options.length ? options.map((country, index) => (
             <CountryOptionRow
               key={country.code}
@@ -125,8 +152,9 @@ export function CountryCombobox({
               inputId={inputId}
               active={index === active}
               onSelect={commit}
+              appearance={appearance}
             />
-          )) : <li className={styles.countryOptionEmpty} role="presentation">No matching country</li>}
+          )) : <li className={appearance?.optionEmpty ?? styles.countryOptionEmpty} role="presentation">No matching country</li>}
         </ul>
       ) : null}
     </div>
@@ -138,18 +166,20 @@ function CountryOptionRow({
   inputId,
   active,
   onSelect,
+  appearance,
 }: {
   country: CountryOption
   inputId: string
   active: boolean
   onSelect: (code: string) => void
+  appearance?: CountryComboboxAppearance
 }) {
   return (
     <li
       id={`${inputId}-option-${country.code}`}
       role="option"
       aria-selected={active}
-      className={active ? styles.countryOptionActive : styles.countryOption}
+      className={active ? (appearance?.optionActive ?? styles.countryOptionActive) : (appearance?.option ?? styles.countryOption)}
       onMouseDown={(event) => event.preventDefault()}
       onClick={() => onSelect(country.code)}
     >

@@ -511,7 +511,7 @@ describe("Page Structure and Accessibility", () => {
     const EnquirePage = (await import("@/app/enquire/page")).default
     render(await EnquirePage({ searchParams: Promise.resolve({ plan: "growth" }) }))
     expect(screen.getByRole("heading", { name: /Enquire about Telloya/i })).toBeInTheDocument()
-    expect(screen.getByText(/not currently available for self-service purchase/i)).toBeInTheDocument()
+    expect(screen.getByText(/No payment is needed to enquire/i)).toBeInTheDocument()
     expect(screen.queryByText(/finalising pricing and packaging/i)).not.toBeInTheDocument()
     expect(screen.getByRole("status")).toHaveTextContent(/enquiry system before public launch/i)
     expect(screen.queryByRole("button", { name: /submit/i })).not.toBeInTheDocument()

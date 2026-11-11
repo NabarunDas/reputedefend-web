@@ -11,12 +11,12 @@ import { TelloyaEnquiryForm } from "./telloya-enquiry-form"
 afterEach(() => cleanup())
 
 describe("Telloya enquiry form commercial labels", () => {
-  it("shows an indicative fixed-plan plus Guard total without authorising billing", () => {
+  it("shows an advertised fixed-plan plus Guard total and keeps the Guard entitlement limit", () => {
     render(<TelloyaEnquiryForm capabilities={{ submissionEnabled: true }} initialPlanTier="growth" />)
     fireEvent.click(screen.getByRole("checkbox", { name: /Add Relaunch Guard monitoring/ }))
     fireEvent.change(screen.getByRole("spinbutton", { name: /How many locations need Guard protection/ }), { target: { value: "2" } })
-    expect(screen.getByText(/Indicative monthly total: £98\.98/)).toBeInTheDocument()
-    expect(screen.getByText(/does not authorise billing/)).toBeInTheDocument()
+    expect(screen.getByText(/Advertised monthly total: £98\.98/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Additional Guard-only locations do not create additional receptionist entitlements/).length).toBeGreaterThan(0)
   })
 
   it("keeps Custom monthly calls optional", () => {
@@ -59,8 +59,10 @@ function renderEnabled(
 
 function fillContact() {
   fireEvent.change(screen.getByRole("textbox", { name: /Business name/ }), { target: { value: "Harbour Plumbing" } })
-  fireEvent.change(screen.getByRole("textbox", { name: /^Country/ }), { target: { value: "United Kingdom" } })
-  fireEvent.change(screen.getByRole("textbox", { name: /Business type or trade/ }), { target: { value: "Plumbing" } })
+  const country = screen.getByRole("combobox", { name: /^Country/ })
+  fireEvent.change(country, { target: { value: "United Kingdom" } })
+  fireEvent.blur(country)
+  fireEvent.change(screen.getByRole("combobox", { name: /Business type or trade/ }), { target: { value: "Plumbing" } })
   fireEvent.change(screen.getByRole("textbox", { name: /Contact name/ }), { target: { value: "Ada Lovelace" } })
   fireEvent.change(screen.getByRole("textbox", { name: /^Email/ }), { target: { value: "ada@example.com" } })
   fireEvent.change(screen.getByRole("textbox", { name: /Phone number/ }), { target: { value: "+447700900123" } })
@@ -125,7 +127,7 @@ describe("Telloya short enquiry journey", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /Add Relaunch Guard monitoring/ }))
     const locations = screen.getByRole("spinbutton", { name: /How many locations need Guard protection/ })
     fireEvent.change(locations, { target: { value: "3" } })
-    expect(screen.getByText(/Indicative monthly total: £149\.97/)).toBeInTheDocument()
+    expect(screen.getByText(/Advertised monthly total: £149\.97/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
     fireEvent.click(screen.getByRole("button", { name: /Edit Your service/ }))
     expect(screen.getByRole("radio", { name: /Pro/ })).toBeChecked()
@@ -145,7 +147,7 @@ describe("Telloya short enquiry journey", () => {
     fireEvent.change(screen.getByRole("spinbutton", { name: /Number of locations/ }), { target: { value: "4" } })
     fireEvent.click(screen.getByRole("checkbox", { name: /Add Relaunch Guard monitoring/ }))
     fireEvent.change(screen.getByRole("spinbutton", { name: /How many locations need Guard protection/ }), { target: { value: "2" } })
-    expect(screen.getByText(/Indicative Guard amount: £19\.98/)).toBeInTheDocument()
+    expect(screen.getByText(/Advertised Guard amount: £19\.98/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
     expect(screen.getByRole("heading", { name: /Your business and contact details/ })).toBeInTheDocument()
   })
@@ -158,16 +160,15 @@ describe("Telloya short enquiry journey", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
     const summary = screen.getByRole("alert")
     expect(summary).toHaveTextContent("Please enter your business name.")
-    expect(summary).toHaveTextContent("Please enter your country.")
-    expect(summary).toHaveTextContent("Please describe your trade or service.")
+    expect(summary).toHaveTextContent("Please choose the country where your business is located.")
+    expect(summary).toHaveTextContent("Please choose your business type.")
     expect(summary).toHaveTextContent("Please enter your name.")
     expect(summary).toHaveTextContent("Please enter a valid email address.")
     expect(summary).toHaveTextContent("Please enter a valid phone number.")
     expect(summary).toHaveTextContent("Please confirm you have read the privacy notice.")
     expect(screen.getByRole("link", { name: "privacy notice" })).toHaveAttribute("href", "/privacy")
     expect(summary).not.toHaveTextContent("phone setup")
-    expect(screen.getByText("Review your selected plan, then provide your business and contact details so we can discuss the next steps.")).toBeInTheDocument()
-    expect(screen.getAllByText(/does not take payment, activate the service, or authorise a recurring charge/)).toHaveLength(1)
+    expect(screen.getByText("Review your selected plan, then tell us how to contact you.")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Please enter your business name." }))
     expect(document.activeElement).toHaveAttribute("name", "businessName")
   })
@@ -419,7 +420,6 @@ describe("Telloya progressive enquiry journey", () => {
     expect(screen.getByText("Our team will discuss your requirements and help you choose a suitable plan.")).toBeInTheDocument()
     expect(screen.queryByText(/per month, indicative/)).not.toBeInTheDocument()
     expect(screen.queryByText(/minutes\/month/)).not.toBeInTheDocument()
-    expect(screen.getByText(/does not take payment, activate the service, or authorise a recurring charge/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
     const summary = screen.getByRole("alert")
     expect(summary).toHaveTextContent("Please enter your business name.")
@@ -530,7 +530,7 @@ describe("Telloya progressive enquiry journey", () => {
       fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
       const field = screen.getByRole("textbox", { name: /What would you like your receptionist to ask/ }) as HTMLTextAreaElement
       expect(field).not.toBeRequired()
-      expect(screen.getByText(/questions, business information or enquiry details you would like covered/)).toBeInTheDocument()
+      expect(screen.getByText(/what you would like your receptionist to say/)).toBeInTheDocument()
       fireEvent.change(field, { target: { value: `  ${question}  ` } })
       fillContact()
       fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
@@ -571,17 +571,17 @@ describe("Telloya progressive enquiry journey", () => {
       })
       vi.stubGlobal("fetch", fetchMock)
       renderEnabled(tier, false, "personalised-demo")
-      expect(screen.getByRole("note")).toHaveTextContent("You are requesting a personalised live demonstration.")
-      fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
-      expect(screen.getByRole("note")).toHaveTextContent("not a confirmed appointment")
+      expect(screen.queryByRole("button", { name: /Continue/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole("radio", { name: /Help me choose a plan/ })).not.toBeInTheDocument()
+      expect(screen.getByRole("note")).toHaveTextContent("Requesting a demonstration does not confirm an appointment.")
+      expect(screen.getByRole("combobox", { name: /Plan preference/ })).toHaveValue(tier)
       fireEvent.change(screen.getByRole("textbox", { name: /What would you like your receptionist to ask/ }), {
         target: { value: "Ask for the postcode." },
       })
       fillContact()
-      fireEvent.click(screen.getByRole("button", { name: "Submit enquiry" }))
-      expect(await screen.findByText("Thank you for your enquiry. We'll review your requirements and contact you to arrange a time for you to call our demonstration number.")).toBeInTheDocument()
-      expect(screen.getByText(/This enquiry is not a confirmed demonstration booking\. No payment is taken, no subscription is activated, and no demonstration agent is provisioned automatically\./)).toBeInTheDocument()
-      expect(screen.getByText(/No payment details are required, and there is no obligation to subscribe\./)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole("button", { name: "Request demonstration" }))
+      expect(await screen.findByText(/We'll review what you would like your receptionist to say, then contact you with a suitable time and our demonstration number/)).toBeInTheDocument()
+      expect(screen.queryByText("Requesting a demonstration does not confirm an appointment.")).not.toBeInTheDocument()
       expect(screen.getByText(reference)).toBeInTheDocument()
       expect(screen.getByText(/does not confirm the message has arrived in your inbox/)).toBeInTheDocument()
       const body = JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>
@@ -590,5 +590,114 @@ describe("Telloya progressive enquiry journey", () => {
       expect(body.planTier).toBe(tier || undefined)
       expect(fetchMock).toHaveBeenCalledTimes(1)
     }
+  })
+})
+
+describe("Telloya enquiry text entry", () => {
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it("keeps focus and the typed value on each character", () => {
+    renderEnabled("basic")
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+    const field = screen.getByRole("textbox", { name: /Business name/ })
+    field.focus()
+    let typed = ""
+    for (const character of "Harbour Plumbing") {
+      typed += character
+      fireEvent.change(field, { target: { value: typed } })
+      expect(document.activeElement).toBe(field)
+      expect(field).toHaveValue(typed)
+    }
+  })
+
+  it("accepts UK, United Kingdom and GB as the United Kingdom", () => {
+    renderEnabled("")
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+    const country = screen.getByRole("combobox", { name: /^Country/ })
+    for (const typed of ["UK", "United Kingdom", "GB"]) {
+      fireEvent.change(country, { target: { value: typed } })
+      fireEvent.keyDown(country, { key: "Enter" })
+      expect(country).toHaveValue("United Kingdom")
+      fireEvent.click(screen.getByRole("button", { name: "Clear country" }))
+      expect(country).toHaveValue("")
+    }
+  })
+
+  it("lets another business type be typed and keeps it when moving back", () => {
+    renderEnabled("growth")
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+    fireEvent.change(screen.getByRole("combobox", { name: /Business type or trade/ }), { target: { value: "other" } })
+    const other = screen.getByRole("textbox", { name: /Please specify your business type/ })
+    other.focus()
+    fireEvent.change(other, { target: { value: "Pest control" } })
+    expect(document.activeElement).toBe(other)
+    expect(other).toHaveValue("Pest control")
+    fireEvent.click(screen.getByRole("button", { name: /Back/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
+    expect(screen.getByRole("combobox", { name: /Business type or trade/ })).toHaveValue("other")
+    expect(screen.getByRole("textbox", { name: /Please specify your business type/ })).toHaveValue("Pest control")
+  })
+
+  it("lets a personalised demo be typed without choosing a plan", () => {
+    renderEnabled("", false, "personalised-demo")
+    const name = screen.getByRole("textbox", { name: /Business name/ })
+    name.focus()
+    fireEvent.change(name, { target: { value: "A" } })
+    expect(document.activeElement).toBe(name)
+    expect(name).toHaveValue("A")
+    expect(screen.queryByRole("radio", { name: /^Basic/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument()
+  })
+
+  it("submits an optional Custom preference without quotation fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => ({
+        ok: true,
+        enquiryRef: reference,
+        leadConversion: false,
+        receiptEmailStatus: "sent",
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    renderEnabled("", false, "personalised-demo")
+    fireEvent.change(screen.getByRole("combobox", { name: /Plan preference/ }), { target: { value: "custom" } })
+    expect(screen.queryByRole("spinbutton", { name: /Monthly minutes needed/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("spinbutton", { name: /Phone numbers needed/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("spinbutton", { name: /Operating locations needed/ })).not.toBeInTheDocument()
+    fillContact()
+    fireEvent.click(screen.getByRole("button", { name: "Request demonstration" }))
+    await screen.findByRole("heading", { name: /we have received your enquiry/i })
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>
+    expect(body.planTier).toBe("custom")
+    expect(body.requestIntent).toBe("personalised-demo")
+    expect(body.customMonthlyMinutes).toBeUndefined()
+    expect(body.customPhoneNumbers).toBeUndefined()
+    expect(body.customLocations).toBeUndefined()
+    expect(validateTelloyaEnquiry(body).valid).toBe(true)
+  })
+
+  it("focuses the visible custom trade field from the error summary", () => {
+    renderEnabled("", false, "personalised-demo")
+    fireEvent.change(screen.getByRole("combobox", { name: /Business type or trade/ }), { target: { value: "other" } })
+    fireEvent.click(screen.getByRole("button", { name: "Request demonstration" }))
+    const summary = screen.getByRole("alert")
+    expect(summary).toHaveTextContent("Please tell us what your business does.")
+    fireEvent.click(screen.getByRole("button", { name: "Please tell us what your business does." }))
+    expect(document.activeElement).toHaveAttribute("name", "trade")
+    expect(document.activeElement?.id).toMatch(/tradeOther$/)
+  })
+
+  it("keeps fields editable after validation errors", () => {
+    renderEnabled("", false, "personalised-demo")
+    fireEvent.click(screen.getByRole("button", { name: "Request demonstration" }))
+    const name = screen.getByRole("textbox", { name: /Business name/ })
+    expect(screen.getByRole("alert")).toHaveTextContent("Please enter your business name.")
+    name.focus()
+    fireEvent.change(name, { target: { value: "Edited after the error" } })
+    expect(name).toHaveValue("Edited after the error")
+    expect(document.activeElement).toBe(name)
   })
 })

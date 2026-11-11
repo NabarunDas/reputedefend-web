@@ -286,6 +286,7 @@
   content: "";
   position: absolute;
   inset: 0;
+  pointer-events: none;
   background:
     radial-gradient(ellipse 30% 25% at 15% 30%, rgba(107,205,132,.15), transparent 100%),
     radial-gradient(ellipse 28% 20% at 88% 35%, rgba(164,255,170,.15), transparent 100%),

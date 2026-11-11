@@ -34,7 +34,8 @@ describe("business location countries", () => {
   it("searches by name, code, and the UK alias", () => {
     expect(filterCountries("ire").map((country) => country.code)).toContain("IE")
     expect(filterCountries("GB")[0]?.code).toBe("GB")
-    expect(filterCountries("UK").some((country) => country.code === "GB")).toBe(true)
+    expect(filterCountries("UK")[0]?.code).toBe("GB")
+    expect(filterCountries("United Kingdom")[0]?.code).toBe("GB")
     expect(filterCountries("not-a-country")).toEqual([])
   })
 })

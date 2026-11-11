@@ -445,11 +445,13 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
     errors.guardLocationCount = "Please specify how many locations need Guard protection."
   }
 
+  const customQuotationRequired = data.planTier === "custom" && data.requestIntent !== "personalised-demo"
+
   if (data.customMonthlyMinutes !== undefined) {
     if (!Number.isInteger(data.customMonthlyMinutes) || data.customMonthlyMinutes < 1 || data.customMonthlyMinutes > 1000000) {
       errors.customMonthlyMinutes = "Monthly minutes must be a whole number from 1 to 1,000,000."
     }
-  } else if (data.planTier === "custom") {
+  } else if (customQuotationRequired) {
     errors.customMonthlyMinutes = "Please specify the monthly minutes you need."
   }
 
@@ -463,7 +465,7 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
     if (!Number.isInteger(data.customPhoneNumbers) || data.customPhoneNumbers < 1 || data.customPhoneNumbers > 999) {
       errors.customPhoneNumbers = "Phone numbers must be a whole number from 1 to 999."
     }
-  } else if (data.planTier === "custom") {
+  } else if (customQuotationRequired) {
     errors.customPhoneNumbers = "Please specify how many phone numbers you need."
   }
 
@@ -471,7 +473,7 @@ export function collectTelloyaEnquiryErrors(data: TelloyaEnquiryInput): TelloyaE
     if (!Number.isInteger(data.customLocations) || data.customLocations < 1 || data.customLocations > 9999) {
       errors.customLocations = "Locations must be a whole number from 1 to 9,999."
     }
-  } else if (data.planTier === "custom") {
+  } else if (customQuotationRequired) {
     errors.customLocations = "Please specify how many locations you operate."
   }
 

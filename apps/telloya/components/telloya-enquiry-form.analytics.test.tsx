@@ -31,8 +31,10 @@ function fillAndSubmit(guard = false) {
   }
   fireEvent.click(screen.getByRole("button", { name: /Continue/ }))
   fireEvent.change(screen.getByRole("textbox", { name: /Business name/ }), { target: { value: business } })
-  fireEvent.change(screen.getByRole("textbox", { name: /^Country/ }), { target: { value: "United Kingdom" } })
-  fireEvent.change(screen.getByRole("textbox", { name: /Business type or trade/ }), { target: { value: "Plumbing" } })
+  const country = screen.getByRole("combobox", { name: /^Country/ })
+  fireEvent.change(country, { target: { value: "United Kingdom" } })
+  fireEvent.blur(country)
+  fireEvent.change(screen.getByRole("combobox", { name: /Business type or trade/ }), { target: { value: "Plumbing" } })
   fireEvent.change(screen.getByRole("textbox", { name: /Contact name/ }), { target: { value: "Ada Lovelace" } })
   fireEvent.change(screen.getByRole("textbox", { name: /^Email/ }), { target: { value: email } })
   fireEvent.change(screen.getByRole("textbox", { name: /Phone number/ }), { target: { value: phone } })

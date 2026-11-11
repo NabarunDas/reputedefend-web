@@ -185,9 +185,12 @@ export const privacyNotice = {
       id: "demonstrations",
       title: "Personalised demonstration calls",
       blocks: [
-        { kind: "p", text: "The film and the on-screen walkthrough do not place a telephone call. A personalised demonstration, if one is arranged, is a separate telephone conversation with an AI receptionist." },
-        { kind: "p", text: "The intended approach for that conversation is no persistent audio recording, no persistent transcript, and no use of the conversation for AI-model training. That approach has not been verified against the live voice-provider account or the demonstration configuration. This notice does not state it as current practice." },
-        { kind: "p", text: "Until that verification is complete, do not rely on this page for what happens to the speech on a demonstration call. We will explain the confirmed position before asking you to call." },
+        { kind: "p", text: "The film and the on-screen walkthrough do not place a telephone call. A personalised demonstration, when one is arranged, is a live telephone conversation with an AI receptionist." },
+        { kind: "p", text: "During that conversation, audio and speech are processed temporarily so the AI can respond." },
+        { kind: "p", text: "The current demonstration agent is configured so that its normal call history does not keep the full call audio or a full transcript. A telephone test of this demonstration showed basic call metadata in that history. A full recording, a full transcript and a post-call extracted summary were not available there. Basic operational call metadata may still be kept by the voice provider." },
+        { kind: "p", text: "No agent-level or account-level webhook destination is configured for this demonstration. The demonstration does not currently provide a persisted structured enquiry summary through the Telloya application. Post-call extraction fields are set on the demonstration agent, but this notice does not confirm that those fields are stored or delivered." },
+        { kind: "p", text: "ProfileRelaunch does not authorise the content of a demonstration call for AI training. An account-specific contractual opt-out with the voice provider has not been confirmed, so this notice does not guarantee that the voice provider excludes caller content from training." },
+        { kind: "p", text: "These points describe the current demonstration agent. They do not describe every agent a future paid subscription might use. Recording, retention and transfer practices for a future subscription are covered separately." },
       ],
     },
     {
@@ -195,15 +198,16 @@ export const privacyNotice = {
       title: "How long an enquiry is kept",
       blocks: [
         { kind: "p", text: "The business target for an ordinary marketing enquiry is 90 days, unless the law requires it to be kept for longer or it is needed to deal with a request you have made." },
-        { kind: "p", text: "Automatic deletion after 90 days is not operating. The saved enquiry, its event history, and the record of whether an email was accepted may therefore remain for longer than 90 days. This notice does not claim that a copy held by the email provider, or a backup held by a provider, is deleted on that timetable." },
-        { kind: "p", text: "A separate retention rule for call summaries, audio or transcripts is not confirmed here, because the demonstration and paid-call configuration has not been verified." },
+        { kind: "p", text: "A deletion function for those enquiries has been prepared. Destructive deletion is switched off, and no scheduled job runs the function. Automatic deletion after 90 days is not operating. The saved enquiry, its event history, and the record of whether an email was accepted may therefore remain for longer than 90 days. This notice does not claim that a copy held by the email provider, or a backup held by a provider, is deleted on that timetable." },
+        { kind: "p", text: "This 90-day target covers an ordinary marketing enquiry on this website. It does not set retention for a future paid subscription, including call audio, transcripts, summaries or billing records." },
       ],
     },
     {
       id: "international",
       title: "Where information may be processed",
       blocks: [
-        { kind: "p", text: "The providers named above may process information in more than one country. This notice does not promise that every copy stays in the United Kingdom, and it does not describe a specific international-transfer mechanism. That remains for legal review." },
+        { kind: "p", text: "The providers named on this page may process information in more than one country. This notice does not promise that every copy stays in the United Kingdom, and it does not describe a completed international-transfer arrangement. That remains for legal review." },
+        { kind: "p", text: "The current personalised demonstration uses Retell as the voice provider. This notice does not state a processing country for that demonstration, because one has not been confirmed for publication." },
       ],
     },
     {
@@ -226,4 +230,4 @@ export const privacyNotice = {
 } as const satisfies { eyebrow: string; title: string; lead: string; sections: readonly LegalSection[] }
 
 export const demonstrationPrivacyNote =
-  "How a personalised demonstration call is recorded or stored has not been verified against the live voice configuration. The privacy notice explains what is confirmed for this website, and it does not treat an unverified recording practice as fact."
+  "How that demonstration call is handled is explained in the privacy notice."

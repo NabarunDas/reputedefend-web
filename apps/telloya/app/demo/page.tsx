@@ -25,6 +25,10 @@ const filmPoster = {
 }
 
 export default function DemoPage() {
+  const privacyLabel = "privacy notice"
+  const privacyAt = demoPageCopy.demonstrationPrivacyNote.lastIndexOf(privacyLabel)
+  const privacyBefore = demoPageCopy.demonstrationPrivacyNote.slice(0, privacyAt)
+  const privacyAfter = demoPageCopy.demonstrationPrivacyNote.slice(privacyAt + privacyLabel.length)
   return (
     <div className={styles.page}>
       <section className={styles.hero} aria-labelledby="demo-title">
@@ -88,8 +92,9 @@ export default function DemoPage() {
           <p className={styles.ctaNote}>{demoPageCopy.personalisedDemoSupport}</p>
           <p className={styles.distinction}>{demoPageCopy.personalisedDemoDistinction}</p>
           <p className={styles.distinction}>
-            {demoPageCopy.demonstrationPrivacyNote}{" "}
-            <Link href={demoPageCopy.demonstrationPrivacyHref}>Privacy notice</Link>
+            {privacyBefore}
+            <Link href={demoPageCopy.demonstrationPrivacyHref}>{privacyLabel}</Link>
+            {privacyAfter}
           </p>
           <div className={styles.ctaRow}>
             <Link className={styles.primaryLink} href={demoPageCopy.personalisedDemoHref}>

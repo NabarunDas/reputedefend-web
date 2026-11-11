@@ -26,20 +26,33 @@ describe("Telloya website terms and privacy notice", () => {
     expect(websiteTerms.sections.some((section) => section.id === "paid-service")).toBe(true)
   })
 
-  it("states verified enquiry handling and does not treat voice storage as established", () => {
+  it("states the verified demonstration position without an absolute deletion or training promise", () => {
     render(<PrivacyPage />)
     expect(screen.getByRole("heading", { level: 1, name: "Privacy notice" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Personalised demonstration calls" })).toBeInTheDocument()
     const text = document.body.textContent ?? ""
+    expect(text).toMatch(/live telephone conversation with an AI receptionist/)
+    expect(text).toMatch(/processed temporarily so the AI can respond/)
+    expect(text).toMatch(/normal call history does not keep the full call audio or a full transcript/)
+    expect(text).toMatch(/Basic operational call metadata may still be kept/)
+    expect(text).toMatch(/No agent-level or account-level webhook destination is configured/)
+    expect(text).toMatch(/does not currently provide a persisted structured enquiry summary/)
+    expect(text).toMatch(/does not authorise the content of a demonstration call for AI training/)
+    expect(text).toMatch(/does not guarantee that the voice provider excludes caller content from training/)
+    expect(text).toMatch(/future paid subscription/)
+    expect(text).toMatch(/Destructive deletion is switched off/)
+    expect(text).toMatch(/no scheduled job runs the function/)
     expect(text).toMatch(/Automatic deletion after 90 days is not operating/)
-    expect(text).toMatch(/has not been verified/)
+    expect(text).toMatch(/uses Retell as the voice provider/)
+    expect(text).toMatch(/does not state a processing country/)
+    expect(text).toMatch(/does not describe a completed international-transfer arrangement/)
     expect(text).toMatch(/Supabase/)
     expect(text).toMatch(/Resend/)
     expect(text).toMatch(/Vercel/)
     expect(text).toMatch(/Cloudflare Stream/)
     expect(text).toMatch(/not a completed legal assessment/)
     expect(screen.getByRole("link", { name: "profilerelaunch.com/privacy" })).toHaveAttribute("href", "https://profilerelaunch.com/privacy")
-    expect(text).not.toMatch(/we do not record|recordings are not kept|this notice confirms that calls are not recorded/i)
+    expect(text).not.toMatch(/has not been verified|completely unverified|10 minutes|no data is ever|we do not record|recordings are not kept|this notice confirms that calls are not recorded|will not be used for training|UK Addendum is the only/i)
   })
 
   it("links the footer to the Telloya notices and keeps the company privacy notice", () => {
@@ -56,8 +69,8 @@ describe("Telloya website terms and privacy notice", () => {
     expect(vatStatement).not.toMatch(/VAT-exempt|can never/i)
   })
 
-  it("keeps the demo explanation from presenting unverified recording behaviour as fact", () => {
-    expect(demonstrationPrivacyNote).toMatch(/has not been verified/)
-    expect(demonstrationPrivacyNote).not.toMatch(/no persistent audio|we do not record|not used for model training/i)
+  it("keeps the demo privacy sentence to one link and avoids an unverified-recording disclaimer", () => {
+    expect(demonstrationPrivacyNote).toBe("How that demonstration call is handled is explained in the privacy notice.")
+    expect(demonstrationPrivacyNote).not.toMatch(/has not been verified|completely unverified|no persistent audio|we do not record|not used for model training|10 minutes/i)
   })
 })

@@ -18,6 +18,17 @@ function Block({ block }: { block: LegalBlock }) {
       : <Link href={block.href}>{block.label}</Link>
     return <p>{block.before}{link}{block.after ?? ""}</p>
   }
+  if (block.kind === "links") {
+    return (
+      <p>
+        {block.parts.map((part, index) => (
+          "href" in part
+            ? <a key={`${part.href}-${index}`} href={part.href} rel="noopener noreferrer">{part.label}</a>
+            : <span key={`text-${index}`}>{part.text}</span>
+        ))}
+      </p>
+    )
+  }
   return <p>{block.text}</p>
 }
 

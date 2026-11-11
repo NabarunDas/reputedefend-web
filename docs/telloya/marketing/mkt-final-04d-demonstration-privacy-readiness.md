@@ -4,7 +4,7 @@ Status: internal draft for legal review. NOT APPROVED. NOT PUBLISHED. NOT LEGAL 
 
 This note records owner-verified demonstration facts and the contractual items that are still open. It is not a customer notice and it is not authority to launch.
 
-The customer-facing drafts are `apps/telloya/lib/legal-notices.ts` and the one privacy sentence on `/demo`. They still require final legal approval.
+The customer-facing privacy page uses a short demonstration statement and links to Retell's published Privacy Policy and Terms of Service. It does not promise a contractual no-training opt-out or a fixed deletion deadline. The one privacy sentence on `/demo` is unchanged. These drafts still require final legal approval.
 
 ## Owner-verified demonstration configuration
 
@@ -25,6 +25,12 @@ The business owner confirmed the following from the live Retell demonstration ag
 The business policy is not to authorise caller content for AI training.
 
 The account-specific contractual opt-out with the voice provider remains outstanding. Do not publish an absolute no-training guarantee until that opt-out is confirmed.
+
+## Deferred contractual negotiations
+
+The business has chosen to defer additional Retell contractual negotiations for now. That choice is subject to legal advice and any mandatory obligations.
+
+Deferred documents are not signed and are not legally completed. This includes an account-specific training opt-out, a data-processing agreement, a UK Addendum, an IDTA, and any other transfer arrangement. Do not describe any of those as executed. Do not describe the UK Addendum as the only legally valid mechanism.
 
 ## International transfers
 

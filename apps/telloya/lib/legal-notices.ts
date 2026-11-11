@@ -17,6 +17,7 @@ export type LegalBlock =
   | { kind: "p"; text: string }
   | { kind: "list"; items: readonly string[] }
   | { kind: "link"; before: string; href: string; label: string; after?: string }
+  | { kind: "links"; parts: readonly ({ text: string } | { href: string; label: string })[] }
 
 export type LegalSection = {
   id: string
@@ -185,12 +186,17 @@ export const privacyNotice = {
       id: "demonstrations",
       title: "Personalised demonstration calls",
       blocks: [
-        { kind: "p", text: "The film and the on-screen walkthrough do not place a telephone call. A personalised demonstration, when one is arranged, is a live telephone conversation with an AI receptionist." },
-        { kind: "p", text: "During that conversation, audio and speech are processed temporarily so the AI can respond." },
-        { kind: "p", text: "The current demonstration agent is configured so that its normal call history does not keep the full call audio or a full transcript. A telephone test of this demonstration showed basic call metadata in that history. A full recording, a full transcript and a post-call extracted summary were not available there. Basic operational call metadata may still be kept by the voice provider." },
-        { kind: "p", text: "No agent-level or account-level webhook destination is configured for this demonstration. The demonstration does not currently provide a persisted structured enquiry summary through the Telloya application. Post-call extraction fields are set on the demonstration agent, but this notice does not confirm that those fields are stored or delivered." },
-        { kind: "p", text: "ProfileRelaunch does not authorise the content of a demonstration call for AI training. An account-specific contractual opt-out with the voice provider has not been confirmed, so this notice does not guarantee that the voice provider excludes caller content from training." },
-        { kind: "p", text: "These points describe the current demonstration agent. They do not describe every agent a future paid subscription might use. Recording, retention and transfer practices for a future subscription are covered separately." },
+        { kind: "p", text: "Personalised telephone demonstrations use Retell AI to process speech and respond during the conversation. Our demonstration agent uses Retell's Basic Attributes Only setting, so full call recordings and transcripts are not retained in its normal call history. Retell may temporarily process conversation content and retain basic operational call information." },
+        {
+          kind: "links",
+          parts: [
+            { text: "Demonstrations allow you to experience a real AI receptionist conversation. They do not currently create a stored enquiry summary within Telloya. Retell's own data handling, including model-improvement uses and international processing, is described in its published " },
+            { href: "https://www.retellai.com/legal/privacy-policy", label: "Privacy Policy" },
+            { text: " and " },
+            { href: "https://www.retellai.com/legal/terms-of-service", label: "Terms of Service" },
+            { text: "." },
+          ],
+        },
       ],
     },
     {
@@ -207,7 +213,6 @@ export const privacyNotice = {
       title: "Where information may be processed",
       blocks: [
         { kind: "p", text: "The providers named on this page may process information in more than one country. This notice does not promise that every copy stays in the United Kingdom, and it does not describe a completed international-transfer arrangement. That remains for legal review." },
-        { kind: "p", text: "The current personalised demonstration uses Retell as the voice provider. This notice does not state a processing country for that demonstration, because one has not been confirmed for publication." },
       ],
     },
     {

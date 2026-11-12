@@ -1,12 +1,15 @@
 BEGIN;
--- Telloya admin journey records for an offline demonstration and later offer versions.
+-- Telloya admin journey records for an offline demonstration.
 -- Do not apply this file to DEV or Production.
 -- It does not call Retell, send email, create a Stripe object, or change an enquiry row.
+-- The demonstration actor is the verified staff session. A client-supplied actor is not accepted.
+-- Demonstration rows cascade with the enquiry so a booked demonstration does not block 90-day deletion.
+-- This file does not enable destructive deletion and does not insert a retention hold.
 -- Offer rows are included here so a later phase does not add a second unapplied migration.
 -- No offer is inserted by this file.
 
 CREATE TABLE admin_private.telloya_admin_demos (
-  enquiry_id uuid PRIMARY KEY REFERENCES public.enquiries(id) ON DELETE RESTRICT,
+  enquiry_id uuid PRIMARY KEY REFERENCES public.enquiries(id) ON DELETE CASCADE,
   status text NOT NULL CHECK (status IN ('NOT_BOOKED','BOOKED','COMPLETED')),
   scheduled_at timestamptz,
   timezone text NOT NULL DEFAULT '' CHECK (length(timezone) <= 80),
@@ -22,7 +25,7 @@ CREATE TABLE admin_private.telloya_admin_demos (
 
 CREATE TABLE admin_private.telloya_admin_demo_events (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  enquiry_id uuid NOT NULL REFERENCES public.enquiries(id) ON DELETE RESTRICT,
+  enquiry_id uuid NOT NULL REFERENCES public.enquiries(id) ON DELETE CASCADE,
   actor_id uuid NOT NULL,
   previous_status text NOT NULL,
   new_status text NOT NULL,
@@ -67,9 +70,27 @@ ALTER TABLE admin_private.telloya_admin_offers ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON admin_private.telloya_admin_demos, admin_private.telloya_admin_demo_events, admin_private.telloya_admin_offers FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON SEQUENCE admin_private.telloya_admin_demo_events_id_seq FROM PUBLIC, anon, authenticated, service_role;
 
+CREATE FUNCTION admin_private.telloya_admin_demo_actor_v1(p_token text) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+  v_session jsonb;
+BEGIN
+  v_session := public.admin_session_v1(p_token);
+  IF v_session IS NULL OR v_session->>'userId' IS NULL THEN
+    RETURN NULL;
+  END IF;
+  RETURN (v_session->>'userId')::uuid;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION admin_private.telloya_admin_demo_actor_v1(text) FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE FUNCTION admin_private.telloya_admin_demo_transition_v1(
+  p_token text,
   p_enquiry_id uuid,
-  p_actor_id uuid,
   p_expected_version integer,
   p_status text,
   p_at timestamptz,
@@ -82,6 +103,8 @@ SECURITY DEFINER
 SET search_path = ''
 AS $fn$
 DECLARE
+  v_actor uuid;
+  v_source text;
   v_status text;
   v_version integer;
   v_key text;
@@ -90,7 +113,7 @@ DECLARE
   v_note text := coalesce(p_note, '');
   v_zone text := coalesce(p_timezone, '');
 BEGIN
-  IF p_enquiry_id IS NULL OR p_actor_id IS NULL OR p_expected_version IS NULL OR p_status IS NULL
+  IF p_enquiry_id IS NULL OR p_expected_version IS NULL OR p_status IS NULL
      OR length(coalesce(p_idempotency_key, '')) < 8 OR length(p_idempotency_key) > 120
      OR length(v_note) > 500 OR length(v_zone) > 80 THEN
     RETURN jsonb_build_object('status', 'invalid');
@@ -98,9 +121,17 @@ BEGIN
   IF p_status NOT IN ('NOT_BOOKED', 'BOOKED', 'COMPLETED') THEN
     RETURN jsonb_build_object('status', 'invalid_transition');
   END IF;
-  PERFORM pg_advisory_xact_lock(hashtext(p_enquiry_id::text));
-  IF NOT EXISTS (SELECT 1 FROM public.enquiries WHERE id = p_enquiry_id) THEN
+  v_actor := admin_private.telloya_admin_demo_actor_v1(p_token);
+  IF v_actor IS NULL THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext(p_enquiry_id::text));
+  SELECT source INTO v_source FROM public.enquiries WHERE id = p_enquiry_id;
+  IF NOT FOUND THEN
     RETURN jsonb_build_object('status', 'missing_enquiry');
+  END IF;
+  IF v_source IS DISTINCT FROM 'telloya' THEN
+    RETURN jsonb_build_object('status', 'not_telloya');
   END IF;
   SELECT status, record_version, idempotency_key, scheduled_at, completed_at
     INTO v_status, v_version, v_key, v_scheduled, v_completed
@@ -124,6 +155,11 @@ BEGIN
     OR (v_status = 'BOOKED' AND p_status = 'NOT_BOOKED')
   ) THEN
     RETURN jsonb_build_object('status', 'invalid_transition', 'demo_status', v_status);
+  END IF;
+  IF p_status = 'BOOKED' AND NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name = v_zone
+  ) THEN
+    RETURN jsonb_build_object('status', 'invalid_timezone');
   END IF;
   IF p_status = 'BOOKED' THEN
     v_scheduled := p_at;
@@ -150,20 +186,20 @@ BEGIN
         note = v_note,
         record_version = record_version + 1,
         idempotency_key = p_idempotency_key,
-        updated_at = now()
+        updated_at = pg_catalog.now()
     WHERE enquiry_id = p_enquiry_id;
   END IF;
   INSERT INTO admin_private.telloya_admin_demo_events(enquiry_id, actor_id, previous_status, new_status, note)
-  VALUES (p_enquiry_id, p_actor_id, v_status, p_status, v_note);
+  VALUES (p_enquiry_id, v_actor, v_status, p_status, v_note);
   RETURN jsonb_build_object('status', 'recorded', 'demo_status', p_status, 'version', v_version + 1, 'previous_status', v_status);
 END;
 $fn$;
 
-REVOKE ALL ON FUNCTION admin_private.telloya_admin_demo_transition_v1(uuid, uuid, integer, text, timestamptz, text, text, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin_private.telloya_admin_demo_transition_v1(text, uuid, integer, text, timestamptz, text, text, text) FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE FUNCTION public.telloya_admin_demo_transition_v1(
+  p_token text,
   p_enquiry_id uuid,
-  p_actor_id uuid,
   p_expected_version integer,
   p_status text,
   p_at timestamptz,
@@ -176,11 +212,50 @@ SECURITY DEFINER
 SET search_path = ''
 AS $fn$
   SELECT admin_private.telloya_admin_demo_transition_v1(
-    p_enquiry_id, p_actor_id, p_expected_version, p_status, p_at, p_timezone, p_note, p_idempotency_key
+    p_token, p_enquiry_id, p_expected_version, p_status, p_at, p_timezone, p_note, p_idempotency_key
   );
 $fn$;
 
-REVOKE ALL ON FUNCTION public.telloya_admin_demo_transition_v1(uuid, uuid, integer, text, timestamptz, text, text, text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.telloya_admin_demo_transition_v1(uuid, uuid, integer, text, timestamptz, text, text, text) TO service_role;
+REVOKE ALL ON FUNCTION public.telloya_admin_demo_transition_v1(text, uuid, integer, text, timestamptz, text, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.telloya_admin_demo_transition_v1(text, uuid, integer, text, timestamptz, text, text, text) TO service_role;
+
+CREATE FUNCTION public.telloya_admin_demo_v1(p_token text, p_enquiry_id uuid) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+  v_actor uuid;
+  v_source text;
+  v_row admin_private.telloya_admin_demos;
+BEGIN
+  v_actor := admin_private.telloya_admin_demo_actor_v1(p_token);
+  IF v_actor IS NULL THEN
+    RETURN NULL;
+  END IF;
+  SELECT source INTO v_source FROM public.enquiries WHERE id = p_enquiry_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'missing_enquiry');
+  END IF;
+  IF v_source IS DISTINCT FROM 'telloya' THEN
+    RETURN jsonb_build_object('status', 'not_telloya');
+  END IF;
+  SELECT * INTO v_row FROM admin_private.telloya_admin_demos WHERE enquiry_id = p_enquiry_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'status', 'ready', 'demo_status', 'NOT_BOOKED', 'version', 0,
+      'scheduled_at', NULL, 'completed_at', NULL, 'timezone', '', 'note', ''
+    );
+  END IF;
+  RETURN jsonb_build_object(
+    'status', 'ready', 'demo_status', v_row.status, 'version', v_row.record_version,
+    'scheduled_at', v_row.scheduled_at, 'completed_at', v_row.completed_at,
+    'timezone', v_row.timezone, 'note', v_row.note
+  );
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION public.telloya_admin_demo_v1(text, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.telloya_admin_demo_v1(text, uuid) TO service_role;
 
 COMMIT;

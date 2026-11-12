@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { requireStaff } from "@/lib/require-staff"
-import { getEnquiry, getInvitationMail, getOnboarding } from "@/lib/enquiries/queries"
+import { getEnquiry, getInvitationMail, getOnboarding, getTelloyaDemo } from "@/lib/enquiries/queries"
 import { invitationDispatchEnabled } from "@/lib/commercial/invitation-dispatch"
 import { enquiryStates, emailStates } from "@/lib/enquiries/model"
 import { ukDate } from "@/lib/admin/activity"
@@ -15,6 +15,7 @@ export const metadata = { title: "Enquiry" }
 export default async function Enquiry({ params }: { params: Promise<{ id: string }> }) {
   await requireStaff(); const { id } = await params, e = await getEnquiry(id), onboarding = await getOnboarding(id), p = e.payload
   const dispatchEnabled = invitationDispatchEnabled()
+  const demo = p.source === "telloya" ? await getTelloyaDemo(id) : { availability: "closed" as const }
   const invitationMail = dispatchEnabled && onboarding.supported && onboarding.invitationReady && !onboarding.emailVerified
     ? await getInvitationMail(id)
     : null
@@ -45,7 +46,7 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
       assigned: e.assigned,
       nextAction: e.nextAction,
       nextActionAt: e.nextActionAt,
-    }} />
+    }} demo={demo} />
     <section className="panel">
       <h2>Email status</h2>
       <p>Internal notification: {emailStates[e.internalStatus]}<br />Customer acknowledgement: {emailStates[e.ackStatus]}</p>

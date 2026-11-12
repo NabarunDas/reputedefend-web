@@ -8,6 +8,8 @@ import { isUuid } from "../records/model"
 import type { OnboardingView } from "../commercial/onboarding"
 import type { InvitationMail } from "../commercial/invitation-mail"
 import { invitationDispatchEnabled } from "../commercial/invitation-dispatch"
+import { telloyaDemoWriteAvailable } from "../commercial/telloya-demo-status"
+import type { TelloyaDemoPanel } from "../../app/enquiries/telloya-journey"
 import type { EnquiryDetail, EnquiryFilters, EnquiryRow } from "./model"
 async function read<T>(name: string, args: Record<string,unknown>): Promise<T> {
   await requireStaff()
@@ -47,6 +49,35 @@ export async function getInvitationMail(id: string): Promise<InvitationMail | nu
     }
   }
 }
+export async function getTelloyaDemo(id: string): Promise<TelloyaDemoPanel> {
+  if (!telloyaDemoWriteAvailable() || !isUuid(id)) return { availability: "closed" }
+  try {
+    const result = await read<{
+      status?: string
+      demo_status?: "NOT_BOOKED" | "BOOKED" | "COMPLETED"
+      version?: number
+      scheduled_at?: string | null
+      completed_at?: string | null
+      timezone?: string
+    } | null>("telloya_admin_demo_v1", { p_enquiry_id: id })
+    if (!result || result.status !== "ready" || !result.demo_status || !Number.isInteger(result.version)) {
+      return { availability: "unavailable" }
+    }
+    return {
+      availability: "ready",
+      enquiryId: id,
+      status: result.demo_status,
+      version: result.version as number,
+      scheduledAt: result.scheduled_at ?? null,
+      completedAt: result.completed_at ?? null,
+      timezone: result.timezone ?? "",
+    }
+  } catch (error) {
+    if (controlFlow(error)) throw error
+    return { availability: "unavailable" }
+  }
+}
+
 export async function getOnboarding(id: string): Promise<OnboardingView> {
   if(!isUuid(id)) notFound()
   const result = await read<OnboardingView | { missing: true }>("admin_commercial_onboarding_v1", { p_enquiry: id })

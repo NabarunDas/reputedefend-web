@@ -80,7 +80,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | ADMIN-TY-R5 | DONE for Preview path; PARTIAL for hosted composite | `5ef9eb43` | Evidence-safe matching, composite source-only `20261112180000`, offer workspace Prepare/confirm, disposable PG coverage. Hosted apply of `20261112180000` remains blocked pending owner approval. Monthly Stripe Checkout remains BLOCKED. |
 | ADMIN-TY-R6 | DONE for source corrections | `f9819cb0` | Removed mutating exception fallback; composite reauth rolls back bootstrap writes; disposable PG covers expired sign-in, retry, concurrency and idempotency. Hosted apply of `20261112180000` still blocked. |
 | Post-R6 migration reconcile | DONE | `06fe08b9` | Manifest records 121 applied DEV migrations, head `20261112180000`. |
-| ADMIN-TY-R7 | DONE in source | pending tip SHA | Interactive draft calculator, draft persistence source-only `20261112210000`, prepare_offer unchanged, UI simplified. Do not apply the draft migration. |
+| ADMIN-TY-R7 | DONE in source | `b4aaccd4` | Interactive draft calculator, draft persistence source-only `20261112210000`, prepare_offer unchanged, UI simplified. Do not apply the draft migration. |
 
 ## Test matrix
 

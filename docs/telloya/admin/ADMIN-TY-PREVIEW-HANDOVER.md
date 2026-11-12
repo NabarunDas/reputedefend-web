@@ -1,15 +1,15 @@
 # ADMIN-TY preview handover
 
-**Status:** ADMIN-TY-R7-B offer calculator corrections on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV remains at applied `20261112180000` (121 migrations). Source-only `20261112210000` adds draft calculator storage/audit and is **not** applied. This is not authorisation to launch, collect payment, send email, place a call, enable flags, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
+**Status:** ADMIN-TY-R7-C-SIMPLE offer calculator simplification on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV remains at applied `20261112180000` (121 migrations). Source-only `20261112210000` adds draft calculator storage/audit (including Custom amount) and is **not** applied. This is not authorisation to launch, collect payment, send email, place a call, enable flags, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
 **Baseline:** `origin/develop` `c3ba97a19492eb2b7ae27ec906f77e740ef12cae`. Plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`.
 
 ## Phase labels (R7)
 
 | Item | Label | Notes |
 | --- | --- | --- |
-| Interactive draft calculator | DONE in source (R7-B) | Plan cards + independent Guard locations + live GBP total; overage is proposed offer term only |
-| Draft save / reload | DONE in source (R7-B) | Typed `enquiries.source`, active TELLOYA request only, append-only draft audit events, Save disabled until migration applied |
-| Official `prepare_offer` | DONE in source (R7-B) | Locked to saved draft tier; Guard uses explicit same-business locations; still shared commercial command |
+| Interactive draft calculator | DONE in source (R7-C-SIMPLE) | Plan dropdown + auto amounts; Custom editable GBP; Guard + live total; unsaved changes block prepare |
+| Draft save / reload | DONE in source (R7-C-SIMPLE) | Typed `enquiries.source`, Custom amount/minutes/requirements audited, Save disabled until migration applied |
+| Official `prepare_offer` | DONE in source (R7-C-SIMPLE) | Locked to saved draft only; Custom requires matching approved plan version; still shared commercial command |
 | Demo Completed → sales-context bootstrap | READY on DEV (composite applied) | `20261112180000` applied once to DEV; fail-closed when RPC unavailable — no multi-step commercial fallback writes |
 | Evidence-based business/location matching | DONE | Sole unrelated business/location is never auto-selected |
 | Offer workspace prepare/confirm actions | DONE | Calculator always available; Prepare offer only when gates pass; no disabled Send offer for missing catalogue |
@@ -82,13 +82,14 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | Post-R6 migration reconcile | DONE | `06fe08b9` | Manifest records 121 applied DEV migrations, head `20261112180000`. |
 | ADMIN-TY-R7 | DONE in source | `b4aaccd4` | Interactive draft calculator, draft persistence source-only `20261112210000`, prepare_offer unchanged, UI simplified. |
 | ADMIN-TY-R7-B | DONE in source | `692db05c` | Typed source + active request, independent Guard locations, proposed-overage wording/GBP cap, prepare matches saved draft, draft audit events, Save disabled when storage unavailable. Do not apply the draft migration. |
+| ADMIN-TY-R7-C-SIMPLE | DONE in source | tip SHA after push | Plan dropdown, Custom editable amount, unsaved-draft prepare gate, Custom approval required before official offer. Do not apply the draft migration. |
 
 ## Test matrix
 
 | Behaviour | Where it is tested |
 | --- | --- |
 | Applied head is `20261112180000`; `pendingMigrations()` is only `20261112210000` | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
-| Draft calculator pence totals, Custom quotation, overage opt-in, malformed tiers | `apps/admin/lib/commercial/telloya-offer-draft.test.ts` |
+| Draft calculator pence totals, Custom £150 + Guard, invalid Custom amounts, unsaved equality | `apps/admin/lib/commercial/telloya-offer-draft.test.ts` |
 | Draft command parse rejects bad payloads | `apps/admin/lib/commercial/telloya-offer-draft-command.test.ts` |
 | Draft save/reload/stale version/lock after prepare_offer/cascade | `apps/admin/lib/commercial/telloya-offer-draft.database.test.ts` |
 | Evidence-safe sales-context bootstrap, sole-business/location confirmation, revoked ownership, concurrency, prepare_offer, expired recent sign-in rollback/retry | `apps/admin/lib/commercial/telloya-sales-context.database.test.ts` |
@@ -123,7 +124,7 @@ The verified DEV ledger previously contained 120 entries and ended at `202611121
 
 `supabase/migrations/20261112210000_telloya_offer_draft_v1.sql`
 
-`appliedToDev` is false. `containsDataChange` is false. `safeToReplay` is false. The repository file is 13,994 characters. MD5 `5fed28886f899b8fc602705473c1fba7`. SHA-256 `775e621395ae998cce52fafcb3485172fa12ab63d1f8b0b200fa1c72bff515a9`. It adds `admin_private.telloya_offer_drafts`, append-only `admin_private.telloya_offer_draft_events`, plus service-role-only `public.telloya_offer_draft_v1` and `public.telloya_offer_draft_command_v1`. Reads/writes require typed `enquiries.source='telloya'` and the current active TELLOYA onboarding request. This is Admin draft-selection storage and revision audit only. It is not a commercial offer, subscription, approved plan, customer quote, email, Stripe object, or Retell action. Do not apply to DEV or Production without owner approval after independent review. Do not edit or replay `20261112120000` or `20261112180000`. `pendingMigrations()` contains only this file.
+`appliedToDev` is false. `containsDataChange` is false. `safeToReplay` is false. The repository file is 17,672 characters. MD5 `199dbfa368261693ed869a134a5fc664`. SHA-256 `e152df8d7204214965aec5c5fe64a2f37b8a63135005479bfcb219f737415f55`. It adds `admin_private.telloya_offer_drafts` (including `custom_amount_minor`, `custom_included_minutes`, `custom_requirements`), append-only `admin_private.telloya_offer_draft_events`, plus service-role-only `public.telloya_offer_draft_v1` and `public.telloya_offer_draft_command_v1`. Reads/writes require typed `enquiries.source='telloya'` and the current active TELLOYA onboarding request. Custom amount is an internal proposed price only and is never written to `plan_versions` by draft save. This is Admin draft-selection storage and revision audit only. It is not a commercial offer, subscription, approved plan, customer quote, email, Stripe object, or Retell action. Do not apply to DEV or Production without owner approval after independent review. Do not edit or replay `20261112120000` or `20261112180000`. `pendingMigrations()` contains only this file.
 
 ## Flags
 

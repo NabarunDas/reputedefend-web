@@ -1,22 +1,26 @@
 # ADMIN-TY preview handover
 
-**Status:** ADMIN-TY post-R6 migration reconciliation on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV has applied `20261112180000` (121 migrations). This is not authorisation to launch, collect payment, send email, place a call, enable flags, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
+**Status:** ADMIN-TY-R7 interactive offer calculator on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV remains at applied `20261112180000` (121 migrations). Source-only `20261112210000` adds draft calculator storage and is **not** applied. This is not authorisation to launch, collect payment, send email, place a call, enable flags, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
 **Baseline:** `origin/develop` `c3ba97a19492eb2b7ae27ec906f77e740ef12cae`. Plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`.
 
-## Phase labels (R6)
+## Phase labels (R7)
 
 | Item | Label | Notes |
 | --- | --- | --- |
+| Interactive draft calculator | DONE in source | Plan cards + optional Guard + live GBP total from `apps/telloya/lib/pricing.ts` without approved catalogue |
+| Draft save / reload | DONE in source | `admin_private.telloya_offer_drafts` via source-only `20261112210000`; Preview-gated command; optimistic versioning |
+| Official `prepare_offer` | UNCHANGED | Still requires approved catalogue, terms/tax, verified authority and confirmed locations |
 | Demo Completed → sales-context bootstrap | READY on DEV (composite applied) | `20261112180000` applied once to DEV; fail-closed when RPC unavailable — no multi-step commercial fallback writes |
 | Evidence-based business/location matching | DONE | Sole unrelated business/location is never auto-selected |
-| Offer workspace prepare/confirm actions | DONE | Plan selector, Guard ticks, authoritative total, Prepare offer, inline confirmations |
+| Offer workspace prepare/confirm actions | DONE | Calculator always available; Prepare offer only when gates pass; no disabled Send offer for missing catalogue |
 | Composite fail-closed / no mutating fallback | DONE (R6-A) | Generic RPC exceptions never call `admin_commercial_command_v1` |
 | Recent-sign-in rollback | DONE (R6-B) | Expired 30-minute Admin privilege aborts the bootstrap subtransaction with no intermediate rows |
 | Shared commercial agreement / portal accept / durable mail / payment evidence | REUSED | No second terms or payment architecture |
 | Monthly Stripe Checkout | BLOCKED | `startTelloyaCheckout` returns `not_created`; not operational |
-| Hosted catalogue / Telloya service agreement / tax | BLOCKED | Workspace stays draft/not sendable |
+| Hosted catalogue / Telloya service agreement / tax | BLOCKED | Draft estimate works; official offer stays not sendable |
 | `20261112120000` | DONE applied once to DEV | Byte-identical; do not replay or apply to Production |
 | `20261112180000` | DONE applied once to DEV | Byte-identical 18,615 chars; do not replay or apply to Production |
+| `20261112210000` | SOURCE-ONLY pending | Draft storage; `appliedToDev: false`; do not apply without owner approval |
 
 ## What is implemented
 
@@ -24,6 +28,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 
 - Offline demonstration booking and completion. The actor is the verified staff session. The command rejects a ProfileRelaunch enquiry, a stale version, a bad time zone, and a missing session. Demonstration rows cascade when an eligible Telloya enquiry is deleted. Destructive deletion stays off in the migration.
 - After Demo Completed, Preview-only sales-context bootstrap opens or resumes a TELLOYA `onboarding_requests` row, matches or creates a provisional customer, and links a business only with matching enquiry evidence or Admin confirmation. A sole unrelated business or location is not selected automatically. Location confirmation and prepare-offer stay in the main offer workspace.
+- Interactive Personalised Offer calculator: Admin chooses Basic / Growth / Pro / Custom and optional Relaunch Guard, sees a live itemised GBP draft total from `apps/telloya/lib/pricing.ts`, and can save or update a draft without approved catalogue, terms or tax. Draft persistence uses source-only `20261112210000` (`admin_private.telloya_offer_drafts`). When storage is not installed the calculator still works for the session. An official offer still uses existing `prepare_offer` once catalogue, agreement, authority and location gates pass. Draft editing locks after an official offer exists.
 - Applied composite `public.telloya_sales_context_command_v1` (`20261112180000`) provides single-transaction bootstrap with rollback on unsafe ambiguity, including expired recent Admin sign-in. When the composite RPC fails ambiguously, Admin fails closed: the offer draft stays visible and read-only, and no separate `admin_commercial_command_v1` onboarding writes run.
 - Customer amendment requests stored against `public.commercial_subscriptions`. The Customer Portal proxy classifies `POST /api/portal/onboarding/offer/amendment` as a portal-session mutation. A pending request blocks acceptance of that offer. A revised offer is created only when the approved plan or the confirmed Guard locations change, and the monthly total is recalculated from those records. An identical selection returns `unchanged`. A receptionist or greeting request can be noted without a second subscription. Decline leaves the offer unchanged. Amendments and mail require a Telloya enquiry, a TELLOYA onboarding request, and the matching customer.
 - Offer email through `public.communications` and the existing `SEND_EMAIL` outbox. The queued subject and body use the TY enquiry reference, the approved plan, the exact GBP monthly price, the included minutes, Guard add-on cost, and one Customer Portal review link. The VC subscription selector stays only in the authenticated link path. A first send also requires an APPROVED Telloya service agreement for the stored terms reference, `tax_behaviour = NOT_APPLICABLE`, verified business authority, and no REQUESTED amendment. An already queued message still returns the same row. The queue row stays `delivery_status = NONE` with a `QUEUED` delivery event. Queued is not provider-accepted and not delivered. The subscription is locked before the communication lookup, and a unique conflict returns the same row. The TELLOYA_OFFER template is inserted as DRAFT and must be approved through `admin_settings_command_v1`. The database mail control is empty, so the function queues nothing until that row is explicitly enabled.
@@ -32,6 +37,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 
 ## What is mocked or display-only
 
+- The draft calculator total is a marketing-price estimate. It is not an approved commercial subscription amount. Official totals still come from approved `plan_versions` at `prepare_offer` time.
 - The catalogue illustration, including the £98.98 Growth plus two Guard locations figure. That figure is not written to a subscription until Admin prepares a commercial offer.
 - The in-memory offer, amendment and checkout helpers under `apps/admin/lib/commercial/telloya-offer.ts`, `telloya-offer-delivery.ts` and `telloya-checkout.ts`. They cover rules in unit tests. They are not the operating ledger.
 - `startTelloyaCheckout` returns `not_created`. Monthly Stripe Checkout, recurring subscription creation, renewal/failure/cancel handling are not operational on this branch. A return from a payment page stays “Payment being verified”.
@@ -73,15 +79,19 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | ADMIN-TY-R4 | PARTIAL | `15af6d75`, `08250127` | Offer-first workspace after Demo Completed. Sole-business/location auto-link and non-atomic reconcile required R5 correction. |
 | ADMIN-TY-R5 | DONE for Preview path; PARTIAL for hosted composite | `5ef9eb43` | Evidence-safe matching, composite source-only `20261112180000`, offer workspace Prepare/confirm, disposable PG coverage. Hosted apply of `20261112180000` remains blocked pending owner approval. Monthly Stripe Checkout remains BLOCKED. |
 | ADMIN-TY-R6 | DONE for source corrections | `f9819cb0` | Removed mutating exception fallback; composite reauth rolls back bootstrap writes; disposable PG covers expired sign-in, retry, concurrency and idempotency. Hosted apply of `20261112180000` still blocked. |
-| Post-R6 migration reconcile | DONE | `06fe08b9` | Manifest records 121 applied DEV migrations, head `20261112180000`. `pendingMigrations()` is empty. |
+| Post-R6 migration reconcile | DONE | `06fe08b9` | Manifest records 121 applied DEV migrations, head `20261112180000`. |
+| ADMIN-TY-R7 | DONE in source | pending tip SHA | Interactive draft calculator, draft persistence source-only `20261112210000`, prepare_offer unchanged, UI simplified. Do not apply the draft migration. |
 
 ## Test matrix
 
 | Behaviour | Where it is tested |
 | --- | --- |
-| Applied head is `20261112180000`; `pendingMigrations()` is empty | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
+| Applied head is `20261112180000`; `pendingMigrations()` is only `20261112210000` | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
+| Draft calculator pence totals, Custom quotation, overage opt-in, malformed tiers | `apps/admin/lib/commercial/telloya-offer-draft.test.ts` |
+| Draft command parse rejects bad payloads | `apps/admin/lib/commercial/telloya-offer-draft-command.test.ts` |
+| Draft save/reload/stale version/lock after prepare_offer/cascade | `apps/admin/lib/commercial/telloya-offer-draft.database.test.ts` |
 | Evidence-safe sales-context bootstrap, sole-business/location confirmation, revoked ownership, concurrency, prepare_offer, expired recent sign-in rollback/retry | `apps/admin/lib/commercial/telloya-sales-context.database.test.ts` |
-| Offer workspace bootstrap, inline confirmations, Prepare offer controls | `apps/admin/app/enquiries/telloya-offer-workspace.test.tsx`, `telloya-sales-context.test.ts` |
+| Offer workspace calculator, Save draft, checklist, Prepare offer controls, no disabled Send offer | `apps/admin/app/enquiries/telloya-offer-workspace.test.tsx`, `telloya-sales-context.test.ts` |
 | Fail-closed composite errors never trigger legacy commercial writes | `apps/admin/lib/commercial/telloya-sales-context-command.test.ts` |
 | Staff session, non-Telloya rejection, spoofed session, stale version, time zone, retention cascade | `supabase/tests/database/telloya-admin-journey.database.test.ts` |
 | Flag-off demonstration command does not call the database | `apps/admin/lib/commercial/telloya-demo-command.test.ts` |
@@ -106,7 +116,13 @@ The verified DEV ledger previously contained 120 entries and ended at `202611121
 
 `supabase/migrations/20261112180000_telloya_sales_context_v1.sql`
 
-`appliedToDev` is true. `containsDataChange` is false. `safeToReplay` is false. `pendingMigrations()` is empty. The repository file is 18,615 characters. MD5 `914c95e0534e4d26cd07cbab1ae8aa18`. SHA-256 `7fbd26ade4d1250ae4a8ea934e3e9bf7a0dc8171b971f62af1cfc118756acfcb`. It adds `public.telloya_sales_context_command_v1` for single-transaction, evidence-safe bootstrap after a completed demonstration. The public composite is executable by `service_role` only. Zero commercial subscriptions, zero Telloya offer emails and zero enabled mail-control rows were created by the apply. Do not edit or replay `20261112180000`. Do not apply `20261112180000` to Production. Do not edit or replay `20261112120000`.
+`appliedToDev` is true. `containsDataChange` is false. `safeToReplay` is false. The repository file is 18,615 characters. MD5 `914c95e0534e4d26cd07cbab1ae8aa18`. SHA-256 `7fbd26ade4d1250ae4a8ea934e3e9bf7a0dc8171b971f62af1cfc118756acfcb`. It adds `public.telloya_sales_context_command_v1` for single-transaction, evidence-safe bootstrap after a completed demonstration. The public composite is executable by `service_role` only. Zero commercial subscriptions, zero Telloya offer emails and zero enabled mail-control rows were created by the apply. Do not edit or replay `20261112180000`. Do not apply `20261112180000` to Production. Do not edit or replay `20261112120000`.
+
+## Source-only pending migration (offer draft)
+
+`supabase/migrations/20261112210000_telloya_offer_draft_v1.sql`
+
+`appliedToDev` is false. `containsDataChange` is false. `safeToReplay` is false. The repository file is 11,165 characters. MD5 `5ded3bb34468631caf10d01041ec4bc2`. SHA-256 `69243795157948e14d485a2ada7e1bfa1437bb837befba4e3377638d8a3fd0cc`. It adds `admin_private.telloya_offer_drafts` plus service-role-only `public.telloya_offer_draft_v1` and `public.telloya_offer_draft_command_v1`. This is Admin draft-selection storage only. It is not a commercial offer, subscription, approved plan, customer quote, email, Stripe object, or Retell action. Do not apply to DEV or Production without owner approval after independent review. Do not edit or replay `20261112120000` or `20261112180000`. `pendingMigrations()` contains only this file.
 
 ## Flags
 

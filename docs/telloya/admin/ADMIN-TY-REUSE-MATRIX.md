@@ -16,7 +16,7 @@
 | Customer setup | `apps/customer/app/portal/onboarding/setup/page.tsx` | Paid handover status. Live activation stays blocked. |
 | Payments | Commercial settlement and webhook tests under `apps/admin/lib/payments` | One-off Guided checkout is not monthly Telloya billing. New recurring preparation stays mocked and off. |
 | Email | Existing durable queue and enquiry acknowledgement states | Queue a proposal. Do not send from a button and do not call Resend in this work. |
-| Catalogue | `apps/telloya/lib/pricing.ts` and `usage-policy.ts` | Display prices. A persisted offer must cite an approved plan version, not the marketing form. |
+| Catalogue | `apps/telloya/lib/pricing.ts` and `usage-policy.ts` | Draft calculator reuses these marketing prices for estimates only. A persisted official offer must cite an approved plan version, not the marketing form. Source-only `20261112210000` stores Admin draft selections; it is not applied. |
 | Setup commands | Begin setup, preferences, AI configuration, number allocation, forwarding, test-call record | Operator checklist only. No Retell call, number purchase, or forwarding change. |
 | Flags | `TELLOYA_ENQUIRY_ENABLED`, `TELLOYA_USAGE_EVENTS_ENABLED`, `TELLOYA_INBOUND_ADMISSION_ENABLED` | Remain off. A new admin-journey write flag will also default off and cannot approve legal or tax. |
 | Preview | Vercel Preview builds the PR branch | No Production promotion, no Vercel env edit, no hosted SQL. |

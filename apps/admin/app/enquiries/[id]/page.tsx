@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { requireStaff } from "@/lib/require-staff"
-import { getEnquiry, getInvitationMail, getOnboarding, getTelloyaDemo, getTelloyaOffer } from "@/lib/enquiries/queries"
+import { getEnquiry, getInvitationMail, getOnboarding, getTelloyaDemo, getTelloyaOffer, getTelloyaOfferDraft } from "@/lib/enquiries/queries"
 import { invitationDispatchEnabled } from "@/lib/commercial/invitation-dispatch"
 import { buildTelloyaSalesWorkspace } from "@/lib/commercial/telloya-sales-context"
 import { enquiryStates, emailStates } from "@/lib/enquiries/model"
@@ -19,6 +19,7 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
   const dispatchEnabled = invitationDispatchEnabled()
   const demo = p.source === "telloya" ? await getTelloyaDemo(id) : { availability: "closed" as const }
   const offer = p.source === "telloya" ? await getTelloyaOffer(id) : { availability: "closed" as const }
+  const draft = p.source === "telloya" ? await getTelloyaOfferDraft(id, p.planTier) : { availability: "closed" as const }
   const invitationMail = dispatchEnabled && onboarding.supported && onboarding.invitationReady && !onboarding.emailVerified
     ? await getInvitationMail(id)
     : null
@@ -53,7 +54,7 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
       nextAction: e.nextAction,
       nextActionAt: e.nextActionAt,
     }} demo={demo} offer={offer} offerFirst={telloyaOfferFirst} />
-    {salesWorkspace && demoStatus === "COMPLETED" && <TelloyaOfferWorkspace enquiryId={e.id} workspace={salesWorkspace} offer={offer} onboarding={onboarding} businessName={p.businessName} country={p.country} />}
+    {salesWorkspace && demoStatus === "COMPLETED" && <TelloyaOfferWorkspace enquiryId={e.id} workspace={salesWorkspace} offer={offer} onboarding={onboarding} draft={draft} businessName={p.businessName} country={p.country} />}
     <section className="panel">
       <h2>Email status</h2>
       <p>Internal notification: {emailStates[e.internalStatus]}<br />Customer acknowledgement: {emailStates[e.ackStatus]}</p>

@@ -1888,6 +1888,23 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya sales context", probe: "public.telloya_sales_context_command_v1" },
   },
+  {
+    // Telloya Admin offer-draft calculator storage. Source-only. Not applied to
+    // DEV or Production. Holds Admin draft plan/Guard selections against one
+    // Telloya onboarding request. Not a commercial offer, subscription, approved
+    // plan, customer quote, email, Stripe object, or Retell action. Official
+    // offers still use admin_commercial_command_v1 prepare_offer. Do not apply
+    // without owner approval after independent review. Do not edit or replay
+    // 20261112120000 or 20261112180000.
+    version: "20261112210000",
+    filename: "20261112210000_telloya_offer_draft_v1.sql",
+    step: "Telloya offer draft calculator storage",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya offer draft", probe: "public.telloya_offer_draft_command_v1" },
+  },
 ]
 
 /**
@@ -2040,7 +2057,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` is empty.
+ * `pendingMigrations()` contains only `20261112210000` telloya_offer_draft_v1.
+ * That file is source-only (`appliedToDev: false`). Do not apply it to DEV or
+ * Production without owner approval after independent review.
  * `20261112180000` was applied once to DEV. The repository file is 18,615
  * characters. MD5 914c95e0534e4d26cd07cbab1ae8aa18. SHA-256
  * 7fbd26ade4d1250ae4a8ea934e3e9bf7a0dc8171b971f62af1cfc118756acfcb.

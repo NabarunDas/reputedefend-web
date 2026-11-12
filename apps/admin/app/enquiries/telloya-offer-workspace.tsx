@@ -1,8 +1,19 @@
 "use client"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { TelloyaSalesWorkspace } from "@/lib/commercial/telloya-sales-context"
 import type { ApprovedCommercialPlan, OnboardingView } from "@/lib/commercial/onboarding"
+import {
+  draftChecklist,
+  emptyTelloyaOfferDraft,
+  estimateTelloyaDraft,
+  mapDraftTierToApprovedPlan,
+  telloyaDraftPricingFacts,
+  type TelloyaDraftPlanTier,
+  type TelloyaOfferDraftPanel,
+  type TelloyaOfferDraftSelection,
+} from "@/lib/commercial/telloya-offer-draft"
+import { formatGbpPence } from "@/lib/commercial/telloya-offer"
 import { CommandForm, Reason } from "../records/forms"
 import { TelloyaOfferActions, type TelloyaOfferPanel } from "./telloya-offer-actions"
 
@@ -12,18 +23,28 @@ function newKey() {
 
 function pounds(minor: number | null) {
   if (minor === null) return "Not recorded"
-  return `£${(minor / 100).toFixed(2)}`
+  return formatGbpPence(minor)
 }
 
 function planReview(plan: ApprovedCommercialPlan) {
   const name = plan.tierLabel || "Unscoped approved version"
   const minutes = plan.includedMinutes === null ? "minutes are quoted with this version" : `${plan.includedMinutes} minutes`
-  const guard = plan.guardQuantity
-    ? `Guard quantity ${plan.guardQuantity}, recorded separately from the Telloya quantity`
-    : plan.guardAddonUnitMinor === 999
-      ? "Relaunch Guard can be added at £9.99 for each location ticked below."
-      : "Relaunch Guard cannot be added to this version."
-  return `${name}, version ${plan.versionNumber}. ${pounds(plan.amountMinor)} per month. ${minutes}. ${guard}`
+  return `${name}, version ${plan.versionNumber}. ${pounds(plan.amountMinor)} per month. ${minutes}.`
+}
+
+function initialDraft(draft: TelloyaOfferDraftPanel, planTier: string | null): TelloyaOfferDraftSelection {
+  if (draft.availability === "ready") {
+    return {
+      planTier: draft.planTier,
+      proposedGuardQuantity: draft.proposedGuardQuantity,
+      guardLocationIds: draft.guardLocationIds,
+      overageOptIn: draft.overageOptIn,
+      overageCapPence: draft.overageCapPence,
+      notes: draft.notes,
+      version: draft.version,
+    }
+  }
+  return emptyTelloyaOfferDraft(planTier)
 }
 
 export function TelloyaOfferWorkspace({
@@ -31,6 +52,7 @@ export function TelloyaOfferWorkspace({
   workspace,
   offer,
   onboarding,
+  draft: draftPanel,
   businessName = "",
   country = "",
 }: {
@@ -38,15 +60,20 @@ export function TelloyaOfferWorkspace({
   workspace: TelloyaSalesWorkspace
   offer: TelloyaOfferPanel
   onboarding: OnboardingView
+  draft: TelloyaOfferDraftPanel
   businessName?: string
   country?: string
 }) {
   const router = useRouter()
   const key = useRef(newKey())
+  const draftKey = useRef(newKey())
   const [status, setStatus] = useState<"working" | "done" | "error">(workspace.needsReconciliation ? "working" : "done")
   const [message, setMessage] = useState<string | null>(null)
   const [retryToken, setRetryToken] = useState(0)
-  const [offerSummary, setOfferSummary] = useState("Choose an approved version to see the offer total.")
+  const [draft, setDraft] = useState<TelloyaOfferDraftSelection>(() => initialDraft(draftPanel, workspace.planTier))
+  const [draftMessage, setDraftMessage] = useState<string | null>(null)
+  const [draftSaving, setDraftSaving] = useState(false)
+  const [authoritativeSummary, setAuthoritativeSummary] = useState("Choose an approved version to see the official offer total.")
   const supported = onboarding.supported ? onboarding : null
   const request = supported?.request ?? null
   const version = request?.version ?? 0
@@ -54,6 +81,34 @@ export function TelloyaOfferWorkspace({
   const offerable = plans.filter(plan => plan.offerable)
   const selectedLocations = supported?.locations.filter(item => item.selected) ?? []
   const usableBusinesses = supported?.businesses.filter(item => item.membership !== "revoked") ?? []
+  const offerReady = offer.availability === "ready"
+  const draftLocked = draftPanel.availability === "locked" || Boolean(request?.subscriptionId) || offerReady
+  const estimate = useMemo(() => estimateTelloyaDraft({
+    planTier: draft.planTier,
+    proposedGuardQuantity: draft.guardLocationIds.length > 0 ? draft.guardLocationIds.length : draft.proposedGuardQuantity,
+    overageOptIn: draft.overageOptIn,
+    overageCapPence: draft.overageCapPence,
+  }), [draft])
+  const checklist = draftChecklist({
+    termsConfigured: supported?.termsConfigured === true,
+    offerablePlans: offerable.length,
+    membershipVerified: supported?.membership === "verified",
+    selectedLocations: selectedLocations.length,
+    offerReady,
+    mailReady: offer.availability === "ready",
+  })
+  const matchedApproved = mapDraftTierToApprovedPlan(offerable, draft.planTier)
+  const canPrepare = Boolean(
+    supported
+    && request
+    && !request.subscriptionId
+    && supported.membership === "verified"
+    && selectedLocations.length > 0
+    && supported.termsConfigured
+    && matchedApproved
+    && draft.planTier
+    && draft.planTier !== "custom",
+  )
 
   useEffect(() => {
     if (!workspace.needsReconciliation) return
@@ -94,47 +149,99 @@ export function TelloyaOfferWorkspace({
     setRetryToken(value => value + 1)
   }
 
+  function setPlan(tier: TelloyaDraftPlanTier) {
+    if (draftLocked) return
+    setDraft(current => ({ ...current, planTier: tier }))
+  }
+
+  function setGuardQuantity(value: number) {
+    if (draftLocked) return
+    const next = Number.isFinite(value) ? Math.max(0, Math.min(50, Math.trunc(value))) : 0
+    setDraft(current => ({ ...current, proposedGuardQuantity: next, guardLocationIds: [] }))
+  }
+
+  function toggleGuardLocation(locationId: string) {
+    if (draftLocked) return
+    setDraft(current => {
+      const exists = current.guardLocationIds.includes(locationId)
+      const guardLocationIds = exists
+        ? current.guardLocationIds.filter(id => id !== locationId)
+        : [...current.guardLocationIds, locationId]
+      return { ...current, guardLocationIds, proposedGuardQuantity: guardLocationIds.length }
+    })
+  }
+
+  async function saveDraft() {
+    if (draftLocked || draftSaving) return
+    setDraftSaving(true)
+    setDraftMessage(null)
+    draftKey.current = newKey()
+    try {
+      const response = await fetch("/api/enquiries/telloya-offer-draft", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": draftKey.current,
+        },
+        body: JSON.stringify({
+          enquiryId,
+          expectedVersion: draft.version,
+          planTier: draft.planTier,
+          proposedGuardQuantity: draft.proposedGuardQuantity,
+          guardLocationIds: draft.guardLocationIds,
+          overageOptIn: draft.overageOptIn,
+          overageCapPence: draft.overageCapPence,
+          notes: draft.notes,
+        }),
+      })
+      const body = await response.json().catch(() => ({ message: "We couldn’t save the draft estimate." }))
+      if (!response.ok) {
+        setDraftMessage(typeof body.message === "string" ? body.message : "We couldn’t save the draft estimate.")
+        return
+      }
+      if (Number.isInteger(body.version)) {
+        setDraft(current => ({ ...current, version: body.version as number }))
+      }
+      setDraftMessage(typeof body.message === "string" ? body.message : "Draft saved.")
+      router.refresh()
+    } catch {
+      setDraftMessage("We couldn’t save the draft estimate. Reload the enquiry before trying again.")
+    } finally {
+      setDraftSaving(false)
+    }
+  }
+
   function refreshOffer(form: HTMLFormElement) {
     const data = new FormData(form)
     const selected = offerable.find(plan => plan.id === String(data.get("planVersionId") ?? ""))
     if (!selected || selected.amountMinor === null) {
-      setOfferSummary("Choose an approved version to see the offer total.")
+      setAuthoritativeSummary("Choose an approved version to see the official offer total.")
       return
     }
     const guards = selected.guardQuantity == null && selected.guardAddonUnitMinor === 999 ? data.getAll("guardLocationIds").length : 0
     const total = selected.amountMinor + (selected.guardAddonUnitMinor ?? 0) * guards
-    setOfferSummary(guards === 0
-      ? `Authoritative offer total ${pounds(total)} per month for Telloya alone.`
-      : `Authoritative offer total ${pounds(total)} per month. Telloya ${pounds(selected.amountMinor)} plus Relaunch Guard ${pounds((selected.guardAddonUnitMinor ?? 0) * guards)} for ${guards} location${guards === 1 ? "" : "s"}.`)
+    setAuthoritativeSummary(guards === 0
+      ? `Official offer total ${pounds(total)} per month for Telloya alone.`
+      : `Official offer total ${pounds(total)} per month. Telloya ${pounds(selected.amountMinor)} plus Relaunch Guard ${pounds((selected.guardAddonUnitMinor ?? 0) * guards)} for ${guards} location${guards === 1 ? "" : "s"}.`)
   }
 
   return <section className="panel workspace" aria-labelledby="telloya-offer-workspace-title">
     <p className="eyebrow">Telloya offer</p>
     <h2 id="telloya-offer-workspace-title">Personalised offer workspace</h2>
-    <p>Product {workspace.product}. Plan interest {workspace.planInterest}. This workspace reuses the existing commercial records, Customer Portal acceptance, durable email queue and verified payment-evidence framework. It does not send email, open Stripe Checkout, or contact Retell.</p>
     <dl>
       <dt>Customer</dt><dd>{workspace.customerSummary}</dd>
       <dt>Business</dt><dd>{workspace.businessSummary}</dd>
       <dt>Voice location</dt><dd>{workspace.voiceLocationSummary}</dd>
-      <dt>Guard</dt><dd>{workspace.guardInterestSummary}</dd>
-      <dt>Catalogue preview</dt><dd>{workspace.illustrativeMonthly || "No illustrative total until a plan preference is confirmed. Illustrative only — not an approved price."}</dd>
+      <dt>Enquiry plan interest</dt><dd>{workspace.planInterest}</dd>
     </dl>
-    {workspace.illustrativeMonthly && <p className="muted">Illustrative catalogue amounts are not approved prices, consent, or a sendable offer.</p>}
-    {workspace.exceptions.length > 0 && <div className="notice notice-warning" role="status">
-      <p><strong>Needs attention</strong></p>
-      <ul>{workspace.exceptions.map(item => <li key={item.code}>{item.message}</li>)}</ul>
-    </div>}
-    {workspace.blockers.length > 0 && <div className="notice notice-blocked" role="status">
-      <p><strong>Not sendable yet</strong></p>
-      <ul>{workspace.blockers.map(item => <li key={item.code}>{item.message}</li>)}</ul>
-    </div>}
+
     {status === "working" && <p role="status">Preparing the offer workspace from the completed demonstration…</p>}
     {status === "error" && message && <div className="notice notice-warning" role="alert"><p>{message}</p><p><button type="button" onClick={resume}>Retry sales-context preparation</button></p></div>}
     {status === "done" && message && <p className="muted">{message}</p>}
 
     {supported && request && supported.step === "business" && usableBusinesses.length > 0 && <div>
       <h3>Confirm business</h3>
-      <p>An existing business is not selected automatically. Choose the matching business or create a provisional one.</p>
+      <p>Choose the matching business or create a provisional one.</p>
       {usableBusinesses.map(business => <CommandForm
         key={business.id}
         endpoint="telloya-sales-context"
@@ -162,7 +269,7 @@ export function TelloyaOfferWorkspace({
 
     {supported && request && (supported.step === "locations" || (selectedLocations.length === 0 && request.businessId)) && <div>
       <h3>Confirm operating location</h3>
-      <p>Enquiry location text is not verified ownership. Confirm one operating location before preparing a sendable offer.</p>
+      <p>Confirm one operating location before preparing an official offer.</p>
       {supported.locations.map(location => <CommandForm
         key={location.id}
         endpoint="telloya-sales-context"
@@ -183,34 +290,151 @@ export function TelloyaOfferWorkspace({
       </CommandForm>
     </div>}
 
-    {supported && request && supported.membership === "verified" && selectedLocations.length > 0 && !request.subscriptionId && <>
-      <h3>Prepare personalised offer</h3>
-      {!supported.termsConfigured || offerable.length === 0
-        ? <p>Not sendable — approved Telloya plan catalogue, service agreement and tax treatment are not configured. The draft workspace stays open for review.</p>
-        : <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare offer" payload={form => {
-          const planVersionId = String(form.get("planVersionId") ?? "")
-          const selected = offerable.find(plan => plan.id === planVersionId)
-          const guardLocationIds = selected && selected.guardQuantity == null && selected.guardAddonUnitMinor === 999
-            ? form.getAll("guardLocationIds").map(String)
-            : []
-          return { operation: "prepare_offer", version, enquiryId, planVersionId, guardLocationIds, reason: form.get("reason") }
-        }}>
-          <fieldset onChange={event => { if (event.currentTarget.form) refreshOffer(event.currentTarget.form) }}>
-            <legend>Which approved version should this offer use?</legend>
-            {offerable.map(plan => <label key={plan.id} className="checkbox"><input type="radio" name="planVersionId" value={plan.id} required />{planReview(plan)}</label>)}
-            {offerable.some(plan => plan.guardAddonUnitMinor === 999) && selectedLocations.length > 0 && <>
-              <p>Tick a location to include it in Relaunch Guard at £9.99 per month. Leave every box unticked to offer Telloya alone. Guard interest from the enquiry stays unselected until you choose.</p>
-              {selectedLocations.map(location => <label key={location.id} className="checkbox"><input type="checkbox" name="guardLocationIds" value={location.id} />Include {location.name} in Relaunch Guard</label>)}
-            </>}
-          </fieldset>
-          <p>{offerSummary}</p>
-          <p>Preparing the offer pins the selected approved version. It does not open Checkout, send email, or activate Telloya or Guard.</p>
-          <Reason label="Why is this offer being prepared?" />
-        </CommandForm>}
-    </>}
+    <div className="telloya-offer-calculator">
+      <h3>Choose Telloya plan</h3>
+      <p className="muted">Draft estimate only. Changing a draft is not customer consent and does not create an official offer.</p>
+      <fieldset disabled={draftLocked} className="telloya-plan-cards">
+        <legend className="sr-only">Telloya plan</legend>
+        {telloyaDraftPricingFacts.plans.map(plan => <label key={plan.tier} className="checkbox telloya-plan-card">
+          <input
+            type="radio"
+            name="draftPlanTier"
+            value={plan.tier}
+            checked={draft.planTier === plan.tier}
+            onChange={() => setPlan(plan.tier)}
+          />
+          <span>
+            <strong>{plan.name}</strong>
+            {plan.popular ? " · Popular" : ""}
+            <br />
+            {plan.amountPence === null
+              ? "Quotation required"
+              : `${formatGbpPence(plan.amountPence)} / month · ${plan.minutesPerMonth} minutes`}
+          </span>
+        </label>)}
+      </fieldset>
 
-    <p><strong>{workspace.primaryLabel}</strong></p>
-    {!workspace.sendable && <p><button type="button" disabled>Send offer</button></p>}
-    <TelloyaOfferActions offer={offer} />
+      <h3>Relaunch Guard</h3>
+      <p className="muted">Optional at {formatGbpPence(telloyaDraftPricingFacts.guardUnitPence)} per location / month. Off by default.</p>
+      {selectedLocations.length > 0
+        ? <fieldset disabled={draftLocked}>
+          <legend className="sr-only">Confirmed Guard locations</legend>
+          {selectedLocations.map(location => <label key={location.id} className="checkbox">
+            <input
+              type="checkbox"
+              checked={draft.guardLocationIds.includes(location.id)}
+              onChange={() => toggleGuardLocation(location.id)}
+            />
+            Include {location.name} in Relaunch Guard
+          </label>)}
+        </fieldset>
+        : <label>Proposed Guard quantity
+          <input
+            type="number"
+            min={0}
+            max={50}
+            value={draft.proposedGuardQuantity}
+            disabled={draftLocked}
+            onChange={event => setGuardQuantity(Number(event.target.value))}
+          />
+          <span className="muted"> Proposed for illustration until an operating location is confirmed.</span>
+        </label>}
+
+      <details>
+        <summary>Optional overage policy</summary>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={draft.overageOptIn}
+            disabled={draftLocked}
+            onChange={event => setDraft(current => ({
+              ...current,
+              overageOptIn: event.target.checked,
+              overageCapPence: event.target.checked ? current.overageCapPence : null,
+            }))}
+          />
+          Opt in to overage at {formatGbpPence(telloyaDraftPricingFacts.overageRatePence)}/min
+        </label>
+        {draft.overageOptIn && <label>Spending cap (pence)
+          <input
+            type="number"
+            min={1}
+            value={draft.overageCapPence ?? ""}
+            disabled={draftLocked}
+            onChange={event => setDraft(current => ({
+              ...current,
+              overageCapPence: event.target.value === "" ? null : Math.max(1, Math.trunc(Number(event.target.value)) || 1),
+            }))}
+          />
+        </label>}
+        <p className="muted">Overage is never part of the fixed monthly total.</p>
+      </details>
+
+      <label>Special notes
+        <textarea
+          maxLength={1000}
+          value={draft.notes}
+          disabled={draftLocked}
+          onChange={event => setDraft(current => ({ ...current, notes: event.target.value.slice(0, 1000) }))}
+        />
+      </label>
+
+      <div className="notice" role="status">
+        <p><strong>Draft estimate</strong></p>
+        <ul>{estimate.summaryLines.map(line => <li key={line}>{line}</li>)}</ul>
+        <p><strong>{estimate.totalLabel}</strong></p>
+      </div>
+
+      {!draftLocked && <p>
+        <button type="button" onClick={() => void saveDraft()} disabled={draftSaving}>
+          {draft.version > 0 ? "Update draft" : "Save draft"}
+        </button>
+      </p>}
+      {draftLocked && <p className="muted">Draft editing is locked because an official offer already exists.</p>}
+      {draftMessage && <p className="muted" role="status">{draftMessage}</p>}
+      {draftPanel.availability === "unavailable" && <p className="muted">Draft persistence is not installed on this deployment yet. The calculator still works for this session.</p>}
+    </div>
+
+    <div>
+      <h3>Before this can be sent</h3>
+      <ul className="telloya-send-checklist">
+        {checklist.map(item => <li key={item.code}>{item.ready ? "✓" : "○"} {item.label}</li>)}
+      </ul>
+    </div>
+
+    {canPrepare && matchedApproved && <div>
+      <h3>Prepare official offer</h3>
+      <p>Uses the approved catalogue version that matches this draft. This creates the commercial offer record without sending email or opening Checkout.</p>
+      <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare offer" payload={form => {
+        const planVersionId = String(form.get("planVersionId") ?? matchedApproved.id)
+        const selected = offerable.find(plan => plan.id === planVersionId) ?? matchedApproved
+        const guardLocationIds = selected.guardQuantity == null && selected.guardAddonUnitMinor === 999
+          ? (draft.guardLocationIds.length > 0
+            ? draft.guardLocationIds
+            : form.getAll("guardLocationIds").map(String))
+          : []
+        return { operation: "prepare_offer", version, enquiryId, planVersionId, guardLocationIds, reason: form.get("reason") }
+      }}>
+        <fieldset onChange={event => { if (event.currentTarget.form) refreshOffer(event.currentTarget.form) }}>
+          <legend>Approved catalogue version</legend>
+          {offerable.map(plan => <label key={plan.id} className="checkbox">
+            <input type="radio" name="planVersionId" value={plan.id} required defaultChecked={plan.id === matchedApproved.id} />
+            {planReview(plan)}
+          </label>)}
+          {matchedApproved.guardAddonUnitMinor === 999 && selectedLocations.length > 0 && <>
+            <p>Tick confirmed locations to include in Relaunch Guard for the official offer.</p>
+            {selectedLocations.map(location => <label key={location.id} className="checkbox">
+              <input type="checkbox" name="guardLocationIds" value={location.id} defaultChecked={draft.guardLocationIds.includes(location.id)} />
+              Include {location.name} in Relaunch Guard
+            </label>)}
+          </>}
+        </fieldset>
+        <p>{authoritativeSummary}</p>
+        <Reason label="Why is this official offer being prepared?" />
+      </CommandForm>
+    </div>}
+
+    {offerReady && <TelloyaOfferActions offer={offer} />}
+    {!offerReady && <p className="muted">{workspace.primaryLabel}</p>}
   </section>
 }

@@ -132,9 +132,9 @@ describe("Telloya admin preview journey", () => {
     expect(view.usage).toMatch(/not available/)
     expect(telloyaVoiceAllowed("initial_paid")).toBe(false)
     expect(requestTelloyaCancellation("initial_paid").billing).toBe("cancel_at_period_end")
-    expect(migrationHead.filename).toBe("20261112180000_telloya_sales_context_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
-    expect(pendingMigrations()).toEqual([])
+    expect(migrationHead.filename).toBe("20261112210000_telloya_offer_draft_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261112210000_telloya_offer_draft_v1.sql"])
   })
 
   it("covers the other catalogue choices and the closed paths", () => {

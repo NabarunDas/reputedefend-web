@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const refresh = vi.fn()
@@ -9,6 +9,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh }
 import { TelloyaOfferWorkspace } from "./telloya-offer-workspace"
 import type { TelloyaSalesWorkspace } from "@/lib/commercial/telloya-sales-context"
 import type { OnboardingView } from "@/lib/commercial/onboarding"
+import { emptyTelloyaOfferDraft, type TelloyaOfferDraftPanel } from "@/lib/commercial/telloya-offer-draft"
 
 const enquiryId = "21affacc-2e97-4b9a-992d-9f0644ab7115"
 
@@ -65,6 +66,12 @@ const onboarding: OnboardingView = {
   approvedPlans: [],
 }
 
+const draftPanel = (overrides: Partial<TelloyaOfferDraftPanel> = {}): TelloyaOfferDraftPanel => ({
+  availability: "ready",
+  ...emptyTelloyaOfferDraft("growth"),
+  ...overrides,
+})
+
 beforeEach(() => {
   refresh.mockReset()
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
@@ -78,19 +85,48 @@ afterEach(() => {
 })
 
 describe("Telloya offer workspace", () => {
-  it("shows a prefilled offer screen with inline location confirmation and no five-step wizard", async () => {
-    render(<TelloyaOfferWorkspace enquiryId={enquiryId} workspace={workspace()} offer={{ availability: "no_offer" }} onboarding={onboarding} businessName="Owner Yard" country="United Kingdom" />)
+  it("shows an interactive calculator without a disabled Send offer control", async () => {
+    render(<TelloyaOfferWorkspace
+      enquiryId={enquiryId}
+      workspace={workspace()}
+      offer={{ availability: "no_offer" }}
+      onboarding={onboarding}
+      draft={draftPanel()}
+      businessName="Owner Yard"
+      country="United Kingdom"
+    />)
     expect(screen.getByRole("heading", { name: "Personalised offer workspace" })).toBeTruthy()
     expect(screen.getByText("Alex Owner · alex@example.com · +447700900123")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Choose Telloya plan" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: /Growth/ })).toHaveProperty("checked", true)
+    expect(screen.getByText("£79.00 / month")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Before this can be sent" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send offer" })).toBeNull()
+    expect(screen.queryByText(/This workspace reuses/)).toBeNull()
     expect(screen.getByText("Confirm operating location")).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Confirm Other site" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Send offer" })).toHaveProperty("disabled", true)
-    expect(screen.queryByText("Open onboarding")).toBeNull()
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/enquiries/telloya-sales-context", expect.objectContaining({
       method: "POST",
       body: JSON.stringify({ enquiryId, operation: "bootstrap" }),
     })))
     await waitFor(() => expect(refresh).toHaveBeenCalled())
+  })
+
+  it("recalculates the draft total when Guard quantity changes", async () => {
+    render(<TelloyaOfferWorkspace
+      enquiryId={enquiryId}
+      workspace={workspace({ needsReconciliation: false, exceptions: [], onboardingStep: "next" })}
+      offer={{ availability: "no_offer" }}
+      onboarding={{ ...onboarding, step: "next", locations: [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "London workshop", country: "United Kingdom", selected: true }] }}
+      draft={draftPanel()}
+    />)
+    expect(screen.getByText("£79.00 / month")).toBeTruthy()
+    fireEvent.click(screen.getByRole("checkbox", { name: /Include London workshop in Relaunch Guard/ }))
+    expect(screen.getByText("£88.99 / month")).toBeTruthy()
+    fireEvent.click(screen.getByRole("radio", { name: /Custom/ }))
+    expect(screen.getAllByText("Quotation required").length).toBeGreaterThan(0)
+    expect(screen.queryByRole("button", { name: "Send offer" })).toBeNull()
+    await waitFor(() => expect(fetch).not.toHaveBeenCalled())
   })
 
   it("does not POST again when the sales context is already reconciled", async () => {
@@ -99,9 +135,40 @@ describe("Telloya offer workspace", () => {
       workspace={workspace({ needsReconciliation: false, exceptions: [], onboardingStep: "next" })}
       offer={{ availability: "no_offer" }}
       onboarding={{ ...onboarding, step: "next", locations: [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "London workshop", country: "United Kingdom", selected: true }] }}
+      draft={draftPanel()}
     />)
     expect(screen.getByText("Review personalised offer draft")).toBeTruthy()
     await waitFor(() => expect(fetch).not.toHaveBeenCalled())
+  })
+
+  it("saves the draft estimate through the draft API", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ message: "Draft offer estimate saved. This is not an official commercial offer.", version: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(<TelloyaOfferWorkspace
+      enquiryId={enquiryId}
+      workspace={workspace({ needsReconciliation: false, exceptions: [] })}
+      offer={{ availability: "no_offer" }}
+      onboarding={onboarding}
+      draft={draftPanel()}
+    />)
+    fireEvent.change(screen.getByLabelText(/Proposed Guard quantity/), { target: { value: "2" } })
+    expect(screen.getByText("£98.98 / month")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/enquiries/telloya-offer-draft", expect.objectContaining({
+      method: "POST",
+    })))
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    expect(body).toMatchObject({
+      enquiryId,
+      expectedVersion: 0,
+      planTier: "growth",
+      proposedGuardQuantity: 2,
+    })
+    await waitFor(() => expect(screen.getByText(/Draft offer estimate saved/)).toBeTruthy())
+    expect(screen.getByRole("button", { name: "Update draft" })).toBeTruthy()
   })
 
   it("exposes Prepare offer with plan and Guard controls when authority and catalogue are ready", async () => {
@@ -116,6 +183,7 @@ describe("Telloya offer workspace", () => {
         onboardingStep: "next",
       })}
       offer={{ availability: "no_offer" }}
+      draft={draftPanel()}
       onboarding={{
         ...onboarding,
         step: "next",
@@ -146,10 +214,11 @@ describe("Telloya offer workspace", () => {
         }],
       }}
     />)
-    expect(screen.getByRole("heading", { name: "Prepare personalised offer" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Prepare official offer" })).toBeTruthy()
     expect(screen.getByText(/Growth, version 1/)).toBeTruthy()
-    expect(screen.getByText(/Include London workshop in Relaunch Guard/)).toBeTruthy()
+    expect(screen.getAllByText(/Include London workshop in Relaunch Guard/).length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Prepare offer" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send offer" })).toBeNull()
     await waitFor(() => expect(fetch).not.toHaveBeenCalled())
   })
 })

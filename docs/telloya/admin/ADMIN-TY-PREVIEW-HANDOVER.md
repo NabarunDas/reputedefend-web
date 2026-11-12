@@ -86,7 +86,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | ADMIN-TY-R7-B | DONE in source | `692db05c` | Typed source + active request, independent Guard locations, proposed-overage wording/GBP cap, prepare matches saved draft, draft audit events, Save disabled when storage unavailable. Do not apply the draft migration. |
 | ADMIN-TY-R7-C-SIMPLE | DONE in source | `bddf0d26` | Plan dropdown, Custom editable amount, unsaved-draft prepare gate, Custom approval required before official offer. |
 | Post-R7 migration reconcile | DONE | `0afda76da686ea6aa0054959ad99c6e09db51c86` | Manifest records 122 applied DEV migrations, head `20261112210000`; `pendingMigrations()` empty. |
-| ADMIN-TY-R8-A/B/C | DONE in source | tip recorded after CI | Approve & Send, prepare-from-draft, personalised email, preview, delivery status, progress stages. Hosted apply of `20261112223000` and R8-D enablement remain blocked. |
+| ADMIN-TY-R8-A/B/C | DONE in source | `82cef2f1350bcb9ed530e60e4fc385f25df8585e` | Approve & Send, prepare-from-draft, personalised email, preview, delivery status, progress stages. Hosted apply of `20261112223000` and R8-D enablement remain blocked. |
 
 ## Test matrix
 

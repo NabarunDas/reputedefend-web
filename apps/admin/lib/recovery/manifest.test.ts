@@ -133,6 +133,13 @@ describe("the migration chain manifest", () => {
       category: "Telloya approve send",
       probe: "public.telloya_prepare_offer_from_draft_v1",
     })
+    const approveSendSql = readFileSync(new URL("20261112223000_telloya_approve_send_offer_v1.sql", directory), "utf8")
+    expect(approveSendSql.length).toBe(41298)
+    expect(createHash("md5").update(approveSendSql).digest("hex")).toBe("de0f2ba0485e459185e3180af212ac67")
+    expect(createHash("sha256").update(approveSendSql).digest("hex")).toBe("524cd3d44b7e291b991f15245a6cfb9d57a3e8b8b2c84a4734f1dfb43b84c377")
+    expect(approveSendSql).toContain("TELLOYA_OFFER_COMPOSER_V1")
+    expect(approveSendSql).toContain("pg_advisory_xact_lock")
+    expect(approveSendSql).toContain("draft_estimate")
     expect(findMigration("20261112210000_telloya_offer_draft_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261112180000_telloya_sales_context_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261112120000_telloya_admin_journey_v1.sql")?.appliedToDev).toBe(true)

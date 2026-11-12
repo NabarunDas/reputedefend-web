@@ -59,6 +59,9 @@ function mapMailDenial(status: string, reason?: string): { message: string; code
   if (status === "unauthorized") return { message: "Please sign in again.", code: 401 }
   if (status === "invalid") return { message: "Reload the offer before approving email.", code: 400 }
   if (status === "mail_disabled") return { message: "Offer email stays off until the mail control is enabled. Nothing was queued.", code: 403 }
+  if (status === "template_unapproved" && reason === "composer_contract") {
+    return { message: "The approved Telloya offer template does not match the server composer contract. Nothing was queued.", code: 409 }
+  }
   if (status === "template_unapproved") return { message: "The Telloya offer template is not approved. Nothing was queued.", code: 409 }
   if (status === "ineligible") return { message: "That offer is not linked to this Telloya enquiry. Nothing was queued.", code: 403 }
   if (status === "demonstration_not_completed") return { message: "Complete the offline demonstration before queueing the offer email.", code: 409 }
@@ -127,8 +130,9 @@ export async function telloyaOfferCommand(request: NextRequest) {
       return reply("This deployment cannot review that amendment. Nothing was saved.", 503)
     }
     if (body.operation === "preview") {
+      // Draft-estimate preview must work without CUSTOMER_ORIGIN on this branch.
+      // Actual send still requires a validated trusted Customer Portal origin.
       const origin = customerOrigin()
-      if (!origin) return reply("The customer portal address is not configured. No preview was created.", 403)
       if (!isUuid(body.enquiryId)) return reply("Reload the enquiry before previewing email.", 400)
       const result = await backend().rpc<{
         status: string
@@ -138,26 +142,38 @@ export async function telloyaOfferCommand(request: NextRequest) {
         html?: string
         recipient?: string | null
         previewOnly?: boolean
+        previewMode?: string
+        sendable?: boolean
+        composerVersion?: number
       }>("telloya_offer_preview_v1", {
         p_token: tokenHash(token),
         p_enquiry: body.enquiryId,
-        p_origin: origin,
+        p_origin: origin ?? "",
       })
       if (result.status === "ready") {
-        return reply("Email preview ready. Nothing was queued or sent.", 200, {
-          previewOnly: true,
-          subject: result.subject ?? "",
-          text: result.text ?? "",
-          html: result.html ?? "",
-          recipient: result.recipient ?? null,
-        })
+        const draftEstimate = result.previewMode === "draft_estimate"
+        return reply(
+          draftEstimate
+            ? "Illustrative draft — not an approved offer; no email sent."
+            : "Email preview ready. Nothing was queued or sent.",
+          200,
+          {
+            previewOnly: true,
+            previewMode: result.previewMode ?? "draft_estimate",
+            sendable: false,
+            composerVersion: result.composerVersion ?? 1,
+            subject: result.subject ?? "",
+            text: result.text ?? "",
+            html: result.html ?? "",
+            recipient: result.recipient ?? null,
+          },
+        )
       }
       if (result.status === "unauthorized") return reply("Please sign in again.", 401)
       if (result.status === "invalid") return reply("Reload the enquiry before previewing email.", 400)
       if (result.status === "no_offer") return reply("Save a quote draft or prepare an offer before previewing email.", 409)
       if (result.status === "draft_required") return reply("Save a quote draft before previewing email.", 409)
       if (result.status === "ineligible") return reply("That offer is not linked to this Telloya enquiry.", 403)
-      if (result.status === "terms_unconfigured") return reply("Not sendable — approved catalogue matching the draft is not configured.", 409)
       return reply("This deployment cannot preview that email. Nothing was sent.", 503)
     }
     if (body.operation === "approve_send") {

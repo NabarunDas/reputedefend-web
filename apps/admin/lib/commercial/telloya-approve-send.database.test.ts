@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, preparePlatform } from "../recovery/harness"
 import { findMigration, pendingMigrations } from "../recovery/manifest"
-import { installTelloyaCatalogueFixture, telloyaCataloguePlans, telloyaPublishedPrices } from "./telloya-catalogue.fixture"
+import { installTelloyaCatalogueFixture, telloyaPublishedPrices } from "./telloya-catalogue.fixture"
 
 const db = new PGlite()
 const admin = "c01c0000-0000-4000-8000-00000000ac08"
@@ -224,14 +224,27 @@ describe("Telloya approve-and-send from saved draft", () => {
     ))[0].n).toBe(0)
 
     const preview = await rpc<Record<string, unknown>>("telloya_offer_preview_v1", [
-      token, opened.enquiryId, "https://localhost",
+      token, opened.enquiryId, "",
     ])
-    expect(preview).toMatchObject({ status: "ready", previewOnly: true, queued: false })
+    expect(preview).toMatchObject({
+      status: "ready",
+      previewOnly: true,
+      previewMode: "draft_estimate",
+      sendable: false,
+      queued: false,
+      composerVersion: 1,
+    })
     expect(String(preview.html)).toContain("Telloya — a ProfileRelaunch company")
+    expect(String(preview.html)).toContain("TELLOYA_OFFER_COMPOSER_V1")
+    expect(String(preview.html)).toContain("Illustrative draft")
+    expect(String(preview.html)).not.toContain('href="https://')
     expect(String(preview.text)).toContain("Hello Alex Owner")
-    expect(String(preview.subject)).toContain("Your Telloya proposal")
+    expect(String(preview.subject)).toContain("[Draft estimate]")
     expect((await rows<{ n: number }>(
       "select count(*)::int as n from public.communications where template_key = 'TELLOYA_OFFER'",
+    ))[0].n).toBe(0)
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from admin_private.job_outbox where topic = 'SEND_EMAIL'",
     ))[0].n).toBe(0)
 
     const blocked = await rpc<Record<string, unknown>>("telloya_prepare_offer_from_draft_v1", [
@@ -263,12 +276,16 @@ describe("Telloya approve-and-send from saved draft", () => {
     const queued = await rpc<Record<string, unknown>>("telloya_offer_mail_v1", [
       token, randomUUID(), first.subscriptionId, first.version, "https://localhost",
     ])
-    expect(queued).toMatchObject({ status: "queued", deliveryStatus: "NONE" })
-    expect(String((await rows<{ body_html: string; subject: string }>(
-      `select body_html, subject from public.communications
+    expect(queued).toMatchObject({ status: "queued", deliveryStatus: "NONE", composerVersion: 1 })
+    const queuedBody = (await rows<{ body_html: string; subject: string; body_text: string }>(
+      `select body_html, subject, body_text from public.communications
        where commercial_subscription_id = $1 and template_key = 'TELLOYA_OFFER'`,
       [first.subscriptionId],
-    ))[0].body_html)).toContain("Review your offer")
+    ))[0]
+    expect(queuedBody.body_html).toContain("Review your offer")
+    expect(queuedBody.body_html).toContain("TELLOYA_OFFER_COMPOSER_V1")
+    expect(queuedBody.body_html).not.toContain("Illustrative draft")
+    expect(queuedBody.body_text).toContain("TELLOYA_OFFER_COMPOSER_V1")
     expect((await rows<{ n: number }>(
       `select count(*)::int as n from public.communications
        where commercial_subscription_id = $1 and template_key = 'TELLOYA_OFFER' and lifecycle is distinct from 'CANCELLED'`,
@@ -298,6 +315,126 @@ describe("Telloya approve-and-send from saved draft", () => {
       amountMinor: 16998,
     })
 
+    await db.query("delete from admin_private.telloya_offer_mail_control")
+  })
+
+  it("previews a Custom draft estimate without approved catalogue or CUSTOMER_ORIGIN and never queues", async () => {
+    const opened = await readyEnquiry("r8.draft.preview@example.test", "custom")
+    const beforeMail = (await rows<{ n: number }>(
+      "select count(*)::int as n from public.communications where template_key = 'TELLOYA_OFFER'",
+    ))[0].n
+    const beforeOutbox = (await rows<{ n: number }>(
+      "select count(*)::int as n from admin_private.job_outbox where topic = 'SEND_EMAIL'",
+    ))[0].n
+    const approvedPlanIds = (await rows<{ id: string }>(
+      `select id from public.plan_versions
+       where product_code = 'TELLOYA' and status = 'APPROVED'`,
+    )).map(row => row.id)
+    await db.query(
+      `update public.plan_versions
+       set status = 'RETIRED', retired_by = $1, retired_at = now()
+       where id = any($2::uuid[])`,
+      [admin, approvedPlanIds],
+    )
+    expect((await rows<{ n: number }>(
+      `select count(*)::int as n from public.plan_versions
+       where product_code = 'TELLOYA' and status = 'APPROVED'`,
+    ))[0].n).toBe(0)
+
+    expect(await rpc<Record<string, unknown>>("telloya_offer_draft_command_v1", [
+      token, randomUUID(), "save", {
+        enquiryId: opened.enquiryId,
+        expectedVersion: 0,
+        planTier: "custom",
+        customAmountPence: 15000,
+        customIncludedMinutes: 400,
+        customRequirements: "Two sites after hours.",
+        proposedGuardQuantity: 2,
+        guardLocationIds: [],
+        overageOptIn: false,
+        overageCapPence: null,
+        notes: "Draft estimate with proposed Guard quantity.",
+      },
+    ])).toMatchObject({ status: "success", version: 1 })
+
+    const preview = await rpc<Record<string, unknown>>("telloya_offer_preview_v1", [
+      token, opened.enquiryId, null,
+    ])
+    expect(preview).toMatchObject({
+      status: "ready",
+      previewMode: "draft_estimate",
+      sendable: false,
+      previewOnly: true,
+      queued: false,
+      composerVersion: 1,
+    })
+    expect(String(preview.text)).toContain("Illustrative draft — not an approved offer; no email sent")
+    expect(String(preview.text)).toContain("£150.00")
+    expect(String(preview.text)).toContain("2 locations")
+    expect(String(preview.html)).not.toContain("VC-PREVIEW")
+    expect(String(preview.html)).not.toContain('href="https://')
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from public.communications where template_key = 'TELLOYA_OFFER'",
+    ))[0].n).toBe(beforeMail)
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from admin_private.job_outbox where topic = 'SEND_EMAIL'",
+    ))[0].n).toBe(beforeOutbox)
+    expect((await rows<{ n: number }>(
+      `select count(*)::int as n from public.onboarding_requests
+       where enquiry_id = $1 and commercial_subscription_id is not null`,
+      [opened.enquiryId],
+    ))[0].n).toBe(0)
+
+    await db.query(
+      `update public.plan_versions
+       set status = 'APPROVED', retired_by = null, retired_at = null, approved_by = $1, approved_at = coalesce(approved_at, now())
+       where id = any($2::uuid[])`,
+      [admin, approvedPlanIds],
+    )
+  })
+
+  it("blocks queue when the approved template loses the server composer contract", async () => {
+    const opened = await readyEnquiry("r8.composer@example.test", "growth")
+    expect(await rpc<Record<string, unknown>>("telloya_offer_draft_command_v1", [
+      token, randomUUID(), "save", {
+        enquiryId: opened.enquiryId,
+        expectedVersion: 0,
+        planTier: "growth",
+        customAmountPence: null,
+        customIncludedMinutes: null,
+        customRequirements: "",
+        proposedGuardQuantity: 0,
+        guardLocationIds: [],
+        overageOptIn: false,
+        overageCapPence: null,
+        notes: "Composer contract gate.",
+      },
+    ])).toMatchObject({ status: "success", version: 1 })
+    const prepared = await rpc<Record<string, unknown>>("telloya_prepare_offer_from_draft_v1", [
+      token, randomUUID(), opened.enquiryId, 1, reason,
+    ])
+    expect(prepared).toMatchObject({ status: "success" })
+    await db.query("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true) on conflict (singleton) do update set mail_enabled = true")
+    const approvedExists = (await rows<{ n: number }>(
+      `select count(*)::int as n from admin_private.communication_templates
+       where template_key = 'TELLOYA_OFFER' and status = 'APPROVED'`,
+    ))[0].n
+    if (approvedExists === 0) await approveTemplate()
+    // reason is mutable on APPROVED rows; body content is not. Clearing the
+    // composer-contract marker from reason leaves body without the contract too.
+    await db.query(
+      `update admin_private.communication_templates
+       set reason = 'Unrelated approved template', record_version = record_version + 1
+       where template_key = 'TELLOYA_OFFER' and status = 'APPROVED'`,
+    )
+    expect(await rpc<Record<string, unknown>>("telloya_offer_mail_v1", [
+      token, randomUUID(), prepared.subscriptionId, prepared.version, "https://localhost",
+    ])).toMatchObject({ status: "template_unapproved", reason: "composer_contract" })
+    expect((await rows<{ n: number }>(
+      `select count(*)::int as n from public.communications
+       where commercial_subscription_id = $1 and template_key = 'TELLOYA_OFFER'`,
+      [prepared.subscriptionId],
+    ))[0].n).toBe(0)
     await db.query("delete from admin_private.telloya_offer_mail_control")
   })
 

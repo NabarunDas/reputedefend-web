@@ -1,6 +1,6 @@
 # ADMIN-TY preview handover
 
-**Status:** ADMIN-TY-R8 source complete on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV remains at applied `20261112210000` (122 migrations). Repository head is source-only `20261112223000` (pending; do not apply without owner approval). Quote-to-email source is implemented; customer-facing send stays closed. Branch-scoped Preview keeps `TELLOYA_ADMIN_JOURNEY_ENABLED=true` for this PR only. This is not authorisation to launch, collect payment, send email, place a call, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
+**Status:** ADMIN-TY-R8-R1 source corrections on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV remains at applied `20261112210000` (122 migrations). Repository head is source-only `20261112223000` (41,298 characters; `appliedToDev: false`; do not apply without owner approval). Draft-estimate email preview works without catalogue/`CUSTOMER_ORIGIN`; Approve & Send remains gated. Customer-facing send stays closed. Branch-scoped Preview keeps `TELLOYA_ADMIN_JOURNEY_ENABLED=true` for this PR only. This is not authorisation to launch, collect payment, send email, place a call, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
 **Baseline:** `origin/develop` `c3ba97a19492eb2b7ae27ec906f77e740ef12cae`. Plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`.
 
 ## Phase labels (R8)
@@ -22,7 +22,7 @@
 | `20261112120000` | DONE applied once to DEV | Byte-identical; do not replay or apply to Production |
 | `20261112180000` | DONE applied once to DEV | Byte-identical 18,615 chars; do not replay or apply to Production |
 | `20261112210000` | DONE applied once to DEV | Draft storage; 17,672 chars; do not replay or apply to Production |
-| `20261112223000` | PARTIAL source-only | Approve/send + personalised mail + preview; `appliedToDev: false`; do not apply without owner approval |
+| `20261112223000` | PARTIAL source-only | R8-R1 approve/send + draft-estimate preview + composer V1; `appliedToDev: false`; do not apply without owner approval |
 
 ## What is implemented
 
@@ -87,6 +87,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | ADMIN-TY-R7-C-SIMPLE | DONE in source | `bddf0d26` | Plan dropdown, Custom editable amount, unsaved-draft prepare gate, Custom approval required before official offer. |
 | Post-R7 migration reconcile | DONE | `0afda76da686ea6aa0054959ad99c6e09db51c86` | Manifest records 122 applied DEV migrations, head `20261112210000`; `pendingMigrations()` empty. |
 | ADMIN-TY-R8-A/B/C | DONE in source | `82cef2f1350bcb9ed530e60e4fc385f25df8585e` | Approve & Send, prepare-from-draft, personalised email, preview, delivery status, progress stages. Hosted apply of `20261112223000` and R8-D enablement remain blocked. |
+| ADMIN-TY-R8-R1 | DONE in source | pending tip SHA | Draft-estimate preview without catalogue/`CUSTOMER_ORIGIN`; advisory-lock receipt race fix; composer V1 contract; sandboxed HTML preview UI. Hosted apply still blocked. |
 
 ## Test matrix
 

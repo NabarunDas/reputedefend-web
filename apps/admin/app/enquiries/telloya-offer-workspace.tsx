@@ -91,7 +91,14 @@ export function TelloyaOfferWorkspace({
   const [draftSaving, setDraftSaving] = useState(false)
   const [previewMessage, setPreviewMessage] = useState<string | null>(null)
   const [previewBusy, setPreviewBusy] = useState(false)
-  const [preview, setPreview] = useState<{ subject: string; text: string; html: string; recipient: string | null } | null>(null)
+  const [preview, setPreview] = useState<{
+    subject: string
+    text: string
+    html: string
+    recipient: string | null
+    previewMode: "draft_estimate" | "approved_offer"
+    sendable: boolean
+  } | null>(null)
   const previewKey = useRef(newKey())
   const supported = onboarding.supported ? onboarding : null
   const request = supported?.request ?? null
@@ -260,13 +267,22 @@ export function TelloyaOfferWorkspace({
         setPreviewMessage(typeof body.message === "string" ? body.message : "We couldn’t preview the offer email.")
         return
       }
+      const previewMode = body.previewMode === "approved_offer" ? "approved_offer" : "draft_estimate"
       setPreview({
         subject: typeof body.subject === "string" ? body.subject : "",
         text: typeof body.text === "string" ? body.text : "",
         html: typeof body.html === "string" ? body.html : "",
         recipient: typeof body.recipient === "string" ? body.recipient : null,
+        previewMode,
+        sendable: false,
       })
-      setPreviewMessage(typeof body.message === "string" ? body.message : "Email preview ready. Nothing was queued or sent.")
+      setPreviewMessage(
+        typeof body.message === "string"
+          ? body.message
+          : previewMode === "draft_estimate"
+            ? "Illustrative draft — not an approved offer; no email sent."
+            : "Email preview ready. Nothing was queued or sent.",
+      )
     } catch {
       setPreview(null)
       setPreviewMessage("We couldn’t preview the offer email. Reload the enquiry before trying again.")
@@ -640,16 +656,24 @@ export function TelloyaOfferWorkspace({
     <div>
       <h3>Preview email</h3>
       <p className="muted">Read-only composition from the saved draft or linked offer. Preview does not queue or send email.</p>
-      <p><button type="button" onClick={() => void previewEmail()} disabled={previewBusy}>Preview email</button></p>
+      <p><button type="button" onClick={() => void previewEmail()} disabled={previewBusy || persistedDraft.version < 1}>Preview email</button></p>
       {previewMessage && <p className="muted" role="status">{previewMessage}</p>}
-      {preview && <div className="notice" role="region" aria-label="Offer email preview">
-        {preview.recipient && <p>Recipient {preview.recipient}</p>}
-        <p><strong>Subject</strong></p>
-        <p>{preview.subject || "(empty)"}</p>
-        <p><strong>Text</strong></p>
-        <pre>{preview.text || "(empty)"}</pre>
-        <p><strong>HTML</strong></p>
-        <pre>{preview.html || "(empty)"}</pre>
+      {preview && <div className="email-preview notice" role="region" aria-label="Offer email preview">
+        {preview.previewMode === "draft_estimate"
+          ? <p role="status"><strong>Illustrative draft — not an approved offer; no email sent</strong></p>
+          : <p role="status">Approved-offer composition preview. Nothing was queued or sent.</p>}
+        <p><span className="email-preview-label">Recipient</span> <span>{preview.recipient || "Not set"}</span></p>
+        <p><span className="email-preview-label">Subject</span> <span>{preview.subject || "No subject"}</span></p>
+        <iframe
+          className="email-preview-frame email-preview-frame-branded"
+          title={preview.previewMode === "draft_estimate" ? "Telloya draft estimate email preview" : "Telloya offer email preview"}
+          sandbox=""
+          srcDoc={preview.html || "<p>No HTML body</p>"}
+        />
+        <details>
+          <summary>Plain-text version</summary>
+          <pre>{preview.text || "(empty)"}</pre>
+        </details>
       </div>}
     </div>
 

@@ -26,7 +26,7 @@ export const telloyaStageLabels: Record<TelloyaStage, string> = {
 }
 
 export type TelloyaDemoStatus = "NOT_BOOKED" | "BOOKED" | "COMPLETED"
-export type TelloyaOfferProgress = "none" | "draft" | "sent" | "amendment" | "accepted"
+export type TelloyaOfferProgress = "none" | "draft" | "prepared" | "sent" | "amendment" | "accepted"
 export type TelloyaPaymentProgress = "none" | "verifying" | "paid" | "failed"
 export type TelloyaSetupProgress = "none" | "preparing" | "testing" | "ready" | "active"
 
@@ -85,6 +85,9 @@ export function telloyaJourneyProgress(input: TelloyaJourneySnapshot): TelloyaJo
   } else if (offer === "none" || offer === "draft") {
     current = "offer"
     next = "Prepare the offer after the demonstration is completed and business authority is verified."
+  } else if (offer === "prepared") {
+    current = "offer"
+    next = "Queue the offer email. The commercial offer is prepared and has not been sent."
   } else if (offer === "sent" || offer === "amendment") {
     current = "offer"
     next = offer === "amendment"

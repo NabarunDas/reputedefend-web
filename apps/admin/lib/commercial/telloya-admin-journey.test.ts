@@ -30,6 +30,25 @@ describe("Telloya admin journey progress", () => {
     expect(progress?.current).toBe("agreement")
     expect(progress?.next).toMatch(/Legal approval is still required/)
   })
+
+  it("moves from the demonstration to the prepared offer", () => {
+    const completed = telloyaJourneyProgress({ source: "telloya", demoStatus: "COMPLETED" })
+    expect(completed?.current).toBe("offer")
+    expect(completed?.next).toMatch(/Prepare the offer/)
+    const prepared = telloyaJourneyProgress({ source: "telloya", demoStatus: "COMPLETED", offerStatus: "prepared" })
+    expect(prepared?.current).toBe("offer")
+    expect(prepared?.next).toMatch(/Queue the offer email/)
+    const paid = telloyaJourneyProgress({
+      source: "telloya",
+      demoStatus: "COMPLETED",
+      offerStatus: "accepted",
+      agreementAccepted: true,
+      paymentStatus: "paid",
+      setupStatus: "preparing",
+    })
+    expect(paid?.current).toBe("setup")
+    expect(paid?.next).toMatch(/Going live stays blocked/)
+  })
 })
 
 describe("Telloya plan interest label", () => {

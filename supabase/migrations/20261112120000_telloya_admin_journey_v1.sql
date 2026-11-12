@@ -757,6 +757,9 @@ BEGIN
   IF v_sub.record_version IS DISTINCT FROM p_expected_version THEN
     RETURN jsonb_build_object('status', 'stale_version', 'version', v_sub.record_version);
   END IF;
+  IF v_link.demo_completed IS DISTINCT FROM true THEN
+    RETURN jsonb_build_object('status', 'demonstration_not_completed');
+  END IF;
   IF v_sub.public_ref !~ '^VC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$' THEN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
@@ -894,6 +897,28 @@ BEGIN
     'status', 'ready', 'subscriptionId', v_sub.id, 'offerRef', v_sub.public_ref,
     'state', v_sub.state, 'version', v_sub.record_version, 'amendments', v_amendments,
     'planVersionId', v_sub.plan_version_id, 'amountMinor', v_sub.amount_minor,
+    'emailQueued', EXISTS (
+      SELECT 1 FROM public.communications AS mail
+      WHERE mail.commercial_subscription_id = v_sub.id
+        AND mail.template_key = 'TELLOYA_OFFER'
+        AND mail.lifecycle IS DISTINCT FROM 'CANCELLED'
+    ),
+    'agreementAccepted', v_sub.state IN ('ACCEPTED', 'PAYMENT_PENDING', 'ACTIVE', 'PAUSED', 'PAST_DUE', 'CANCEL_AT_PERIOD_END'),
+    'paymentStatus', CASE
+      WHEN v_sub.state IN ('ACTIVE', 'PAUSED', 'PAST_DUE', 'CANCEL_AT_PERIOD_END')
+        OR EXISTS (SELECT 1 FROM public.commercial_payment_evidence AS evidence WHERE evidence.subscription_id = v_sub.id)
+        THEN 'paid'
+      WHEN v_sub.state = 'PAYMENT_PENDING' THEN 'verifying'
+      ELSE 'none'
+    END,
+    'provisionState', (
+      SELECT provision.state
+      FROM public.service_provisions AS provision
+      JOIN public.product_entitlements AS entitlement ON entitlement.id = provision.entitlement_id
+      WHERE entitlement.commercial_subscription_id = v_sub.id
+      ORDER BY provision.updated_at DESC
+      LIMIT 1
+    ),
     'tier', (SELECT tier_code FROM public.plan_versions WHERE id = v_sub.plan_version_id),
     'enquiryRef', (
       SELECT enquiry.public_ref FROM public.onboarding_requests AS request
@@ -950,5 +975,629 @@ ALTER TABLE admin_private.onboarding_request_events
 
 REVOKE ALL ON FUNCTION public.telloya_offer_admin_v1(text, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.telloya_offer_admin_v1(text, uuid) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_commercial_command_v1(
+  p_token text,
+  p_request uuid,
+  p_operation text,
+  p_payload jsonb,
+  p_version integer
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  s jsonb;
+  actor uuid;
+  fingerprint text;
+  receipt admin_private.commercial_command_receipts;
+  enquiry public.enquiries;
+  req public.onboarding_requests;
+  previous text;
+  outcome text := 'success';
+  result jsonb;
+  note text;
+  chosen_product text;
+  mailbox text;
+  matched_customer uuid;
+  supplied_customer uuid;
+  matched_business uuid;
+  supplied_business uuid;
+  membership public.business_memberships;
+  membership_status text;
+  saved jsonb;
+  location_ids uuid[] := ARRAY[]::uuid[];
+  created_location uuid;
+  email_verified boolean := false;
+  occupying uuid;
+  plan public.plan_versions;
+  opened_subscription uuid;
+  opened_ref text;
+  attempt integer;
+  covered integer;
+  piece record;
+  ready boolean;
+  membership_exists boolean := false;
+  preserved_membership text;
+  live_offer public.commercial_subscriptions;
+  telloya_limit integer;
+  guard_limit integer;
+  component_count integer;
+  plan_count integer;
+  chosen_conditions public.commercial_plan_conditions;
+  composed_amount integer;
+  guard_ids uuid[] := ARRAY[]::uuid[];
+  addon_count integer := 0;
+BEGIN
+  s := public.admin_session_v1(p_token);
+  IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
+  actor := (s->>'userId')::uuid;
+  IF p_request IS NULL OR p_version IS NULL OR p_version < 0 OR p_operation IS NULL
+    OR p_operation NOT IN (
+      'classify', 'review', 'match_customer', 'match_business', 'select_locations',
+      'mark_ready', 'decline', 'prepare_offer'
+    )
+    OR p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' OR octet_length(p_payload::text) > 8000
+    OR jsonb_typeof(p_payload->'enquiryId') IS DISTINCT FROM 'string'
+    OR (p_payload->>'enquiryId') !~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
+    OR jsonb_typeof(p_payload->'reason') IS DISTINCT FROM 'string'
+    OR char_length(btrim(p_payload->>'reason')) NOT BETWEEN 10 AND 1000
+  THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+  note := btrim(p_payload->>'reason');
+  fingerprint := md5(jsonb_build_object('operation', p_operation, 'payload', p_payload, 'version', p_version)::text);
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_request::text, 0));
+  SELECT * INTO receipt FROM admin_private.commercial_command_receipts WHERE request_id = p_request;
+  IF receipt.request_id IS NOT NULL THEN
+    IF receipt.fingerprint = fingerprint THEN RETURN receipt.response; END IF;
+    RETURN jsonb_build_object('status', 'conflict');
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('onboarding:' || (p_payload->>'enquiryId'), 0));
+  SELECT * INTO enquiry FROM public.enquiries WHERE id = (p_payload->>'enquiryId')::uuid FOR UPDATE;
+  IF enquiry.id IS NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+  SELECT * INTO req FROM public.onboarding_requests
+  WHERE enquiry_id = enquiry.id AND state NOT IN ('CLOSED', 'DECLINED')
+  ORDER BY created_at DESC
+  LIMIT 1
+  FOR UPDATE;
+
+  IF p_operation = 'classify' THEN
+    chosen_product := p_payload->>'product';
+    IF chosen_product IS NULL OR chosen_product NOT IN ('TELLOYA', 'COMPLETE') OR p_version <> 0 THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    IF enquiry.status NOT IN ('new', 'open', 'waiting')
+      OR NOT admin_private.commercial_enquiry_supported_v1(enquiry.payload)
+    THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF req.id IS NOT NULL THEN
+      IF req.product_code IS DISTINCT FROM chosen_product THEN RETURN jsonb_build_object('status', 'conflict', 'reason', 'product'); END IF;
+      result := jsonb_build_object('status', 'success', 'id', enquiry.id, 'requestId', req.id, 'version', req.record_version, 'existing', true);
+      INSERT INTO admin_private.commercial_command_receipts(request_id, actor_id, fingerprint, response)
+      VALUES (p_request, actor, fingerprint, result);
+      RETURN result;
+    END IF;
+    PERFORM admin_private.ensure_commercial_product_v1(chosen_product);
+    mailbox := lower(btrim(enquiry.payload->>'email'));
+    INSERT INTO public.onboarding_requests(enquiry_id, email_snapshot, product_code, plan_family, state)
+    VALUES (enquiry.id, mailbox, chosen_product, 'VOICE', 'RECEIVED')
+    RETURNING * INTO req;
+    PERFORM admin_private.onboarding_event_v1(req.id, actor, p_request, 'classify', NULL, 'RECEIVED', note,
+      jsonb_build_object('product', chosen_product, 'invitationSent', false));
+    result := jsonb_build_object('status', 'success', 'id', enquiry.id, 'requestId', req.id, 'version', req.record_version);
+    INSERT INTO admin_private.commercial_command_receipts(request_id, actor_id, fingerprint, response)
+    VALUES (p_request, actor, fingerprint, result);
+    RETURN result;
+  END IF;
+
+  IF req.id IS NULL OR req.record_version IS DISTINCT FROM p_version THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'version');
+  END IF;
+  previous := req.state;
+  email_verified := admin_private.contact_verified_v1(req.customer_id, 'email');
+  IF p_operation IN ('review', 'match_customer', 'match_business', 'select_locations', 'mark_ready')
+    AND (req.commercial_subscription_id IS NOT NULL OR req.state = 'OFFERED')
+  THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'frozen');
+  END IF;
+
+  IF p_operation = 'review' THEN
+    IF req.state = 'DECLINED' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF req.state = 'RECEIVED' THEN
+      UPDATE public.onboarding_requests SET state = 'IN_REVIEW' WHERE id = req.id RETURNING * INTO req;
+    END IF;
+    PERFORM admin_private.onboarding_event_v1(req.id, actor, p_request, 'review', previous, req.state, note, '{}'::jsonb);
+  ELSIF p_operation = 'match_customer' THEN
+    IF req.state IN ('DECLINED', 'CLOSED', 'OFFERED') THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    mailbox := req.email_snapshot;
+    SELECT customers.id INTO matched_customer FROM public.customers AS customers WHERE lower(customers.email) = mailbox;
+    IF p_payload ? 'customerId' AND jsonb_typeof(p_payload->'customerId') <> 'null' THEN
+      IF (p_payload->>'customerId') !~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' THEN
+        RETURN jsonb_build_object('status', 'invalid');
+      END IF;
+      supplied_customer := (p_payload->>'customerId')::uuid;
+      IF matched_customer IS NULL OR matched_customer IS DISTINCT FROM supplied_customer THEN
+        RETURN jsonb_build_object('status', 'denied');
+      END IF;
+    ELSIF matched_customer IS NULL THEN
+      IF coalesce(p_payload->>'create', '') <> 'true' THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+      IF req.customer_id IS NOT NULL THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+      BEGIN
+        saved := public.admin_record_save_v1(
+          p_token, 'client', NULL, 0,
+          jsonb_build_object(
+            'name', btrim(enquiry.payload->>'fullName'),
+            'email', mailbox,
+            'phone', coalesce(enquiry.payload->>'phone', '')
+          ),
+          note,
+          admin_private.commercial_request_uuid_v1(p_request, 'customer')
+        );
+        IF saved->>'status' = 'success' THEN
+          matched_customer := (saved->>'id')::uuid;
+        ELSIF saved->>'status' = 'conflict' THEN
+          RAISE EXCEPTION 'commercial nested refused' USING ERRCODE = 'P0001';
+        ELSE
+          RAISE EXCEPTION 'commercial nested refused' USING ERRCODE = 'P0001';
+        END IF;
+      EXCEPTION
+        WHEN SQLSTATE 'P0001' THEN
+          IF SQLERRM <> 'commercial nested refused' THEN RAISE; END IF;
+          IF saved->>'status' = 'conflict' THEN
+            SELECT customers.id INTO matched_customer FROM public.customers AS customers WHERE lower(customers.email) = mailbox;
+          END IF;
+          IF matched_customer IS NULL THEN RETURN saved; END IF;
+      END;
+    END IF;
+    IF matched_customer IS NULL OR (req.customer_id IS NOT NULL AND req.customer_id IS DISTINCT FROM matched_customer) THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
+    email_verified := admin_private.contact_verified_v1(matched_customer, 'email');
+    UPDATE public.onboarding_requests
+    SET customer_id = matched_customer,
+        state = CASE WHEN email_verified THEN 'IN_REVIEW' ELSE 'MAILBOX_REQUIRED' END
+    WHERE id = req.id
+    RETURNING * INTO req;
+    PERFORM admin_private.onboarding_event_v1(req.id, actor, p_request, 'match_customer', previous, req.state, note,
+      jsonb_build_object('customerId', matched_customer, 'emailVerified', email_verified, 'invitationSent', false));
+  ELSIF p_operation = 'match_business' THEN
+    IF req.customer_id IS NULL OR req.state IN ('DECLINED', 'CLOSED', 'OFFERED') THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
+    membership_status := coalesce(p_payload->>'membership', 'pending');
+    IF membership_status NOT IN ('pending', 'verified') THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+    matched_business := NULL;
+    IF p_payload ? 'businessId' AND jsonb_typeof(p_payload->'businessId') <> 'null' THEN
+      IF (p_payload->>'businessId') !~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' THEN
+        RETURN jsonb_build_object('status', 'invalid');
+      END IF;
+      supplied_business := (p_payload->>'businessId')::uuid;
+      IF NOT EXISTS (SELECT 1 FROM public.businesses WHERE id = supplied_business) THEN
+        RETURN jsonb_build_object('status', 'invalid');
+      END IF;
+      matched_business := supplied_business;
+    ELSIF coalesce(p_payload->>'create', '') = 'true' THEN
+      IF jsonb_typeof(p_payload->'name') IS DISTINCT FROM 'string'
+        OR char_length(btrim(p_payload->>'name')) NOT BETWEEN 1 AND 200
+        OR jsonb_typeof(p_payload->'website') IS DISTINCT FROM 'string'
+        OR ((p_payload->>'website') <> '' AND (p_payload->>'website') !~ '^https?://[^[:space:]]+$')
+      THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+    ELSE
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    IF matched_business IS NOT NULL AND EXISTS (
+      SELECT 1 FROM public.onboarding_requests other
+      WHERE other.business_id = matched_business AND other.plan_family = 'VOICE'
+        AND other.state NOT IN ('CLOSED', 'DECLINED') AND other.id <> req.id
+    ) THEN RETURN jsonb_build_object('status', 'conflict', 'reason', 'business'); END IF;
+    membership_exists := false;
+    IF matched_business IS NOT NULL THEN
+      SELECT * INTO membership FROM public.business_memberships
+      WHERE customer_id = req.customer_id AND business_id = matched_business;
+      membership_exists := FOUND;
+    END IF;
+    IF membership_exists AND membership.status = 'revoked' THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'revoked');
+    END IF;
+    IF membership_exists THEN
+      preserved_membership := membership.status;
+    ELSE
+      IF (s->>'createdAt')::timestamptz < pg_catalog.now() - interval '30 minutes' THEN
+        RETURN jsonb_build_object('status', 'reauth_required');
+      END IF;
+      IF membership_status = 'verified'
+        AND NOT (
+          admin_private.contact_verified_v1(req.customer_id, 'email')
+          OR admin_private.contact_verified_v1(req.customer_id, 'phone')
+        )
+      THEN RETURN jsonb_build_object('status', 'denied', 'reason', 'membership'); END IF;
+      preserved_membership := membership_status;
+      BEGIN
+        IF matched_business IS NULL THEN
+          saved := public.admin_record_save_v1(
+            p_token, 'business', NULL, 0,
+            jsonb_build_object('name', btrim(p_payload->>'name'), 'website', p_payload->>'website'),
+            note,
+            admin_private.commercial_request_uuid_v1(p_request, 'business')
+          );
+          IF saved->>'status' IS DISTINCT FROM 'success' THEN
+            RAISE EXCEPTION 'commercial nested refused' USING ERRCODE = 'P0001';
+          END IF;
+          matched_business := (saved->>'id')::uuid;
+          IF EXISTS (
+            SELECT 1 FROM public.onboarding_requests other
+            WHERE other.business_id = matched_business AND other.plan_family = 'VOICE'
+              AND other.state NOT IN ('CLOSED', 'DECLINED') AND other.id <> req.id
+          ) THEN
+            saved := jsonb_build_object('status', 'conflict', 'reason', 'business');
+            RAISE EXCEPTION 'commercial nested refused' USING ERRCODE = 'P0001';
+          END IF;
+        END IF;
+        saved := public.admin_membership_save_v1(
+          p_token, req.customer_id, matched_business, 0, preserved_membership, note,
+          admin_private.commercial_request_uuid_v1(p_request, 'membership')
+        );
+        IF saved->>'status' IS DISTINCT FROM 'success' THEN
+          RAISE EXCEPTION 'commercial nested refused' USING ERRCODE = 'P0001';
+        END IF;
+      EXCEPTION
+        WHEN SQLSTATE 'P0001' THEN
+          IF SQLERRM <> 'commercial nested refused' THEN RAISE; END IF;
+          RETURN saved;
+      END;
+    END IF;
+    UPDATE public.onboarding_requests SET business_id = matched_business WHERE id = req.id RETURNING * INTO req;
+    DELETE FROM admin_private.onboarding_request_locations
+    WHERE onboarding_request_id = req.id
+      AND location_id IN (SELECT locations.id FROM public.locations AS locations WHERE locations.business_id IS DISTINCT FROM matched_business);
+    PERFORM admin_private.onboarding_event_v1(req.id, actor, p_request, 'match_business', previous, req.state, note,
+      jsonb_build_object('businessId', matched_business, 'membership', preserved_membership, 'emailVerified', admin_private.contact_verified_v1(req.customer_id, 'email')));
+  ELSIF p_operation = 'select_locations' THEN
+    IF req.business_id IS NULL OR req.state IN ('DECLINED', 'CLOSED') THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
+    location_ids := ARRAY[]::uuid[];
+    IF p_payload ? 'locationIds' AND jsonb_typeof(p_payload->'locationIds') = 'array' THEN
+      IF EXISTS (
+        SELECT 1 FROM jsonb_array_elements_text(p_payload->'locationIds') AS value
+        WHERE value !~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
+      ) THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+      SELECT coalesce(array_agg(value::uuid), ARRAY[]::uuid[]) INTO location_ids
+      FROM jsonb_array_elements_text(p_payload->'locationIds') AS value;
+    ELSIF coalesce(p_payload->>'create', '') <> 'true' THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    IF coalesce(cardinality(location_ids), 0) > 0 AND EXISTS (
+      SELECT 1 FROM unnest(location_ids) AS picked(id)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.locations location
+        WHERE location.id = picked.id AND location.business_id = req.business_id
+      )
+    ) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF coalesce(p_payload->>'create', '') = 'true' THEN
+      IF jsonb_typeof(p_payload->'locationName') IS DISTINCT FROM 'string'
+        OR char_length(coalesce(p_payload->>'locationName', '')) > 200
+        OR jsonb_typeof(p_payload->'country') IS DISTINCT FROM 'string'
+        OR char_length(btrim(p_payload->>'country')) NOT BETWEEN 1 AND 100
+        OR coalesce(cardinality(location_ids), 0) + 1 > 20
+      THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+      BEGIN
+        saved := public.admin_record_save_v1(
+          p_token, 'location', NULL, 0,
+          jsonb_build_object(
+            'name', coalesce(p_payload->>'locationName', ''),
+            'country', btrim(p_payload->>'country'),
+            'profileUrl', '',
+            'businessId', req.business_id
+          ),
+          note,
+          admin_private.commercial_request_uuid_v1(p_request, 'location')
+        );
+        IF saved->>'status' IS DISTINCT FROM 'success' THEN
+          RAISE EXCEPTION 'commercial nested refused' USING ERRCODE = 'P0001';
+        END IF;
+        created_location := (saved->>'id')::uuid;
+      EXCEPTION
+        WHEN SQLSTATE 'P0001' THEN
+          IF SQLERRM <> 'commercial nested refused' THEN RAISE; END IF;
+          RETURN saved;
+      END;
+      location_ids := location_ids || created_location;
+    END IF;
+    IF location_ids IS NULL OR cardinality(location_ids) < 1 OR cardinality(location_ids) > 20 THEN
+      RAISE EXCEPTION 'location selection failed its own checks';
+    END IF;
+    DELETE FROM admin_private.onboarding_request_locations
+    WHERE onboarding_request_id = req.id AND NOT (location_id = ANY(location_ids));
+    INSERT INTO admin_private.onboarding_request_locations(onboarding_request_id, location_id)
+    SELECT req.id, picked.id FROM unnest(location_ids) AS picked(id)
+    ON CONFLICT DO NOTHING;
+    PERFORM admin_private.onboarding_event_v1(req.id, actor, p_request, 'select_locations', previous, req.state, note,
+      jsonb_build_object('locationCount', cardinality(location_ids)));
+  ELSIF p_operation = 'mark_ready' THEN
+    IF req.customer_id IS NULL OR req.business_id IS NULL OR req.state IN ('DECLINED', 'CLOSED') THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1 FROM admin_private.onboarding_request_locations WHERE onboarding_request_id = req.id
+    ) THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    SELECT status INTO membership_status FROM public.business_memberships
+    WHERE customer_id = req.customer_id AND business_id = req.business_id;
+    IF membership_status IS NULL OR membership_status = 'revoked' THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', CASE WHEN membership_status = 'revoked' THEN 'revoked' ELSE 'membership' END);
+    END IF;
+    email_verified := admin_private.contact_verified_v1(req.customer_id, 'email');
+    IF req.state IN ('RECEIVED', 'IN_REVIEW', 'MAILBOX_REQUIRED') THEN
+      UPDATE public.onboarding_requests
+      SET state = CASE WHEN email_verified THEN 'IN_REVIEW' ELSE 'MAILBOX_REQUIRED' END
+      WHERE id = req.id
+      RETURNING * INTO req;
+    END IF;
+    PERFORM admin_private.onboarding_event_v1(req.id, actor, p_request, 'mark_ready', previous, req.state, note,
+      jsonb_build_object('invitationSent', false, 'emailVerified', email_verified, 'membership', membership_status));
+  ELSIF p_operation = 'decline' THEN
+    IF char_length(note) NOT BETWEEN 10 AND 2000 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+    IF req.state = 'DECLINED' THEN
+      result := jsonb_build_object('status', 'success', 'id', enquiry.id, 'requestId', req.id, 'version', req.record_version, 'existing', true);
+      INSERT INTO admin_private.commercial_command_receipts(request_id, actor_id, fingerprint, response)
+      VALUES (p_request, actor, fingerprint, result);
+      RETURN result;
+    END IF;
+    IF req.commercial_subscription_id IS NOT NULL THEN
+      SELECT * INTO live_offer FROM public.commercial_subscriptions WHERE id = req.commercial_subscription_id FOR UPDATE;
+      IF live_offer.id IS NULL OR live_offer.state IS DISTINCT FROM 'OFFERED' THEN
+        RETURN jsonb_build_object('status', 'denied', 'reason', 'offer_state');
+      END IF;
+      UPDATE public.commercial_subscriptions
+      SET state = 'CANCELED', canceled_at = pg_catalog.now()
+      WHERE id = live_offer.id AND state = 'OFFERED';
+      IF NOT FOUND THEN RETURN jsonb_build_object('status', 'conflict', 'reason', 'offer'); END IF;
+      INSERT INTO public.commercial_subscription_events(subscription_id, actor_id, request_id, from_state, to_state, reason)
+      VALUES (live_offer.id, actor, p_request, 'OFFERED', 'CANCELED', note);
+    END IF;
+    UPDATE public.onboarding_requests SET state = 'DECLINED', decline_reason = note WHERE id = req.id RETURNING * INTO req;
+    PERFORM admin_private.onboarding_event_v1(req.id, actor, p_request, 'decline', previous, 'DECLINED', note,
+      jsonb_build_object('invitationSent', false, 'offerWithdrawn', live_offer.id IS NOT NULL));
+  ELSIF p_operation = 'prepare_offer' THEN
+    IF enquiry.source = 'telloya' AND req.product_code IN ('TELLOYA', 'COMPLETE') AND NOT EXISTS (
+      SELECT 1 FROM admin_private.telloya_admin_demos AS demo
+      WHERE demo.enquiry_id = enquiry.id AND demo.status = 'COMPLETED'
+    ) THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'demonstration_not_completed');
+    END IF;
+    IF req.customer_id IS NULL OR req.business_id IS NULL OR req.state IN ('DECLINED', 'CLOSED') THEN
+      RETURN jsonb_build_object('status', 'denied');
+    END IF;
+    SELECT status INTO membership_status FROM public.business_memberships
+    WHERE customer_id = req.customer_id AND business_id = req.business_id;
+    IF membership_status IS DISTINCT FROM 'verified' THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    SELECT count(*) INTO covered FROM admin_private.onboarding_request_locations WHERE onboarding_request_id = req.id;
+    IF covered < 1 THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+    IF req.commercial_subscription_id IS NOT NULL THEN
+      result := jsonb_build_object('status', 'success', 'id', enquiry.id, 'requestId', req.id, 'version', req.record_version, 'existing', true);
+      INSERT INTO admin_private.commercial_command_receipts(request_id, actor_id, fingerprint, response) VALUES (p_request, actor, fingerprint, result);
+      RETURN result;
+    END IF;
+    IF p_payload ? 'planVersionId' AND jsonb_typeof(p_payload->'planVersionId') <> 'null' THEN
+      IF (p_payload->>'planVersionId') !~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' THEN
+        RETURN jsonb_build_object('status', 'invalid');
+      END IF;
+      SELECT * INTO plan FROM public.plan_versions WHERE id = (p_payload->>'planVersionId')::uuid;
+    ELSE
+      SELECT count(*) INTO plan_count FROM public.plan_versions
+      WHERE product_code = req.product_code AND status = 'APPROVED'
+        AND amount_minor IS NOT NULL AND tax_behaviour = 'NOT_APPLICABLE'
+        AND terms_ref IS NOT NULL AND effective_from <= pg_catalog.now()
+        AND (effective_to IS NULL OR effective_to > pg_catalog.now());
+      IF plan_count = 0 THEN
+        RETURN jsonb_build_object('status', 'terms_unconfigured', 'id', enquiry.id, 'requestId', req.id);
+      END IF;
+      IF plan_count IS DISTINCT FROM 1 OR EXISTS (
+        SELECT 1 FROM public.plan_versions tiered
+        WHERE tiered.product_code = req.product_code AND tiered.status = 'APPROVED'
+          AND tiered.tier_code IS NOT NULL
+          AND tiered.amount_minor IS NOT NULL AND tiered.tax_behaviour = 'NOT_APPLICABLE'
+          AND tiered.terms_ref IS NOT NULL AND tiered.effective_from <= pg_catalog.now()
+          AND (tiered.effective_to IS NULL OR tiered.effective_to > pg_catalog.now())
+      ) THEN
+        RETURN jsonb_build_object('status', 'tier_required', 'id', enquiry.id, 'requestId', req.id);
+      END IF;
+      SELECT * INTO plan FROM public.plan_versions
+      WHERE product_code = req.product_code AND status = 'APPROVED'
+        AND tier_code IS NULL
+        AND amount_minor IS NOT NULL AND tax_behaviour = 'NOT_APPLICABLE'
+        AND terms_ref IS NOT NULL AND effective_from <= pg_catalog.now()
+        AND (effective_to IS NULL OR effective_to > pg_catalog.now());
+      IF NOT FOUND THEN
+        RETURN jsonb_build_object('status', 'terms_unconfigured', 'id', enquiry.id, 'requestId', req.id);
+      END IF;
+    END IF;
+    SELECT * INTO chosen_conditions FROM public.commercial_plan_conditions
+    WHERE plan_version_id = plan.id AND status = 'APPROVED';
+    IF plan.tier_code IS NOT NULL AND chosen_conditions.id IS NOT NULL
+      AND chosen_conditions.tier_code IS DISTINCT FROM plan.tier_code THEN
+      RETURN jsonb_build_object('status', 'tier_mismatch', 'id', enquiry.id, 'requestId', req.id);
+    END IF;
+    IF plan.id IS NULL OR plan.product_code IS DISTINCT FROM req.product_code OR plan.status IS DISTINCT FROM 'APPROVED'
+      OR plan.amount_minor IS NULL OR plan.tax_behaviour IS DISTINCT FROM 'NOT_APPLICABLE'
+      OR plan.terms_ref IS NULL OR plan.effective_from > pg_catalog.now()
+      OR (plan.effective_to IS NOT NULL AND plan.effective_to <= pg_catalog.now())
+    THEN RETURN jsonb_build_object('status', 'terms_unconfigured', 'id', enquiry.id, 'requestId', req.id); END IF;
+    SELECT count(*) INTO component_count FROM public.plan_components AS pieces WHERE pieces.plan_version_id = plan.id;
+    SELECT pieces.quantity_limit INTO telloya_limit FROM public.plan_components AS pieces
+    WHERE pieces.plan_version_id = plan.id AND pieces.component_code = 'TELLOYA';
+    SELECT pieces.quantity_limit INTO guard_limit FROM public.plan_components AS pieces
+    WHERE pieces.plan_version_id = plan.id AND pieces.component_code = 'GUARD';
+    IF req.product_code = 'TELLOYA' AND (component_count IS DISTINCT FROM 1 OR telloya_limit IS NULL OR guard_limit IS NOT NULL) THEN
+      RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'components', 'id', enquiry.id, 'requestId', req.id);
+    ELSIF req.product_code = 'COMPLETE' AND (component_count IS DISTINCT FROM 2 OR telloya_limit IS NULL OR guard_limit IS NULL) THEN
+      RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'components', 'id', enquiry.id, 'requestId', req.id);
+    ELSIF req.product_code NOT IN ('TELLOYA', 'COMPLETE') THEN
+      RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'components', 'id', enquiry.id, 'requestId', req.id);
+    END IF;
+    IF covered IS DISTINCT FROM telloya_limit THEN
+      RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'locations', 'id', enquiry.id, 'requestId', req.id);
+    END IF;
+    IF chosen_conditions.id IS NULL OR chosen_conditions.status IS DISTINCT FROM 'APPROVED' THEN
+      RETURN jsonb_build_object(
+        'status', 'terms_unconfigured',
+        'reason', CASE WHEN plan.tier_code = 'CUSTOM' THEN 'quotation' ELSE 'conditions' END,
+        'id', enquiry.id, 'requestId', req.id
+      );
+    END IF;
+    IF plan.tier_code IS NOT NULL AND chosen_conditions.tier_code IS DISTINCT FROM plan.tier_code THEN
+      RETURN jsonb_build_object('status', 'tier_mismatch', 'id', enquiry.id, 'requestId', req.id);
+    END IF;
+    IF plan.currency IS DISTINCT FROM 'GBP'
+      OR plan.billing_cadence IS DISTINCT FROM 'MONTH'
+      OR plan.amount_minor IS NULL
+      OR plan.amount_minor <= 0
+      OR (
+        req.product_code = 'TELLOYA'
+        AND (
+          chosen_conditions.base_amount_minor IS DISTINCT FROM plan.amount_minor
+          OR (
+            chosen_conditions.guard_unit_amount_minor IS NOT NULL
+            AND chosen_conditions.guard_unit_amount_minor IS DISTINCT FROM 999
+          )
+        )
+      )
+      OR (
+        req.product_code = 'COMPLETE'
+        AND (
+          chosen_conditions.guard_unit_amount_minor IS NULL
+          OR chosen_conditions.base_amount_minor
+            + chosen_conditions.guard_unit_amount_minor * guard_limit
+            IS DISTINCT FROM plan.amount_minor
+        )
+      )
+    THEN
+      RETURN jsonb_build_object(
+        'status', 'terms_unconfigured',
+        'reason', CASE WHEN plan.tier_code = 'CUSTOM' AND plan.amount_minor IS NULL THEN 'quotation' ELSE 'price' END,
+        'id', enquiry.id, 'requestId', req.id
+      );
+    END IF;
+    IF plan.terms_ref IS NULL OR NOT EXISTS (
+      SELECT 1
+      FROM public.commercial_agreement_versions agreement
+      WHERE agreement.product_code = plan.product_code
+        AND agreement.version_ref = plan.terms_ref
+        AND agreement.status = 'APPROVED'
+    ) THEN
+      RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'agreement', 'id', enquiry.id, 'requestId', req.id);
+    END IF;
+    addon_count := 0;
+    guard_ids := ARRAY[]::uuid[];
+    IF p_payload ? 'guardLocationIds' AND jsonb_typeof(p_payload->'guardLocationIds') = 'array' THEN
+      IF EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(p_payload->'guardLocationIds') AS listed(value)
+        WHERE listed.value !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      ) THEN
+        RETURN jsonb_build_object('status', 'invalid');
+      END IF;
+      SELECT coalesce(array_agg(DISTINCT listed.value::uuid), ARRAY[]::uuid[])
+      INTO guard_ids
+      FROM jsonb_array_elements_text(p_payload->'guardLocationIds') AS listed(value);
+      addon_count := coalesce(cardinality(guard_ids), 0);
+    ELSIF p_payload ? 'guardLocationIds' AND p_payload->'guardLocationIds' IS DISTINCT FROM 'null'::jsonb THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    IF addon_count > 999 THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    IF addon_count > 0 AND EXISTS (
+      SELECT 1
+      FROM unnest(guard_ids) AS picked(location_id)
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM public.locations location
+        WHERE location.id = picked.location_id
+          AND location.business_id = req.business_id
+      )
+    ) THEN
+      RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'guard', 'id', enquiry.id, 'requestId', req.id);
+    END IF;
+    IF req.product_code = 'COMPLETE' AND addon_count > 0 THEN
+      RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'guard', 'id', enquiry.id, 'requestId', req.id);
+    END IF;
+    IF req.product_code = 'TELLOYA' AND addon_count > 0
+      AND chosen_conditions.guard_unit_amount_minor IS DISTINCT FROM 999
+    THEN
+      RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'price', 'id', enquiry.id, 'requestId', req.id);
+    END IF;
+    composed_amount := plan.amount_minor;
+    IF req.product_code = 'TELLOYA' AND addon_count > 0 THEN
+      composed_amount := plan.amount_minor + 999 * addon_count;
+    END IF;
+    SELECT id INTO occupying FROM public.commercial_subscriptions
+    WHERE business_id = req.business_id AND state IN ('ACTIVE', 'PAUSED', 'PAST_DUE', 'CANCEL_AT_PERIOD_END')
+    LIMIT 1;
+    IF EXISTS (
+      SELECT 1 FROM public.commercial_subscriptions
+      WHERE business_id = req.business_id AND state IN ('OFFERED', 'ACCEPTED', 'PAYMENT_PENDING')
+    ) THEN RETURN jsonb_build_object('status', 'conflict', 'reason', 'offer'); END IF;
+    FOR attempt IN 1..8 LOOP
+      opened_ref := admin_private.commercial_public_ref_v1();
+      BEGIN
+        INSERT INTO public.commercial_subscriptions(
+          public_ref, customer_id, business_id, plan_family, plan_version_id, grant_kind, state,
+          amount_minor, currency, tax_behaviour, tax_amount_minor, cadence_snapshot, terms_ref,
+          succeeds_subscription_id
+        ) VALUES (
+          opened_ref, req.customer_id, req.business_id, 'VOICE', plan.id, 'BILLABLE', 'DRAFT',
+          composed_amount, plan.currency, plan.tax_behaviour, NULL, plan.billing_cadence, plan.terms_ref,
+          occupying
+        ) RETURNING id INTO opened_subscription;
+        EXIT;
+      EXCEPTION WHEN unique_violation THEN
+        opened_subscription := NULL;
+      END;
+    END LOOP;
+    IF opened_subscription IS NULL THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+    FOR piece IN
+      SELECT pieces.component_code, pieces.quantity_limit
+      FROM public.plan_components AS pieces
+      WHERE pieces.plan_version_id = plan.id
+    LOOP
+      INSERT INTO public.commercial_subscription_items(
+        subscription_id, component_code, quantity, quantity_limit_snapshot
+      ) VALUES (opened_subscription, piece.component_code, piece.quantity_limit, piece.quantity_limit);
+    END LOOP;
+    IF req.product_code = 'TELLOYA' AND addon_count > 0 THEN
+      INSERT INTO public.commercial_subscription_items(
+        subscription_id, component_code, quantity, quantity_limit_snapshot
+      ) VALUES (opened_subscription, 'GUARD', addon_count, addon_count);
+      INSERT INTO admin_private.commercial_offer_guard_locations(subscription_id, location_id)
+      SELECT opened_subscription, picked.location_id
+      FROM unnest(guard_ids) AS picked(location_id);
+    END IF;
+    UPDATE public.commercial_subscriptions SET state = 'OFFERED' WHERE id = opened_subscription;
+    UPDATE public.onboarding_requests
+    SET commercial_subscription_id = opened_subscription, state = 'OFFERED'
+    WHERE id = req.id
+    RETURNING * INTO req;
+    INSERT INTO public.commercial_subscription_events(subscription_id, actor_id, request_id, from_state, to_state, reason)
+    VALUES (opened_subscription, actor, p_request, 'DRAFT', 'OFFERED', note);
+    PERFORM admin_private.onboarding_event_v1(req.id, actor, p_request, 'prepare_offer', previous, 'OFFERED', note,
+      jsonb_build_object('planVersionId', plan.id, 'tierCode', plan.tier_code, 'amountMinor', composed_amount, 'guardLocationCount', addon_count, 'taxBehaviour', plan.tax_behaviour, 'invitationSent', false, 'paymentRecorded', false));
+  ELSE
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+
+  IF req.record_version IS NOT DISTINCT FROM p_version THEN
+    UPDATE public.onboarding_requests
+    SET updated_at = pg_catalog.now()
+    WHERE id = req.id
+    RETURNING * INTO req;
+  END IF;
+
+  result := jsonb_build_object('status', outcome, 'id', enquiry.id, 'requestId', req.id, 'version', req.record_version);
+  INSERT INTO admin_private.commercial_command_receipts(request_id, actor_id, fingerprint, response)
+  VALUES (p_request, actor, fingerprint, result);
+  RETURN result;
+END;
+$$;
 
 COMMIT;

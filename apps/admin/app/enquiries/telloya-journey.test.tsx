@@ -44,6 +44,56 @@ describe("Telloya journey panel", () => {
     expect(screen.queryByRole("button", { name: "Mark demo completed" })).toBeNull()
   })
 
+  it("moves the next step when the recorded demonstration is completed", () => {
+    render(<TelloyaJourney snapshot={{ source: "telloya" }} demo={{
+      availability: "ready",
+      enquiryId: "22222222-2222-4222-8222-222222222222",
+      status: "COMPLETED",
+      version: 2,
+      scheduledAt: "2026-11-12T10:00:00.000Z",
+      completedAt: "2026-11-12T11:00:00.000Z",
+      timezone: "Europe/London",
+    }} offer={{
+      availability: "ready",
+      subscriptionId: "33333333-3333-4333-8333-333333333333",
+      offerRef: "VC-26-ABCDEF",
+      state: "OFFERED",
+      version: 1,
+      amendments: [],
+      emailQueued: false,
+      paymentStatus: "none",
+    }} />)
+    expect(screen.getByText("Offer · current")).toBeTruthy()
+    expect(screen.getByText(/Queue the offer email/)).toBeTruthy()
+    expect(screen.queryByText("Demo · current")).toBeNull()
+  })
+
+  it("follows a paid subscription into setup", () => {
+    render(<TelloyaJourney snapshot={{ source: "telloya" }} demo={{
+      availability: "ready",
+      enquiryId: "22222222-2222-4222-8222-222222222222",
+      status: "COMPLETED",
+      version: 2,
+      scheduledAt: null,
+      completedAt: "2026-11-12T11:00:00.000Z",
+      timezone: "Europe/London",
+    }} offer={{
+      availability: "ready",
+      subscriptionId: "33333333-3333-4333-8333-333333333333",
+      offerRef: "VC-26-ABCDEF",
+      state: "ACTIVE",
+      version: 4,
+      amendments: [],
+      emailQueued: true,
+      agreementAccepted: true,
+      paymentStatus: "paid",
+      provisionState: "FORWARDING_REQUIRED",
+    }} />)
+    expect(screen.getByText("Setup · current")).toBeTruthy()
+    expect(screen.getByText(/Record forwarding instructions/)).toBeTruthy()
+    expect(screen.getAllByText(/Going live stays blocked/).length).toBeGreaterThan(0)
+  })
+
   it("stays off a legacy enquiry", () => {
     const { container } = render(<TelloyaJourney snapshot={{ source: "homepage", planTier: "basic" }} />)
     expect(container.textContent).toBe("")

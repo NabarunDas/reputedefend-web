@@ -22,7 +22,10 @@ export type TelloyaOfferPanel =
       enquiryRef?: string | null
       plans?: TelloyaOfferPlan[]
       locations?: TelloyaOfferLocation[]
+      emailQueued?: boolean
+      agreementAccepted?: boolean
       paymentStatus?: "none" | "verifying" | "paid"
+      provisionState?: string | null
     }
 
 export function TelloyaOfferActions({ offer }: { offer: TelloyaOfferPanel }) {

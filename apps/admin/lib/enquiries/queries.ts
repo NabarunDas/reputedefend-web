@@ -95,7 +95,10 @@ export async function getTelloyaOffer(id: string): Promise<TelloyaOfferPanel> {
       enquiryRef?: string | null
       plans?: TelloyaOfferPlan[]
       locations?: TelloyaOfferLocation[]
+      emailQueued?: boolean
+      agreementAccepted?: boolean
       paymentStatus?: "none" | "verifying" | "paid"
+      provisionState?: string | null
     } | null>("telloya_offer_admin_v1", { p_enquiry: id })
     if (!result) return { availability: "unavailable" }
     if (result.status === "no_offer") return { availability: "no_offer" }
@@ -115,7 +118,10 @@ export async function getTelloyaOffer(id: string): Promise<TelloyaOfferPanel> {
       enquiryRef: result.enquiryRef,
       plans: Array.isArray(result.plans) ? result.plans : [],
       locations: Array.isArray(result.locations) ? result.locations : [],
+      emailQueued: result.emailQueued === true,
+      agreementAccepted: result.agreementAccepted === true,
       paymentStatus: result.paymentStatus,
+      provisionState: result.provisionState ?? null,
     }
   } catch (error) {
     if (controlFlow(error)) throw error

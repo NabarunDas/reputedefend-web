@@ -1,8 +1,47 @@
-import { telloyaJourneyProgress, type TelloyaJourneySnapshot } from "@/lib/commercial/telloya-admin-journey"
+import { telloyaJourneyProgress, type TelloyaJourneySnapshot, type TelloyaOfferProgress, type TelloyaSetupProgress } from "@/lib/commercial/telloya-admin-journey"
 import { formatGbpPence, previewTelloyaOffer } from "@/lib/commercial/telloya-offer"
-import { telloyaSetupChecklist } from "@/lib/commercial/telloya-setup"
+import { telloyaSetupChecklist, type TelloyaSetupStep } from "@/lib/commercial/telloya-setup"
 import { TelloyaDemoForm } from "./telloya-demo-form"
 import { TelloyaOfferActions, type TelloyaOfferPanel } from "./telloya-offer-actions"
+
+const ACCEPTED_STATES = new Set(["ACCEPTED", "PAYMENT_PENDING", "ACTIVE", "PAUSED", "PAST_DUE", "CANCEL_AT_PERIOD_END"])
+const PAID_STATES = new Set(["ACTIVE", "PAUSED", "PAST_DUE", "CANCEL_AT_PERIOD_END"])
+const SETUP_STEPS: Record<string, TelloyaSetupStep[]> = {
+  NUMBER_REQUIRED: ["preferences", "ai"],
+  FORWARDING_REQUIRED: ["preferences", "ai", "number"],
+  TEST_REQUIRED: ["preferences", "ai", "number", "forwarding"],
+  AWAITING_CONFIRMATION: ["preferences", "ai", "number", "forwarding", "test_call"],
+  READY_FOR_PROVIDER_VERIFICATION: ["preferences", "ai", "number", "forwarding", "test_call", "customer_connection"],
+}
+
+function setupProgress(state: string | null | undefined): TelloyaSetupProgress {
+  if (state === "LIVE") return "active"
+  if (state === "READY_FOR_PROVIDER_VERIFICATION") return "ready"
+  if (state === "TEST_REQUIRED" || state === "AWAITING_CONFIRMATION") return "testing"
+  if (state && state !== "NOT_STARTED") return "preparing"
+  return "none"
+}
+
+function persistedJourney(snapshot: TelloyaJourneySnapshot, demo: TelloyaDemoPanel, offer: TelloyaOfferPanel): TelloyaJourneySnapshot {
+  const next: TelloyaJourneySnapshot = { ...snapshot }
+  if (demo.availability === "ready") next.demoStatus = demo.status
+  if (offer.availability !== "ready") return next
+  const accepted = ACCEPTED_STATES.has(offer.state)
+  const offerStatus: TelloyaOfferProgress = offer.amendments.some(item => item.status === "REQUESTED")
+    ? "amendment"
+    : offer.state === "DRAFT"
+      ? "draft"
+      : offer.state === "OFFERED"
+        ? offer.emailQueued ? "sent" : "prepared"
+        : accepted
+          ? "accepted"
+          : "none"
+  next.offerStatus = offerStatus
+  next.agreementAccepted = offer.agreementAccepted ?? accepted
+  next.paymentStatus = offer.paymentStatus ?? (PAID_STATES.has(offer.state) ? "paid" : offer.state === "PAYMENT_PENDING" ? "verifying" : "none")
+  next.setupStatus = setupProgress(offer.provisionState)
+  return next
+}
 
 export type TelloyaDemoPanel =
   | { availability: "closed" }
@@ -18,10 +57,14 @@ export type TelloyaDemoPanel =
     }
 
 export function TelloyaJourney({ snapshot, demo = { availability: "closed" }, offer = { availability: "closed" } }: { snapshot: TelloyaJourneySnapshot; demo?: TelloyaDemoPanel; offer?: TelloyaOfferPanel }) {
-  const progress = telloyaJourneyProgress(snapshot)
+  const progress = telloyaJourneyProgress(persistedJourney(snapshot, demo, offer))
   if (!progress) return null
   const preview = previewTelloyaOffer(snapshot.planTier, snapshot.guardLocationCount)
-  const setup = telloyaSetupChecklist({ initialInvoicePaid: false, completed: [] })
+  const paid = offer.availability === "ready" && (offer.paymentStatus === "paid" || PAID_STATES.has(offer.state))
+  const setup = telloyaSetupChecklist({
+    initialInvoicePaid: paid,
+    completed: offer.availability === "ready" ? SETUP_STEPS[offer.provisionState ?? ""] ?? [] : [],
+  })
   return <section className="panel" aria-labelledby="telloya-journey-title">
     <h2 id="telloya-journey-title">Telloya progress</h2>
     <p>{progress.requestLabel} · {progress.planLabel}</p>

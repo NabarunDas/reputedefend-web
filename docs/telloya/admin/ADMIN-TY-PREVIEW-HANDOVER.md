@@ -88,7 +88,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | Post-R7 migration reconcile | DONE | `0afda76da686ea6aa0054959ad99c6e09db51c86` | Manifest records 122 applied DEV migrations, head `20261112210000`; `pendingMigrations()` empty. |
 | ADMIN-TY-R8-A/B/C | DONE in source | `82cef2f1350bcb9ed530e60e4fc385f25df8585e` | Approve & Send, prepare-from-draft, personalised email, preview, delivery status, progress stages. Hosted apply of `20261112223000` and R8-D enablement remain blocked. |
 | ADMIN-TY-R8-R1 | DONE in source | `06f0e48ee48d2419b38086cd574c931b87a84797` | Draft-estimate preview without catalogue/`CUSTOMER_ORIGIN`; advisory-lock receipt race fix; composer V1 contract; sandboxed HTML preview UI. Hosted apply still blocked. |
-| ADMIN-TY-R8-R2 | DONE in source | pending tip SHA | Exact Basic/Growth/Pro quotation match; plain text without composer id; approved template body bound to `TELLOYA_OFFER_COMPOSER_CONTRACT_V1`. Hosted apply still blocked. |
+| ADMIN-TY-R8-R2 | DONE in source | `da93bfa9b77594ea5d5a797ce947d98ac1ed8787` | Exact Basic/Growth/Pro quotation match; plain text without composer id; approved template body bound to `TELLOYA_OFFER_COMPOSER_CONTRACT_V1`. Hosted apply still blocked. |
 
 ## Test matrix
 

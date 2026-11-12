@@ -82,7 +82,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | Post-R6 migration reconcile | DONE | `06fe08b9` | Manifest records 121 applied DEV migrations, head `20261112180000`. |
 | ADMIN-TY-R7 | DONE in source | `b4aaccd4` | Interactive draft calculator, draft persistence source-only `20261112210000`, prepare_offer unchanged, UI simplified. |
 | ADMIN-TY-R7-B | DONE in source | `692db05c` | Typed source + active request, independent Guard locations, proposed-overage wording/GBP cap, prepare matches saved draft, draft audit events, Save disabled when storage unavailable. Do not apply the draft migration. |
-| ADMIN-TY-R7-C-SIMPLE | DONE in source | tip SHA after push | Plan dropdown, Custom editable amount, unsaved-draft prepare gate, Custom approval required before official offer. Do not apply the draft migration. |
+| ADMIN-TY-R7-C-SIMPLE | DONE in source | `3c697496f77466c3a62c03ef2b0061ea9eb937b5` | Plan dropdown, Custom editable amount, unsaved-draft prepare gate, Custom approval required before official offer. Do not apply the draft migration. |
 
 ## Test matrix
 

@@ -4,6 +4,7 @@ import type { AcceptedOffer, CommercialOfferRead, PricedOffer, ReadyOffer } from
 type ShownOffer = ReadyOffer | AcceptedOffer
 import { AcceptOfferForm } from "./accept-form"
 import { ContinueToSecurePayment } from "./payment-form"
+import { TelloyaAmendmentRequest } from "./telloya-amendment"
 
 function pounds(minor: number) {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(minor / 100)
@@ -236,6 +237,7 @@ export function OfferView({
       {ready && !acceptEnabled ? (
         <p className="onboarding-banner">You can read this offer. Accepting it is not available from this page yet.</p>
       ) : null}
+      {ready && offer.product === "Telloya" ? <TelloyaAmendmentRequest enabled={false} /> : null}
       <p className="onboarding-links">
         <a className="portal-button secondary" href="/portal/onboarding">Setup progress</a>
         <a className="portal-button secondary" href="/portal/products">Back to My Products</a>

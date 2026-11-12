@@ -50,8 +50,8 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | R2b | DONE | `a0f632dd` | Persisted TY-referenced offer email. Template stays DRAFT until settings approval. |
 | R2c | DONE | `47192179` | Progress from recorded states. Demo required before prepare_offer and mail. Scoped amendments and idempotent queue. |
 | R2d | DONE | `84adb199` | Full disposable database and package verification. Honest statuses above. |
-| R3-A | DONE | this commit | Offer email refuses retired agreement, unsupported tax, revoked authority and a REQUESTED amendment. Replay stays idempotent. |
-| R3-B | DONE | this commit | Manifest marks `20261112120000` `containsDataChange: true` for the DRAFT template catalogue INSERT. |
+| R3-A | DONE | `ed4e3874` | Offer email refuses retired agreement, unsupported tax, revoked authority and a REQUESTED amendment. Replay stays idempotent. |
+| R3-B | DONE | `ed4e3874` | Manifest marks `20261112120000` `containsDataChange: true` for the DRAFT template catalogue INSERT. |
 
 ## Test matrix
 

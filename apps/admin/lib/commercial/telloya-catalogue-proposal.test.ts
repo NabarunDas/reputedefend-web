@@ -113,7 +113,7 @@ describe("Telloya catalogue proposal", () => {
     expect(migrations).toContain("20261106140000_telloya_standard_location_cap_v1.sql")
     expect(migrations).not.toContain("proposed-location-number-constraint.sql")
     expect(migrations).toContain("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261112223000_telloya_approve_send_offer_v1.sql"])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
     expect(findMigration("20261106200000_admin_commercial_initiate_agent_test_call_v1.sql")).toMatchObject({
       appliedToDev: true,
       containsDataChange: false,

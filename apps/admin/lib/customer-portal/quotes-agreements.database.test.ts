@@ -3,7 +3,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { syntheticPurchasingEstablishmentSql } from "../commercial/purchasing-establishment.fixture"
 import { applyChain, applyUpgrade, migrationSql, preparePlatform } from "../recovery/harness"
-import { migrationHead } from "../recovery/manifest"
 import { paidQuoteCommand } from "../commercial/paid-quote-acceptance"
 import { SYNTHETIC_APPROVAL_EVIDENCE, SYNTHETIC_APPROVAL_REQUEST } from "../commercial/paid-service-approval.fixture"
 
@@ -102,7 +101,7 @@ const upgradedFiles = [
   "20261112120000_telloya_admin_journey_v1.sql",
   "20261112180000_telloya_sales_context_v1.sql",
   "20261112210000_telloya_offer_draft_v1.sql",
-  migrationHead.filename,
+  "20261112223000_telloya_approve_send_offer_v1.sql",
 ].join(",")
 const db = new PGlite()
 

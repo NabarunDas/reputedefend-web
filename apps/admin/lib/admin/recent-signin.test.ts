@@ -53,7 +53,7 @@ describe("the Admin 30-minute recent-sign-in migration", () => {
     // Do not replay 20261105120000. Do not apply 20261105120000 to Production.
     // Do not replay 20261104220000. Do not apply 20261104220000 to Production.
     // Do not replay 20261104190000. Do not apply it to Production.
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261112223000_telloya_approve_send_offer_v1.sql"])
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
     expect(findMigration("20261106200000_admin_commercial_initiate_agent_test_call_v1.sql")).toMatchObject({
       appliedToDev: true,
       containsDataChange: false,

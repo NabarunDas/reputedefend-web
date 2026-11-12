@@ -1,6 +1,6 @@
 /**
  * Disposable PGlite coverage for Telloya offer-draft calculator persistence.
- * Applies the source-only draft migration in-process only. No hosted apply,
+ * Replays applied DEV draft migration in-process only. No hosted replay,
  * Stripe, email, or Retell contact.
  */
 import { randomUUID } from "node:crypto"
@@ -29,7 +29,7 @@ const commercial = (operation: string, payload: object, version: number, key = r
   rpc<Record<string, unknown>>("admin_commercial_command_v1", [token, key, operation, payload, version])
 
 beforeAll(async () => {
-  expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261112223000_telloya_approve_send_offer_v1.sql"])
+  expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
   expect(findMigration("20261112210000_telloya_offer_draft_v1.sql")).toMatchObject({
     appliedToDev: true,
     containsDataChange: false,

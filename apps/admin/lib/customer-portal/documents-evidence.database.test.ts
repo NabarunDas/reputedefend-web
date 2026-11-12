@@ -2,7 +2,6 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, applyUpgrade, migrationSql, preparePlatform } from "../recovery/harness"
-import { migrationHead } from "../recovery/manifest"
 
 const appliedHead = "20261003183002"
 const migration = "20261003194353_customer_portal_documents_evidence_v1.sql"
@@ -100,7 +99,7 @@ const upgradedFiles = [
   "20261112120000_telloya_admin_journey_v1.sql",
   "20261112180000_telloya_sales_context_v1.sql",
   "20261112210000_telloya_offer_draft_v1.sql",
-  migrationHead.filename,
+  "20261112223000_telloya_approve_send_offer_v1.sql",
 ].join(",")
 const db = new PGlite()
 

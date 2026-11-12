@@ -28,13 +28,14 @@ const commercialTail = [
 
 describe("Telloya commercial migration chain", () => {
   it("records the commercial tail as applied and leaves nothing pending", () => {
-    expect(appliedMigrationHead.filename).toBe("20261112210000_telloya_offer_draft_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261112223000_telloya_approve_send_offer_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(appliedMigrationHead.containsDataChange).toBe(false)
+    expect(appliedMigrationHead.containsDataChange).toBe(true)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     const pending = pendingMigrations()
     const afterPreviousHead = chainAfter("20261105120000")
     expect(afterPreviousHead.slice(0, commercialTail.length).map(entry => entry.filename)).toEqual(commercialTail)
+    expect(pending.map(entry => entry.filename)).toEqual([])
     expect(pending.map(entry => entry.filename)).toEqual(chainAfter(appliedMigrationHead.version).map(entry => entry.filename))
     expect(pending.every(entry => entry.appliedToDev === false && entry.safeToReplay === false)).toBe(true)
     expect(findMigration("20261112120000_telloya_admin_journey_v1.sql")).toMatchObject({

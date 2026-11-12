@@ -1,7 +1,7 @@
 /**
  * Disposable PGlite coverage for ADMIN-TY-R8 approve-and-send.
- * Applies source-only 20261112223000 in-process only. No hosted apply,
- * real Resend send, Stripe, or Retell contact.
+ * Replays applied DEV migration 20261112223000 in-process only. No hosted
+ * replay, real Resend send, Stripe, or Retell contact.
  */
 import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
@@ -25,11 +25,9 @@ async function rows<T>(sql: string, params: unknown[] = []) {
 }
 
 beforeAll(async () => {
-  expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-    "20261112223000_telloya_approve_send_offer_v1.sql",
-  ])
+  expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
   expect(findMigration("20261112223000_telloya_approve_send_offer_v1.sql")).toMatchObject({
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: true,
     safeToReplay: false,
   })

@@ -83,6 +83,8 @@ export async function telloyaOfferCommand(request: NextRequest) {
       })
       if (result.status === "queued" || result.status === "replay") return reply("The offer email is queued. Queued does not mean the provider accepted it or that it was delivered.", 200)
       if (result.status === "mail_disabled") return reply("Offer email stays off until the mail control is enabled. Nothing was queued.", 403)
+      if (result.status === "template_unapproved") return reply("The Telloya offer template is not approved. Nothing was queued.", 409)
+      if (result.status === "ineligible") return reply("That offer is not linked to this Telloya enquiry. Nothing was queued.", 403)
       if (result.status === "stale_version") return reply("This offer has changed. Reload it before queueing email.", 409)
       return reply("This deployment cannot queue that email. Nothing was sent.", 503)
     }

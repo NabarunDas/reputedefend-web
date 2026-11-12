@@ -670,17 +670,11 @@ INSERT INTO admin_private.communication_templates (
   template_key, version, name, subject_template, body_text_template, status, reason
 ) VALUES (
   'TELLOYA_OFFER', 1, 'Telloya offer',
-  'Your Telloya proposal {public_ref}',
+  'Your Telloya proposal',
   'The live Telloya offer email is composed by the server from the stored subscription.',
   'DRAFT',
-  'Catalogue row for the server-composed Telloya offer email.'
+  'Catalogue row for the server-composed Telloya offer email. Approval uses the settings command.'
 );
-
-UPDATE admin_private.communication_templates
-SET status = 'APPROVED', approval_source = 'MIGRATED_EXISTING',
-    reason = 'Server-composed snapshot. The approved row documents the key and is not the live email.',
-    record_version = record_version + 1
-WHERE template_key = 'TELLOYA_OFFER' AND version = 1 AND status = 'DRAFT';
 
 CREATE UNIQUE INDEX communications_one_telloya_offer_idx
   ON public.communications (commercial_subscription_id)
@@ -711,10 +705,19 @@ DECLARE
   v_actor uuid;
   v_enabled boolean := false;
   v_sub public.commercial_subscriptions;
+  v_link record;
   v_email text;
   v_existing public.communications;
-  v_ref text;
-  v_link text;
+  v_tier text;
+  v_minutes integer;
+  v_plan_amount integer;
+  v_guard integer;
+  v_template_version integer;
+  v_plan_label text;
+  v_minutes_text text;
+  v_guard_text text;
+  v_price text;
+  v_href text;
   v_subject text;
   v_text text;
   v_html text;
@@ -733,6 +736,10 @@ BEGIN
   IF COALESCE(v_enabled, false) IS DISTINCT FROM true THEN
     RETURN jsonb_build_object('status', 'mail_disabled');
   END IF;
+  SELECT * INTO v_sub FROM public.commercial_subscriptions WHERE id = p_subscription FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'offer_not_open');
+  END IF;
   SELECT * INTO v_existing
   FROM public.communications
   WHERE commercial_subscription_id = p_subscription AND template_key = 'TELLOYA_OFFER' AND lifecycle IS DISTINCT FROM 'CANCELLED'
@@ -740,8 +747,11 @@ BEGIN
   IF FOUND THEN
     RETURN jsonb_build_object('status', 'replay', 'communicationId', v_existing.id, 'deliveryStatus', v_existing.delivery_status);
   END IF;
-  SELECT * INTO v_sub FROM public.commercial_subscriptions WHERE id = p_subscription FOR UPDATE;
-  IF NOT FOUND OR v_sub.state IS DISTINCT FROM 'OFFERED' THEN
+  SELECT * INTO v_link FROM admin_private.telloya_linked_offer_v1(v_sub.id) AS linked;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'ineligible');
+  END IF;
+  IF v_sub.state IS DISTINCT FROM 'OFFERED' THEN
     RETURN jsonb_build_object('status', 'offer_not_open');
   END IF;
   IF v_sub.record_version IS DISTINCT FROM p_expected_version THEN
@@ -754,36 +764,97 @@ BEGIN
   IF v_email IS NULL OR v_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' THEN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
-  v_ref := admin_private.telloya_offer_html_v1(v_sub.public_ref);
-  v_link := p_origin || '/portal/onboarding/offer/' || v_sub.public_ref;
-  v_subject := 'Your Telloya proposal — ' || v_sub.public_ref;
-  v_text := 'Review your offer and subscribe' || E'\n' || v_link || E'\nThis link is not a payment link.';
-  v_html := '<p>' || admin_private.telloya_offer_html_v1('Review your offer and subscribe') || '</p><p><a href="' || admin_private.telloya_offer_html_v1(v_link) || '">' || v_ref || '</a></p><p>This link is not a payment link.</p>';
-  INSERT INTO public.communications(
-    case_id, customer_id, business_id, commercial_subscription_id,
-    channel, communication_type, direction, recipient, subject, body_text, body_html,
-    status, lifecycle, delivery_status, template_key, template_version,
-    author_id, reviewer_id, reviewed_at, queued_at, sender_address, reply_to_address,
-    content_version, record_version, content_locked, link_key_version
-  ) VALUES (
-    NULL, v_sub.customer_id, v_sub.business_id, v_sub.id,
-    'EMAIL', 'TELLOYA_OFFER', 'OUTBOUND', v_email, v_subject, v_text, v_html,
-    'PENDING', 'QUEUED', 'NONE', 'TELLOYA_OFFER', 1,
-    v_actor, v_actor, pg_catalog.now(), pg_catalog.now(), 'support@profilerelaunch.com', 'support@profilerelaunch.com',
-    1, 1, true, 1
-  ) RETURNING * INTO v_comm;
-  PERFORM admin_private.enqueue_outbox_v1(
-    'send-email:' || v_comm.id::text || ':v' || v_comm.content_version::text,
-    'SEND_EMAIL', 'communication', v_comm.id,
-    jsonb_build_object('communicationId', v_comm.id, 'contentVersion', v_comm.content_version)
-  );
-  PERFORM admin_private.append_delivery_event_v1(v_comm.id, 'QUEUED', 'Telloya offer email queued for the provider. Queued is not delivered.');
-  PERFORM admin_private.write_record_audit_v1(
-    v_actor, 'COMMUNICATION_CHANGED', 'success', v_comm.id, p_request, 'communication',
-    'Queued a Telloya offer email. The provider has not accepted it.',
-    jsonb_build_object('operation', 'queue_telloya_offer')
-  );
-  RETURN jsonb_build_object('status', 'queued', 'communicationId', v_comm.id, 'deliveryStatus', v_comm.delivery_status);
+  SELECT version INTO v_template_version
+  FROM admin_private.communication_templates
+  WHERE template_key = 'TELLOYA_OFFER' AND status = 'APPROVED'
+  ORDER BY version DESC
+  LIMIT 1;
+  IF v_template_version IS NULL THEN
+    RETURN jsonb_build_object('status', 'template_unapproved');
+  END IF;
+  SELECT chosen.tier_code, chosen.included_minutes, chosen.amount_minor
+  INTO v_tier, v_minutes, v_plan_amount
+  FROM (
+    SELECT plan.tier_code, conditions.included_minutes, plan.amount_minor
+    FROM public.plan_versions AS plan
+    JOIN public.commercial_plan_conditions AS conditions
+      ON conditions.plan_version_id = plan.id AND conditions.status = 'APPROVED'
+    WHERE plan.id = v_sub.plan_version_id AND plan.product_code = 'TELLOYA' AND plan.status = 'APPROVED'
+    LIMIT 1
+  ) AS chosen;
+  SELECT count(*)::integer INTO v_guard
+  FROM admin_private.commercial_offer_guard_locations AS chosen
+  WHERE chosen.subscription_id = v_sub.id;
+  v_plan_label := CASE v_tier
+    WHEN 'BASIC' THEN 'Basic'
+    WHEN 'GROWTH' THEN 'Growth'
+    WHEN 'PRO' THEN 'Pro'
+    WHEN 'CUSTOM' THEN 'Custom'
+    ELSE NULL
+  END;
+  IF v_plan_label IS NULL OR v_plan_amount IS NULL OR v_sub.amount_minor IS DISTINCT FROM v_plan_amount + (999 * v_guard) THEN
+    RETURN jsonb_build_object('status', 'terms_unconfigured');
+  END IF;
+  v_minutes_text := CASE WHEN v_minutes IS NULL THEN 'confirmed in the quotation' ELSE v_minutes::text END;
+  v_guard_text := CASE
+    WHEN v_guard = 0 THEN 'not included'
+    ELSE v_guard::text || CASE WHEN v_guard = 1 THEN ' location' ELSE ' locations' END
+      || ' at ' || admin_private.telloya_gbp_v1(999) || ' each (' || admin_private.telloya_gbp_v1(999 * v_guard) || ')'
+  END;
+  v_price := admin_private.telloya_gbp_v1(v_sub.amount_minor);
+  v_href := p_origin || '/portal/onboarding/offer/' || v_sub.public_ref;
+  v_subject := 'Your Telloya proposal — ' || v_link.enquiry_ref;
+  v_text := 'Enquiry ' || v_link.enquiry_ref
+    || E'\nPlan: ' || v_plan_label
+    || E'\nMonthly price: ' || v_price
+    || E'\nIncluded minutes: ' || v_minutes_text
+    || E'\nGuard add-ons: ' || v_guard_text
+    || E'\nReview your offer'
+    || E'\n' || v_href
+    || E'\nThis link is not a payment link.';
+  v_html := '<p>Enquiry ' || admin_private.telloya_offer_html_v1(v_link.enquiry_ref) || '</p>'
+    || '<p>Plan: ' || admin_private.telloya_offer_html_v1(v_plan_label) || '</p>'
+    || '<p>Monthly price: ' || admin_private.telloya_offer_html_v1(v_price) || '</p>'
+    || '<p>Included minutes: ' || admin_private.telloya_offer_html_v1(v_minutes_text) || '</p>'
+    || '<p>Guard add-ons: ' || admin_private.telloya_offer_html_v1(v_guard_text) || '</p>'
+    || '<p><a href="' || admin_private.telloya_offer_html_v1(v_href) || '">Review your offer</a></p>'
+    || '<p>This link is not a payment link.</p>';
+  BEGIN
+    INSERT INTO public.communications(
+      case_id, customer_id, business_id, commercial_subscription_id,
+      channel, communication_type, direction, recipient, subject, body_text, body_html,
+      status, lifecycle, delivery_status, template_key, template_version,
+      author_id, reviewer_id, reviewed_at, queued_at, sender_address, reply_to_address,
+      content_version, record_version, content_locked, link_key_version
+    ) VALUES (
+      NULL, v_sub.customer_id, v_sub.business_id, v_sub.id,
+      'EMAIL', 'TELLOYA_OFFER', 'OUTBOUND', v_email, v_subject, v_text, v_html,
+      'PENDING', 'QUEUED', 'NONE', 'TELLOYA_OFFER', v_template_version,
+      v_actor, v_actor, pg_catalog.now(), pg_catalog.now(), 'support@profilerelaunch.com', 'support@profilerelaunch.com',
+      1, 1, true, 1
+    ) RETURNING * INTO v_comm;
+    PERFORM admin_private.enqueue_outbox_v1(
+      'send-email:' || v_comm.id::text || ':v' || v_comm.content_version::text,
+      'SEND_EMAIL', 'communication', v_comm.id,
+      jsonb_build_object('communicationId', v_comm.id, 'contentVersion', v_comm.content_version)
+    );
+    PERFORM admin_private.append_delivery_event_v1(v_comm.id, 'QUEUED', 'Telloya offer email queued for the provider. Queued is not delivered.');
+    PERFORM admin_private.write_record_audit_v1(
+      v_actor, 'COMMUNICATION_CHANGED', 'success', v_comm.id, p_request, 'communication',
+      'Queued a Telloya offer email. The provider has not accepted it.',
+      jsonb_build_object('operation', 'queue_telloya_offer', 'enquiryRef', v_link.enquiry_ref)
+    );
+    RETURN jsonb_build_object('status', 'queued', 'communicationId', v_comm.id, 'deliveryStatus', v_comm.delivery_status);
+  EXCEPTION WHEN unique_violation THEN
+    SELECT * INTO v_existing
+    FROM public.communications
+    WHERE commercial_subscription_id = p_subscription AND template_key = 'TELLOYA_OFFER' AND lifecycle IS DISTINCT FROM 'CANCELLED'
+    ORDER BY created_at DESC LIMIT 1;
+    IF FOUND THEN
+      RETURN jsonb_build_object('status', 'replay', 'communicationId', v_existing.id, 'deliveryStatus', v_existing.delivery_status);
+    END IF;
+    RAISE;
+  END;
 END;
 $fn$;
 

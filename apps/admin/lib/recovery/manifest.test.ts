@@ -19,13 +19,13 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261112120000_telloya_admin_journey_v1.sql")
-    expect(appliedMigrationHead.version).toBe("20261112120000")
+    expect(appliedMigrationHead.filename).toBe("20261112180000_telloya_sales_context_v1.sql")
+    expect(appliedMigrationHead.version).toBe("20261112180000")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
-    expect(appliedMigrationHead.containsDataChange).toBe(true)
+    expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     expect(migrationHead.filename).toBe("20261112180000_telloya_sales_context_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
@@ -40,7 +40,7 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261112180000_telloya_sales_context_v1.sql"])
+    expect(pendingMigrations()).toEqual([])
     expect(chainAfter(appliedMigrationHead.version)).toEqual(pendingMigrations())
     expect(findMigration("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")).toMatchObject({
       appliedToDev: true,
@@ -58,7 +58,7 @@ describe("the migration chain manifest", () => {
       "20260916000000_relaunch_guard_data_foundation_v1.sql",
     ]
     expect(ledgerGap.every(filename => findMigration(filename)?.appliedToDev === true)).toBe(true)
-    expect(migrationChain.filter(entry => entry.appliedToDev).length - ledgerGap.length).toBe(120)
+    expect(migrationChain.filter(entry => entry.appliedToDev).length - ledgerGap.length).toBe(121)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
     expect(findMigration("20261028120000_guided_postpayment_handover_v1.sql")?.appliedToDev).toBe(true)
@@ -111,7 +111,7 @@ describe("the migration chain manifest", () => {
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261023091735_email_confirmation_delivery_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
-    expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(true)
+    expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
     // The location cap is the DEV ledger head. It was applied once.
     // Do not replay 20261106140000. Do not apply 20261106140000 to Production.
@@ -126,7 +126,7 @@ describe("the migration chain manifest", () => {
     // The repository head is the applied admission migration.
     // Do not replay 20261107120000. Do not apply 20261107120000 to Production.
     // Do not replay 20261106200000. Do not apply 20261106200000 to Production.
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration("20261112120000_telloya_admin_journey_v1.sql")?.appliedToDev).toBe(true)
@@ -313,7 +313,7 @@ describe("the migration chain manifest", () => {
     expect(basisSql).not.toContain("admin_case_assessment_command_v1")
     expect(findMigration("20261031160000_customer_portal_idle_timeout_v1.sql")?.containsDataChange).toBe(true)
     expect(findMigration("20261031160000_customer_portal_idle_timeout_v1.sql")?.safeToReplay).toBe(false)
-    expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(true)
+    expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration("20261101200000_customer_portal_products_v1.sql")?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration("20261024233701_admin_reconcile_accepted_service_v1.sql")?.appliedToDev).toBe(true)

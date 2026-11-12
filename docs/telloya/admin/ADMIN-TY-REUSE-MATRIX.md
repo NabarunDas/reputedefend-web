@@ -2,7 +2,7 @@
 
 **Status:** inventory only. This document does not change behaviour, apply a migration, or enable a flag.
 **Baseline:** `origin/develop` is `c3ba97a19492eb2b7ae27ec906f77e740ef12cae` (“Telloya: polish enquiry success screens and acknowledgement emails (MKT-FINAL-05C)”). This implementation starts from plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`, which adds the runbook on top of that develop history.
-**Observed repository ledger:** the verified DEV ledger contains 120 entries and the manifest applied head is `20261112120000`. `20261112120000_telloya_admin_journey_v1.sql` is `appliedToDev: true`, `containsDataChange: true`, `safeToReplay: false`. The repository file is 79,175 characters. Do not edit or replay that file. Do not apply it to Production. `20261111130000_telloya_marketing_enquiry_retention_v1.sql` remains applied. Voice ingestion `20261107130000` and PR #457 are untouched.
+**Observed repository ledger:** the verified DEV ledger contains 121 entries and the manifest applied head is `20261112180000`. `20261112180000_telloya_sales_context_v1.sql` is `appliedToDev: true`, `containsDataChange: false`, `safeToReplay: false`. The repository file is 18,615 characters. Do not edit or replay that file. Do not apply it to Production. `20261112120000_telloya_admin_journey_v1.sql` remains applied. `20261111130000_telloya_marketing_enquiry_retention_v1.sql` remains applied. Voice ingestion `20261107130000` and PR #457 are untouched.
 
 ## Dependency map
 

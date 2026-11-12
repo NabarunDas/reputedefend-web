@@ -27,9 +27,9 @@ const commercial = (operation: string, payload: object, version: number, key = r
   rpc<Record<string, unknown>>("admin_commercial_command_v1", [token, key, operation, payload, version])
 
 beforeAll(async () => {
-  expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261112180000_telloya_sales_context_v1.sql"])
+  expect(pendingMigrations()).toEqual([])
   expect(findMigration("20261112180000_telloya_sales_context_v1.sql")).toMatchObject({
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
   })

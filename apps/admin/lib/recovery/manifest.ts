@@ -1849,16 +1849,20 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Telloya marketing enquiry retention", probe: "admin_private.telloya_marketing_enquiry_retention_v1" },
   },
   {
-    // Source-only Telloya admin journey. Not applied to DEV or Production.
+    // Telloya admin journey. Applied once to DEV. Not applied to Production.
     // Offline demonstration status, commercial amendment/mail functions, and one
     // DRAFT TELLOYA_OFFER communication template catalogue row. No Retell call,
     // no real email, and no Stripe object. The catalogue INSERT is DML outside a
     // function body, so containsDataChange is true. The template stays DRAFT.
+    // The repository file is 79,175 characters. The mail-control table has 0 rows.
+    // Zero demonstration rows, zero commercial subscriptions, zero amendments and
+    // zero Telloya offer emails were created. TELLOYA_ADMIN_JOURNEY_ENABLED remains
+    // off. Do not edit or replay the applied SQL.
     version: "20261112120000",
     filename: "20261112120000_telloya_admin_journey_v1.sql",
     step: "Telloya admin journey proposal",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: true,
     safeToReplay: false,
     verification: { category: "Telloya admin journey", probe: "admin_private.telloya_admin_demo_transition_v1" },
@@ -1874,8 +1878,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261111130000`. The live DEV ledger contains 119 entries. The previous
- * ledger contained 118 entries and ended at `20261110170000`. The ledger
+ * `20261112120000`. The live DEV ledger contains 120 entries. The previous
+ * ledger contained 119 entries and ended at `20261111130000`. The ledger
+ * before that contained 118 entries and ended at `20261110170000`. The ledger
  * before that contained 117 entries and ended at `20261107120000`. The ledger
  * before that contained 116 entries and ended at `20261107110000`. The ledger
  * before that contained 115 entries and ended at `20261106200000`. The ledger
@@ -2013,8 +2018,13 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` contains only unapplied `20261112120000`.
- * Do not apply `20261112120000` to DEV or Production.
+ * `pendingMigrations()` is empty.
+ * `20261112120000` was applied once to DEV. The repository file is 79,175
+ * characters. containsDataChange is true. The template stays DRAFT. The
+ * mail-control table has 0 rows. Zero demonstration rows, zero commercial
+ * subscriptions, zero amendments and zero Telloya offer emails were created.
+ * TELLOYA_ADMIN_JOURNEY_ENABLED remains off. Do not edit or replay
+ * `20261112120000`. Do not apply `20261112120000` to Production.
  * `20261111130000` was applied once to DEV. The hosted statement is 10,710
  * characters and the repository file is 10,712 characters. The two-byte
  * difference is the dollar sign and closing quote at the end of the reason

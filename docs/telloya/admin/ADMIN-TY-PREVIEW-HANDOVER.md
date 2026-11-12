@@ -1,6 +1,6 @@
 # ADMIN-TY preview handover
 
-**Status:** preview corrections on `cursor/telloya-admin-e2e-preview-20261112` after ADMIN-TY-R2. This is not authorisation to launch, collect payment, send email, place a call, or apply a hosted migration.
+**Status:** post-migration reconciliation on `cursor/telloya-admin-e2e-preview-20261112` after owner-approved DEV apply of `20261112120000`. This is not authorisation to launch, collect payment, send email, place a call, enable flags, or apply further hosted migrations.
 **Baseline:** `origin/develop` `c3ba97a19492eb2b7ae27ec906f77e740ef12cae`. Plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`.
 
 ## What is implemented
@@ -22,7 +22,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 
 ## What is blocked
 
-- Applying `20261112120000` to DEV or Production.
+- Replaying `20261112120000` or applying it to Production.
 - Sending email. The journey flag is off, the mail control row is not inserted, and the new template is not approved in hosted databases.
 - Stripe products, prices, customers, Checkout sessions, and live mode.
 - Retell, number purchase, forwarding, and a real test call.
@@ -52,12 +52,13 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | R2d | DONE | `84adb199` | Full disposable database and package verification. Honest statuses above. |
 | R3-A | DONE | `ed4e3874` | Offer email refuses retired agreement, unsupported tax, revoked authority and a REQUESTED amendment. Replay stays idempotent. |
 | R3-B | DONE | `ed4e3874` | Manifest marks `20261112120000` `containsDataChange: true` for the DRAFT template catalogue INSERT. |
+| Post-migration reconcile | DONE | `d173c997` | Manifest records 120 applied DEV migrations, head `20261112120000`. |
 
 ## Test matrix
 
 | Behaviour | Where it is tested |
 | --- | --- |
-| Applied head is `20261111130000`, and only `20261112120000` is pending | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
+| Applied head is `20261112120000`, and `pendingMigrations()` is empty | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
 | Staff session, non-Telloya rejection, spoofed session, stale version, time zone, retention cascade | `supabase/tests/database/telloya-admin-journey.database.test.ts` |
 | Flag-off demonstration command does not call the database | `apps/admin/lib/commercial/telloya-demo-command.test.ts` |
 | Growth + 2 Guard (£98.98) to Growth + 1 Guard (£88.99), unchanged selection, greeting note, Basic to Growth, demo gate, TY-referenced mail for Basic/Growth/Pro/Custom/Guard, wrong customer, phone-source ineligible, retired agreement, unsupported tax, revoked authority, pending amendment | `apps/admin/lib/commercial/telloya-commercial-readiness.database.test.ts` |
@@ -69,17 +70,17 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 
 Disposable database tests use PGlite. Concurrent mail and commercial settlement checks use a disposable local PostgreSQL cluster. Neither connects to hosted DEV or Production.
 
-## Source-only migration
+## Applied DEV migration
 
 `supabase/migrations/20261112120000_telloya_admin_journey_v1.sql`
 
-`appliedToDev` is false. `containsDataChange` is true because the migration inserts one DRAFT `TELLOYA_OFFER` communication template catalogue row outside a function body. That catalogue row is not a customer, payment, subscription, invitation, communication or session record, and the template stays DRAFT until settings approval. `safeToReplay` is false. Public functions are executable by `service_role` only. Private tables have row level security and no policies. Do not apply `20261112120000` to DEV or Production.
+`appliedToDev` is true. `containsDataChange` is true because the migration inserts one DRAFT `TELLOYA_OFFER` communication template catalogue row outside a function body. That catalogue row is not a customer, payment, subscription, invitation, communication or session record, and the template stays DRAFT until settings approval. `safeToReplay` is false. Public functions are executable by `service_role` only. Private tables have row level security and no policies. The repository file is 79,175 characters. The mail-control table has 0 rows. Zero demonstration rows, zero commercial subscriptions, zero amendments and zero Telloya offer emails were created. Do not edit or replay `20261112120000`. Do not apply `20261112120000` to Production.
 
-`20261111130000_telloya_marketing_enquiry_retention_v1.sql` is recorded as applied once to DEV. The verified DEV ledger contains 119 entries and ends at `20261111130000`. The hosted `schema_migrations` statement is 10,710 characters and the repository file is 10,712 characters. The two-byte difference is the dollar sign and closing quote at the end of the reason check, around character 1075. The installed `telloya_marketing_enquiry_holds_reason_check` is correct. Do not edit or replay the applied SQL. Do not apply `20261111130000` to Production.
+The verified DEV ledger contains 120 entries and ends at `20261112120000`. `20261111130000_telloya_marketing_enquiry_retention_v1.sql` remains applied once to DEV. The hosted `schema_migrations` statement for that retention file is 10,710 characters and the repository file is 10,712 characters. The two-byte difference is the dollar sign and closing quote at the end of the reason check, around character 1075. The installed `telloya_marketing_enquiry_holds_reason_check` is correct. Do not edit or replay the applied retention SQL. Do not apply `20261111130000` to Production.
 
 ## Flags
 
-`TELLOYA_ADMIN_JOURNEY_ENABLED` is absent. Exactly `true` opens the demonstration, amendment, revision and mail commands. It does not approve a service agreement, a tax treatment, a payment, or live answering. Mail still requires the empty `telloya_offer_mail_control` row to be enabled, an APPROVED TELLOYA_OFFER template, and the migration still has to be applied.
+`TELLOYA_ADMIN_JOURNEY_ENABLED` is absent. Exactly `true` opens the demonstration, amendment, revision and mail commands. It does not approve a service agreement, a tax treatment, a payment, or live answering. Mail still requires the empty `telloya_offer_mail_control` row to be enabled and an APPROVED TELLOYA_OFFER template.
 
 `TELLOYA_ENQUIRY_ENABLED`, `TELLOYA_USAGE_EVENTS_ENABLED`, and `TELLOYA_INBOUND_ADMISSION_ENABLED` were not enabled.
 
@@ -87,7 +88,6 @@ Disposable database tests use PGlite. Concurrent mail and commercial settlement 
 
 - Owner and legal approval of the paid Telloya Service Agreement.
 - Tax treatment for a recurring GBP subscription. International tax stays unsupported.
-- Explicit approval before applying `20261112120000`.
 - Approved hosted Telloya plan versions and agreement versions before a customer can be offered a real subscription.
 - Stripe test-mode configuration before any Checkout session. This branch did not create a Stripe product, price, customer, or session.
 - Retell, number purchase, forwarding, and a real test call remain outside this work.

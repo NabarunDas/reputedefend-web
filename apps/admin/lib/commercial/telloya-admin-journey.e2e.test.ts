@@ -133,8 +133,8 @@ describe("Telloya admin preview journey", () => {
     expect(telloyaVoiceAllowed("initial_paid")).toBe(false)
     expect(requestTelloyaCancellation("initial_paid").billing).toBe("cancel_at_period_end")
     expect(migrationHead.filename).toBe("20261112120000_telloya_admin_journey_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261112120000_telloya_admin_journey_v1.sql"])
+    expect(migrationHead.appliedToDev).toBe(true)
+    expect(pendingMigrations()).toEqual([])
   })
 
   it("covers the other catalogue choices and the closed paths", () => {

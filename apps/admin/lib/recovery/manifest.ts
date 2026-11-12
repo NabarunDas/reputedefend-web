@@ -1813,8 +1813,9 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Optional receptionist questions and request intent on the existing
-    // enquiry payload. Applied once to DEV. The verified DEV ledger contains
-    // 118 entries and ends at 20261110170000. The previous ledger contained
+    // enquiry payload. Applied once to DEV. When this file was the head, the
+    // verified DEV ledger contained 118 entries and ended at 20261110170000.
+    // The previous ledger contained
     // 117 entries and ended at 20261107120000. CREATE OR REPLACE replaces
     // admin_private.valid_enquiry_v1 only. No new table. No enquiry row was
     // created. Production is unchanged. Do not replay 20261110170000. Do not
@@ -1830,14 +1831,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Telloya enquiry receptionist questions", probe: "admin_private.valid_enquiry_v1" },
   },
   {
-    // Proposed retention for ordinary Telloya marketing enquiries.
-    // Not applied to DEV. Do not apply 20261111130000 to DEV or Production.
-    // Destructive deletion stays off and no schedule is created.
+    // 90-day retention for ordinary Telloya marketing enquiries. Applied once
+    // to DEV. Not applied to Production. Destructive deletion stays off and
+    // no schedule is created. The hosted schema_migrations statement is
+    // 10,710 characters. The repository file is 10,712 characters. The
+    // two-byte difference is the dollar sign and closing quote at the end of
+    // the reason check, around character 1075. The installed
+    // telloya_marketing_enquiry_holds_reason_check is correct. Do not edit
+    // or replay the applied SQL.
     version: "20261111130000",
     filename: "20261111130000_telloya_marketing_enquiry_retention_v1.sql",
     step: "Telloya marketing enquiry retention proposal",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Telloya marketing enquiry retention", probe: "admin_private.telloya_marketing_enquiry_retention_v1" },
@@ -1865,8 +1871,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261110170000`. The live DEV ledger contains 118 entries. The previous
- * ledger contained 117 entries and ended at `20261107120000`. The ledger
+ * `20261111130000`. The live DEV ledger contains 119 entries. The previous
+ * ledger contained 118 entries and ended at `20261110170000`. The ledger
+ * before that contained 117 entries and ended at `20261107120000`. The ledger
  * before that contained 116 entries and ended at `20261107110000`. The ledger
  * before that contained 115 entries and ended at `20261106200000`. The ledger
  * before that contained 114 entries and ended at `20261106140000`. The ledger
@@ -2003,8 +2010,13 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` contains unapplied `20261112120000` and unapplied `20261111130000`.
- * Do not apply `20261112120000` or `20261111130000` to DEV or Production.
+ * `pendingMigrations()` contains only unapplied `20261112120000`.
+ * Do not apply `20261112120000` to DEV or Production.
+ * `20261111130000` was applied once to DEV. The hosted statement is 10,710
+ * characters and the repository file is 10,712 characters. The two-byte
+ * difference is the dollar sign and closing quote at the end of the reason
+ * check, around character 1075. The installed check is correct. Do not edit
+ * or replay `20261111130000`. Do not apply `20261111130000` to Production.
  * `20261110170000` was applied once to DEV.
  * Do not replay `20261110170000`. Do not apply `20261110170000` to Production.
  * `20261107120000` was applied once to DEV. Do not replay `20261107120000`.

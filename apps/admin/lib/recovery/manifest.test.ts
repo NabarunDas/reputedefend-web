@@ -19,8 +19,8 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261110170000_telloya_enquiry_receptionist_questions_v1.sql")
-    expect(appliedMigrationHead.version).toBe("20261110170000")
+    expect(appliedMigrationHead.filename).toBe("20261111130000_telloya_marketing_enquiry_retention_v1.sql")
+    expect(appliedMigrationHead.version).toBe("20261111130000")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
@@ -41,7 +41,6 @@ describe("the migration chain manifest", () => {
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261111130000_telloya_marketing_enquiry_retention_v1.sql",
       "20261112120000_telloya_admin_journey_v1.sql",
     ])
     expect(chainAfter(appliedMigrationHead.version)).toEqual(pendingMigrations())
@@ -61,7 +60,7 @@ describe("the migration chain manifest", () => {
       "20260916000000_relaunch_guard_data_foundation_v1.sql",
     ]
     expect(ledgerGap.every(filename => findMigration(filename)?.appliedToDev === true)).toBe(true)
-    expect(migrationChain.filter(entry => entry.appliedToDev).length - ledgerGap.length).toBe(118)
+    expect(migrationChain.filter(entry => entry.appliedToDev).length - ledgerGap.length).toBe(119)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
     expect(findMigration("20261028120000_guided_postpayment_handover_v1.sql")?.appliedToDev).toBe(true)

@@ -28,7 +28,7 @@ const commercialTail = [
 
 describe("Telloya commercial migration chain", () => {
   it("records the commercial tail as applied and leaves nothing pending", () => {
-    expect(appliedMigrationHead.filename).toBe("20261110170000_telloya_enquiry_receptionist_questions_v1.sql")
+    expect(appliedMigrationHead.filename).toBe("20261111130000_telloya_marketing_enquiry_retention_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)

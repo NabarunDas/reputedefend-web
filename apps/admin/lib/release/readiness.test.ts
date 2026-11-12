@@ -153,10 +153,9 @@ describe("readiness model", () => {
 
   it("agrees with the recovery manifest about the applied and repository heads", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261111130000_telloya_marketing_enquiry_retention_v1.sql",
       "20261112120000_telloya_admin_journey_v1.sql",
     ])
-    expect(appliedMigrationHead.version).toBe("20261110170000")
+    expect(appliedMigrationHead.version).toBe("20261111130000")
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     expect(migrationHead.filename).toBe("20261112120000_telloya_admin_journey_v1.sql")
@@ -167,8 +166,8 @@ describe("readiness model", () => {
     const supabase = item("supabase.applied-head")
     expect(supabase?.status).toBe("READY")
     expect(supabase?.requirement).toContain(appliedMigrationHead.version)
-    expect(supabase?.requirement).toContain("Observed DEV ledger head is 20261110170000")
-    expect(supabase?.requirement).toContain("The verified DEV ledger contains 118 entries")
+    expect(supabase?.requirement).toContain("Observed DEV ledger head is 20261111130000")
+    expect(supabase?.requirement).toContain("The verified DEV ledger contains 119 entries")
     expect(supabase?.requirement).toContain("The verified DEV ledger previously contained 117 entries and ended at 20261107120000")
     expect(supabase?.requirement).toContain("The verified DEV ledger previously contained 116 entries and ended at 20261107110000")
     expect(supabase?.requirement).toContain("The verified DEV ledger previously contained 115 entries and ended at 20261106200000")
@@ -176,7 +175,7 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("The verified DEV ledger previously contained 112 entries and ended at 20261106003939")
     expect(supabase?.requirement).toContain("The verified DEV ledger previously contained 105 entries and ended at 20261105120000")
     expect(supabase?.requirement).toContain("The verified DEV ledger previously contained 104 entries and ended at 20261104220000")
-    expect(supabase?.requirement).toContain("The repository applied-file head is 20261110170000")
+    expect(supabase?.requirement).toContain("The repository applied-file head is 20261111130000")
     expect(supabase?.requirement).toContain("25,436-character SQL")
     expect(supabase?.requirement).toContain("690e88917f0166f376d3e8189b60b427")
     expect(supabase?.requirement).toContain("dbbc03ed138c1f2115d44e7c13923570bf1cbf6205e401bec85aef6df00552c3")
@@ -253,7 +252,7 @@ describe("readiness model", () => {
     expect(supabase?.requirement).toContain("Do not replay 20261105120000.")
     expect(supabase?.requirement).toContain("Do not apply 20261105120000 to Production.")
     expect(supabase?.requirement).not.toContain("Do not apply 20261105120000 to DEV")
-    expect(supabase?.requirement).toContain("pendingMigrations() contains unapplied 20261112120000 telloya_admin_journey_v1 and unapplied 20261111130000 telloya_marketing_enquiry_retention_v1. Do not apply 20261112120000 to DEV or Production. Do not apply 20261111130000 to DEV or Production. 20261110170000 telloya_enquiry_receptionist_questions_v1 was applied once to DEV and must not be replayed. Do not apply 20261110170000 to Production. 20261107120000 telloya_inbound_admission_reservation_v1 was applied once to DEV and must not be replayed. Do not apply 20261107120000 to Production. The migration is registered once. The stored SQL matches the committed source. Two private tables have RLS enabled. Three public functions are service-role only. Three triggers were added. Admission records are zero. Retell live routing stays disabled. TELLOYA_INBOUND_ADMISSION_ENABLED and TELLOYA_USAGE_EVENTS_ENABLED stay off. 20261107110000 telloya_subscription_usage_ledger_v1 was applied once to DEV and must not be replayed. Do not apply 20261107110000 to Production. No usage events, reservations or legal holds were created. 20261106200000 admin_commercial_initiate_agent_test_call_v1 was applied once to DEV and must not be replayed. Do not apply 20261106200000 to Production. Zero test attempts were created. The controlled test-call flag remains off. 20261106120000 admin_commercial_verify_agent_test_call_v1 and 20261106140000 telloya_standard_location_cap_v1 are already applied on DEV and must not be replayed. Do not apply 20261106120000 or 20261106140000 to Production.")
+    expect(supabase?.requirement).toContain("pendingMigrations() contains only unapplied 20261112120000 telloya_admin_journey_v1. Do not apply 20261112120000 to DEV or Production. 20261111130000 telloya_marketing_enquiry_retention_v1 was applied once to DEV and must not be replayed. Do not apply 20261111130000 to Production. The hosted schema_migrations statement for 20261111130000 is 10,710 characters and the repository file is 10,712 characters. The two-byte difference is the dollar sign and closing quote at the end of the reason check, around character 1075. The installed telloya_marketing_enquiry_holds_reason_check is the correct expression. Do not edit or replay the applied SQL. 20261110170000 telloya_enquiry_receptionist_questions_v1 was applied once to DEV and must not be replayed. Do not apply 20261110170000 to Production. 20261107120000 telloya_inbound_admission_reservation_v1 was applied once to DEV and must not be replayed. Do not apply 20261107120000 to Production. The migration is registered once. The stored SQL matches the committed source. Two private tables have RLS enabled. Three public functions are service-role only. Three triggers were added. Admission records are zero. Retell live routing stays disabled. TELLOYA_INBOUND_ADMISSION_ENABLED and TELLOYA_USAGE_EVENTS_ENABLED stay off. 20261107110000 telloya_subscription_usage_ledger_v1 was applied once to DEV and must not be replayed. Do not apply 20261107110000 to Production. No usage events, reservations or legal holds were created. 20261106200000 admin_commercial_initiate_agent_test_call_v1 was applied once to DEV and must not be replayed. Do not apply 20261106200000 to Production. Zero test attempts were created. The controlled test-call flag remains off. 20261106120000 admin_commercial_verify_agent_test_call_v1 and 20261106140000 telloya_standard_location_cap_v1 are already applied on DEV and must not be replayed. Do not apply 20261106120000 or 20261106140000 to Production.")
     expect(supabase?.requirement).not.toContain("Do not apply 20261107120000 to hosted DEV")
     expect(supabase?.requirement).not.toContain("Do not apply 20261106200000 to DEV")
     expect(supabase?.requirement).not.toContain("Do not apply 20261106120000 to DEV")
@@ -382,7 +381,7 @@ describe("readiness model", () => {
     expect(supabase?.evidence).toContain("previously contained 115 entries and ended at canonical 20261106200000")
     expect(supabase?.evidence).toContain("previously contained 116 entries and ended at canonical 20261107110000")
     expect(supabase?.evidence).toContain("previously contained 117 entries and ended at canonical 20261107120000")
-    expect(supabase?.evidence).toContain("now contains 118 entries and ends at canonical 20261110170000")
+    expect(supabase?.evidence).toContain("now contains 119 entries and ends at canonical 20261111130000")
     expect(supabase?.evidence).toContain("previously contained 105 entries and ended at canonical 20261105120000")
     expect(supabase?.evidence).toContain("previously contained 104 entries and ended at canonical 20261104220000")
     expect(supabase?.evidence).toContain("25,436 characters")

@@ -29,9 +29,7 @@ No Stripe request was made. No Retell request was made. No email was sent. No ho
 
 `appliedToDev` is false. `containsDataChange` is false. `safeToReplay` is false. The public demonstration function is executable by `service_role` only. The private tables have row level security and no policies. Do not apply `20261112120000` to DEV or Production.
 
-`20261111130000_telloya_marketing_enquiry_retention_v1.sql` remains unapplied in the manifest. A marketing note on this branch says it was applied to DEV. That disagreement is unresolved. Do not apply or replay it from this work.
-
-The manifest’s recorded applied head stays `20261110170000`.
+`20261111130000_telloya_marketing_enquiry_retention_v1.sql` is recorded as applied once to DEV. The verified DEV ledger contains 119 entries and ends at `20261111130000`. The hosted `schema_migrations` statement is 10,710 characters and the repository file is 10,712 characters. The two-byte difference is the dollar sign and closing quote at the end of the reason check, around character 1075. The installed `telloya_marketing_enquiry_holds_reason_check` is correct. Do not edit or replay the applied SQL. Do not apply `20261111130000` to Production.
 
 ## Flags
 
@@ -43,7 +41,7 @@ The manifest’s recorded applied head stays `20261110170000`.
 
 - Owner and legal approval of the paid Telloya Service Agreement.
 - Tax treatment for a recurring GBP subscription. International tax stays unsupported.
-- A decision on the DEV ledger disagreement for `20261111130000`.
+- `20261111130000` is recorded as applied. The two-byte statement difference is documented and the applied SQL is not edited.
 - Explicit approval before applying `20261112120000`.
 - Stripe test-mode configuration, if a later owner wants a hosted Checkout session. This branch did not create a Stripe product, price, customer, or session.
 - Retell, number purchase, forwarding, and a real test call remain outside this work.

@@ -2,7 +2,7 @@
 
 **Status:** inventory only. This document does not change behaviour, apply a migration, or enable a flag.
 **Baseline:** `origin/develop` is `c3ba97a19492eb2b7ae27ec906f77e740ef12cae` (“Telloya: polish enquiry success screens and acknowledgement emails (MKT-FINAL-05C)”). This implementation starts from plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`, which adds the runbook on top of that develop history.
-**Observed repository ledger:** applied DEV head in the manifest is `20261110170000` (118 applied entries in the manifest’s recorded count). `20261111130000_telloya_marketing_enquiry_retention_v1.sql` is present and `appliedToDev: false` in `apps/admin/lib/recovery/manifest.ts`. A marketing note on this branch says that retention file was applied to DEV. That disagreement is unresolved here. Do not apply or replay either file from this work. Voice ingestion `20261107130000` and PR #457 are untouched.
+**Observed repository ledger:** the verified DEV ledger contains 119 entries and the manifest applied head is `20261111130000`. `20261111130000_telloya_marketing_enquiry_retention_v1.sql` is `appliedToDev: true`. The hosted statement is 10,710 characters and the repository file is 10,712 characters. The two-byte difference is the dollar sign and closing quote at the end of the reason check, around character 1075. The installed check is correct. Do not edit or replay that file. Do not apply it to Production. `20261112120000` stays unapplied. Voice ingestion `20261107130000` and PR #457 are untouched.
 
 ## Dependency map
 

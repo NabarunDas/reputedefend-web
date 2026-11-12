@@ -150,7 +150,7 @@ describe("Telloya admin preview journey", () => {
     expect(requestTelloyaCancellation(paid.record.state).billing).toBe("cancel_at_period_end")
     expect(migrationHead.filename).toBe("20261112120000_telloya_admin_journey_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
-    expect(pendingMigrations().map(entry => entry.filename)).toContain("20261111130000_telloya_marketing_enquiry_retention_v1.sql")
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261112120000_telloya_admin_journey_v1.sql"])
   })
 
   it("covers the other catalogue choices and the closed paths", () => {

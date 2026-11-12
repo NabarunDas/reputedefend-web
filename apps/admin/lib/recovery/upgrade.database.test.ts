@@ -98,7 +98,7 @@ describe("upgrading a database that is already running", () => {
     expect(pending.at(-1)?.containsDataChange).toBe(false)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261111130000_telloya_marketing_enquiry_retention_v1.sql")
-    expect(pending.at(-2)?.appliedToDev).toBe(false)
+    expect(pending.at(-2)?.appliedToDev).toBe(true)
     expect(pending.at(-2)?.containsDataChange).toBe(false)
     expect(pending.at(-2)?.safeToReplay).toBe(false)
     expect(pending.at(-3)?.filename).toBe("20261110170000_telloya_enquiry_receptionist_questions_v1.sql")

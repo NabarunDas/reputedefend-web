@@ -41,6 +41,7 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
       source: p.source,
       requestIntent: p.requestIntent,
       planTier: p.planTier,
+      guardLocationCount: p.guardLocationCount,
       assigned: e.assigned,
       nextAction: e.nextAction,
       nextActionAt: e.nextActionAt,

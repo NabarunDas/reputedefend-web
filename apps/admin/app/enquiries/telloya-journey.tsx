@@ -1,9 +1,11 @@
 import { telloyaJourneyProgress, type TelloyaJourneySnapshot } from "@/lib/commercial/telloya-admin-journey"
 import { telloyaDemoWriteAvailable } from "@/lib/commercial/telloya-demo-status"
+import { formatGbpPence, previewTelloyaOffer } from "@/lib/commercial/telloya-offer"
 
 export function TelloyaJourney({ snapshot }: { snapshot: TelloyaJourneySnapshot }) {
   const progress = telloyaJourneyProgress(snapshot)
   if (!progress) return null
+  const preview = previewTelloyaOffer(snapshot.planTier, snapshot.guardLocationCount)
   return <section className="panel" aria-labelledby="telloya-journey-title">
     <h2 id="telloya-journey-title">Telloya progress</h2>
     <p>{progress.requestLabel} · {progress.planLabel}</p>
@@ -18,5 +20,12 @@ export function TelloyaJourney({ snapshot }: { snapshot: TelloyaJourneySnapshot 
     <p>Status starts at not booked. A completed demonstration is recorded only after it has actually finished. This does not book, place, or provision a Retell demonstration.</p>
     <p>{telloyaDemoWriteAvailable() ? "Recording is available to an authorised administrator." : "Recording stays off. The admin journey flag is not enabled, and the source-only migration is not applied."}</p>
     <p><button type="button" disabled>Mark demo booked</button> <button type="button" disabled>Mark demo completed</button></p>
+    <h3>Offer preview</h3>
+    <p>Preview / test only, not available to customers</p>
+    <p>Catalogue display only. This is not an approved offer, and Send stays closed until an approved plan, service agreement, and tax treatment exist.</p>
+    {preview?.monthlyTotalPence !== null && preview?.monthlyTotalPence !== undefined
+      ? <p>Illustrative monthly total {formatGbpPence(preview.monthlyTotalPence)} for {preview.planCode}, including {formatGbpPence(preview.guardAmountPence)} for {preview.guardLocations} Guard locations. One voice location and one number. Overage is off.</p>
+      : <p>No illustrative total is available until a plan is confirmed.</p>}
+    <p><button type="button" disabled>Send offer</button></p>
   </section>
 }

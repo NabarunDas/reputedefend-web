@@ -34,6 +34,7 @@ export type TelloyaJourneySnapshot = {
   source?: string
   requestIntent?: string
   planTier?: string
+  guardLocationCount?: number
   assigned?: boolean
   nextAction?: string
   nextActionAt?: string | null

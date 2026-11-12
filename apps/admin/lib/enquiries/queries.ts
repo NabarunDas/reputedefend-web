@@ -10,7 +10,7 @@ import type { InvitationMail } from "../commercial/invitation-mail"
 import { invitationDispatchEnabled } from "../commercial/invitation-dispatch"
 import { telloyaDemoWriteAvailable } from "../commercial/telloya-demo-status"
 import type { TelloyaDemoPanel } from "../../app/enquiries/telloya-journey"
-import type { TelloyaOfferPanel } from "../../app/enquiries/telloya-offer-actions"
+import type { TelloyaOfferLocation, TelloyaOfferPanel, TelloyaOfferPlan } from "../../app/enquiries/telloya-offer-actions"
 import type { EnquiryDetail, EnquiryFilters, EnquiryRow } from "./model"
 async function read<T>(name: string, args: Record<string,unknown>): Promise<T> {
   await requireStaff()
@@ -89,6 +89,13 @@ export async function getTelloyaOffer(id: string): Promise<TelloyaOfferPanel> {
       state?: string
       version?: number
       amendments?: { id: string; status: string; version: number; text: string }[]
+      planVersionId?: string
+      amountMinor?: number
+      tier?: string | null
+      enquiryRef?: string | null
+      plans?: TelloyaOfferPlan[]
+      locations?: TelloyaOfferLocation[]
+      paymentStatus?: "none" | "verifying" | "paid"
     } | null>("telloya_offer_admin_v1", { p_enquiry: id })
     if (!result) return { availability: "unavailable" }
     if (result.status === "no_offer") return { availability: "no_offer" }
@@ -102,6 +109,13 @@ export async function getTelloyaOffer(id: string): Promise<TelloyaOfferPanel> {
       state: result.state,
       version: result.version as number,
       amendments: Array.isArray(result.amendments) ? result.amendments : [],
+      planVersionId: result.planVersionId,
+      amountMinor: result.amountMinor,
+      tier: result.tier,
+      enquiryRef: result.enquiryRef,
+      plans: Array.isArray(result.plans) ? result.plans : [],
+      locations: Array.isArray(result.locations) ? result.locations : [],
+      paymentStatus: result.paymentStatus,
     }
   } catch (error) {
     if (controlFlow(error)) throw error

@@ -236,7 +236,7 @@ CREATE TABLE admin_private.telloya_offer_amendments (
   subscription_id uuid NOT NULL REFERENCES public.commercial_subscriptions(id) ON DELETE RESTRICT,
   customer_id uuid NOT NULL REFERENCES public.customers(id) ON DELETE RESTRICT,
   request_text text NOT NULL CHECK (char_length(btrim(request_text)) BETWEEN 1 AND 1000),
-  status text NOT NULL CHECK (status IN ('REQUESTED','APPROVED','DECLINED')),
+  status text NOT NULL CHECK (status IN ('REQUESTED','APPROVED','DECLINED','NOTED')),
   record_version integer NOT NULL DEFAULT 1 CHECK (record_version > 0),
   revision_subscription_id uuid REFERENCES public.commercial_subscriptions(id) ON DELETE RESTRICT,
   idempotency_key text NOT NULL CHECK (char_length(idempotency_key) BETWEEN 8 AND 80),
@@ -272,6 +272,42 @@ END;
 $fn$;
 
 REVOKE ALL ON FUNCTION admin_private.telloya_block_accept_during_amendment_v1() FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.telloya_linked_offer_v1(p_subscription uuid)
+RETURNS TABLE(request_id uuid, enquiry_id uuid, enquiry_ref text, customer_id uuid, demo_completed boolean)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+  SELECT request.id, enquiry.id, enquiry.public_ref, request.customer_id,
+    EXISTS (
+      SELECT 1 FROM admin_private.telloya_admin_demos AS demo
+      WHERE demo.enquiry_id = enquiry.id AND demo.status = 'COMPLETED'
+    )
+  FROM public.onboarding_requests AS request
+  JOIN public.enquiries AS enquiry ON enquiry.id = request.enquiry_id
+  JOIN public.commercial_subscriptions AS sub ON sub.id = request.commercial_subscription_id
+  WHERE request.commercial_subscription_id = p_subscription
+    AND request.state NOT IN ('DECLINED', 'CLOSED')
+    AND request.product_code = 'TELLOYA'
+    AND request.customer_id = sub.customer_id
+    AND enquiry.source = 'telloya'
+    AND enquiry.public_ref ~ '^TY-[0-9]{2}-[A-Z2-9]{6}$';
+$fn$;
+
+REVOKE ALL ON FUNCTION admin_private.telloya_linked_offer_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION admin_private.telloya_gbp_v1(p_minor integer) RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $fn$
+  SELECT '£' || pg_catalog.btrim(pg_catalog.to_char(p_minor / 100, 'FM999999990')) || '.' || pg_catalog.lpad((pg_catalog.abs(p_minor) % 100)::text, 2, '0');
+$fn$;
+
+REVOKE ALL ON FUNCTION admin_private.telloya_gbp_v1(integer) FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE TRIGGER commercial_subscriptions_telloya_amendment
   BEFORE UPDATE ON public.commercial_subscriptions
   FOR EACH ROW EXECUTE FUNCTION admin_private.telloya_block_accept_during_amendment_v1();
@@ -313,6 +349,12 @@ BEGIN
   IF NOT FOUND OR v_sub.customer_id IS DISTINCT FROM v_customer THEN
     RETURN jsonb_build_object('status', 'unavailable');
   END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM admin_private.telloya_linked_offer_v1(v_sub.id) AS linked
+    WHERE linked.customer_id = v_customer
+  ) THEN
+    RETURN jsonb_build_object('status', 'ineligible');
+  END IF;
   IF v_sub.state IS DISTINCT FROM 'OFFERED' THEN
     RETURN jsonb_build_object('status', 'offer_not_open');
   END IF;
@@ -333,7 +375,9 @@ CREATE FUNCTION public.telloya_offer_revision_v1(
   p_request uuid,
   p_amendment uuid,
   p_expected_version integer,
-  p_decision text
+  p_decision text,
+  p_plan uuid,
+  p_locations uuid[]
 ) RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -343,15 +387,26 @@ DECLARE
   v_actor uuid;
   v_row admin_private.telloya_offer_amendments;
   v_sub public.commercial_subscriptions;
+  v_link record;
+  v_plan public.plan_versions;
+  v_conditions public.commercial_plan_conditions;
+  v_current uuid[];
+  v_next uuid[];
+  v_covered integer;
+  v_telloya_limit integer;
+  v_guard integer;
+  v_amount integer;
   v_new uuid;
   v_ref text;
   v_attempt integer;
+  v_billed integer;
 BEGIN
   v_actor := admin_private.telloya_admin_demo_actor_v1(p_token);
   IF v_actor IS NULL THEN
     RETURN jsonb_build_object('status', 'unauthorized');
   END IF;
-  IF p_request IS NULL OR p_amendment IS NULL OR p_expected_version IS NULL OR p_decision NOT IN ('APPROVED','DECLINED') THEN
+  IF p_request IS NULL OR p_amendment IS NULL OR p_expected_version IS NULL
+     OR p_decision NOT IN ('REVISED','NOTED','DECLINED') THEN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
   SELECT * INTO v_row FROM admin_private.telloya_offer_amendments WHERE id = p_amendment FOR UPDATE;
@@ -365,6 +420,14 @@ BEGIN
     RETURN jsonb_build_object('status', 'replay', 'decision', v_row.status, 'version', v_row.record_version, 'subscriptionId', v_row.revision_subscription_id);
   END IF;
   SELECT * INTO v_sub FROM public.commercial_subscriptions WHERE id = v_row.subscription_id FOR UPDATE;
+  IF v_sub.id IS NULL OR v_sub.customer_id IS DISTINCT FROM v_row.customer_id THEN
+    RETURN jsonb_build_object('status', 'ineligible');
+  END IF;
+  SELECT * INTO v_link FROM admin_private.telloya_linked_offer_v1(v_sub.id) AS linked
+  WHERE linked.customer_id = v_row.customer_id;
+  IF v_link.request_id IS NULL THEN
+    RETURN jsonb_build_object('status', 'ineligible');
+  END IF;
   IF v_sub.state IS DISTINCT FROM 'OFFERED' THEN
     RETURN jsonb_build_object('status', 'offer_not_open');
   END IF;
@@ -372,13 +435,90 @@ BEGIN
     UPDATE admin_private.telloya_offer_amendments
     SET status = 'DECLINED', decided_at = pg_catalog.now(), decided_by = v_actor, record_version = record_version + 1
     WHERE id = v_row.id;
-    RETURN jsonb_build_object('status', 'recorded', 'decision', 'DECLINED', 'version', v_row.record_version + 1);
+    PERFORM admin_private.write_record_audit_v1(
+      v_actor, 'COMMERCE_CHANGED', 'success', v_sub.id, p_request, 'commercial_subscription',
+      'Declined a Telloya amendment. The open offer is unchanged.',
+      jsonb_build_object('enquiryId', v_link.enquiry_id, 'enquiryRef', v_link.enquiry_ref, 'decision', 'DECLINED')
+    );
+    RETURN jsonb_build_object('status', 'recorded', 'decision', 'DECLINED', 'version', v_row.record_version + 1, 'subscriptionId', v_sub.id);
   END IF;
-  UPDATE public.commercial_subscriptions
-  SET state = 'CANCELED', canceled_at = pg_catalog.now(), updated_at = pg_catalog.now()
-  WHERE id = v_sub.id AND state = 'OFFERED';
-  INSERT INTO public.commercial_subscription_events(subscription_id, actor_id, request_id, from_state, to_state, reason)
-  VALUES (v_sub.id, v_actor, p_request, 'OFFERED', 'CANCELED', 'Replaced by an approved Telloya amendment');
+  IF p_decision = 'NOTED' THEN
+    UPDATE admin_private.telloya_offer_amendments
+    SET status = 'NOTED', decided_at = pg_catalog.now(), decided_by = v_actor, record_version = record_version + 1
+    WHERE id = v_row.id;
+    PERFORM admin_private.onboarding_event_v1(
+      v_link.request_id, v_actor, p_request, 'note_amendment', 'OFFERED', 'OFFERED',
+      'Recorded a Telloya request that does not change the commercial offer.',
+      jsonb_build_object('enquiryId', v_link.enquiry_id, 'enquiryRef', v_link.enquiry_ref, 'amendmentId', v_row.id)
+    );
+    PERFORM admin_private.write_record_audit_v1(
+      v_actor, 'COMMERCE_CHANGED', 'success', v_sub.id, p_request, 'commercial_subscription',
+      'Recorded a Telloya configuration request. The open offer is unchanged.',
+      jsonb_build_object('enquiryId', v_link.enquiry_id, 'enquiryRef', v_link.enquiry_ref, 'decision', 'NOTED')
+    );
+    RETURN jsonb_build_object('status', 'recorded', 'decision', 'NOTED', 'version', v_row.record_version + 1, 'subscriptionId', v_sub.id);
+  END IF;
+  IF NOT v_link.demo_completed THEN
+    RETURN jsonb_build_object('status', 'demonstration_not_completed');
+  END IF;
+  IF p_plan IS NULL OR p_locations IS NULL THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  IF EXISTS (SELECT 1 FROM unnest(p_locations) AS listed(id) GROUP BY listed.id HAVING count(*) > 1) THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  SELECT coalesce(array_agg(chosen.location_id ORDER BY chosen.location_id), ARRAY[]::uuid[])
+  INTO v_current
+  FROM admin_private.commercial_offer_guard_locations AS chosen
+  WHERE chosen.subscription_id = v_sub.id;
+  SELECT coalesce(array_agg(listed.id ORDER BY listed.id), ARRAY[]::uuid[])
+  INTO v_next
+  FROM unnest(p_locations) AS listed(id);
+  IF v_sub.plan_version_id = p_plan AND v_current = v_next THEN
+    RETURN jsonb_build_object('status', 'unchanged', 'subscriptionId', v_sub.id, 'amountMinor', v_sub.amount_minor);
+  END IF;
+  SELECT * INTO v_plan FROM public.plan_versions WHERE id = p_plan;
+  SELECT * INTO v_conditions FROM public.commercial_plan_conditions
+  WHERE plan_version_id = v_plan.id AND status = 'APPROVED';
+  SELECT count(*)::integer INTO v_covered
+  FROM admin_private.onboarding_request_locations
+  WHERE onboarding_request_id = v_link.request_id;
+  SELECT pieces.quantity_limit INTO v_telloya_limit
+  FROM public.plan_components AS pieces
+  WHERE pieces.plan_version_id = v_plan.id AND pieces.component_code = 'TELLOYA';
+  v_guard := coalesce(cardinality(v_next), 0);
+  IF v_plan.id IS NULL OR v_plan.product_code IS DISTINCT FROM 'TELLOYA' OR v_plan.status IS DISTINCT FROM 'APPROVED'
+     OR v_plan.amount_minor IS NULL OR v_plan.currency IS DISTINCT FROM 'GBP'
+     OR v_plan.billing_cadence IS DISTINCT FROM 'MONTH' OR v_plan.tax_behaviour IS DISTINCT FROM 'NOT_APPLICABLE'
+     OR v_plan.terms_ref IS NULL OR v_plan.effective_from > pg_catalog.now()
+     OR (v_plan.effective_to IS NOT NULL AND v_plan.effective_to <= pg_catalog.now())
+     OR v_conditions.id IS NULL OR v_conditions.tier_code IS DISTINCT FROM v_plan.tier_code
+     OR v_conditions.base_amount_minor IS DISTINCT FROM v_plan.amount_minor
+     OR v_telloya_limit IS NULL OR v_covered IS DISTINCT FROM v_telloya_limit
+     OR EXISTS (
+       SELECT 1 FROM public.plan_components AS pieces
+       WHERE pieces.plan_version_id = v_plan.id AND pieces.component_code = 'GUARD'
+     )
+     OR NOT EXISTS (
+       SELECT 1 FROM public.commercial_agreement_versions AS agreement
+       WHERE agreement.product_code = 'TELLOYA' AND agreement.version_ref = v_plan.terms_ref AND agreement.status = 'APPROVED'
+     )
+  THEN
+    RETURN jsonb_build_object('status', 'terms_unconfigured');
+  END IF;
+  IF v_guard > 0 AND (
+    v_conditions.guard_unit_amount_minor IS DISTINCT FROM 999
+    OR EXISTS (
+      SELECT 1 FROM unnest(v_next) AS picked(location_id)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.locations AS location
+        WHERE location.id = picked.location_id AND location.business_id = v_sub.business_id
+      )
+    )
+  ) THEN
+    RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'guard');
+  END IF;
+  v_amount := v_plan.amount_minor + CASE WHEN v_guard > 0 THEN 999 * v_guard ELSE 0 END;
   FOR v_attempt IN 1..8 LOOP
     v_ref := admin_private.commercial_public_ref_v1();
     BEGIN
@@ -386,8 +526,8 @@ BEGIN
         public_ref, customer_id, business_id, plan_family, plan_version_id, grant_kind, state,
         amount_minor, currency, tax_behaviour, tax_amount_minor, cadence_snapshot, terms_ref
       ) VALUES (
-        v_ref, v_sub.customer_id, v_sub.business_id, v_sub.plan_family, v_sub.plan_version_id, v_sub.grant_kind, 'DRAFT',
-        v_sub.amount_minor, v_sub.currency, v_sub.tax_behaviour, v_sub.tax_amount_minor, v_sub.cadence_snapshot, v_sub.terms_ref
+        v_ref, v_sub.customer_id, v_sub.business_id, 'VOICE', v_plan.id, 'BILLABLE', 'DRAFT',
+        v_amount, v_plan.currency, v_plan.tax_behaviour, NULL, v_plan.billing_cadence, v_plan.terms_ref
       ) RETURNING id INTO v_new;
       EXIT;
     EXCEPTION WHEN unique_violation THEN
@@ -398,24 +538,56 @@ BEGIN
     RAISE EXCEPTION 'telloya_revision_ref_exhausted' USING ERRCODE = 'P0001';
   END IF;
   INSERT INTO public.commercial_subscription_items(subscription_id, component_code, quantity, quantity_limit_snapshot)
-  SELECT v_new, item.component_code, item.quantity, item.quantity_limit_snapshot
-  FROM public.commercial_subscription_items AS item
-  WHERE item.subscription_id = v_sub.id;
+  SELECT v_new, pieces.component_code, pieces.quantity_limit, pieces.quantity_limit
+  FROM public.plan_components AS pieces
+  WHERE pieces.plan_version_id = v_plan.id;
+  IF v_guard > 0 THEN
+    INSERT INTO public.commercial_subscription_items(subscription_id, component_code, quantity, quantity_limit_snapshot)
+    VALUES (v_new, 'GUARD', v_guard, v_guard);
+    INSERT INTO admin_private.commercial_offer_guard_locations(subscription_id, location_id)
+    SELECT v_new, picked.location_id FROM unnest(v_next) AS picked(location_id);
+  END IF;
+  v_billed := admin_private.commercial_billable_amount_v1(v_new);
+  IF v_billed IS DISTINCT FROM v_amount THEN
+    RAISE EXCEPTION 'telloya_revision_amount' USING ERRCODE = 'P0001';
+  END IF;
+  UPDATE public.commercial_subscriptions
+  SET state = 'CANCELED', canceled_at = pg_catalog.now(), updated_at = pg_catalog.now()
+  WHERE id = v_sub.id AND state = 'OFFERED';
+  INSERT INTO public.commercial_subscription_events(subscription_id, actor_id, request_id, from_state, to_state, reason)
+  VALUES (v_sub.id, v_actor, p_request, 'OFFERED', 'CANCELED', 'Replaced after an approved Telloya amendment');
   UPDATE public.commercial_subscriptions SET state = 'OFFERED', updated_at = pg_catalog.now() WHERE id = v_new;
   INSERT INTO public.commercial_subscription_events(subscription_id, actor_id, request_id, from_state, to_state, reason)
-  VALUES (v_new, v_actor, p_request, 'DRAFT', 'OFFERED', 'Approved Telloya amendment');
+  VALUES (v_new, v_actor, p_request, 'DRAFT', 'OFFERED', 'Issued the revised Telloya offer');
   UPDATE public.onboarding_requests
   SET commercial_subscription_id = v_new
-  WHERE commercial_subscription_id = v_sub.id;
+  WHERE id = v_link.request_id AND commercial_subscription_id = v_sub.id;
+  PERFORM admin_private.onboarding_event_v1(
+    v_link.request_id, v_actor, p_request, 'revise_offer', 'OFFERED', 'OFFERED',
+    'Issued a revised Telloya offer for the same enquiry.',
+    jsonb_build_object(
+      'enquiryId', v_link.enquiry_id, 'enquiryRef', v_link.enquiry_ref,
+      'previousSubscriptionId', v_sub.id, 'subscriptionId', v_new,
+      'planVersionId', v_plan.id, 'amountMinor', v_amount, 'guardLocationCount', v_guard
+    )
+  );
   UPDATE admin_private.telloya_offer_amendments
   SET status = 'APPROVED', revision_subscription_id = v_new, decided_at = pg_catalog.now(), decided_by = v_actor, record_version = record_version + 1
   WHERE id = v_row.id;
-  RETURN jsonb_build_object('status', 'recorded', 'decision', 'APPROVED', 'version', v_row.record_version + 1, 'subscriptionId', v_new, 'offerRef', v_ref);
+  PERFORM admin_private.write_record_audit_v1(
+    v_actor, 'COMMERCE_CHANGED', 'success', v_new, p_request, 'commercial_subscription',
+    'Issued a revised Telloya offer. The previous offer is canceled.',
+    jsonb_build_object('enquiryId', v_link.enquiry_id, 'enquiryRef', v_link.enquiry_ref, 'previousSubscriptionId', v_sub.id, 'amountMinor', v_amount)
+  );
+  RETURN jsonb_build_object(
+    'status', 'recorded', 'decision', 'REVISED', 'version', v_row.record_version + 1,
+    'subscriptionId', v_new, 'offerRef', v_ref, 'amountMinor', v_amount, 'guardLocationCount', v_guard
+  );
 END;
 $fn$;
 
-REVOKE ALL ON FUNCTION public.telloya_offer_revision_v1(text, uuid, uuid, integer, text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.telloya_offer_revision_v1(text, uuid, uuid, integer, text) TO service_role;
+REVOKE ALL ON FUNCTION public.telloya_offer_revision_v1(text, uuid, uuid, integer, text, uuid, uuid[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.telloya_offer_revision_v1(text, uuid, uuid, integer, text, uuid, uuid[]) TO service_role;
 
 ALTER TABLE public.communications
   ADD COLUMN commercial_subscription_id uuid;
@@ -649,10 +821,61 @@ BEGIN
   WHERE amendment.subscription_id = v_sub.id OR amendment.revision_subscription_id = v_sub.id;
   RETURN jsonb_build_object(
     'status', 'ready', 'subscriptionId', v_sub.id, 'offerRef', v_sub.public_ref,
-    'state', v_sub.state, 'version', v_sub.record_version, 'amendments', v_amendments
+    'state', v_sub.state, 'version', v_sub.record_version, 'amendments', v_amendments,
+    'planVersionId', v_sub.plan_version_id, 'amountMinor', v_sub.amount_minor,
+    'tier', (SELECT tier_code FROM public.plan_versions WHERE id = v_sub.plan_version_id),
+    'enquiryRef', (
+      SELECT enquiry.public_ref FROM public.onboarding_requests AS request
+      JOIN public.enquiries AS enquiry ON enquiry.id = request.enquiry_id
+      WHERE request.commercial_subscription_id = v_sub.id
+      ORDER BY request.created_at DESC LIMIT 1
+    ),
+    'plans', (
+      SELECT coalesce(jsonb_agg(jsonb_build_object(
+        'id', plan.id, 'tier', plan.tier_code,
+        'label', CASE plan.tier_code WHEN 'BASIC' THEN 'Basic' WHEN 'GROWTH' THEN 'Growth' WHEN 'PRO' THEN 'Pro' WHEN 'CUSTOM' THEN 'Custom' ELSE plan.tier_code END,
+        'amountMinor', plan.amount_minor, 'includedMinutes', conditions.included_minutes, 'locationCap', pieces.quantity_limit
+      ) ORDER BY plan.tier_code, plan.amount_minor), '[]'::jsonb)
+      FROM public.plan_versions AS plan
+      JOIN public.commercial_plan_conditions AS conditions
+        ON conditions.plan_version_id = plan.id AND conditions.status = 'APPROVED'
+      JOIN public.plan_components AS pieces
+        ON pieces.plan_version_id = plan.id AND pieces.component_code = 'TELLOYA'
+      WHERE plan.product_code = 'TELLOYA' AND plan.status = 'APPROVED'
+        AND plan.amount_minor IS NOT NULL AND plan.effective_from <= pg_catalog.now()
+        AND (plan.effective_to IS NULL OR plan.effective_to > pg_catalog.now())
+        AND pieces.quantity_limit = (
+          SELECT count(*)::integer FROM admin_private.onboarding_request_locations AS chosen
+          JOIN public.onboarding_requests AS request ON request.id = chosen.onboarding_request_id
+          WHERE request.commercial_subscription_id = v_sub.id AND request.state NOT IN ('DECLINED', 'CLOSED')
+        )
+    ),
+    'locations', (
+      SELECT coalesce(jsonb_agg(jsonb_build_object(
+        'id', location.id, 'name', location.location_name,
+        'selected', EXISTS (
+          SELECT 1 FROM admin_private.commercial_offer_guard_locations AS chosen
+          WHERE chosen.subscription_id = v_sub.id AND chosen.location_id = location.id
+        )
+      ) ORDER BY location.location_name), '[]'::jsonb)
+      FROM public.locations AS location
+      WHERE location.business_id = v_sub.business_id
+    )
   );
 END;
 $fn$;
+
+ALTER TABLE admin_private.onboarding_request_events
+  DROP CONSTRAINT onboarding_request_events_operation_check;
+ALTER TABLE admin_private.onboarding_request_events
+  ADD CONSTRAINT onboarding_request_events_operation_check CHECK (operation IN (
+    'classify', 'review', 'match_customer', 'match_business', 'select_locations',
+    'mark_ready', 'decline', 'prepare_offer',
+    'issue_invitation', 'resend_invitation', 'revoke_invitation',
+    'begin_setup', 'confirm_preferences', 'confirm_ai_configuration',
+    'record_number_allocation', 'record_forwarding_instructions', 'verify_agent_test_call',
+    'revise_offer', 'note_amendment'
+  ));
 
 REVOKE ALL ON FUNCTION public.telloya_offer_admin_v1(text, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.telloya_offer_admin_v1(text, uuid) TO service_role;

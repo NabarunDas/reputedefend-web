@@ -75,6 +75,8 @@ const people = [
   ["c01c0000-0000-4000-8000-0000000000a6", "c01c0000-0000-4000-8000-0000000000d6", "stranger.ready@example.test"],
   ["c01c0000-0000-4000-8000-0000000000a7", "c01c0000-0000-4000-8000-0000000000d7", "amend.open@example.test"],
   ["c01c0000-0000-4000-8000-0000000000a8", "c01c0000-0000-4000-8000-0000000000d8", "amend.mail@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000a9", "c01c0000-0000-4000-8000-0000000000d9", "amend.note@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000ba", "c01c0000-0000-4000-8000-0000000000ea", "amend.tier@example.test"],
 ] as const
 
 type Result = Record<string, unknown>
@@ -616,51 +618,121 @@ describe("Telloya commercial readiness rehearsal", () => {
   it("keeps amendments and offer mail on the commercial subscription", async () => {
     const opened = await ready("amend.open@example.test", 1, "growth")
     const session = sessions.get("amend.open@example.test") ?? ""
+    const secondGuard = (await db.query<{ id: string }>(
+      `insert into public.locations(business_id, location_name, country)
+       values ((select business_id from public.onboarding_requests where enquiry_id = $1), 'Guard yard two', 'United Kingdom')
+       returning id`,
+      [opened.enquiryId],
+    )).rows[0].id
     expect((await command("prepare_offer", {
-      enquiryId: opened.enquiryId, planVersionId: telloyaCataloguePlans.growthCap1, guardLocationIds: [], reason,
+      enquiryId: opened.enquiryId,
+      planVersionId: telloyaCataloguePlans.growthCap1,
+      guardLocationIds: [opened.locationIds[0], secondGuard],
+      reason,
     }, opened.version)).status).toBe("success")
     const offer = await offerRow(opened.enquiryId)
+    expect(offer.amount_minor).toBe(9898)
+    expect(await rpc<Result>("telloya_offer_amendment_v1", [
+      session, randomUUID(), offer.public_ref, "Please remove one Guard location.",
+    ])).toMatchObject({ status: "ineligible" })
+    await db.query(
+      "update public.enquiries set source = 'telloya', public_ref = 'TY-26-GUARD2' where id = $1",
+      [opened.enquiryId],
+    )
+    await db.query(
+      "insert into admin_private.telloya_admin_demos(enquiry_id, status, completed_at) values ($1, 'COMPLETED', now())",
+      [opened.enquiryId],
+    )
     const amended = await rpc<Result>("telloya_offer_amendment_v1", [
-      session, randomUUID(), offer.public_ref, "Please change the greeting.",
+      session, randomUUID(), offer.public_ref, "Please remove one Guard location.",
     ])
     expect(amended).toMatchObject({ status: "recorded", version: 1, subscriptionVersion: offer.record_version })
-    const view = await rpc<Result>("customer_portal_commercial_offer_v1", [session, offer.public_ref])
-    const agreement = view.agreement as { versionRef: string }
-    const conditions = view.conditions as Record<string, unknown>
-    await expect(rpc("customer_portal_commercial_offer_command_v1", [
-      session,
-      randomUUID(),
-      offer.public_ref,
-      JSON.stringify({
-        offerVersion: view.offerVersion,
-        priceMinor: offer.amount_minor,
-        taxBehaviour: view.taxBehaviour,
-        taxMinor: view.taxMinor,
-        cadence: view.cadence,
-        agreementRef: agreement.versionRef,
-        agreementAccepted: true,
-        recurringConsent: true,
-        confirmations: { business_authority: true },
-        conditions: { ...conditions, overageOptIn: false, overageCapMinor: null },
-      }),
-    ])).rejects.toThrow(/telloya_amendment_pending/)
+    await expect(submit(session, offer.public_ref, 9898)).rejects.toThrow(/telloya_amendment_pending/)
     expect((await rows<{ state: string }>("select state from public.commercial_subscriptions where id = $1", [offer.id]))[0].state).toBe("OFFERED")
-    expect(await rpc<Result>("telloya_offer_revision_v1", [token, randomUUID(), amended.amendmentId, 0, "APPROVED"])).toMatchObject({ status: "stale_version" })
-    const revised = await rpc<Result>("telloya_offer_revision_v1", [token, randomUUID(), amended.amendmentId, 1, "APPROVED"])
-    expect(revised).toMatchObject({ status: "recorded", decision: "APPROVED" })
+    const revise = (version: number, decision: string, plan: string | null, locations: string[]) =>
+      db.query<{ value: Result }>(
+        "select public.telloya_offer_revision_v1($1,$2,$3,$4,$5,$6,$7::uuid[]) as value",
+        [token, randomUUID(), amended.amendmentId, version, decision, plan, locations],
+      ).then(result => result.rows[0].value)
+    expect(await revise(0, "REVISED", telloyaCataloguePlans.growthCap1, [opened.locationIds[0]])).toMatchObject({ status: "stale_version" })
+    expect(await revise(1, "REVISED", telloyaCataloguePlans.growthCap1, [opened.locationIds[0], secondGuard])).toMatchObject({
+      status: "unchanged", subscriptionId: offer.id, amountMinor: 9898,
+    })
+    expect((await rows<{ n: number }>("select count(*)::int as n from public.commercial_subscriptions where business_id = $1", [offer.business_id]))[0].n).toBe(1)
+    const revised = await revise(1, "REVISED", telloyaCataloguePlans.growthCap1, [opened.locationIds[0]])
+    expect(revised).toMatchObject({ status: "recorded", decision: "REVISED", amountMinor: 8899, guardLocationCount: 1 })
     expect(revised.subscriptionId).not.toBe(offer.id)
-    const chain = await rows<{ id: string; state: string; amount_minor: number }>(
-      "select id, state, amount_minor from public.commercial_subscriptions where id = any($1::uuid[]) order by state",
+    const chain = await rows<{ id: string; state: string; amount_minor: number; plan_version_id: string }>(
+      "select id, state, amount_minor, plan_version_id from public.commercial_subscriptions where id = any($1::uuid[]) order by state",
       [[offer.id, revised.subscriptionId]],
     )
     expect(chain).toEqual([
-      { id: offer.id, state: "CANCELED", amount_minor: offer.amount_minor },
-      { id: revised.subscriptionId, state: "OFFERED", amount_minor: offer.amount_minor },
+      { id: offer.id, state: "CANCELED", amount_minor: 9898, plan_version_id: telloyaCataloguePlans.growthCap1 },
+      { id: revised.subscriptionId, state: "OFFERED", amount_minor: 8899, plan_version_id: telloyaCataloguePlans.growthCap1 },
     ])
+    expect((await rows<{ location_id: string }>(
+      "select location_id from admin_private.commercial_offer_guard_locations where subscription_id = $1 order by location_id",
+      [offer.id],
+    )).map(row => row.location_id).sort()).toEqual([opened.locationIds[0], secondGuard].sort())
+    expect((await rows<{ location_id: string }>(
+      "select location_id from admin_private.commercial_offer_guard_locations where subscription_id = $1",
+      [revised.subscriptionId],
+    ))).toEqual([{ location_id: opened.locationIds[0] }])
     expect((await rows<{ revision_subscription_id: string }>(
       "select revision_subscription_id from admin_private.telloya_offer_amendments where id = $1",
       [amended.amendmentId],
     ))[0].revision_subscription_id).toBe(revised.subscriptionId)
+    expect(await rpc<Result>("customer_portal_commercial_offer_v1", [session, offer.public_ref])).toMatchObject({ status: "unavailable" })
+    expect((await submit(session, String(revised.offerRef), 8899)).accepted.status).toBe("success")
+    expect(await rpc<Result>("telloya_offer_amendment_v1", [
+      session, randomUUID(), revised.offerRef, "Please change this after acceptance.",
+    ])).toMatchObject({ status: "offer_not_open" })
+
+    const noted = await ready("amend.note@example.test", 1, "growth")
+    const noteSession = sessions.get("amend.note@example.test") ?? ""
+    expect((await command("prepare_offer", {
+      enquiryId: noted.enquiryId, planVersionId: telloyaCataloguePlans.growthCap1, guardLocationIds: [], reason,
+    }, noted.version)).status).toBe("success")
+    const noteOffer = await offerRow(noted.enquiryId)
+    await db.query("update public.enquiries set source = 'telloya', public_ref = 'TY-26-NOTE2A' where id = $1", [noted.enquiryId])
+    const noteRequest = await rpc<Result>("telloya_offer_amendment_v1", [
+      noteSession, randomUUID(), noteOffer.public_ref, "Please change the receptionist greeting.",
+    ])
+    const notedResult = (await db.query<{ value: Result }>(
+      "select public.telloya_offer_revision_v1($1,$2,$3,$4,'NOTED',null,'{}'::uuid[]) as value",
+      [token, randomUUID(), noteRequest.amendmentId, 1],
+    )).rows[0].value
+    expect(notedResult).toMatchObject({ status: "recorded", decision: "NOTED", subscriptionId: noteOffer.id })
+    expect((await rows<{ n: number; state: string }>(
+      `select count(*)::int as n, max(state) as state from public.commercial_subscriptions where business_id = $1`,
+      [noteOffer.business_id],
+    ))[0]).toEqual({ n: 1, state: "OFFERED" })
+    expect((await rows<{ revision_subscription_id: string | null; status: string }>(
+      "select revision_subscription_id, status from admin_private.telloya_offer_amendments where id = $1",
+      [noteRequest.amendmentId],
+    ))[0]).toEqual({ revision_subscription_id: null, status: "NOTED" })
+
+    const tier = await ready("amend.tier@example.test", 1, "basic")
+    const tierSession = sessions.get("amend.tier@example.test") ?? ""
+    expect((await command("prepare_offer", {
+      enquiryId: tier.enquiryId, planVersionId: telloyaCataloguePlans.basicCap1, guardLocationIds: [], reason,
+    }, tier.version)).status).toBe("success")
+    const tierOffer = await offerRow(tier.enquiryId)
+    expect(tierOffer.amount_minor).toBe(4900)
+    await db.query("update public.enquiries set source = 'telloya', public_ref = 'TY-26-TIER2A' where id = $1", [tier.enquiryId])
+    await db.query("insert into admin_private.telloya_admin_demos(enquiry_id, status, completed_at) values ($1, 'COMPLETED', now())", [tier.enquiryId])
+    const tierRequest = await rpc<Result>("telloya_offer_amendment_v1", [
+      tierSession, randomUUID(), tierOffer.public_ref, "Please move this offer from Basic to Growth.",
+    ])
+    const tierRevised = (await db.query<{ value: Result }>(
+      "select public.telloya_offer_revision_v1($1,$2,$3,$4,'REVISED',$5,'{}'::uuid[]) as value",
+      [token, randomUUID(), tierRequest.amendmentId, 1, telloyaCataloguePlans.growthCap1],
+    )).rows[0].value
+    expect(tierRevised).toMatchObject({ status: "recorded", decision: "REVISED", amountMinor: 7900, guardLocationCount: 0 })
+    expect((await rows<{ plan_version_id: string; state: string }>(
+      "select plan_version_id, state from public.commercial_subscriptions where id = $1",
+      [tierRevised.subscriptionId],
+    ))[0]).toEqual({ plan_version_id: telloyaCataloguePlans.growthCap1, state: "OFFERED" })
 
     const mailed = await ready("amend.mail@example.test", 1, "growth")
     const mailSession = sessions.get("amend.mail@example.test") ?? ""
@@ -706,7 +778,7 @@ describe("Telloya commercial readiness rehearsal", () => {
     expect(accepted.accepted.status).toBe("success")
     expect(await rpc<Result>("telloya_offer_amendment_v1", [
       mailSession, randomUUID(), mailOffer.public_ref, "Please change this after acceptance.",
-    ])).toMatchObject({ status: "offer_not_open" })
+    ])).toMatchObject({ status: "ineligible" })
     expect((await rows<{ value: string }>("select admin_private.telloya_offer_html_v1('<script>\"&') as value"))[0].value).toBe("&lt;script&gt;&quot;&amp;")
     await db.query("delete from admin_private.telloya_offer_mail_control")
   })

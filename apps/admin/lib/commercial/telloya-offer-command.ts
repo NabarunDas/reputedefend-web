@@ -42,19 +42,32 @@ export async function telloyaOfferCommand(request: NextRequest) {
     raw += decoder.decode()
     const body = JSON.parse(raw) as Record<string, unknown>
     if (body.operation === "revision") {
-      if (!isUuid(body.amendmentId) || !Number.isInteger(body.expectedVersion) || (body.decision !== "APPROVED" && body.decision !== "DECLINED")) {
+      const decision = body.decision
+      if (!isUuid(body.amendmentId) || !Number.isInteger(body.expectedVersion) || (decision !== "REVISED" && decision !== "NOTED" && decision !== "DECLINED")) {
         return reply("Reload the amendment before deciding it.", 400)
       }
-      const result = await backend().rpc<{ status: string }>("telloya_offer_revision_v1", {
+      const locations = Array.isArray(body.guardLocationIds) ? body.guardLocationIds : []
+      if (decision === "REVISED" && (!isUuid(body.planVersionId) || locations.some(id => !isUuid(id)))) {
+        return reply("Choose an approved plan and confirmed Guard locations.", 400)
+      }
+      const result = await backend().rpc<{ status: string; decision?: string }>("telloya_offer_revision_v1", {
         p_token: tokenHash(token),
         p_request: key,
         p_amendment: body.amendmentId,
         p_expected_version: body.expectedVersion,
-        p_decision: body.decision,
+        p_decision: decision,
+        p_plan: decision === "REVISED" ? body.planVersionId : null,
+        p_locations: decision === "REVISED" ? locations : [],
       })
+      if (result.status === "recorded" && result.decision === "REVISED") return reply("The revised offer is ready. The previous offer is canceled.", 200)
+      if (result.status === "recorded" && result.decision === "NOTED") return reply("The request is recorded. The commercial offer is unchanged.", 200)
       if (result.status === "recorded" || result.status === "replay") return reply("Saved. The commercial offer has been reviewed.", 200)
+      if (result.status === "unchanged") return reply("That selection matches the current offer. No replacement was created.", 409)
       if (result.status === "stale_version") return reply("This amendment has changed. Reload it before trying again.", 409)
       if (result.status === "offer_not_open") return reply("That offer is no longer open.", 409)
+      if (result.status === "demonstration_not_completed") return reply("Complete the offline demonstration before issuing a revised offer.", 409)
+      if (result.status === "ineligible") return reply("That offer is not linked to this Telloya enquiry.", 403)
+      if (result.status === "terms_unconfigured") return reply("The selected plan or Guard locations are not an approved offer. Nothing was saved.", 409)
       return reply("This deployment cannot review that amendment. Nothing was saved.", 503)
     }
     if (body.operation === "mail") {

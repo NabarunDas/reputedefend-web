@@ -72,6 +72,6 @@ export function transitionTelloyaDemo(current: TelloyaDemoRecord, command: Tello
   return { result: "recorded", record, previousStatus: current.status }
 }
 
-export function telloyaDemoWriteAvailable(flag: string | undefined = process.env.TELLOYA_ADMIN_JOURNEY_ENABLED): boolean {
-  return telloyaAdminJourneyEnabled(flag)
+export function telloyaDemoWriteAvailable(): boolean {
+  return telloyaAdminJourneyEnabled()
 }

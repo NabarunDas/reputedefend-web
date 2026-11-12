@@ -34,7 +34,7 @@ describe("Telloya admin journey progress", () => {
   it("moves from the demonstration to the prepared offer", () => {
     const completed = telloyaJourneyProgress({ source: "telloya", demoStatus: "COMPLETED" })
     expect(completed?.current).toBe("offer")
-    expect(completed?.next).toMatch(/Prepare the offer/)
+    expect(completed?.next).toMatch(/Prepare \/ Review personalised offer/)
     const prepared = telloyaJourneyProgress({ source: "telloya", demoStatus: "COMPLETED", offerStatus: "prepared" })
     expect(prepared?.current).toBe("offer")
     expect(prepared?.next).toMatch(/Queue the offer email/)

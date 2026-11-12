@@ -84,7 +84,7 @@ export function telloyaJourneyProgress(input: TelloyaJourneySnapshot): TelloyaJo
       : "Mark the demonstration booked after it is arranged offline."
   } else if (offer === "none" || offer === "draft") {
     current = "offer"
-    next = "Prepare the offer after the demonstration is completed and business authority is verified."
+    next = "Prepare / Review personalised offer. The completed demonstration opens the offer workspace automatically."
   } else if (offer === "prepared") {
     current = "offer"
     next = "Queue the offer email. The commercial offer is prepared and has not been sent."

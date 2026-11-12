@@ -2,6 +2,7 @@ import Link from "next/link"
 import { requireStaff } from "@/lib/require-staff"
 import { getEnquiry, getInvitationMail, getOnboarding, getTelloyaDemo, getTelloyaOffer } from "@/lib/enquiries/queries"
 import { invitationDispatchEnabled } from "@/lib/commercial/invitation-dispatch"
+import { buildTelloyaSalesWorkspace } from "@/lib/commercial/telloya-sales-context"
 import { enquiryStates, emailStates } from "@/lib/enquiries/model"
 import { ukDate } from "@/lib/admin/activity"
 import { safeWebUrl } from "@/lib/records/model"
@@ -9,6 +10,7 @@ import { TriageForm, ConversionForm } from "../forms"
 import { OnboardingPanel } from "../onboarding"
 import { TelloyaEnquiryInterest } from "../telloya-interest"
 import { TelloyaJourney } from "../telloya-journey"
+import { TelloyaOfferWorkspace } from "../telloya-offer-workspace"
 import { Badge, PageHeader } from "../../ui"
 
 export const metadata = { title: "Enquiry" }
@@ -20,6 +22,9 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
   const invitationMail = dispatchEnabled && onboarding.supported && onboarding.invitationReady && !onboarding.emailVerified
     ? await getInvitationMail(id)
     : null
+  const demoStatus = demo.availability === "ready" ? demo.status : null
+  const salesWorkspace = buildTelloyaSalesWorkspace({ payload: p, demoStatus, onboarding, offer })
+  const telloyaOfferFirst = Boolean(salesWorkspace && demoStatus === "COMPLETED")
   return <section className="page">
     <Link className="back-link" href="/enquiries">Back to enquiries</Link>
     <PageHeader 
@@ -47,7 +52,8 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
       assigned: e.assigned,
       nextAction: e.nextAction,
       nextActionAt: e.nextActionAt,
-    }} demo={demo} offer={offer} />
+    }} demo={demo} offer={offer} offerFirst={telloyaOfferFirst} />
+    {salesWorkspace && demoStatus === "COMPLETED" && <TelloyaOfferWorkspace enquiryId={e.id} workspace={salesWorkspace} offer={offer} />}
     <section className="panel">
       <h2>Email status</h2>
       <p>Internal notification: {emailStates[e.internalStatus]}<br />Customer acknowledgement: {emailStates[e.ackStatus]}</p>
@@ -58,7 +64,12 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
       <p>{e.nextAction || "No next action recorded."}{e.nextActionAt && <> · {ukDate(e.nextActionAt)}</>}</p>
       {e.status !== "converted" && <TriageForm key={e.version} enquiry={e} />}
     </section>
-    {onboarding.supported && <OnboardingPanel view={onboarding} enquiryId={e.id} open={["new", "open", "waiting"].includes(e.status)} businessName={p.businessName} country={p.country} dispatchEnabled={dispatchEnabled} invitationMail={invitationMail} />}
+    {onboarding.supported && telloyaOfferFirst && <details className="panel">
+      <summary>Advanced / Internal onboarding details</summary>
+      <p className="muted">The Product → Customer → Business → Locations wizard is not the normal Telloya journey after a completed demonstration. Use this only for exceptional manual recovery.</p>
+      <OnboardingPanel view={onboarding} enquiryId={e.id} open={["new", "open", "waiting"].includes(e.status)} businessName={p.businessName} country={p.country} dispatchEnabled={dispatchEnabled} invitationMail={invitationMail} />
+    </details>}
+    {onboarding.supported && !telloyaOfferFirst && <OnboardingPanel view={onboarding} enquiryId={e.id} open={["new", "open", "waiting"].includes(e.status)} businessName={p.businessName} country={p.country} dispatchEnabled={dispatchEnabled} invitationMail={invitationMail} />}
     {e.status === "converted" ? <section className="panel"><h2>Linked work</h2><p>{e.caseRef ? <Link href={`/cases/${e.caseId}`}>Case {e.caseRef}</Link> : `Relaunch Guard request ${e.monitoringId}`}</p><p>Continue this work through the case or monitoring workflow. This enquiry stays linked for its history.</p></section> : !onboarding.supported && ["new", "open", "waiting"].includes(e.status) && <details className="panel"><summary>Create work from this enquiry</summary><ConversionForm key={e.version} enquiry={e} /></details>}
     <section className="panel">
       <h2>History</h2>

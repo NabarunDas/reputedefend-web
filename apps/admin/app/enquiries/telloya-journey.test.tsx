@@ -72,6 +72,27 @@ describe("Telloya journey panel", () => {
     expect(screen.queryByText(/2026-11-12T11:00:00.000Z/)).toBeNull()
   })
 
+  it("defers the catalogue offer preview to the offer workspace after a completed demo", () => {
+    render(<TelloyaJourney
+      snapshot={{ source: "telloya", planTier: "growth", guardLocationCount: 2 }}
+      offerFirst
+      demo={{
+        availability: "ready",
+        enquiryId: "22222222-2222-4222-8222-222222222222",
+        status: "COMPLETED",
+        version: 2,
+        scheduledAt: null,
+        completedAt: "2026-11-12T11:00:00.000Z",
+        timezone: "Europe/London",
+      }}
+      offer={{ availability: "no_offer" }}
+    />)
+    expect(screen.getByText(/Prepare \/ Review personalised offer/)).toBeTruthy()
+    expect(screen.getByText(/personalised offer workspace below/)).toBeTruthy()
+    expect(screen.queryByText(/Illustrative monthly total/)).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send offer" })).toBeNull()
+  })
+
   it("formats a booked demonstration in the recorded timezone", () => {
     render(<TelloyaJourney snapshot={{ source: "telloya" }} demo={{
       availability: "ready",

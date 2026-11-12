@@ -99,4 +99,19 @@ describe("Telloya demonstration command", () => {
     expect(telloyaDemoCommandArgs({ ...body, timezone: "" })).toBeNull()
     expect(telloyaDemoCommandArgs({ ...body, status: "COMPLETED", at: null })).toBeNull()
   })
+
+  it("still saves a completed demonstration when sales-context bootstrap is closed", async () => {
+    vi.stubEnv("VERCEL_ENV", "production")
+    mocks.rpc.mockResolvedValueOnce({ status: "recorded", version: 2 })
+    const response = await POST(req({
+      ...body,
+      expectedVersion: 1,
+      status: "COMPLETED",
+      at: "2026-11-20T16:00:00.000Z",
+      note: "Demonstration finished offline.",
+    }))
+    expect(response.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    expect(mocks.rpc.mock.calls[0][0]).toBe("telloya_admin_demo_transition_v1")
+  })
 })

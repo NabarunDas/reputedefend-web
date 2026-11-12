@@ -62,7 +62,7 @@ export type TelloyaDemoPanel =
       timezone: string
     }
 
-export function TelloyaJourney({ snapshot, demo = { availability: "closed" }, offer = { availability: "closed" } }: { snapshot: TelloyaJourneySnapshot; demo?: TelloyaDemoPanel; offer?: TelloyaOfferPanel }) {
+export function TelloyaJourney({ snapshot, demo = { availability: "closed" }, offer = { availability: "closed" }, offerFirst = false }: { snapshot: TelloyaJourneySnapshot; demo?: TelloyaDemoPanel; offer?: TelloyaOfferPanel; offerFirst?: boolean }) {
   const progress = telloyaJourneyProgress(persistedJourney(snapshot, demo, offer))
   if (!progress) return null
   const preview = previewTelloyaOffer(snapshot.planTier, snapshot.guardLocationCount)
@@ -95,14 +95,17 @@ export function TelloyaJourney({ snapshot, demo = { availability: "closed" }, of
       <TelloyaDemoForm enquiryId={demo.enquiryId} version={demo.version} status={demo.status} timezone={demo.timezone} />
     </>}
     {demo.availability !== "ready" && <p><button type="button" disabled>Mark demo booked</button> <button type="button" disabled>Mark demo completed</button></p>}
-    <h3>Offer preview</h3>
-    <p>Preview / test only, not available to customers</p>
-    <p>Catalogue display only. This is not an approved offer, and Send stays closed until an approved plan, service agreement, and tax treatment exist.</p>
-    {preview?.monthlyTotalPence !== null && preview?.monthlyTotalPence !== undefined
-      ? <p>Illustrative monthly total {formatGbpPence(preview.monthlyTotalPence)} for {preview.planCode}, including {formatGbpPence(preview.guardAmountPence)} for {preview.guardLocations} Guard locations. One voice location and one number. Overage is off.</p>
-      : <p>No illustrative total is available until a plan is confirmed.</p>}
-    <TelloyaOfferActions offer={offer} />
-    {offer.availability !== "ready" && <p><button type="button" disabled>Send offer</button></p>}
+    {!offerFirst && <>
+      <h3>Offer preview</h3>
+      <p>Preview / test only, not available to customers</p>
+      <p>Catalogue display only. This is not an approved offer, and Send stays closed until an approved plan, service agreement, and tax treatment exist.</p>
+      {preview?.monthlyTotalPence !== null && preview?.monthlyTotalPence !== undefined
+        ? <p>Illustrative monthly total {formatGbpPence(preview.monthlyTotalPence)} for {preview.planCode}, including {formatGbpPence(preview.guardAmountPence)} for {preview.guardLocations} Guard locations. One voice location and one number. Overage is off.</p>
+        : <p>No illustrative total is available until a plan is confirmed.</p>}
+      <TelloyaOfferActions offer={offer} />
+      {offer.availability !== "ready" && <p><button type="button" disabled>Send offer</button></p>}
+    </>}
+    {offerFirst && <p>The personalised offer workspace below is the next Admin step after a completed demonstration.</p>}
     <h3>Setup</h3>
     <p>{setup.next} Going live stays blocked until the voice safety gates are verified. Recording a number or forwarding instructions does not turn forwarding on and does not place a call.</p>
   </section>

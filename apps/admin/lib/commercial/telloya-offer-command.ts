@@ -37,6 +37,12 @@ function mapPrepareDenial(status: string, reason?: string): { message: string; c
     return { message: "Custom draft saved — approval required to issue offer. Convert the proposed amount through commercial plan approval first.", code: 409 }
   }
   if (status === "terms_unconfigured" && reason === "catalogue") return { message: "Not sendable — approved Telloya plan catalogue is not configured.", code: 409 }
+  if (status === "terms_unconfigured" && reason === "standard_mismatch") {
+    return { message: "Not sendable — the approved catalogue no longer matches the saved Basic, Growth or Pro quotation. Revise and re-save the quote before approving.", code: 409 }
+  }
+  if (status === "denied" && reason === "standard_mismatch") {
+    return { message: "Not sendable — the approved catalogue no longer matches the saved Basic, Growth or Pro quotation. Revise and re-save the quote before approving.", code: 409 }
+  }
   if (status === "terms_unconfigured" && reason === "conditions") return { message: "Not sendable — approved plan conditions are not configured.", code: 409 }
   if (status === "terms_unconfigured" && reason === "agreement") return { message: "Not sendable — approved service agreement is not configured.", code: 409 }
   if (status === "terms_unconfigured") return { message: "Not sendable — approved catalogue or agreement is not configured.", code: 409 }

@@ -1909,20 +1909,22 @@ export const migrationChain: readonly MigrationEntry[] = [
   {
     // Telloya Admin approve-and-send offer orchestration. SOURCE-ONLY. Not applied
     // to DEV or Production. Do not edit or replay 20261112120000, 20261112180000,
-    // or 20261112210000. R8-R1: draft-estimate preview without catalogue,
-    // advisory-locked approve-send receipts, TELLOYA_OFFER_COMPOSER_V1 contract.
+    // or 20261112210000. R8-R1/R8-R2: draft-estimate preview without catalogue,
+    // advisory-locked approve-send receipts, published standard price match,
+    // TELLOYA_OFFER_COMPOSER_CONTRACT_V1 bound in DRAFT template body.
     // Adds telloya_prepare_offer_from_draft_v1, telloya_offer_preview_v1,
     // personalised telloya_offer_mail_v1, Admin delivery fields on
     // telloya_offer_admin_v1, and admin_private.telloya_approve_send_receipts.
-    // Schema and function changes only. containsDataChange is false.
-    // Repository file is 41,298 characters. MD5 de0f2ba0485e459185e3180af212ac67.
-    // SHA-256 524cd3d44b7e291b991f15245a6cfb9d57a3e8b8b2c84a4734f1dfb43b84c377.
+    // Contains a DRAFT TELLOYA_OFFER body update for the composer contract.
+    // containsDataChange is true. safeToReplay remains false.
+    // Repository file is 45,006 characters. MD5 d8bdfefcb0bef55f8dcc8b62979e20bf.
+    // SHA-256 f5ba88fb55086cdbc409e53aa4d305864b729ebcf8a0905637c4f62c3fa8e6ea.
     version: "20261112223000",
     filename: "20261112223000_telloya_approve_send_offer_v1.sql",
     step: "Telloya approve-and-send offer orchestration",
     kind: "additive",
     appliedToDev: false,
-    containsDataChange: false,
+    containsDataChange: true,
     safeToReplay: false,
     verification: { category: "Telloya approve send", probe: "public.telloya_prepare_offer_from_draft_v1" },
   },

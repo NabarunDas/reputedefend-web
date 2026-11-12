@@ -142,6 +142,17 @@ describe("Telloya offer draft calculator", () => {
       { tierCode: "CUSTOM", offerable: true, amountMinor: 15000, includedMinutes: 800 },
     ]
     expect(mapDraftTierToApprovedPlan(plans, "growth")).toEqual(plans[1])
+    expect(mapDraftTierToApprovedPlan(plans, "basic")).toEqual(plans[0])
+    expect(mapDraftTierToApprovedPlan([
+      { tierCode: "GROWTH", offerable: true, amountMinor: 8900, includedMinutes: 250 },
+      ...plans,
+    ], "growth")).toEqual(plans[1])
+    expect(mapDraftTierToApprovedPlan([
+      { tierCode: "GROWTH", offerable: true, amountMinor: 8900, includedMinutes: 250 },
+    ], "growth")).toBeNull()
+    expect(mapDraftTierToApprovedPlan([
+      { tierCode: "BASIC", offerable: true, amountMinor: 4900, includedMinutes: 90 },
+    ], "basic")).toBeNull()
     expect(mapDraftTierToApprovedPlan(plans, "custom")).toBeNull()
     expect(mapDraftTierToApprovedPlan(plans, "custom", {
       customAmountPence: 15000,

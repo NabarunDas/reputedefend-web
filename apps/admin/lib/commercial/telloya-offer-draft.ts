@@ -255,8 +255,17 @@ export function mapDraftTierToApprovedPlan<T extends {
       && plan.includedMinutes === minutes
     ) ?? null
   }
+  const catalogue = telloyaCataloguePence(planTier)
+  if (!catalogue || catalogue.amountPence == null || catalogue.includedMinutes == null) return null
   const wanted = planTier.toUpperCase()
-  return plans.find(plan => plan.offerable && (plan.tierCode ?? "").toUpperCase() === wanted) ?? null
+  // Standard drafts must match the published quotation schedule exactly.
+  // A future catalogue reprice cannot silently replace Basic/Growth/Pro amounts.
+  return plans.find(plan =>
+    plan.offerable
+    && (plan.tierCode ?? "").toUpperCase() === wanted
+    && plan.amountMinor === catalogue.amountPence
+    && plan.includedMinutes === catalogue.includedMinutes
+  ) ?? null
 }
 
 export function guardQuantityForDraft(input: {

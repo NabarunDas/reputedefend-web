@@ -4,11 +4,75 @@ BEGIN;
 -- Do not edit or replay 20261112120000, 20261112180000, or 20261112210000.
 -- ADMIN-TY-R8-R1: draft estimate preview without catalogue, advisory lock on
 -- approve-send receipts, composer contract V1.
+-- ADMIN-TY-R8-R2: standard-plan amount/minutes must match published quotation;
+-- customer plain text hides internal composer id; approved template body is bound
+-- to immutable TELLOYA_OFFER_COMPOSER_CONTRACT_V1 fingerprint.
 -- Adds server-side prepare-from-saved-draft, personalised TELLOYA_OFFER composition,
 -- read-only email preview (including illustrative draft estimates), and Admin
 -- delivery-status fields.
+-- Updates the DRAFT TELLOYA_OFFER catalogue body to the composer contract text only.
 -- Does not enable mail control, approve the DRAFT template, seed catalogue rows,
 -- create Stripe objects, send customer email, or touch Production.
+
+CREATE OR REPLACE FUNCTION admin_private.telloya_offer_composer_contract_id_v1()
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $fn$
+  SELECT 'TELLOYA_OFFER_COMPOSER_CONTRACT_V1'::text;
+$fn$;
+
+REVOKE ALL ON FUNCTION admin_private.telloya_offer_composer_contract_id_v1()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION admin_private.telloya_offer_composer_contract_body_v1()
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $fn$
+  -- Immutable catalogue body bound at template approval. fingerprint is
+  -- sha256('TELLOYA_OFFER_COMPOSER_CONTRACT_V1').
+  SELECT 'TELLOYA_OFFER_COMPOSER_CONTRACT_V1'
+    || E'\n'
+    || 'fingerprint=sha256:64f35564345e2cedb10df7b01a3349339793dbc87b9e18080ab498cb9c756212'
+    || E'\n'
+    || 'The live Telloya offer email is composed by the server under this approved contract. Do not edit after approval.';
+$fn$;
+
+REVOKE ALL ON FUNCTION admin_private.telloya_offer_composer_contract_body_v1()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION admin_private.telloya_published_standard_v1(p_tier text)
+RETURNS TABLE(amount_minor integer, included_minutes integer)
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $fn$
+  -- Canonical Telloya published quotation schedule (parity with apps/telloya/lib/pricing.ts).
+  SELECT amount_minor, included_minutes
+  FROM (
+    VALUES
+      ('basic', 4900, 120),
+      ('growth', 7900, 300),
+      ('pro', 12000, 500)
+  ) AS published(tier_code, amount_minor, included_minutes)
+  WHERE published.tier_code = lower(btrim(coalesce(p_tier, '')));
+$fn$;
+
+REVOKE ALL ON FUNCTION admin_private.telloya_published_standard_v1(text)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+UPDATE admin_private.communication_templates
+SET
+  body_text_template = admin_private.telloya_offer_composer_contract_body_v1(),
+  reason = 'Catalogue row bound to TELLOYA_OFFER_COMPOSER_CONTRACT_V1. Approval uses the settings command.',
+  record_version = record_version + 1
+WHERE template_key = 'TELLOYA_OFFER'
+  AND version = 1
+  AND status = 'DRAFT'
+  AND body_text_template IS DISTINCT FROM admin_private.telloya_offer_composer_contract_body_v1();
 
 CREATE TABLE IF NOT EXISTS admin_private.telloya_approve_send_receipts (
   request_id uuid PRIMARY KEY,
@@ -63,9 +127,9 @@ BEGIN
     WHEN v_is_draft THEN '[Draft estimate] Your Telloya proposal — ' || p_enquiry_ref
     ELSE 'Your Telloya proposal — ' || p_enquiry_ref
   END;
-  v_text := 'TELLOYA_OFFER_COMPOSER_V1'
-    || CASE WHEN v_is_draft THEN E'\n\n' || v_draft_banner ELSE '' END
-    || E'\n\n' || v_greeting
+  -- Customer-facing plain text must not expose the internal composer identifier.
+  v_text := CASE WHEN v_is_draft THEN v_draft_banner || E'\n\n' ELSE '' END
+    || v_greeting
     || E'\n\nTelloya — a ProfileRelaunch company'
     || E'\nEnquiry ' || p_enquiry_ref
     || E'\nPlan: ' || p_plan_label
@@ -88,7 +152,7 @@ BEGIN
       ELSE
         E'\n\n' || v_portal_no_link
     END;
-  v_html := '<!-- TELLOYA_OFFER_COMPOSER_V1 -->'
+  v_html := '<!-- TELLOYA_OFFER_COMPOSER_CONTRACT_V1 -->'
     || '<div style="font-family:Georgia,serif;color:#15202b;line-height:1.5;max-width:560px">'
     || CASE
       WHEN v_is_draft THEN
@@ -126,7 +190,8 @@ BEGIN
     'subject', v_subject,
     'text', v_text,
     'html', v_html,
-    'composerVersion', 1
+    'composerVersion', 1,
+    'composerContract', admin_private.telloya_offer_composer_contract_id_v1()
   );
 END;
 $fn$;
@@ -241,13 +306,14 @@ BEGIN
   IF v_template_version IS NULL THEN
     RETURN jsonb_build_object('status', 'template_unapproved');
   END IF;
-  IF (
-    position('server-composed Telloya offer email' in coalesce(v_template_reason, '')) = 0
-    AND position('TELLOYA_OFFER_COMPOSER_V1' in coalesce(v_template_reason, '')) = 0
-    AND position('server-composed Telloya offer email' in coalesce(v_template_body, '')) = 0
-    AND position('TELLOYA_OFFER_COMPOSER_V1' in coalesce(v_template_body, '')) = 0
-  ) THEN
-    RETURN jsonb_build_object('status', 'template_unapproved', 'reason', 'composer_contract');
+  -- Approved immutable body must exactly equal the versioned composer contract.
+  -- A generic reason/body mention is not enough.
+  IF v_template_body IS DISTINCT FROM admin_private.telloya_offer_composer_contract_body_v1() THEN
+    RETURN jsonb_build_object(
+      'status', 'template_unapproved',
+      'reason', 'composer_contract',
+      'composerContract', admin_private.telloya_offer_composer_contract_id_v1()
+    );
   END IF;
   SELECT chosen.tier_code, chosen.included_minutes, chosen.amount_minor
   INTO v_tier, v_minutes, v_plan_amount
@@ -335,6 +401,7 @@ BEGIN
         'operation', 'queue_telloya_offer',
         'enquiryRef', v_link.enquiry_ref,
         'composerVersion', 1,
+        'composerContract', admin_private.telloya_offer_composer_contract_id_v1(),
         'templateVersion', v_template_version
       )
     );
@@ -342,7 +409,8 @@ BEGIN
       'status', 'queued',
       'communicationId', v_comm.id,
       'deliveryStatus', v_comm.delivery_status,
-      'composerVersion', 1
+      'composerVersion', 1,
+      'composerContract', admin_private.telloya_offer_composer_contract_id_v1()
     );
   EXCEPTION WHEN unique_violation THEN
     SELECT * INTO v_existing
@@ -598,6 +666,8 @@ DECLARE
   v_guard_count integer;
   v_result jsonb;
   v_reason text;
+  v_plan_amount integer;
+  v_minutes integer;
 BEGIN
   v_actor := admin_private.telloya_admin_demo_actor_v1(p_token);
   IF v_actor IS NULL THEN
@@ -706,12 +776,20 @@ BEGIN
     ORDER BY plan.version_number DESC
     LIMIT 1;
   ELSE
+    SELECT published.amount_minor, published.included_minutes
+    INTO v_plan_amount, v_minutes
+    FROM admin_private.telloya_published_standard_v1(v_draft.plan_tier) AS published;
+    IF v_plan_amount IS NULL OR v_minutes IS NULL THEN
+      RETURN jsonb_build_object('status', 'invalid', 'reason', 'plan_tier');
+    END IF;
     SELECT plan.* INTO v_plan
     FROM public.plan_versions AS plan
     JOIN public.commercial_plan_conditions AS conditions
       ON conditions.plan_version_id = plan.id AND conditions.status = 'APPROVED'
     WHERE plan.product_code = 'TELLOYA' AND plan.status = 'APPROVED'
       AND lower(plan.tier_code) = v_draft.plan_tier
+      AND plan.amount_minor = v_plan_amount
+      AND conditions.included_minutes = v_minutes
       AND plan.currency = 'GBP' AND plan.billing_cadence = 'MONTH'
       AND plan.tax_behaviour = 'NOT_APPLICABLE'
       AND plan.amount_minor IS NOT NULL AND plan.effective_from <= pg_catalog.now()
@@ -722,7 +800,10 @@ BEGIN
   IF v_plan.id IS NULL THEN
     RETURN jsonb_build_object(
       'status', 'terms_unconfigured',
-      'reason', CASE WHEN v_draft.plan_tier = 'custom' THEN 'custom_approval' ELSE 'catalogue' END
+      'reason', CASE
+        WHEN v_draft.plan_tier = 'custom' THEN 'custom_approval'
+        ELSE 'standard_mismatch'
+      END
     );
   END IF;
   SELECT * INTO v_conditions FROM public.commercial_plan_conditions
@@ -736,6 +817,15 @@ BEGIN
        OR v_conditions.included_minutes IS DISTINCT FROM v_draft.custom_included_minutes
      ) THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'custom_mismatch');
+  END IF;
+  IF v_draft.plan_tier IS DISTINCT FROM 'custom' THEN
+    SELECT published.amount_minor, published.included_minutes
+    INTO v_plan_amount, v_minutes
+    FROM admin_private.telloya_published_standard_v1(v_draft.plan_tier) AS published;
+    IF v_plan.amount_minor IS DISTINCT FROM v_plan_amount
+       OR v_conditions.included_minutes IS DISTINCT FROM v_minutes THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'standard_mismatch');
+    END IF;
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM public.commercial_agreement_versions AS agreement

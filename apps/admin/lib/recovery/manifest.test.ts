@@ -26,7 +26,7 @@ describe("the migration chain manifest", () => {
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     expect(migrationHead.filename).toBe("20261112223000_telloya_approve_send_offer_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
-    expect(migrationHead.containsDataChange).toBe(false)
+    expect(migrationHead.containsDataChange).toBe(true)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261015230000_dev_stripe_one_shot_v1.sql")?.appliedToDev).toBe(true)
@@ -127,19 +127,21 @@ describe("the migration chain manifest", () => {
     // Do not replay 20261107120000. Do not apply 20261107120000 to Production.
     // Do not replay 20261106200000. Do not apply 20261106200000 to Production.
     expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
-    expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
+    expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(true)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration(migrationHead.filename)?.verification).toEqual({
       category: "Telloya approve send",
       probe: "public.telloya_prepare_offer_from_draft_v1",
     })
     const approveSendSql = readFileSync(new URL("20261112223000_telloya_approve_send_offer_v1.sql", directory), "utf8")
-    expect(approveSendSql.length).toBe(41298)
-    expect(createHash("md5").update(approveSendSql).digest("hex")).toBe("de0f2ba0485e459185e3180af212ac67")
-    expect(createHash("sha256").update(approveSendSql).digest("hex")).toBe("524cd3d44b7e291b991f15245a6cfb9d57a3e8b8b2c84a4734f1dfb43b84c377")
-    expect(approveSendSql).toContain("TELLOYA_OFFER_COMPOSER_V1")
+    expect(approveSendSql.length).toBe(45006)
+    expect(createHash("md5").update(approveSendSql).digest("hex")).toBe("d8bdfefcb0bef55f8dcc8b62979e20bf")
+    expect(createHash("sha256").update(approveSendSql).digest("hex")).toBe("f5ba88fb55086cdbc409e53aa4d305864b729ebcf8a0905637c4f62c3fa8e6ea")
+    expect(approveSendSql).toContain("TELLOYA_OFFER_COMPOSER_CONTRACT_V1")
+    expect(approveSendSql).toContain("telloya_published_standard_v1")
     expect(approveSendSql).toContain("pg_advisory_xact_lock")
     expect(approveSendSql).toContain("draft_estimate")
+    expect(approveSendSql).not.toMatch(/v_text := 'TELLOYA_OFFER_COMPOSER/)
     expect(findMigration("20261112210000_telloya_offer_draft_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261112180000_telloya_sales_context_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261112120000_telloya_admin_journey_v1.sql")?.appliedToDev).toBe(true)
@@ -403,6 +405,7 @@ describe("the migration chain manifest", () => {
       "20261031160000",
       "20261102110000",
       "20261112120000",
+      "20261112223000",
     ])
   })
 

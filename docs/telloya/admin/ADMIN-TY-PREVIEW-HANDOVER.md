@@ -72,7 +72,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | Post-migration reconcile | DONE | `cb692ad1` | Manifest records 120 applied DEV migrations, head `20261112120000`. |
 | ADMIN-TY-R4 | PARTIAL | `15af6d75`, `08250127` | Offer-first workspace after Demo Completed. Sole-business/location auto-link and non-atomic reconcile required R5 correction. |
 | ADMIN-TY-R5 | DONE for Preview path; PARTIAL for hosted composite | `5ef9eb43` | Evidence-safe matching, composite source-only `20261112180000`, offer workspace Prepare/confirm, disposable PG coverage. Hosted apply of `20261112180000` remains blocked pending owner approval. Monthly Stripe Checkout remains BLOCKED. |
-| ADMIN-TY-R6 | DONE for source corrections | this tip | Removed mutating exception fallback; composite reauth rolls back bootstrap writes; disposable PG covers expired sign-in, retry, concurrency and idempotency. Hosted apply of `20261112180000` still blocked. |
+| ADMIN-TY-R6 | DONE for source corrections | `f9819cb0` | Removed mutating exception fallback; composite reauth rolls back bootstrap writes; disposable PG covers expired sign-in, retry, concurrency and idempotency. Hosted apply of `20261112180000` still blocked. |
 
 ## Test matrix
 

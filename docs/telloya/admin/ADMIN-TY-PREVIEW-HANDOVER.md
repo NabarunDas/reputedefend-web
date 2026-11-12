@@ -1,6 +1,6 @@
 # ADMIN-TY preview handover
 
-**Status:** ADMIN-TY-R7-C-SIMPLE offer calculator simplification on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV remains at applied `20261112180000` (121 migrations). Source-only `20261112210000` adds draft calculator storage/audit (including Custom amount) and is **not** applied. This is not authorisation to launch, collect payment, send email, place a call, enable flags, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
+**Status:** Post-R7 migration reconciliation on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV is at applied `20261112210000` (122 migrations). Draft calculator storage is operational on DEV. Branch-scoped Preview keeps `TELLOYA_ADMIN_JOURNEY_ENABLED=true` for this PR only. This is not authorisation to launch, collect payment, send email, place a call, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
 **Baseline:** `origin/develop` `c3ba97a19492eb2b7ae27ec906f77e740ef12cae`. Plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`.
 
 ## Phase labels (R7)
@@ -8,7 +8,7 @@
 | Item | Label | Notes |
 | --- | --- | --- |
 | Interactive draft calculator | DONE in source (R7-C-SIMPLE) | Plan dropdown + auto amounts; Custom editable GBP; Guard + live total; unsaved changes block prepare |
-| Draft save / reload | DONE in source (R7-C-SIMPLE) | Typed `enquiries.source`, Custom amount/minutes/requirements audited, Save disabled until migration applied |
+| Draft save / reload | READY on DEV (draft storage applied) | Typed `enquiries.source`, Custom amount/minutes/requirements audited; Save works on Preview/DEV with applied RPC |
 | Official `prepare_offer` | DONE in source (R7-C-SIMPLE) | Locked to saved draft only; Custom requires matching approved plan version; still shared commercial command |
 | Demo Completed → sales-context bootstrap | READY on DEV (composite applied) | `20261112180000` applied once to DEV; fail-closed when RPC unavailable — no multi-step commercial fallback writes |
 | Evidence-based business/location matching | DONE | Sole unrelated business/location is never auto-selected |
@@ -20,7 +20,7 @@
 | Hosted catalogue / Telloya service agreement / tax | BLOCKED | Draft estimate works; official offer stays not sendable |
 | `20261112120000` | DONE applied once to DEV | Byte-identical; do not replay or apply to Production |
 | `20261112180000` | DONE applied once to DEV | Byte-identical 18,615 chars; do not replay or apply to Production |
-| `20261112210000` | SOURCE-ONLY pending | Draft storage; `appliedToDev: false`; do not apply without owner approval |
+| `20261112210000` | DONE applied once to DEV | Draft storage; 17,672 chars; do not replay or apply to Production |
 
 ## What is implemented
 
@@ -82,13 +82,14 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | Post-R6 migration reconcile | DONE | `06fe08b9` | Manifest records 121 applied DEV migrations, head `20261112180000`. |
 | ADMIN-TY-R7 | DONE in source | `b4aaccd4` | Interactive draft calculator, draft persistence source-only `20261112210000`, prepare_offer unchanged, UI simplified. |
 | ADMIN-TY-R7-B | DONE in source | `692db05c` | Typed source + active request, independent Guard locations, proposed-overage wording/GBP cap, prepare matches saved draft, draft audit events, Save disabled when storage unavailable. Do not apply the draft migration. |
-| ADMIN-TY-R7-C-SIMPLE | DONE in source | `3c697496f77466c3a62c03ef2b0061ea9eb937b5` | Plan dropdown, Custom editable amount, unsaved-draft prepare gate, Custom approval required before official offer. Do not apply the draft migration. |
+| ADMIN-TY-R7-C-SIMPLE | DONE in source | `bddf0d26` | Plan dropdown, Custom editable amount, unsaved-draft prepare gate, Custom approval required before official offer. |
+| Post-R7 migration reconcile | DONE | tip SHA after push | Manifest records 122 applied DEV migrations, head `20261112210000`; `pendingMigrations()` empty. |
 
 ## Test matrix
 
 | Behaviour | Where it is tested |
 | --- | --- |
-| Applied head is `20261112180000`; `pendingMigrations()` is only `20261112210000` | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
+| Applied head is `20261112210000`; `pendingMigrations()` is empty | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
 | Draft calculator pence totals, Custom £150 + Guard, invalid Custom amounts, unsaved equality | `apps/admin/lib/commercial/telloya-offer-draft.test.ts` |
 | Draft command parse rejects bad payloads | `apps/admin/lib/commercial/telloya-offer-draft-command.test.ts` |
 | Draft save/reload/stale version/lock after prepare_offer/cascade | `apps/admin/lib/commercial/telloya-offer-draft.database.test.ts` |
@@ -112,7 +113,7 @@ Disposable database tests use PGlite. Concurrent mail and commercial settlement 
 
 `appliedToDev` is true. `containsDataChange` is true because the migration inserts one DRAFT `TELLOYA_OFFER` communication template catalogue row outside a function body. That catalogue row is not a customer, payment, subscription, invitation, communication or session record, and the template stays DRAFT until settings approval. `safeToReplay` is false. Public functions are executable by `service_role` only. Private tables have row level security and no policies. The repository file is 79,175 characters. The mail-control table has 0 rows. Zero demonstration rows, zero commercial subscriptions, zero amendments and zero Telloya offer emails were created. Do not edit or replay `20261112120000`. Do not apply `20261112120000` to Production.
 
-The verified DEV ledger previously contained 120 entries and ended at `20261112120000`. The verified DEV ledger now contains 121 entries and ends at `20261112180000`. `20261111130000_telloya_marketing_enquiry_retention_v1.sql` remains applied once to DEV. The hosted `schema_migrations` statement for that retention file is 10,710 characters and the repository file is 10,712 characters. The two-byte difference is the dollar sign and closing quote at the end of the reason check, around character 1075. The installed `telloya_marketing_enquiry_holds_reason_check` is correct. Do not edit or replay the applied retention SQL. Do not apply `20261111130000` to Production.
+The verified DEV ledger previously contained 120 entries and ended at `20261112120000`. The verified DEV ledger previously contained 121 entries and ended at `20261112180000`. The verified DEV ledger now contains 122 entries and ends at `20261112210000`. `20261111130000_telloya_marketing_enquiry_retention_v1.sql` remains applied once to DEV. The hosted `schema_migrations` statement for that retention file is 10,710 characters and the repository file is 10,712 characters. The two-byte difference is the dollar sign and closing quote at the end of the reason check, around character 1075. The installed `telloya_marketing_enquiry_holds_reason_check` is correct. Do not edit or replay the applied retention SQL. Do not apply `20261111130000` to Production.
 
 ## Applied DEV migration (sales-context composite)
 
@@ -120,15 +121,15 @@ The verified DEV ledger previously contained 120 entries and ended at `202611121
 
 `appliedToDev` is true. `containsDataChange` is false. `safeToReplay` is false. The repository file is 18,615 characters. MD5 `914c95e0534e4d26cd07cbab1ae8aa18`. SHA-256 `7fbd26ade4d1250ae4a8ea934e3e9bf7a0dc8171b971f62af1cfc118756acfcb`. It adds `public.telloya_sales_context_command_v1` for single-transaction, evidence-safe bootstrap after a completed demonstration. The public composite is executable by `service_role` only. Zero commercial subscriptions, zero Telloya offer emails and zero enabled mail-control rows were created by the apply. Do not edit or replay `20261112180000`. Do not apply `20261112180000` to Production. Do not edit or replay `20261112120000`.
 
-## Source-only pending migration (offer draft)
+## Applied DEV migration (offer draft)
 
 `supabase/migrations/20261112210000_telloya_offer_draft_v1.sql`
 
-`appliedToDev` is false. `containsDataChange` is false. `safeToReplay` is false. The repository file is 17,672 characters. MD5 `199dbfa368261693ed869a134a5fc664`. SHA-256 `e152df8d7204214965aec5c5fe64a2f37b8a63135005479bfcb219f737415f55`. It adds `admin_private.telloya_offer_drafts` (including `custom_amount_minor`, `custom_included_minutes`, `custom_requirements`), append-only `admin_private.telloya_offer_draft_events`, plus service-role-only `public.telloya_offer_draft_v1` and `public.telloya_offer_draft_command_v1`. Reads/writes require typed `enquiries.source='telloya'` and the current active TELLOYA onboarding request. Custom amount is an internal proposed price only and is never written to `plan_versions` by draft save. This is Admin draft-selection storage and revision audit only. It is not a commercial offer, subscription, approved plan, customer quote, email, Stripe object, or Retell action. Do not apply to DEV or Production without owner approval after independent review. Do not edit or replay `20261112120000` or `20261112180000`. `pendingMigrations()` contains only this file.
+`appliedToDev` is true. `containsDataChange` is false. `safeToReplay` is false. The repository file is 17,672 characters. MD5 `199dbfa368261693ed869a134a5fc664`. SHA-256 `e152df8d7204214965aec5c5fe64a2f37b8a63135005479bfcb219f737415f55`. It adds `admin_private.telloya_offer_drafts` (including `custom_amount_minor`, `custom_included_minutes`, `custom_requirements`), append-only `admin_private.telloya_offer_draft_events`, plus service-role-only `public.telloya_offer_draft_v1` and `public.telloya_offer_draft_command_v1`. Reads/writes require typed `enquiries.source='telloya'` and the current active TELLOYA onboarding request. Custom amount is an internal proposed price only and is never written to `plan_versions` by draft save. This is Admin draft-selection storage and revision audit only. It is not a commercial offer, subscription, approved plan, customer quote, email, Stripe object, or Retell action. Post-apply DEV had zero draft rows, zero draft audit events, zero commercial subscriptions, zero Telloya offer emails and zero enabled mail-control rows. Do not edit or replay `20261112210000`. Do not apply `20261112210000` to Production. Do not edit or replay `20261112120000` or `20261112180000`. `pendingMigrations()` is empty.
 
 ## Flags
 
-`TELLOYA_ADMIN_JOURNEY_ENABLED` is absent. Exactly `true` opens the demonstration, amendment, revision and mail commands. It does not approve a service agreement, a tax treatment, a payment, or live answering. Mail still requires the empty `telloya_offer_mail_control` row to be enabled and an APPROVED TELLOYA_OFFER template.
+`TELLOYA_ADMIN_JOURNEY_ENABLED` is exactly `true` on the branch-scoped Admin Preview for `cursor/telloya-admin-e2e-preview-20261112` only. It remains absent/OFF outside that Preview. Exactly `true` opens the demonstration, amendment, revision, sales-context and draft commands. It does not approve a service agreement, a tax treatment, a payment, or live answering. Mail still requires the empty `telloya_offer_mail_control` row to be enabled and an APPROVED TELLOYA_OFFER template.
 
 `TELLOYA_ENQUIRY_ENABLED`, `TELLOYA_USAGE_EVENTS_ENABLED`, and `TELLOYA_INBOUND_ADMISSION_ENABLED` were not enabled.
 

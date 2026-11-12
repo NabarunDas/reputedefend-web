@@ -1889,18 +1889,19 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Telloya sales context", probe: "public.telloya_sales_context_command_v1" },
   },
   {
-    // Telloya Admin offer-draft calculator storage. Source-only. Not applied to
-    // DEV or Production. Holds Admin draft plan/Guard selections against one
+    // Telloya Admin offer-draft calculator storage. Applied once to DEV. Not
+    // applied to Production. Holds Admin draft plan/Guard selections against one
     // Telloya onboarding request. Not a commercial offer, subscription, approved
     // plan, customer quote, email, Stripe object, or Retell action. Official
-    // offers still use admin_commercial_command_v1 prepare_offer. Do not apply
-    // without owner approval after independent review. Do not edit or replay
-    // 20261112120000 or 20261112180000.
+    // offers still use admin_commercial_command_v1 prepare_offer. Do not edit or
+    // replay this file. Do not edit or replay 20261112120000 or 20261112180000.
+    // Repository file is 17,672 characters. MD5 199dbfa368261693ed869a134a5fc664.
+    // SHA-256 e152df8d7204214965aec5c5fe64a2f37b8a63135005479bfcb219f737415f55.
     version: "20261112210000",
     filename: "20261112210000_telloya_offer_draft_v1.sql",
     step: "Telloya offer draft calculator storage",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: false,
     safeToReplay: false,
     verification: { category: "Telloya offer draft", probe: "public.telloya_offer_draft_command_v1" },
@@ -1916,8 +1917,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261112180000`. The live DEV ledger contains 121 entries. The previous
- * ledger contained 120 entries and ended at `20261112120000`. The ledger
+ * `20261112210000`. The live DEV ledger contains 122 entries. The previous
+ * ledger contained 121 entries and ended at `20261112180000`. The ledger
+ * before that contained 120 entries and ended at `20261112120000`. The ledger
  * before that contained 119 entries and ended at `20261111130000`. The ledger
  * before that contained 118 entries and ended at `20261110170000`. The ledger
  * before that contained 117 entries and ended at `20261107120000`. The ledger
@@ -2057,9 +2059,15 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` contains only `20261112210000` telloya_offer_draft_v1.
- * That file is source-only (`appliedToDev: false`). Do not apply it to DEV or
- * Production without owner approval after independent review.
+ * `pendingMigrations()` is empty. `20261112210000` telloya_offer_draft_v1 was
+ * applied once to DEV. The repository file is 17,672 characters. MD5
+ * 199dbfa368261693ed869a134a5fc664. SHA-256
+ * e152df8d7204214965aec5c5fe64a2f37b8a63135005479bfcb219f737415f55.
+ * containsDataChange is false. public.telloya_offer_draft_v1 and
+ * public.telloya_offer_draft_command_v1 are service-role-only. Zero draft rows,
+ * zero draft audit events, zero commercial subscriptions, zero Telloya offer
+ * emails and zero enabled mail-control rows were created by the apply. Do not
+ * edit or replay `20261112210000`. Do not apply `20261112210000` to Production.
  * `20261112180000` was applied once to DEV. The repository file is 18,615
  * characters. MD5 914c95e0534e4d26cd07cbab1ae8aa18. SHA-256
  * 7fbd26ade4d1250ae4a8ea934e3e9bf7a0dc8171b971f62af1cfc118756acfcb.

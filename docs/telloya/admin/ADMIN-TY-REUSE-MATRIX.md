@@ -2,7 +2,7 @@
 
 **Status:** inventory only. This document does not change behaviour, apply a migration, or enable a flag.
 **Baseline:** `origin/develop` is `c3ba97a19492eb2b7ae27ec906f77e740ef12cae` (“Telloya: polish enquiry success screens and acknowledgement emails (MKT-FINAL-05C)”). This implementation starts from plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`, which adds the runbook on top of that develop history.
-**Observed repository ledger:** the verified DEV ledger contains 121 entries and the manifest applied head is `20261112180000`. `20261112180000_telloya_sales_context_v1.sql` is `appliedToDev: true`, `containsDataChange: false`, `safeToReplay: false`. The repository file is 18,615 characters. Do not edit or replay that file. Do not apply it to Production. `20261112120000_telloya_admin_journey_v1.sql` remains applied. `20261111130000_telloya_marketing_enquiry_retention_v1.sql` remains applied. Voice ingestion `20261107130000` and PR #457 are untouched.
+**Observed repository ledger:** the verified DEV ledger contains 122 entries and the manifest applied head is `20261112210000`. `20261112210000_telloya_offer_draft_v1.sql` is `appliedToDev: true`, `containsDataChange: false`, `safeToReplay: false`. The repository file is 17,672 characters. Do not edit or replay that file. Do not apply it to Production. `20261112180000_telloya_sales_context_v1.sql` remains applied. `20261112120000_telloya_admin_journey_v1.sql` remains applied. `20261111130000_telloya_marketing_enquiry_retention_v1.sql` remains applied. Voice ingestion `20261107130000` and PR #457 are untouched.
 
 ## Dependency map
 
@@ -16,7 +16,7 @@
 | Customer setup | `apps/customer/app/portal/onboarding/setup/page.tsx` | Paid handover status. Live activation stays blocked. |
 | Payments | Commercial settlement and webhook tests under `apps/admin/lib/payments` | One-off Guided checkout is not monthly Telloya billing. New recurring preparation stays mocked and off. |
 | Email | Existing durable queue and enquiry acknowledgement states | Queue a proposal. Do not send from a button and do not call Resend in this work. |
-| Catalogue | `apps/telloya/lib/pricing.ts` and `usage-policy.ts` | Draft calculator reuses these marketing prices for estimates only. A persisted official offer must cite an approved plan version, not the marketing form. Source-only `20261112210000` stores Admin draft selections; it is not applied. |
+| Catalogue | `apps/telloya/lib/pricing.ts` and `usage-policy.ts` | Draft calculator reuses these marketing prices for estimates only. A persisted official offer must cite an approved plan version, not the marketing form. Applied `20261112210000` stores Admin draft selections on DEV; do not replay or apply to Production. |
 | Setup commands | Begin setup, preferences, AI configuration, number allocation, forwarding, test-call record | Operator checklist only. No Retell call, number purchase, or forwarding change. |
 | Flags | `TELLOYA_ENQUIRY_ENABLED`, `TELLOYA_USAGE_EVENTS_ENABLED`, `TELLOYA_INBOUND_ADMISSION_ENABLED` | Remain off. A new admin-journey write flag will also default off and cannot approve legal or tax. |
 | Preview | Vercel Preview builds the PR branch | No Production promotion, no Vercel env edit, no hosted SQL. |

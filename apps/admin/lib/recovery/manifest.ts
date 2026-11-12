@@ -1907,10 +1907,11 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Telloya offer draft", probe: "public.telloya_offer_draft_command_v1" },
   },
   {
-    // Telloya Admin approve-and-send offer orchestration. SOURCE-ONLY. Not applied
-    // to DEV or Production. Do not edit or replay 20261112120000, 20261112180000,
-    // or 20261112210000. R8-R1/R8-R2: draft-estimate preview without catalogue,
-    // advisory-locked approve-send receipts, published standard price match,
+    // Telloya Admin approve-and-send offer orchestration. Applied once to DEV.
+    // Do not edit or replay 20261112120000, 20261112180000, 20261112210000, or
+    // 20261112223000. Do not apply 20261112223000 to Production.
+    // R8-R1/R8-R2: draft-estimate preview without catalogue, advisory-locked
+    // approve-send receipts, published standard price match,
     // TELLOYA_OFFER_COMPOSER_CONTRACT_V1 bound in DRAFT template body.
     // Adds telloya_prepare_offer_from_draft_v1, telloya_offer_preview_v1,
     // personalised telloya_offer_mail_v1, Admin delivery fields on
@@ -1919,11 +1920,13 @@ export const migrationChain: readonly MigrationEntry[] = [
     // containsDataChange is true. safeToReplay remains false.
     // Repository file is 45,006 characters. MD5 d8bdfefcb0bef55f8dcc8b62979e20bf.
     // SHA-256 f5ba88fb55086cdbc409e53aa4d305864b729ebcf8a0905637c4f62c3fa8e6ea.
+    // Post-apply DEV: TELLOYA_OFFER template v1 remains DRAFT at record_version 2;
+    // 0 approved templates; 0 mail controls; 0 subscriptions; 0 offer emails.
     version: "20261112223000",
     filename: "20261112223000_telloya_approve_send_offer_v1.sql",
     step: "Telloya approve-and-send offer orchestration",
     kind: "additive",
-    appliedToDev: false,
+    appliedToDev: true,
     containsDataChange: true,
     safeToReplay: false,
     verification: { category: "Telloya approve send", probe: "public.telloya_prepare_offer_from_draft_v1" },
@@ -1939,8 +1942,9 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261112210000`. The live DEV ledger contains 122 entries. The previous
- * ledger contained 121 entries and ended at `20261112180000`. The ledger
+ * `20261112223000`. The live DEV ledger contains 123 entries. The previous
+ * ledger contained 122 entries and ended at `20261112210000`. The ledger
+ * before that contained 121 entries and ended at `20261112180000`. The ledger
  * before that contained 120 entries and ended at `20261112120000`. The ledger
  * before that contained 119 entries and ended at `20261111130000`. The ledger
  * before that contained 118 entries and ended at `20261110170000`. The ledger
@@ -2081,11 +2085,21 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` contains only
- * `20261112223000_telloya_approve_send_offer_v1.sql` (source-only;
- * appliedToDev false). The repository migration head is `20261112223000`.
- * `20261112210000` telloya_offer_draft_v1 was applied once to DEV. The
- * repository file is 17,672 characters. MD5
+ * `pendingMigrations()` is empty. The repository migration head is
+ * `20261112223000`. `20261112223000` telloya_approve_send_offer_v1 was applied
+ * once to DEV. The repository file is 45,006 characters. MD5
+ * d8bdfefcb0bef55f8dcc8b62979e20bf. SHA-256
+ * f5ba88fb55086cdbc409e53aa4d305864b729ebcf8a0905637c4f62c3fa8e6ea.
+ * containsDataChange is true. admin_private.telloya_approve_send_receipts has
+ * RLS enabled. public.telloya_offer_preview_v1,
+ * public.telloya_prepare_offer_from_draft_v1, public.telloya_offer_mail_v1 and
+ * public.telloya_offer_admin_v1 are service-role-only. TELLOYA_OFFER template v1
+ * remains DRAFT at record_version 2 with the composer-contract body. Zero
+ * approved template versions, zero approval receipts, zero commercial
+ * subscriptions, zero Telloya offer emails and zero enabled mail-control rows
+ * were created by the apply. Do not edit or replay `20261112223000`. Do not
+ * apply `20261112223000` to Production. `20261112210000` telloya_offer_draft_v1
+ * was applied once to DEV. The repository file is 17,672 characters. MD5
  * 199dbfa368261693ed869a134a5fc664. SHA-256
  * e152df8d7204214965aec5c5fe64a2f37b8a63135005479bfcb219f737415f55.
  * containsDataChange is false. public.telloya_offer_draft_v1 and

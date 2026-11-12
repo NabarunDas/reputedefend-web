@@ -1842,6 +1842,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya marketing enquiry retention", probe: "admin_private.telloya_marketing_enquiry_retention_v1" },
   },
+  {
+    // Source-only Telloya admin journey. Not applied to DEV or Production.
+    // Offline demonstration status only. No Retell call, email, or Stripe object.
+    version: "20261112120000",
+    filename: "20261112120000_telloya_admin_journey_v1.sql",
+    step: "Telloya admin journey proposal",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya admin journey", probe: "admin_private.telloya_admin_demo_transition_v1" },
+  },
 ]
 
 /**
@@ -1991,8 +2003,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` contains only unapplied `20261111130000`.
- * Do not apply `20261111130000` to DEV or Production.
+ * `pendingMigrations()` contains unapplied `20261112120000` and unapplied `20261111130000`.
+ * Do not apply `20261112120000` or `20261111130000` to DEV or Production.
  * `20261110170000` was applied once to DEV.
  * Do not replay `20261110170000`. Do not apply `20261110170000` to Production.
  * `20261107120000` was applied once to DEV. Do not replay `20261107120000`.

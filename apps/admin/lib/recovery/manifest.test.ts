@@ -24,7 +24,7 @@ describe("the migration chain manifest", () => {
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261111130000_telloya_marketing_enquiry_retention_v1.sql")
+    expect(migrationHead.filename).toBe("20261112120000_telloya_admin_journey_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
@@ -42,6 +42,7 @@ describe("the migration chain manifest", () => {
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261111130000_telloya_marketing_enquiry_retention_v1.sql",
+      "20261112120000_telloya_admin_journey_v1.sql",
     ])
     expect(chainAfter(appliedMigrationHead.version)).toEqual(pendingMigrations())
     expect(findMigration("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")).toMatchObject({

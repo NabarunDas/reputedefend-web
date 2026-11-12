@@ -96,6 +96,7 @@ const upgradedFiles = [
   "20261107110000_telloya_subscription_usage_ledger_v1.sql",
   "20261107120000_telloya_inbound_admission_reservation_v1.sql",
   "20261110170000_telloya_enquiry_receptionist_questions_v1.sql",
+  "20261111130000_telloya_marketing_enquiry_retention_v1.sql",
   migrationHead.filename,
 ].join(",")
 const db = new PGlite()

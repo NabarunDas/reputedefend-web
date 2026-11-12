@@ -12,6 +12,9 @@ describe("Telloya journey panel", () => {
     expect(screen.getByText((_, node) => node?.tagName === "P" && node.textContent === "General enquiry · Plan to be confirmed")).toBeTruthy()
     expect(screen.getByText("Demo · current")).toBeTruthy()
     expect(screen.getByText(/Mark the demonstration booked/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Mark demo booked" })).toHaveProperty("disabled", true)
+    expect(screen.getByRole("button", { name: "Mark demo completed" })).toHaveProperty("disabled", true)
+    expect(screen.getByText(/does not book, place, or provision a Retell demonstration/)).toBeTruthy()
   })
 
   it("stays off a legacy enquiry", () => {

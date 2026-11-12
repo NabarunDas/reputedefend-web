@@ -115,6 +115,7 @@ describe("Telloya catalogue proposal", () => {
     expect(migrations).toContain("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")
     expect(pendingMigrations().map(entry => entry.filename)).toEqual([
       "20261111130000_telloya_marketing_enquiry_retention_v1.sql",
+      "20261112120000_telloya_admin_journey_v1.sql",
     ])
     expect(findMigration("20261106200000_admin_commercial_initiate_agent_test_call_v1.sql")).toMatchObject({
       appliedToDev: true,

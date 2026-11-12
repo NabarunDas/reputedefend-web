@@ -61,6 +61,7 @@ describe("Telloya admin journey migration", () => {
     const source = readFileSync(new URL(`../../../supabase/migrations/${migrationName}`, import.meta.url), "utf8")
     expect(source).toContain("Do not apply this file to DEV or Production")
     expect(source).toContain("ON DELETE CASCADE")
+    expect(source).not.toContain("telloya_admin_offers")
     expect(source).not.toContain("p_actor_id")
     expect(migrationChain.at(-1)?.filename).toBe(migrationName)
     expect(migrationChain.at(-1)?.appliedToDev).toBe(false)
@@ -79,13 +80,12 @@ describe("Telloya admin journey migration", () => {
        join pg_namespace n on n.oid = c.relnamespace
        join pg_constraint fk on fk.conrelid = c.oid and fk.contype = 'f'
        where n.nspname = 'admin_private'
-         and c.relname in ('telloya_admin_demos','telloya_admin_demo_events','telloya_admin_offers')
+         and c.relname in ('telloya_admin_demos','telloya_admin_demo_events')
        order by c.relname`,
     )
     expect(tables).toEqual([
       { relname: "telloya_admin_demo_events", relrowsecurity: true, delete_rule: "c" },
       { relname: "telloya_admin_demos", relrowsecurity: true, delete_rule: "c" },
-      { relname: "telloya_admin_offers", relrowsecurity: true, delete_rule: "r" },
     ])
   })
 

@@ -10,6 +10,7 @@ import type { InvitationMail } from "../commercial/invitation-mail"
 import { invitationDispatchEnabled } from "../commercial/invitation-dispatch"
 import { telloyaDemoWriteAvailable } from "../commercial/telloya-demo-status"
 import type { TelloyaDemoPanel } from "../../app/enquiries/telloya-journey"
+import type { TelloyaOfferPanel } from "../../app/enquiries/telloya-offer-actions"
 import type { EnquiryDetail, EnquiryFilters, EnquiryRow } from "./model"
 async function read<T>(name: string, args: Record<string,unknown>): Promise<T> {
   await requireStaff()
@@ -71,6 +72,36 @@ export async function getTelloyaDemo(id: string): Promise<TelloyaDemoPanel> {
       scheduledAt: result.scheduled_at ?? null,
       completedAt: result.completed_at ?? null,
       timezone: result.timezone ?? "",
+    }
+  } catch (error) {
+    if (controlFlow(error)) throw error
+    return { availability: "unavailable" }
+  }
+}
+
+export async function getTelloyaOffer(id: string): Promise<TelloyaOfferPanel> {
+  if (!telloyaDemoWriteAvailable() || !isUuid(id)) return { availability: "closed" }
+  try {
+    const result = await read<{
+      status?: string
+      subscriptionId?: string
+      offerRef?: string
+      state?: string
+      version?: number
+      amendments?: { id: string; status: string; version: number; text: string }[]
+    } | null>("telloya_offer_admin_v1", { p_enquiry: id })
+    if (!result) return { availability: "unavailable" }
+    if (result.status === "no_offer") return { availability: "no_offer" }
+    if (result.status !== "ready" || !result.subscriptionId || !result.offerRef || !result.state || !Number.isInteger(result.version)) {
+      return { availability: "unavailable" }
+    }
+    return {
+      availability: "ready",
+      subscriptionId: result.subscriptionId,
+      offerRef: result.offerRef,
+      state: result.state,
+      version: result.version as number,
+      amendments: Array.isArray(result.amendments) ? result.amendments : [],
     }
   } catch (error) {
     if (controlFlow(error)) throw error

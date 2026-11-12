@@ -28,7 +28,7 @@ export function telloyaOfferMessage(input: {
   version: TelloyaOfferVersion
 }): TelloyaOfferMessage | null {
   if (!/^TY-\d{2}-[A-Z0-9]{6}$/.test(input.enquiryRef)) return null
-  if (!input.customerId || input.selector === input.enquiryRef || input.selector.length < 12) return null
+  if (!input.customerId || input.selector === input.enquiryRef || !/^[A-Za-z0-9-]{12,40}$/.test(input.selector)) return null
   const guard = input.version.guardLocations > 0
   const subject = guard
     ? `Your Telloya + Relaunch Guard proposal — ${input.enquiryRef}`
@@ -48,7 +48,7 @@ export function telloyaOfferMessage(input: {
   return {
     subject,
     text,
-    html: `<p>${text.replaceAll("\n", "</p><p>")}</p>`,
+    html: `<p>${text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;").replaceAll("\n", "</p><p>")}</p>`,
     idempotencyKey: `${input.customerId}:${input.version.version}:${input.version.termsHash}:offer`,
     reviewPath,
   }

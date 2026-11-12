@@ -145,10 +145,12 @@ export function OfferView({
   offer,
   acceptEnabled = commercialOfferAcceptEnabled(),
   paymentAction = false,
+  amendmentEnabled = false,
 }: {
   offer: Exclude<CommercialOfferRead, { status: "unauthenticated" }>
   acceptEnabled?: boolean
   paymentAction?: boolean
+  amendmentEnabled?: boolean
 }) {
   if (offer.status === "unavailable") {
     return <OfferUnavailable message={offer.reason === "authority" ? offer.nextStep : undefined} />
@@ -240,7 +242,7 @@ export function OfferView({
       {ready && !acceptEnabled ? (
         <p className="onboarding-banner">You can read this offer. Accepting it is not available from this page yet.</p>
       ) : null}
-      {ready && offer.product === "Telloya" ? <TelloyaAmendmentRequest enabled={false} /> : null}
+      {ready && offer.product === "Telloya" ? <TelloyaAmendmentRequest enabled={amendmentEnabled} selector={offer.offerRef} /> : null}
       <p className="onboarding-links">
         <a className="portal-button secondary" href="/portal/onboarding">Setup progress</a>
         <a className="portal-button secondary" href="/portal/products">Back to My Products</a>

@@ -2,6 +2,7 @@ import { telloyaJourneyProgress, type TelloyaJourneySnapshot } from "@/lib/comme
 import { formatGbpPence, previewTelloyaOffer } from "@/lib/commercial/telloya-offer"
 import { telloyaSetupChecklist } from "@/lib/commercial/telloya-setup"
 import { TelloyaDemoForm } from "./telloya-demo-form"
+import { TelloyaOfferActions, type TelloyaOfferPanel } from "./telloya-offer-actions"
 
 export type TelloyaDemoPanel =
   | { availability: "closed" }
@@ -16,7 +17,7 @@ export type TelloyaDemoPanel =
       timezone: string
     }
 
-export function TelloyaJourney({ snapshot, demo = { availability: "closed" } }: { snapshot: TelloyaJourneySnapshot; demo?: TelloyaDemoPanel }) {
+export function TelloyaJourney({ snapshot, demo = { availability: "closed" }, offer = { availability: "closed" } }: { snapshot: TelloyaJourneySnapshot; demo?: TelloyaDemoPanel; offer?: TelloyaOfferPanel }) {
   const progress = telloyaJourneyProgress(snapshot)
   if (!progress) return null
   const preview = previewTelloyaOffer(snapshot.planTier, snapshot.guardLocationCount)
@@ -48,7 +49,8 @@ export function TelloyaJourney({ snapshot, demo = { availability: "closed" } }: 
     {preview?.monthlyTotalPence !== null && preview?.monthlyTotalPence !== undefined
       ? <p>Illustrative monthly total {formatGbpPence(preview.monthlyTotalPence)} for {preview.planCode}, including {formatGbpPence(preview.guardAmountPence)} for {preview.guardLocations} Guard locations. One voice location and one number. Overage is off.</p>
       : <p>No illustrative total is available until a plan is confirmed.</p>}
-    <p><button type="button" disabled>Send offer</button></p>
+    <TelloyaOfferActions offer={offer} />
+    {offer.availability !== "ready" && <p><button type="button" disabled>Send offer</button></p>}
     <h3>Setup</h3>
     <p>{setup.next} Going live stays blocked until the voice safety gates are verified. Recording a number or forwarding instructions does not turn forwarding on and does not place a call.</p>
   </section>

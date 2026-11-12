@@ -32,6 +32,11 @@ export function commercialOfferAcceptEnabled() {
   return process.env.CUSTOMER_COMMERCIAL_OFFER_ACCEPT_ENABLED === "true"
 }
 
+/** Exactly "true" lets a signed-in customer request a change to an open Telloya offer. */
+export function telloyaAmendmentEnabled() {
+  return process.env.TELLOYA_ADMIN_JOURNEY_ENABLED === "true"
+}
+
 /**
  * Session-scoped commercial checkout preparation.
  *

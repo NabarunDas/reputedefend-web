@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { portalAvailable } from "@/lib/portal/config"
-import { commercialCheckoutEnabled, commercialOfferReadEnabled } from "@/lib/portal/onboarding/flag"
+import { commercialCheckoutEnabled, commercialOfferReadEnabled, telloyaAmendmentEnabled } from "@/lib/portal/onboarding/flag"
 import { paymentLane, paymentsEnabled } from "../../../../../../../lib/payments/config"
 import { loadCommercialOffer } from "@/lib/portal/onboarding/offer-load"
 import { productsHubEnabled } from "@/lib/portal/products-hub"
@@ -29,5 +29,5 @@ export default async function CommercialOfferPage({ params }: { params: Promise<
     && loaded.cadence === "MONTH"
     && loaded.taxBehaviour === "NOT_APPLICABLE"
     && (loaded.payment?.state === "preparing" || loaded.payment?.state === "started")
-  return <OfferView offer={loaded} paymentAction={paymentAction} />
+  return <OfferView offer={loaded} paymentAction={paymentAction} amendmentEnabled={telloyaAmendmentEnabled()} />
 }

@@ -53,7 +53,7 @@ afterAll(async () => { await db.close() })
 describe("upgrading a database that is already running", () => {
   it("starts from a real earlier checkpoint rather than an empty schema", () => {
     expect(chainThrough(checkpoint)).toHaveLength(15)
-    expect(chainAfter(checkpoint)).toHaveLength(110)
+    expect(chainAfter(checkpoint)).toHaveLength(111)
   })
 
   it("applies only the migrations the running database had not received, in order", async () => {

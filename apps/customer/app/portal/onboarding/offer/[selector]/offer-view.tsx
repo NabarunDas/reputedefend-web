@@ -223,6 +223,9 @@ export function OfferView({
               </div>
             ) : null}
           </dl>
+          {offer.product === "Telloya" && (offer.payment?.state === "started" || offer.payment?.state === "preparing") ? (
+            <p>Payment being verified. Returning from Checkout does not mark this offer as paid.</p>
+          ) : null}
           {offer.payment?.state === "unsupported" ? (
             <p className="onboarding-banner">This billing arrangement is not ready for secure payment.</p>
           ) : paymentAction && (offer.payment?.state === "preparing" || offer.payment?.state === "started") ? (

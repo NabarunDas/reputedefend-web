@@ -1,15 +1,17 @@
 # ADMIN-TY preview handover
 
-**Status:** ADMIN-TY-R5 on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Source-only sales-context composite is pending owner approval. This is not authorisation to launch, collect payment, send email, place a call, enable flags, or apply further hosted migrations.
+**Status:** ADMIN-TY-R6 on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Source-only sales-context composite is pending owner approval. This is not authorisation to launch, collect payment, send email, place a call, enable flags, seed catalogue/agreements, or apply further hosted migrations.
 **Baseline:** `origin/develop` `c3ba97a19492eb2b7ae27ec906f77e740ef12cae`. Plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`.
 
-## Phase labels (R5)
+## Phase labels (R6)
 
 | Item | Label | Notes |
 | --- | --- | --- |
-| Demo Completed → sales-context bootstrap | PARTIAL until `20261112180000` is owner-approved on DEV | Composite RPC is source-only; Preview uses evidence-safe TypeScript fallback when the function is absent |
+| Demo Completed → sales-context bootstrap | PARTIAL until `20261112180000` is owner-approved on DEV | Composite is source-only; when absent the offer workspace stays visible but read-only — no multi-step commercial fallback writes |
 | Evidence-based business/location matching | DONE | Sole unrelated business/location is never auto-selected |
 | Offer workspace prepare/confirm actions | DONE | Plan selector, Guard ticks, authoritative total, Prepare offer, inline confirmations |
+| Composite fail-closed / no mutating fallback | DONE (R6-A) | Generic RPC exceptions never call `admin_commercial_command_v1` |
+| Recent-sign-in rollback | DONE (R6-B) | Expired 30-minute Admin privilege aborts the bootstrap subtransaction with no intermediate rows |
 | Shared commercial agreement / portal accept / durable mail / payment evidence | REUSED | No second terms or payment architecture |
 | Monthly Stripe Checkout | BLOCKED | `startTelloyaCheckout` returns `not_created`; not operational |
 | Hosted catalogue / Telloya service agreement / tax | BLOCKED | Workspace stays draft/not sendable |
@@ -22,7 +24,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 
 - Offline demonstration booking and completion. The actor is the verified staff session. The command rejects a ProfileRelaunch enquiry, a stale version, a bad time zone, and a missing session. Demonstration rows cascade when an eligible Telloya enquiry is deleted. Destructive deletion stays off in the migration.
 - After Demo Completed, Preview-only sales-context bootstrap opens or resumes a TELLOYA `onboarding_requests` row, matches or creates a provisional customer, and links a business only with matching enquiry evidence or Admin confirmation. A sole unrelated business or location is not selected automatically. Location confirmation and prepare-offer stay in the main offer workspace.
-- Source-only composite `public.telloya_sales_context_command_v1` (`20261112180000`) provides single-transaction bootstrap with rollback on unsafe ambiguity. Until that migration is applied, Admin uses an evidence-safe TypeScript fallback over the existing commercial commands.
+- Source-only composite `public.telloya_sales_context_command_v1` (`20261112180000`) provides single-transaction bootstrap with rollback on unsafe ambiguity, including expired recent Admin sign-in. When the composite is missing or any RPC fails ambiguously, Admin fails closed: the offer draft stays visible and read-only, and no separate `admin_commercial_command_v1` onboarding writes run.
 - Customer amendment requests stored against `public.commercial_subscriptions`. The Customer Portal proxy classifies `POST /api/portal/onboarding/offer/amendment` as a portal-session mutation. A pending request blocks acceptance of that offer. A revised offer is created only when the approved plan or the confirmed Guard locations change, and the monthly total is recalculated from those records. An identical selection returns `unchanged`. A receptionist or greeting request can be noted without a second subscription. Decline leaves the offer unchanged. Amendments and mail require a Telloya enquiry, a TELLOYA onboarding request, and the matching customer.
 - Offer email through `public.communications` and the existing `SEND_EMAIL` outbox. The queued subject and body use the TY enquiry reference, the approved plan, the exact GBP monthly price, the included minutes, Guard add-on cost, and one Customer Portal review link. The VC subscription selector stays only in the authenticated link path. A first send also requires an APPROVED Telloya service agreement for the stored terms reference, `tax_behaviour = NOT_APPLICABLE`, verified business authority, and no REQUESTED amendment. An already queued message still returns the same row. The queue row stays `delivery_status = NONE` with a `QUEUED` delivery event. Queued is not provider-accepted and not delivered. The subscription is locked before the communication lookup, and a unique conflict returns the same row. The TELLOYA_OFFER template is inserted as DRAFT and must be approved through `admin_settings_command_v1`. The database mail control is empty, so the function queues nothing until that row is explicitly enabled.
 - Admin progress on the enquiry page reads the recorded demonstration, offer, agreement, payment and provision states. Marking a demonstration completed moves the next step off Demo. Preparing or queueing a Telloya offer before that demonstration returns `demonstration_not_completed` from the authenticated command.
@@ -70,14 +72,16 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | Post-migration reconcile | DONE | `cb692ad1` | Manifest records 120 applied DEV migrations, head `20261112120000`. |
 | ADMIN-TY-R4 | PARTIAL | `15af6d75`, `08250127` | Offer-first workspace after Demo Completed. Sole-business/location auto-link and non-atomic reconcile required R5 correction. |
 | ADMIN-TY-R5 | DONE for Preview path; PARTIAL for hosted composite | `5ef9eb43` | Evidence-safe matching, composite source-only `20261112180000`, offer workspace Prepare/confirm, disposable PG coverage. Hosted apply of `20261112180000` remains blocked pending owner approval. Monthly Stripe Checkout remains BLOCKED. |
+| ADMIN-TY-R6 | DONE for source corrections | this tip | Removed mutating exception fallback; composite reauth rolls back bootstrap writes; disposable PG covers expired sign-in, retry, concurrency and idempotency. Hosted apply of `20261112180000` still blocked. |
 
 ## Test matrix
 
 | Behaviour | Where it is tested |
 | --- | --- |
 | Applied head is `20261112120000`; `pendingMigrations()` is only source-only `20261112180000` | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
-| Evidence-safe sales-context bootstrap, sole-business/location confirmation, revoked ownership, concurrency, prepare_offer | `apps/admin/lib/commercial/telloya-sales-context.database.test.ts` |
-| Offer workspace bootstrap, inline confirmations, Prepare offer controls | `apps/admin/app/enquiries/telloya-offer-workspace.test.tsx`, `telloya-sales-context.test.ts`, `telloya-sales-context-command.test.ts` |
+| Evidence-safe sales-context bootstrap, sole-business/location confirmation, revoked ownership, concurrency, prepare_offer, expired recent sign-in rollback/retry | `apps/admin/lib/commercial/telloya-sales-context.database.test.ts` |
+| Offer workspace bootstrap, inline confirmations, Prepare offer controls | `apps/admin/app/enquiries/telloya-offer-workspace.test.tsx`, `telloya-sales-context.test.ts` |
+| Fail-closed composite errors never trigger legacy commercial writes | `apps/admin/lib/commercial/telloya-sales-context-command.test.ts` |
 | Staff session, non-Telloya rejection, spoofed session, stale version, time zone, retention cascade | `supabase/tests/database/telloya-admin-journey.database.test.ts` |
 | Flag-off demonstration command does not call the database | `apps/admin/lib/commercial/telloya-demo-command.test.ts` |
 | Growth + 2 Guard (£98.98) to Growth + 1 Guard (£88.99), unchanged selection, greeting note, Basic to Growth, demo gate, TY-referenced mail for Basic/Growth/Pro/Custom/Guard, wrong customer, phone-source ineligible, retired agreement, unsupported tax, revoked authority, pending amendment | `apps/admin/lib/commercial/telloya-commercial-readiness.database.test.ts` |

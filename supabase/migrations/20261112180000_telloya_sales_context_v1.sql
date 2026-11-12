@@ -7,6 +7,8 @@ BEGIN;
 -- prepare a paid offer. Business and location are linked only with matching
 -- evidence or an explicit Admin confirmation. A sole unrelated business or
 -- location is never selected automatically.
+-- Nested reauth_required aborts the bootstrap subtransaction so classify or
+-- customer writes cannot commit when recent Admin sign-in is required.
 
 CREATE OR REPLACE FUNCTION admin_private.telloya_sales_context_norm_v1(p_value text)
 RETURNS text
@@ -106,6 +108,9 @@ BEGIN
           jsonb_build_object('enquiryId', enquiry.id, 'product', 'TELLOYA', 'reason', note),
           0
         );
+        IF nested->>'status' = 'reauth_required' THEN
+          RAISE EXCEPTION 'telloya_sales_context reauth' USING ERRCODE = 'P0001';
+        END IF;
         IF nested->>'status' IS DISTINCT FROM 'success' THEN
           RAISE EXCEPTION 'telloya_sales_context abort' USING ERRCODE = 'P0001';
         END IF;
@@ -142,6 +147,9 @@ BEGIN
             jsonb_build_object('enquiryId', enquiry.id, 'create', true, 'reason', note),
             version
           );
+        END IF;
+        IF nested->>'status' = 'reauth_required' THEN
+          RAISE EXCEPTION 'telloya_sales_context reauth' USING ERRCODE = 'P0001';
         END IF;
         IF nested->>'status' IS DISTINCT FROM 'success' THEN
           RAISE EXCEPTION 'telloya_sales_context abort' USING ERRCODE = 'P0001';
@@ -200,6 +208,12 @@ BEGIN
           SELECT 1 FROM public.business_memberships m
           WHERE m.customer_id = req.customer_id AND m.status IS DISTINCT FROM 'revoked'
         ) THEN
+          -- Creating a membership requires the existing Admin recent-sign-in gate.
+          -- Check before the nested write so an expired privilege never leaves
+          -- classify/customer rows from this bootstrap.
+          IF (s->>'createdAt')::timestamptz < pg_catalog.now() - interval '30 minutes' THEN
+            RAISE EXCEPTION 'telloya_sales_context reauth' USING ERRCODE = 'P0001';
+          END IF;
           nested := public.admin_commercial_command_v1(
             p_token,
             admin_private.commercial_request_uuid_v1(p_request, 'match_business'),
@@ -229,15 +243,12 @@ BEGIN
           VALUES (p_request, actor, fingerprint, result);
           RETURN result;
         END IF;
+        IF nested->>'status' = 'reauth_required' THEN
+          RAISE EXCEPTION 'telloya_sales_context reauth' USING ERRCODE = 'P0001';
+        END IF;
         IF nested->>'status' IS DISTINCT FROM 'success' THEN
           IF nested->>'reason' = 'revoked' THEN
-            result := jsonb_build_object('status', 'denied', 'reason', 'revoked', 'exception', 'revoked_membership');
-            INSERT INTO admin_private.commercial_command_receipts(request_id, actor_id, fingerprint, response)
-            VALUES (p_request, actor, fingerprint, result);
-            RETURN result;
-          END IF;
-          IF nested->>'status' = 'reauth_required' THEN
-            RETURN nested;
+            RAISE EXCEPTION 'telloya_sales_context revoked' USING ERRCODE = 'P0001';
           END IF;
           RAISE EXCEPTION 'telloya_sales_context abort' USING ERRCODE = 'P0001';
         END IF;
@@ -267,6 +278,9 @@ BEGIN
             jsonb_build_object('enquiryId', enquiry.id, 'locationIds', jsonb_build_array(matched_location), 'reason', note),
             version
           );
+          IF nested->>'status' = 'reauth_required' THEN
+            RAISE EXCEPTION 'telloya_sales_context reauth' USING ERRCODE = 'P0001';
+          END IF;
           IF nested->>'status' IS DISTINCT FROM 'success' THEN
             RAISE EXCEPTION 'telloya_sales_context abort' USING ERRCODE = 'P0001';
           END IF;
@@ -295,6 +309,12 @@ BEGIN
       RETURN result;
     EXCEPTION
       WHEN SQLSTATE 'P0001' THEN
+        IF SQLERRM = 'telloya_sales_context reauth' THEN
+          RETURN jsonb_build_object('status', 'reauth_required');
+        END IF;
+        IF SQLERRM = 'telloya_sales_context revoked' THEN
+          RETURN jsonb_build_object('status', 'denied', 'reason', 'revoked', 'exception', 'revoked_membership');
+        END IF;
         IF SQLERRM <> 'telloya_sales_context abort' THEN RAISE; END IF;
         RETURN jsonb_build_object(
           'status', 'conflict',

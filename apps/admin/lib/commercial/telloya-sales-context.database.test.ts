@@ -338,6 +338,55 @@ describe("Telloya sales-context composite", () => {
     expect((await rows<{ id: string }>("select id from public.communications where channel = 'EMAIL' and lifecycle = 'QUEUED'")).length).toBe(0)
   })
 
+  it("rolls back bootstrap when recent Admin sign-in has expired, then succeeds after renew", async () => {
+    const email = "sales.context.reauth@example.test"
+    const enquiryId = await telloyaEnquiry(email, "Reauth Yard")
+    await db.query(
+      `update public.admin_sessions
+       set created_at = now() - interval '31 minutes', last_seen_at = now(), expires_at = now() + interval '12 hours'
+       where token_hash = $1`,
+      [token],
+    )
+    const aged = await rpc<Record<string, unknown>>("telloya_sales_context_command_v1", [
+      token, randomUUID(), "bootstrap", { enquiryId },
+    ])
+    expect(aged).toEqual({ status: "reauth_required" })
+    expect((await rows<{ id: string }>(
+      `select id from public.onboarding_requests where enquiry_id = $1`,
+      [enquiryId],
+    ))).toEqual([])
+    expect((await rows<{ id: string }>(
+      `select id from public.customers where lower(email) = lower($1)`,
+      [email],
+    ))).toEqual([])
+    expect((await rows<{ id: string }>(
+      `select id from public.businesses where display_name = 'Reauth Yard'`,
+    ))).toEqual([])
+
+    await db.query(
+      `update public.admin_sessions set created_at = now(), last_seen_at = now(), expires_at = now() + interval '12 hours' where token_hash = $1`,
+      [token],
+    )
+    const retryKey = randomUUID()
+    const renewed = await rpc<Record<string, unknown>>("telloya_sales_context_command_v1", [
+      token, retryKey, "bootstrap", { enquiryId },
+    ])
+    expect(renewed.status).toBe("success")
+    expect(renewed.exception).toBe("confirm_operating_location")
+    expect((await rows<{ id: string }>(
+      `select id from public.onboarding_requests where enquiry_id = $1 and state not in ('CLOSED','DECLINED')`,
+      [enquiryId],
+    ))).toHaveLength(1)
+    const replay = await rpc<Record<string, unknown>>("telloya_sales_context_command_v1", [
+      token, retryKey, "bootstrap", { enquiryId },
+    ])
+    expect(replay).toEqual(renewed)
+    expect((await rows<{ id: string }>(
+      `select id from public.customers where lower(email) = lower($1)`,
+      [email],
+    ))).toHaveLength(1)
+  })
+
   it("refuses bootstrap before the demonstration is completed", async () => {
     const payload = {
       fullName: "Alex Owner",

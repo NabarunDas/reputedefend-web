@@ -7,7 +7,6 @@ import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
 import { telloyaSalesBootstrapAllowed } from "./telloya-sales-context"
-import { reconcileTelloyaSalesContextFallback } from "./telloya-sales-context-fallback"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -15,6 +14,9 @@ const reply = (message: string, status: number, extra: Record<string, unknown> =
 const OPERATIONS = new Set(["bootstrap", "confirm_business", "confirm_location", "create_location"])
 
 export type TelloyaSalesContextOperation = "bootstrap" | "confirm_business" | "confirm_location" | "create_location"
+
+const UNAVAILABLE =
+  "Telloya sales-context is unavailable on this deployment until the source-only composite is applied. The offer workspace stays read-only."
 
 export function parseTelloyaSalesContextCommand(body: unknown): {
   enquiryId: string
@@ -122,10 +124,9 @@ export async function reconcileTelloyaSalesContext(input: {
     })
     return mapResult(result)
   } catch {
-    if (operation === "bootstrap") {
-      return reconcileTelloyaSalesContextFallback({ token: input.token, enquiryId: input.enquiryId })
-    }
-    return { ok: false, status: 503, message: "Telloya sales-context is unavailable on this deployment until the source-only migration is applied." }
+    // Fail closed. Never fall back to multi-step commercial writes: network,
+    // auth, SQL and unknown commit outcomes all look like the same storage error.
+    return { ok: false, status: 503, message: UNAVAILABLE }
   }
 }
 

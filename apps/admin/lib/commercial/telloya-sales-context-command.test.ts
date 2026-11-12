@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock("@/lib/auth/backend", async original => ({ ...await original<typeof import("@/lib/auth/backend")>(), backend: () => mocks }))
 import { POST } from "@/app/api/enquiries/telloya-sales-context/route"
 import { sessionCookie } from "@/lib/auth/config"
+import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "@/lib/admin/reauth-copy"
 import { parseTelloyaSalesContextCommand, reconcileTelloyaSalesContext } from "./telloya-sales-context-command"
 
 const origin = "https://admin.profilerelaunch.com"
@@ -67,98 +68,29 @@ describe("Telloya sales-context command", () => {
     }))
   })
 
-  it("falls back to evidence-safe orchestration when the composite migration is unapplied", async () => {
-    mocks.rpc
-      .mockRejectedValueOnce(new Error("function telloya_sales_context_command_v1 does not exist"))
-      .mockResolvedValueOnce({ status: "ready", demo_status: "COMPLETED" })
-      .mockResolvedValueOnce({ payload: { businessName: "Owner Yard", websiteUrl: "", locations: "London", country: "United Kingdom" } })
-      .mockResolvedValueOnce({
-        supported: true,
-        productHint: "TELLOYA",
-        step: "classify",
-        termsConfigured: false,
-        invitationReady: false,
-        invitationSent: false,
-        emailVerified: false,
-        contactVerified: false,
-        membership: null,
-        outstanding: [],
-        nextAction: null,
-        request: null,
-        customer: null,
-        candidates: [],
-        businesses: [],
-        locations: [],
-        history: [],
-        approvedPlans: [],
-      })
-      .mockResolvedValueOnce({ status: "success", version: 1 })
-      .mockResolvedValueOnce({
-        supported: true,
-        productHint: "TELLOYA",
-        step: "customer",
-        termsConfigured: false,
-        invitationReady: false,
-        invitationSent: false,
-        emailVerified: false,
-        contactVerified: false,
-        membership: null,
-        outstanding: [],
-        nextAction: null,
-        request: {
-          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-          product: "TELLOYA",
-          state: "RECEIVED",
-          version: 1,
-          customerId: null,
-          businessId: null,
-          declineReason: null,
-          subscriptionId: null,
-        },
-        customer: null,
-        candidates: [],
-        businesses: [],
-        locations: [],
-        history: [],
-        approvedPlans: [],
-      })
-      .mockResolvedValueOnce({ status: "success", version: 2 })
-      .mockResolvedValueOnce({
-        supported: true,
-        productHint: "TELLOYA",
-        step: "business",
-        termsConfigured: false,
-        invitationReady: false,
-        invitationSent: false,
-        emailVerified: false,
-        contactVerified: false,
-        membership: null,
-        outstanding: [],
-        nextAction: null,
-        request: {
-          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-          product: "TELLOYA",
-          state: "MAILBOX_REQUIRED",
-          version: 2,
-          customerId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-          businessId: null,
-          declineReason: null,
-          subscriptionId: null,
-        },
-        customer: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Alex", emailVerified: false, version: 1 },
-        candidates: [],
-        businesses: [{ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Different Yard", membership: "pending", membershipVersion: 1 }],
-        locations: [],
-        history: [],
-        approvedPlans: [],
-      })
-
+  it.each([
+    ["missing function", new Error("function telloya_sales_context_command_v1 does not exist")],
+    ["network timeout", new Error("Admin authentication storage unavailable")],
+    ["PostgREST database error", new Error("Admin authentication storage unavailable")],
+    ["lost RPC response", new Error("Admin authentication storage unavailable")],
+  ])("fails closed on %s without legacy commercial writes", async (_label, error) => {
+    mocks.rpc.mockRejectedValueOnce(error)
     const result = await reconcileTelloyaSalesContext({ token, enquiryId, idempotencyKey: key })
-    expect(result.ok).toBe(true)
-    expect(result.exception).toBe("confirm_business_authority")
-    const commercial = mocks.rpc.mock.calls.filter(call => call[0] === "admin_commercial_command_v1").map(call => call[1].p_operation)
-    expect(commercial).toEqual(["classify", "match_customer"])
-    expect(commercial).not.toContain("match_business")
+    expect(result).toEqual({
+      ok: false,
+      status: 503,
+      message: "Telloya sales-context is unavailable on this deployment until the source-only composite is applied. The offer workspace stays read-only.",
+    })
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    expect(mocks.rpc).toHaveBeenCalledWith("telloya_sales_context_command_v1", expect.any(Object))
+    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_commercial_command_v1")).toBe(false)
+  })
+
+  it("maps reauth_required from the composite without commercial fallback writes", async () => {
+    mocks.rpc.mockResolvedValueOnce({ status: "reauth_required" })
+    const result = await reconcileTelloyaSalesContext({ token, enquiryId, idempotencyKey: key })
+    expect(result).toEqual({ ok: false, status: 403, message: ADMIN_RECENT_SIGN_IN_MESSAGE })
+    expect(mocks.rpc.mock.calls.map(call => call[0])).toEqual(["telloya_sales_context_command_v1"])
   })
 
   it("rejects a forged origin on the HTTP command", async () => {

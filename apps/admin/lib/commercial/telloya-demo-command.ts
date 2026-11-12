@@ -6,6 +6,7 @@ import { adminCommandOriginError } from "../auth/command-origin"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { telloyaDemoWriteAvailable } from "./telloya-demo-status"
+import { reconcileTelloyaSalesContextAfterDemo } from "./telloya-sales-context-command"
 
 const STATUSES = new Set(["NOT_BOOKED", "BOOKED", "COMPLETED"])
 
@@ -78,6 +79,9 @@ export async function telloyaDemoCommand(request: NextRequest) {
     switch (result.status) {
       case "recorded":
       case "replay":
+        if (args.p_status === "COMPLETED") {
+          await reconcileTelloyaSalesContextAfterDemo({ token, enquiryId: args.p_enquiry_id })
+        }
         return reply("Saved. The demonstration record has been updated.", 200)
       case "unauthorized":
         return reply("Your session has ended. Please sign in again.", 401)

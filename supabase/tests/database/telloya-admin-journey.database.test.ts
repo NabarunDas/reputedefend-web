@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PGlite } from "@electric-sql/pglite"
 import { applyChain, preparePlatform } from "../../../apps/admin/lib/recovery/harness"
-import { migrationChain } from "../../../apps/admin/lib/recovery/manifest"
+import { findMigration, migrationHead } from "../../../apps/admin/lib/recovery/manifest"
 
 const db = new PGlite()
 const admin = "11111111-1111-4111-8111-111111111111"
@@ -63,10 +63,15 @@ describe("Telloya admin journey migration", () => {
     expect(source).toContain("ON DELETE CASCADE")
     expect(source).not.toContain("telloya_admin_offers")
     expect(source).not.toContain("p_actor_id")
-    expect(migrationChain.at(-1)?.filename).toBe(migrationName)
-    expect(migrationChain.at(-1)?.appliedToDev).toBe(true)
-    expect(migrationChain.at(-1)?.containsDataChange).toBe(true)
-    expect(migrationChain.at(-1)?.safeToReplay).toBe(false)
+    expect(findMigration(migrationName)).toMatchObject({
+      appliedToDev: true,
+      containsDataChange: true,
+      safeToReplay: false,
+    })
+    expect(migrationHead.filename).toBe("20261112180000_telloya_sales_context_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.containsDataChange).toBe(false)
+    expect(migrationHead.safeToReplay).toBe(false)
     const privileges = await rows<{ role: string; allowed: boolean }>(
       `select role, has_function_privilege(role, '${transitionSignature}', 'EXECUTE') as allowed
        from (values ('anon'), ('authenticated'), ('service_role')) as roles(role)`,

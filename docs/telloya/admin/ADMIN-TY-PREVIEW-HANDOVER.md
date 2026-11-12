@@ -1,6 +1,6 @@
 # ADMIN-TY preview handover
 
-**Status:** ADMIN-TY-R8 applied on DEV (123 migrations, head `20261112223000`). `pendingMigrations()` is empty. Repository and applied head are `20261112223000_telloya_approve_send_offer_v1.sql` (45,006 characters; `appliedToDev: true`; `containsDataChange: true`; `safeToReplay: false`). Verified post-apply: receipts table RLS enabled; approve/send RPCs service-role-only; `TELLOYA_OFFER` remains DRAFT at `record_version` 2; 0 approved templates; 0 mail-control enabled; 0 commercial subscriptions; 0 Telloya offer communications. Customer-facing send stays closed and R8-D gated. Tip SHA pending. Branch-scoped Preview keeps `TELLOYA_ADMIN_JOURNEY_ENABLED=true` for this PR only. This is not authorisation to launch, collect payment, send email, place a call, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
+**Status:** ADMIN-TY-R8 applied on DEV (123 migrations, head `20261112223000`). `pendingMigrations()` is empty. Repository and applied head are `20261112223000_telloya_approve_send_offer_v1.sql` (45,006 characters; `appliedToDev: true`; `containsDataChange: true`; `safeToReplay: false`). Verified post-apply: receipts table RLS enabled; approve/send RPCs service-role-only; `TELLOYA_OFFER` remains DRAFT at `record_version` 2; 0 approved templates; 0 mail-control enabled; 0 commercial subscriptions; 0 Telloya offer communications. Customer-facing send stays closed and R8-D gated. Tip SHA . Branch-scoped Preview keeps `TELLOYA_ADMIN_JOURNEY_ENABLED=true` for this PR only. This is not authorisation to launch, collect payment, send email, place a call, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
 **Baseline:** `origin/develop` `c3ba97a19492eb2b7ae27ec906f77e740ef12cae`. Plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`.
 
 ## Phase labels (R8)
@@ -89,7 +89,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | ADMIN-TY-R8-A/B/C | DONE in source | `82cef2f1350bcb9ed530e60e4fc385f25df8585e` | Approve & Send, prepare-from-draft, personalised email, preview, delivery status, progress stages. R8-D enablement remains blocked. |
 | ADMIN-TY-R8-R1 | DONE in source | `06f0e48ee48d2419b38086cd574c931b87a84797` | Draft-estimate preview without catalogue/`CUSTOMER_ORIGIN`; advisory-lock receipt race fix; composer V1 contract; sandboxed HTML preview UI. |
 | ADMIN-TY-R8-R2 | DONE in source | `da93bfa9b77594ea5d5a797ce947d98ac1ed8787` | Exact Basic/Growth/Pro quotation match; plain text without composer id; approved template body bound to `TELLOYA_OFFER_COMPOSER_CONTRACT_V1`. |
-| Post-R8 migration reconcile | DONE | Tip SHA pending | Manifest records 123 applied DEV migrations, head `20261112223000`; `pendingMigrations()` empty. Send remains blocked; R8-D gated. |
+| Post-R8 migration reconcile | DONE |  | Manifest records 123 applied DEV migrations, head `20261112223000`; `pendingMigrations()` empty. Send remains blocked; R8-D gated. |
 
 ## Test matrix
 

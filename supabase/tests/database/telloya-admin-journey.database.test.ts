@@ -57,14 +57,16 @@ afterAll(async () => {
 })
 
 describe("Telloya admin journey migration", () => {
-  it("is source-only and closed to customer roles", async () => {
+  it("is recorded as applied on DEV and closed to customer roles", async () => {
     const source = readFileSync(new URL(`../../../supabase/migrations/${migrationName}`, import.meta.url), "utf8")
     expect(source).toContain("Do not apply this file to DEV or Production")
     expect(source).toContain("ON DELETE CASCADE")
     expect(source).not.toContain("telloya_admin_offers")
     expect(source).not.toContain("p_actor_id")
     expect(migrationChain.at(-1)?.filename).toBe(migrationName)
-    expect(migrationChain.at(-1)?.appliedToDev).toBe(false)
+    expect(migrationChain.at(-1)?.appliedToDev).toBe(true)
+    expect(migrationChain.at(-1)?.containsDataChange).toBe(true)
+    expect(migrationChain.at(-1)?.safeToReplay).toBe(false)
     const privileges = await rows<{ role: string; allowed: boolean }>(
       `select role, has_function_privilege(role, '${transitionSignature}', 'EXECUTE') as allowed
        from (values ('anon'), ('authenticated'), ('service_role')) as roles(role)`,

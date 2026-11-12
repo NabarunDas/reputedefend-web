@@ -6,7 +6,13 @@ import { adminCommandOriginError } from "../auth/command-origin"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { telloyaSalesBootstrapAllowed } from "./telloya-sales-context"
-import { parseTelloyaDraftPlanTier, type TelloyaDraftPlanTier } from "./telloya-offer-draft"
+import {
+  CUSTOM_AMOUNT_MAX_PENCE,
+  CUSTOM_AMOUNT_MIN_PENCE,
+  CUSTOM_INCLUDED_MINUTES_MAX,
+  parseTelloyaDraftPlanTier,
+  type TelloyaDraftPlanTier,
+} from "./telloya-offer-draft"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
@@ -18,6 +24,9 @@ export function parseTelloyaOfferDraftCommand(body: unknown): {
   enquiryId: string
   expectedVersion: number
   planTier: TelloyaDraftPlanTier | null
+  customAmountPence: number | null
+  customIncludedMinutes: number | null
+  customRequirements: string
   proposedGuardQuantity: number
   guardLocationIds: string[]
   overageOptIn: boolean
@@ -46,10 +55,42 @@ export function parseTelloyaOfferDraftCommand(body: unknown): {
   if (overageCapPence === undefined) return null
   const notes = typeof record.notes === "string" ? record.notes : ""
   if (notes.length > 1000) return null
+
+  let customAmountPence: number | null = null
+  let customIncludedMinutes: number | null = null
+  let customRequirements = ""
+  if (planTier === "custom") {
+    if (!Number.isInteger(record.customAmountPence)
+      || (record.customAmountPence as number) < CUSTOM_AMOUNT_MIN_PENCE
+      || (record.customAmountPence as number) > CUSTOM_AMOUNT_MAX_PENCE) {
+      return null
+    }
+    customAmountPence = record.customAmountPence as number
+    if (record.customIncludedMinutes !== null && record.customIncludedMinutes !== undefined && record.customIncludedMinutes !== "") {
+      if (!Number.isInteger(record.customIncludedMinutes)
+        || (record.customIncludedMinutes as number) < 1
+        || (record.customIncludedMinutes as number) > CUSTOM_INCLUDED_MINUTES_MAX) {
+        return null
+      }
+      customIncludedMinutes = record.customIncludedMinutes as number
+    }
+    customRequirements = typeof record.customRequirements === "string" ? record.customRequirements : ""
+    if (customRequirements.length > 1000) return null
+  } else if (
+    (record.customAmountPence !== null && record.customAmountPence !== undefined && record.customAmountPence !== "")
+    || (record.customIncludedMinutes !== null && record.customIncludedMinutes !== undefined && record.customIncludedMinutes !== "")
+    || (typeof record.customRequirements === "string" && record.customRequirements.length > 0)
+  ) {
+    return null
+  }
+
   return {
     enquiryId: record.enquiryId,
     expectedVersion: record.expectedVersion as number,
     planTier,
+    customAmountPence,
+    customIncludedMinutes,
+    customRequirements,
     proposedGuardQuantity: record.proposedGuardQuantity as number,
     guardLocationIds,
     overageOptIn,
@@ -105,6 +146,9 @@ export async function saveTelloyaOfferDraft(input: {
   enquiryId: string
   expectedVersion: number
   planTier: TelloyaDraftPlanTier | null
+  customAmountPence: number | null
+  customIncludedMinutes: number | null
+  customRequirements: string
   proposedGuardQuantity: number
   guardLocationIds: string[]
   overageOptIn: boolean
@@ -124,6 +168,9 @@ export async function saveTelloyaOfferDraft(input: {
         enquiryId: input.enquiryId,
         expectedVersion: input.expectedVersion,
         planTier: input.planTier,
+        customAmountPence: input.customAmountPence,
+        customIncludedMinutes: input.customIncludedMinutes,
+        customRequirements: input.customRequirements,
         proposedGuardQuantity: input.proposedGuardQuantity,
         guardLocationIds: input.guardLocationIds,
         overageOptIn: input.overageOptIn,

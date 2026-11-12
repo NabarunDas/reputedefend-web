@@ -8,8 +8,15 @@ import { formatGbpPence, poundsToPence, telloyaCataloguePence, telloyaGuardLocat
 
 export type TelloyaDraftPlanTier = TelloyaPlanTier
 
+export const CUSTOM_AMOUNT_MIN_PENCE = 1
+export const CUSTOM_AMOUNT_MAX_PENCE = 10_000_000
+export const CUSTOM_INCLUDED_MINUTES_MAX = 1_000_000
+
 export type TelloyaOfferDraftSelection = {
   planTier: TelloyaDraftPlanTier | null
+  customAmountPence: number | null
+  customIncludedMinutes: number | null
+  customRequirements: string
   proposedGuardQuantity: number
   guardLocationIds: string[]
   overageOptIn: boolean
@@ -28,6 +35,7 @@ export type TelloyaDraftEstimate = {
   guardAmountPence: number
   monthlyTotalPence: number | null
   quotationRequired: boolean
+  customApprovalRequired: boolean
   overageOptIn: boolean
   overageRatePence: number
   overageCapPence: number | null
@@ -48,9 +56,31 @@ export function parseTelloyaDraftPlanTier(value: unknown): TelloyaDraftPlanTier 
   return PLAN_TIERS.has(tier as TelloyaDraftPlanTier) ? tier as TelloyaDraftPlanTier : null
 }
 
+export function parseCustomAmountGbpInput(raw: string): number | null {
+  const trimmed = raw.trim()
+  if (trimmed === "") return null
+  const match = trimmed.match(/^(\d+)(?:\.(\d{1,2}))?$/)
+  if (!match) return null
+  const pounds = Number(match[1])
+  const pencePart = match[2] ? Number(match[2].padEnd(2, "0")) : 0
+  if (!Number.isInteger(pounds) || !Number.isInteger(pencePart) || pounds < 0 || pencePart < 0) return null
+  if (pounds > Math.floor(CUSTOM_AMOUNT_MAX_PENCE / 100)) return null
+  const pence = pounds * 100 + pencePart
+  if (!Number.isInteger(pence) || pence < CUSTOM_AMOUNT_MIN_PENCE || pence > CUSTOM_AMOUNT_MAX_PENCE) return null
+  return pence
+}
+
+export function formatCustomAmountGbpInput(pence: number | null): string {
+  if (pence == null || !Number.isInteger(pence) || pence <= 0) return ""
+  return (pence / 100).toFixed(2)
+}
+
 export function emptyTelloyaOfferDraft(prefillTier: string | null | undefined = null): TelloyaOfferDraftSelection {
   return {
     planTier: parseTelloyaDraftPlanTier(prefillTier),
+    customAmountPence: null,
+    customIncludedMinutes: null,
+    customRequirements: "",
     proposedGuardQuantity: 0,
     guardLocationIds: [],
     overageOptIn: false,
@@ -60,8 +90,47 @@ export function emptyTelloyaOfferDraft(prefillTier: string | null | undefined = 
   }
 }
 
+export function draftSelectionSnapshot(selection: TelloyaOfferDraftSelection): Omit<TelloyaOfferDraftSelection, "version"> {
+  return {
+    planTier: selection.planTier,
+    customAmountPence: selection.planTier === "custom" ? selection.customAmountPence : null,
+    customIncludedMinutes: selection.planTier === "custom" ? selection.customIncludedMinutes : null,
+    customRequirements: selection.planTier === "custom" ? selection.customRequirements : "",
+    proposedGuardQuantity: selection.proposedGuardQuantity,
+    guardLocationIds: [...selection.guardLocationIds].sort(),
+    overageOptIn: selection.overageOptIn,
+    overageCapPence: selection.overageOptIn ? selection.overageCapPence : null,
+    notes: selection.notes,
+  }
+}
+
+export function draftSelectionsEqual(left: TelloyaOfferDraftSelection, right: TelloyaOfferDraftSelection): boolean {
+  const a = draftSelectionSnapshot(left)
+  const b = draftSelectionSnapshot(right)
+  return a.planTier === b.planTier
+    && a.customAmountPence === b.customAmountPence
+    && a.customIncludedMinutes === b.customIncludedMinutes
+    && a.customRequirements === b.customRequirements
+    && a.proposedGuardQuantity === b.proposedGuardQuantity
+    && a.overageOptIn === b.overageOptIn
+    && a.overageCapPence === b.overageCapPence
+    && a.notes === b.notes
+    && a.guardLocationIds.length === b.guardLocationIds.length
+    && a.guardLocationIds.every((id, index) => id === b.guardLocationIds[index])
+}
+
+export function draftSaveReady(selection: TelloyaOfferDraftSelection): boolean {
+  if (!selection.planTier) return false
+  if (selection.planTier !== "custom") return true
+  return Number.isInteger(selection.customAmountPence)
+    && (selection.customAmountPence as number) >= CUSTOM_AMOUNT_MIN_PENCE
+    && (selection.customAmountPence as number) <= CUSTOM_AMOUNT_MAX_PENCE
+}
+
 export function estimateTelloyaDraft(input: {
   planTier: TelloyaDraftPlanTier | null
+  customAmountPence?: number | null
+  customIncludedMinutes?: number | null
   proposedGuardQuantity: number
   overageOptIn?: boolean
   overageCapPence?: number | null
@@ -75,18 +144,35 @@ export function estimateTelloyaDraft(input: {
     : null
   const catalogue = input.planTier ? telloyaCataloguePence(input.planTier) : null
   const plan = input.planTier ? telloyaPlans.find(item => item.tier === input.planTier) ?? null : null
-  const quotationRequired = input.planTier === "custom" || catalogue?.amountPence === null
-  const planAmountPence = quotationRequired ? null : catalogue?.amountPence ?? null
+  const customAmountValid = input.planTier === "custom"
+    && Number.isInteger(input.customAmountPence)
+    && (input.customAmountPence as number) >= CUSTOM_AMOUNT_MIN_PENCE
+    && (input.customAmountPence as number) <= CUSTOM_AMOUNT_MAX_PENCE
+  const customMinutes = input.planTier === "custom"
+    && Number.isInteger(input.customIncludedMinutes)
+    && (input.customIncludedMinutes as number) >= 1
+    && (input.customIncludedMinutes as number) <= CUSTOM_INCLUDED_MINUTES_MAX
+    ? input.customIncludedMinutes as number
+    : null
+  const customApprovalRequired = input.planTier === "custom"
+  const quotationRequired = input.planTier === "custom" && !customAmountValid
+  const planAmountPence = input.planTier === "custom"
+    ? (customAmountValid ? input.customAmountPence as number : null)
+    : catalogue?.amountPence ?? null
+  const includedMinutes = input.planTier === "custom"
+    ? customMinutes
+    : catalogue?.includedMinutes ?? null
   const guardAmountPence = quantity * telloyaGuardLocationPence
   const monthlyTotalPence = planAmountPence === null ? null : planAmountPence + guardAmountPence
   const summaryLines: string[] = []
   if (!input.planTier) {
     summaryLines.push("Choose a Telloya plan to calculate the draft monthly total.")
   } else if (quotationRequired) {
-    summaryLines.push(`${plan?.name ?? "Custom"} requires a separate quotation.`)
+    summaryLines.push("Enter a Custom monthly amount to calculate the draft total.")
   } else if (planAmountPence !== null) {
     summaryLines.push(`${plan?.name ?? "Plan"} ${formatGbpPence(planAmountPence)} / month`)
-    if (catalogue?.includedMinutes != null) summaryLines.push(`${catalogue.includedMinutes} included minutes`)
+    if (includedMinutes != null) summaryLines.push(`${includedMinutes} included minutes`)
+    else if (customApprovalRequired) summaryLines.push("Included minutes still to confirm for Custom")
   }
   if (quantity > 0) {
     summaryLines.push(`Relaunch Guard × ${quantity} at ${formatGbpPence(telloyaGuardLocationPence)} = ${formatGbpPence(guardAmountPence)}`)
@@ -94,6 +180,9 @@ export function estimateTelloyaDraft(input: {
     summaryLines.push("Relaunch Guard off")
   }
   summaryLines.push("Standard setup included. One operating location and one number on standard tiers.")
+  if (customApprovalRequired && customAmountValid) {
+    summaryLines.push("Custom draft is a proposed price only. Approval is required before an official offer can be issued.")
+  }
   let overageLabel: string | null = null
   if (overageOptIn) {
     overageLabel = overageCapPence
@@ -107,19 +196,20 @@ export function estimateTelloyaDraft(input: {
     planTier: input.planTier,
     planName: plan?.name ?? null,
     planAmountPence,
-    includedMinutes: catalogue?.includedMinutes ?? null,
+    includedMinutes,
     proposedGuardQuantity: quantity,
     guardUnitPence: telloyaGuardLocationPence,
     guardAmountPence,
     monthlyTotalPence,
     quotationRequired,
+    customApprovalRequired,
     overageOptIn,
     overageRatePence: telloyaOveragePence,
     overageCapPence,
     overageLabel,
     summaryLines,
     totalLabel: monthlyTotalPence === null
-      ? (quotationRequired ? "Quotation required" : "Choose a plan")
+      ? (quotationRequired ? "Enter Custom amount" : "Choose a plan")
       : `${formatGbpPence(monthlyTotalPence)} / month`,
   }
 }
@@ -142,11 +232,29 @@ export function draftChecklist(input: {
   ]
 }
 
-export function mapDraftTierToApprovedPlan<T extends { tierCode: string | null; offerable: boolean }>(
+export function mapDraftTierToApprovedPlan<T extends {
+  tierCode: string | null
+  offerable: boolean
+  amountMinor?: number | null
+  includedMinutes?: number | null
+}>(
   plans: T[],
   planTier: TelloyaDraftPlanTier | null,
+  options: { customAmountPence?: number | null; customIncludedMinutes?: number | null } = {},
 ): T | null {
-  if (!planTier || planTier === "custom") return null
+  if (!planTier) return null
+  if (planTier === "custom") {
+    const amount = options.customAmountPence
+    const minutes = options.customIncludedMinutes
+    if (!Number.isInteger(amount) || (amount as number) <= 0) return null
+    if (!Number.isInteger(minutes) || (minutes as number) < 1) return null
+    return plans.find(plan =>
+      plan.offerable
+      && (plan.tierCode ?? "").toUpperCase() === "CUSTOM"
+      && plan.amountMinor === amount
+      && plan.includedMinutes === minutes
+    ) ?? null
+  }
   const wanted = planTier.toUpperCase()
   return plans.find(plan => plan.offerable && (plan.tierCode ?? "").toUpperCase() === wanted) ?? null
 }
@@ -175,4 +283,6 @@ export const telloyaDraftPricingFacts = {
   overageRatePence: telloyaOveragePence,
   overageRequiresOptIn: overagePolicy.requiresOptIn,
   overageRequiresCap: overagePolicy.requiresSpendingCap,
+  customAmountMaxPence: CUSTOM_AMOUNT_MAX_PENCE,
+  customIncludedMinutesMax: CUSTOM_INCLUDED_MINUTES_MAX,
 } as const

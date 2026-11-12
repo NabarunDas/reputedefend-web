@@ -8,11 +8,17 @@ BEGIN;
 -- public.admin_commercial_command_v1('prepare_offer').
 -- overage_opt_in means Admin proposes overage in the draft offer; it is not
 -- customer consent or usage authorisation.
+-- custom_amount_minor is an internal proposed Custom price only. It is never an
+-- approved plan_versions row. Issuing a Custom offer still requires the existing
+-- ProfileRelaunch commercial approval path to create a matching approved version.
 
 CREATE TABLE admin_private.telloya_offer_drafts (
   onboarding_request_id uuid PRIMARY KEY REFERENCES public.onboarding_requests(id) ON DELETE CASCADE,
   enquiry_id uuid NOT NULL REFERENCES public.enquiries(id) ON DELETE CASCADE,
   plan_tier text NULL CHECK (plan_tier IS NULL OR plan_tier IN ('basic', 'growth', 'pro', 'custom')),
+  custom_amount_minor integer NULL CHECK (custom_amount_minor IS NULL OR (custom_amount_minor > 0 AND custom_amount_minor <= 10000000)),
+  custom_included_minutes integer NULL CHECK (custom_included_minutes IS NULL OR (custom_included_minutes >= 1 AND custom_included_minutes <= 1000000)),
+  custom_requirements text NOT NULL DEFAULT '' CHECK (char_length(custom_requirements) <= 1000),
   proposed_guard_quantity integer NOT NULL DEFAULT 0
     CHECK (proposed_guard_quantity >= 0 AND proposed_guard_quantity <= 50),
   guard_location_ids uuid[] NOT NULL DEFAULT '{}'::uuid[],
@@ -27,7 +33,20 @@ CREATE TABLE admin_private.telloya_offer_drafts (
     (overage_opt_in = false AND overage_cap_minor IS NULL)
     OR (overage_opt_in = true)
   ),
-  CONSTRAINT telloya_offer_drafts_guard_ids_bounded CHECK (cardinality(guard_location_ids) <= 20)
+  CONSTRAINT telloya_offer_drafts_guard_ids_bounded CHECK (cardinality(guard_location_ids) <= 20),
+  CONSTRAINT telloya_offer_drafts_custom_amount_consistency CHECK (
+    (
+      plan_tier IS DISTINCT FROM 'custom'
+      AND custom_amount_minor IS NULL
+      AND custom_included_minutes IS NULL
+      AND custom_requirements = ''
+    )
+    OR (
+      plan_tier = 'custom'
+      AND custom_amount_minor IS NOT NULL
+      AND custom_amount_minor > 0
+    )
+  )
 );
 
 CREATE UNIQUE INDEX telloya_offer_drafts_enquiry_uidx
@@ -107,6 +126,9 @@ BEGIN
     'version', coalesce(draft.record_version, 0),
     'draft', CASE WHEN draft.onboarding_request_id IS NULL THEN NULL ELSE jsonb_build_object(
       'planTier', draft.plan_tier,
+      'customAmountPence', draft.custom_amount_minor,
+      'customIncludedMinutes', draft.custom_included_minutes,
+      'customRequirements', draft.custom_requirements,
       'proposedGuardQuantity', draft.proposed_guard_quantity,
       'guardLocationIds', to_jsonb(draft.guard_location_ids),
       'overageOptIn', draft.overage_opt_in,
@@ -139,6 +161,9 @@ DECLARE
   draft admin_private.telloya_offer_drafts;
   expected integer;
   selected_plan_tier text;
+  selected_custom_amount integer := NULL;
+  selected_custom_minutes integer := NULL;
+  selected_custom_requirements text := '';
   selected_proposed_guard integer;
   guard_ids uuid[] := '{}'::uuid[];
   selected_overage_opt_in boolean := false;
@@ -220,6 +245,40 @@ BEGIN
     END IF;
   END IF;
 
+  IF selected_plan_tier = 'custom' THEN
+    IF p_payload ? 'customAmountPence' AND jsonb_typeof(p_payload->'customAmountPence') <> 'null' THEN
+      IF jsonb_typeof(p_payload->'customAmountPence') IS DISTINCT FROM 'number'
+        OR (p_payload->>'customAmountPence') !~ '^[0-9]+$'
+      THEN
+        RETURN jsonb_build_object('status', 'invalid', 'reason', 'custom_amount');
+      END IF;
+      selected_custom_amount := (p_payload->>'customAmountPence')::integer;
+      IF selected_custom_amount IS NULL OR selected_custom_amount <= 0 OR selected_custom_amount > 10000000 THEN
+        RETURN jsonb_build_object('status', 'invalid', 'reason', 'custom_amount');
+      END IF;
+    ELSE
+      RETURN jsonb_build_object('status', 'invalid', 'reason', 'custom_amount');
+    END IF;
+    IF p_payload ? 'customIncludedMinutes' AND jsonb_typeof(p_payload->'customIncludedMinutes') <> 'null' THEN
+      IF jsonb_typeof(p_payload->'customIncludedMinutes') IS DISTINCT FROM 'number'
+        OR (p_payload->>'customIncludedMinutes') !~ '^[0-9]+$'
+      THEN
+        RETURN jsonb_build_object('status', 'invalid', 'reason', 'custom_minutes');
+      END IF;
+      selected_custom_minutes := (p_payload->>'customIncludedMinutes')::integer;
+      IF selected_custom_minutes IS NULL OR selected_custom_minutes < 1 OR selected_custom_minutes > 1000000 THEN
+        RETURN jsonb_build_object('status', 'invalid', 'reason', 'custom_minutes');
+      END IF;
+    ELSE
+      selected_custom_minutes := NULL;
+    END IF;
+    selected_custom_requirements := left(coalesce(p_payload->>'customRequirements', ''), 1000);
+  ELSE
+    selected_custom_amount := NULL;
+    selected_custom_minutes := NULL;
+    selected_custom_requirements := '';
+  END IF;
+
   selected_proposed_guard := coalesce((p_payload->>'proposedGuardQuantity')::integer, 0);
   IF selected_proposed_guard < 0 OR selected_proposed_guard > 50 THEN
     RETURN jsonb_build_object('status', 'invalid', 'reason', 'guard_quantity');
@@ -265,6 +324,9 @@ BEGIN
     from_version := draft.record_version;
     before_state := jsonb_build_object(
       'planTier', draft.plan_tier,
+      'customAmountPence', draft.custom_amount_minor,
+      'customIncludedMinutes', draft.custom_included_minutes,
+      'customRequirements', draft.custom_requirements,
       'proposedGuardQuantity', draft.proposed_guard_quantity,
       'guardLocationIds', to_jsonb(draft.guard_location_ids),
       'overageOptIn', draft.overage_opt_in,
@@ -276,16 +338,21 @@ BEGIN
 
   IF draft.onboarding_request_id IS NULL THEN
     INSERT INTO admin_private.telloya_offer_drafts (
-      onboarding_request_id, enquiry_id, plan_tier, proposed_guard_quantity,
-      guard_location_ids, overage_opt_in, overage_cap_minor, notes, record_version, actor_id
+      onboarding_request_id, enquiry_id, plan_tier, custom_amount_minor, custom_included_minutes,
+      custom_requirements, proposed_guard_quantity, guard_location_ids, overage_opt_in,
+      overage_cap_minor, notes, record_version, actor_id
     ) VALUES (
-      req.id, enquiry.id, selected_plan_tier, selected_proposed_guard,
-      guard_ids, selected_overage_opt_in, selected_overage_cap, selected_notes, 1, actor
+      req.id, enquiry.id, selected_plan_tier, selected_custom_amount, selected_custom_minutes,
+      selected_custom_requirements, selected_proposed_guard, guard_ids, selected_overage_opt_in,
+      selected_overage_cap, selected_notes, 1, actor
     )
     RETURNING * INTO draft;
   ELSE
     UPDATE admin_private.telloya_offer_drafts SET
       plan_tier = selected_plan_tier,
+      custom_amount_minor = selected_custom_amount,
+      custom_included_minutes = selected_custom_minutes,
+      custom_requirements = selected_custom_requirements,
       proposed_guard_quantity = selected_proposed_guard,
       guard_location_ids = guard_ids,
       overage_opt_in = selected_overage_opt_in,
@@ -300,6 +367,9 @@ BEGIN
 
   after_state := jsonb_build_object(
     'planTier', draft.plan_tier,
+    'customAmountPence', draft.custom_amount_minor,
+    'customIncludedMinutes', draft.custom_included_minutes,
+    'customRequirements', draft.custom_requirements,
     'proposedGuardQuantity', draft.proposed_guard_quantity,
     'guardLocationIds', to_jsonb(draft.guard_location_ids),
     'overageOptIn', draft.overage_opt_in,

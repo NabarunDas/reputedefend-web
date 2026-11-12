@@ -138,6 +138,9 @@ export async function getTelloyaOfferDraft(id: string, planTierPrefill?: string 
       locked?: boolean
       draft?: {
         planTier?: string | null
+        customAmountPence?: number | null
+        customIncludedMinutes?: number | null
+        customRequirements?: string
         proposedGuardQuantity?: number
         guardLocationIds?: string[]
         overageOptIn?: boolean
@@ -155,9 +158,25 @@ export async function getTelloyaOfferDraft(id: string, planTierPrefill?: string 
       return { availability: "ready", ...fallback, version: Number.isInteger(result.version) ? result.version as number : 0 }
     }
     const guardLocationIds = Array.isArray(draft.guardLocationIds) ? draft.guardLocationIds.filter(isUuid) : []
+    const planTier = parseTelloyaDraftPlanTier(draft.planTier) ?? fallback.planTier
+    const customAmountPence = planTier === "custom"
+      && Number.isInteger(draft.customAmountPence)
+      && (draft.customAmountPence as number) > 0
+      ? draft.customAmountPence as number
+      : null
+    const customIncludedMinutes = planTier === "custom"
+      && Number.isInteger(draft.customIncludedMinutes)
+      && (draft.customIncludedMinutes as number) >= 1
+      ? draft.customIncludedMinutes as number
+      : null
     return {
       availability: "ready",
-      planTier: parseTelloyaDraftPlanTier(draft.planTier) ?? fallback.planTier,
+      planTier,
+      customAmountPence,
+      customIncludedMinutes,
+      customRequirements: planTier === "custom" && typeof draft.customRequirements === "string"
+        ? draft.customRequirements.slice(0, 1000)
+        : "",
       proposedGuardQuantity: Number.isInteger(draft.proposedGuardQuantity) ? Math.max(0, Math.min(50, draft.proposedGuardQuantity as number)) : 0,
       guardLocationIds,
       overageOptIn: draft.overageOptIn === true,

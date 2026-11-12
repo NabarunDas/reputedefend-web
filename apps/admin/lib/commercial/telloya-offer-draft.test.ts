@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest"
 import {
   draftChecklist,
+  draftSaveReady,
+  draftSelectionsEqual,
   emptyTelloyaOfferDraft,
   estimateTelloyaDraft,
   guardQuantityForDraft,
   mapDraftTierToApprovedPlan,
+  parseCustomAmountGbpInput,
   parseTelloyaDraftPlanTier,
 } from "./telloya-offer-draft"
 import { telloyaGuardLocationPence } from "./telloya-offer"
@@ -28,13 +31,64 @@ describe("Telloya offer draft calculator", () => {
     expect(estimate.quotationRequired).toBe(false)
   })
 
-  it("keeps Basic, Pro and Custom on the marketing catalogue", () => {
+  it("keeps Basic and Pro on the marketing catalogue and prices Custom from an entered amount", () => {
     expect(estimateTelloyaDraft({ planTier: "basic", proposedGuardQuantity: 0 }).monthlyTotalPence).toBe(4900)
     expect(estimateTelloyaDraft({ planTier: "pro", proposedGuardQuantity: 1 }).monthlyTotalPence).toBe(12999)
-    const custom = estimateTelloyaDraft({ planTier: "custom", proposedGuardQuantity: 3 })
-    expect(custom.quotationRequired).toBe(true)
-    expect(custom.monthlyTotalPence).toBeNull()
-    expect(custom.totalLabel).toBe("Quotation required")
+    const blankCustom = estimateTelloyaDraft({ planTier: "custom", proposedGuardQuantity: 3 })
+    expect(blankCustom.quotationRequired).toBe(true)
+    expect(blankCustom.monthlyTotalPence).toBeNull()
+    expect(blankCustom.totalLabel).toBe("Enter Custom amount")
+    const custom = estimateTelloyaDraft({
+      planTier: "custom",
+      customAmountPence: 15000,
+      customIncludedMinutes: 800,
+      proposedGuardQuantity: 2,
+    })
+    expect(custom.quotationRequired).toBe(false)
+    expect(custom.customApprovalRequired).toBe(true)
+    expect(custom.planAmountPence).toBe(15000)
+    expect(custom.monthlyTotalPence).toBe(16998)
+    expect(custom.totalLabel).toBe("£169.98 / month")
+    expect(custom.summaryLines.some(line => /approval is required/i.test(line))).toBe(true)
+  })
+
+  it("rejects blank, zero, negative, malformed and overlarge Custom GBP amounts", () => {
+    expect(parseCustomAmountGbpInput("")).toBeNull()
+    expect(parseCustomAmountGbpInput("0")).toBeNull()
+    expect(parseCustomAmountGbpInput("0.00")).toBeNull()
+    expect(parseCustomAmountGbpInput("-12.50")).toBeNull()
+    expect(parseCustomAmountGbpInput("12.345")).toBeNull()
+    expect(parseCustomAmountGbpInput("abc")).toBeNull()
+    expect(parseCustomAmountGbpInput("100000.01")).toBeNull()
+    expect(parseCustomAmountGbpInput("150.00")).toBe(15000)
+    expect(parseCustomAmountGbpInput("9.99")).toBe(999)
+    expect(draftSaveReady({
+      ...emptyTelloyaOfferDraft("custom"),
+      customAmountPence: null,
+    })).toBe(false)
+    expect(draftSaveReady({
+      ...emptyTelloyaOfferDraft("custom"),
+      customAmountPence: 15000,
+    })).toBe(true)
+  })
+
+  it("clears Custom amount when comparing a switched standard selection", () => {
+    const custom = {
+      ...emptyTelloyaOfferDraft("custom"),
+      customAmountPence: 15000,
+      customIncludedMinutes: 600,
+      customRequirements: "Two numbers",
+      version: 1,
+    }
+    const basic = {
+      ...custom,
+      planTier: "basic" as const,
+      customAmountPence: null,
+      customIncludedMinutes: null,
+      customRequirements: "",
+    }
+    expect(draftSelectionsEqual(custom, basic)).toBe(false)
+    expect(draftSelectionsEqual(basic, { ...basic, version: 9 })).toBe(true)
   })
 
   it("treats overage as a proposed offer term, not a fixed monthly fee or customer consent", () => {
@@ -82,12 +136,21 @@ describe("Telloya offer draft calculator", () => {
 
   it("maps a draft tier onto an offerable approved plan and builds the send checklist", () => {
     const plans = [
-      { tierCode: "BASIC", offerable: true },
-      { tierCode: "GROWTH", offerable: true },
-      { tierCode: "PRO", offerable: false },
+      { tierCode: "BASIC", offerable: true, amountMinor: 4900, includedMinutes: 120 },
+      { tierCode: "GROWTH", offerable: true, amountMinor: 7900, includedMinutes: 300 },
+      { tierCode: "PRO", offerable: false, amountMinor: 12000, includedMinutes: 500 },
+      { tierCode: "CUSTOM", offerable: true, amountMinor: 15000, includedMinutes: 800 },
     ]
-    expect(mapDraftTierToApprovedPlan(plans, "growth")).toEqual({ tierCode: "GROWTH", offerable: true })
+    expect(mapDraftTierToApprovedPlan(plans, "growth")).toEqual(plans[1])
     expect(mapDraftTierToApprovedPlan(plans, "custom")).toBeNull()
+    expect(mapDraftTierToApprovedPlan(plans, "custom", {
+      customAmountPence: 15000,
+      customIncludedMinutes: 800,
+    })).toEqual(plans[3])
+    expect(mapDraftTierToApprovedPlan(plans, "custom", {
+      customAmountPence: 15000,
+      customIncludedMinutes: 700,
+    })).toBeNull()
     expect(draftChecklist({
       termsConfigured: false,
       offerablePlans: 0,

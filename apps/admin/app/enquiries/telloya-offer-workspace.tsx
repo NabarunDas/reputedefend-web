@@ -5,9 +5,13 @@ import type { TelloyaSalesWorkspace } from "@/lib/commercial/telloya-sales-conte
 import type { ApprovedCommercialPlan, OnboardingView } from "@/lib/commercial/onboarding"
 import {
   draftChecklist,
+  draftSaveReady,
+  draftSelectionsEqual,
   emptyTelloyaOfferDraft,
   estimateTelloyaDraft,
+  formatCustomAmountGbpInput,
   mapDraftTierToApprovedPlan,
+  parseCustomAmountGbpInput,
   telloyaDraftPricingFacts,
   type TelloyaDraftPlanTier,
   type TelloyaOfferDraftPanel,
@@ -32,10 +36,13 @@ function planReview(plan: ApprovedCommercialPlan) {
   return `${name}, version ${plan.versionNumber}. ${pounds(plan.amountMinor)} per month. ${minutes}.`
 }
 
-function initialDraft(draft: TelloyaOfferDraftPanel, planTier: string | null): TelloyaOfferDraftSelection {
+function selectionFromPanel(draft: TelloyaOfferDraftPanel, planTier: string | null): TelloyaOfferDraftSelection {
   if (draft.availability === "ready") {
     return {
       planTier: draft.planTier,
+      customAmountPence: draft.customAmountPence,
+      customIncludedMinutes: draft.customIncludedMinutes,
+      customRequirements: draft.customRequirements,
       proposedGuardQuantity: draft.proposedGuardQuantity,
       guardLocationIds: draft.guardLocationIds,
       overageOptIn: draft.overageOptIn,
@@ -45,6 +52,12 @@ function initialDraft(draft: TelloyaOfferDraftPanel, planTier: string | null): T
     }
   }
   return emptyTelloyaOfferDraft(planTier)
+}
+
+function standardAmountLabel(tier: TelloyaDraftPlanTier | null): string {
+  const plan = telloyaDraftPricingFacts.plans.find(item => item.tier === tier)
+  if (!plan || plan.amountPence === null) return ""
+  return formatGbpPence(plan.amountPence)
 }
 
 export function TelloyaOfferWorkspace({
@@ -70,10 +83,12 @@ export function TelloyaOfferWorkspace({
   const [status, setStatus] = useState<"working" | "done" | "error">(workspace.needsReconciliation ? "working" : "done")
   const [message, setMessage] = useState<string | null>(null)
   const [retryToken, setRetryToken] = useState(0)
-  const [draft, setDraft] = useState<TelloyaOfferDraftSelection>(() => initialDraft(draftPanel, workspace.planTier))
+  const initial = selectionFromPanel(draftPanel, workspace.planTier)
+  const [draft, setDraft] = useState<TelloyaOfferDraftSelection>(() => initial)
+  const [persistedDraft, setPersistedDraft] = useState<TelloyaOfferDraftSelection>(() => initial)
+  const [customAmountText, setCustomAmountText] = useState(() => formatCustomAmountGbpInput(initial.customAmountPence))
   const [draftMessage, setDraftMessage] = useState<string | null>(null)
   const [draftSaving, setDraftSaving] = useState(false)
-  const [formOfferSummary, setFormOfferSummary] = useState<{ basis: string; text: string } | null>(null)
   const supported = onboarding.supported ? onboarding : null
   const request = supported?.request ?? null
   const version = request?.version ?? 0
@@ -87,6 +102,8 @@ export function TelloyaOfferWorkspace({
   const draftLocked = draftPanel.availability === "locked" || Boolean(request?.subscriptionId) || offerReady
   const estimate = useMemo(() => estimateTelloyaDraft({
     planTier: draft.planTier,
+    customAmountPence: draft.customAmountPence,
+    customIncludedMinutes: draft.customIncludedMinutes,
     proposedGuardQuantity: draft.guardLocationIds.length > 0 ? draft.guardLocationIds.length : draft.proposedGuardQuantity,
     overageOptIn: draft.overageOptIn,
     overageCapPence: draft.overageCapPence,
@@ -99,8 +116,15 @@ export function TelloyaOfferWorkspace({
     offerReady,
     mailReady: offer.availability === "ready",
   })
-  const matchedApproved = mapDraftTierToApprovedPlan(offerable, draft.planTier)
-  const draftSaved = draft.version > 0
+  const unsavedChanges = !draftSelectionsEqual(draft, persistedDraft)
+  const draftSavedClean = persistedDraft.version > 0 && !unsavedChanges
+  const savedGuardUnresolved = draftSavedClean
+    && persistedDraft.proposedGuardQuantity > 0
+    && persistedDraft.guardLocationIds.length === 0
+  const matchedApproved = mapDraftTierToApprovedPlan(offerable, persistedDraft.planTier, {
+    customAmountPence: persistedDraft.customAmountPence,
+    customIncludedMinutes: persistedDraft.customIncludedMinutes,
+  })
   const canPrepare = Boolean(
     supported
     && request
@@ -109,24 +133,18 @@ export function TelloyaOfferWorkspace({
     && selectedLocations.length > 0
     && supported.termsConfigured
     && matchedApproved
-    && draftSaved
-    && draft.planTier
-    && draft.planTier !== "custom",
+    && draftSavedClean
+    && !savedGuardUnresolved
+    && persistedDraft.planTier,
   )
-  const guardMismatch = canPrepare && matchedApproved?.guardAddonUnitMinor === 999 && draft.proposedGuardQuantity > 0
-    && draft.guardLocationIds.length === 0
-  const offerSummaryBasis = `${matchedApproved?.id ?? ""}:${draft.guardLocationIds.join(",")}`
-  let draftOfferSummary = "Choose an approved version to see the official offer total."
+  let officialSummary = "Choose an approved version to see the official offer total."
   if (matchedApproved && matchedApproved.amountMinor !== null) {
-    const guards = matchedApproved.guardAddonUnitMinor === 999 ? draft.guardLocationIds.length : 0
+    const guards = matchedApproved.guardAddonUnitMinor === 999 ? persistedDraft.guardLocationIds.length : 0
     const total = matchedApproved.amountMinor + (matchedApproved.guardAddonUnitMinor ?? 0) * guards
-    draftOfferSummary = guards === 0
+    officialSummary = guards === 0
       ? `Official offer total ${pounds(total)} per month for Telloya alone.`
       : `Official offer total ${pounds(total)} per month. Telloya ${pounds(matchedApproved.amountMinor)} plus Relaunch Guard ${pounds((matchedApproved.guardAddonUnitMinor ?? 0) * guards)} for ${guards} location${guards === 1 ? "" : "s"}.`
   }
-  const authoritativeSummary = formOfferSummary?.basis === offerSummaryBasis
-    ? formOfferSummary.text
-    : draftOfferSummary
 
   useEffect(() => {
     if (!workspace.needsReconciliation) return
@@ -167,9 +185,31 @@ export function TelloyaOfferWorkspace({
     setRetryToken(value => value + 1)
   }
 
-  function setPlan(tier: TelloyaDraftPlanTier) {
+  function setPlan(tier: TelloyaDraftPlanTier | "") {
     if (draftLocked) return
-    setDraft(current => ({ ...current, planTier: tier }))
+    if (tier === "") {
+      setDraft(current => ({
+        ...current,
+        planTier: null,
+        customAmountPence: null,
+        customIncludedMinutes: null,
+        customRequirements: "",
+      }))
+      setCustomAmountText("")
+      return
+    }
+    if (tier === "custom") {
+      setDraft(current => ({ ...current, planTier: tier }))
+      return
+    }
+    setDraft(current => ({
+      ...current,
+      planTier: tier,
+      customAmountPence: null,
+      customIncludedMinutes: null,
+      customRequirements: "",
+    }))
+    setCustomAmountText("")
   }
 
   function setGuardQuantity(value: number) {
@@ -190,7 +230,7 @@ export function TelloyaOfferWorkspace({
   }
 
   async function saveDraft() {
-    if (draftLocked || draftSaving) return
+    if (draftLocked || draftSaving || !draftSaveReady(draft)) return
     setDraftSaving(true)
     setDraftMessage(null)
     draftKey.current = newKey()
@@ -205,6 +245,9 @@ export function TelloyaOfferWorkspace({
           enquiryId,
           expectedVersion: draft.version,
           planTier: draft.planTier,
+          customAmountPence: draft.planTier === "custom" ? draft.customAmountPence : null,
+          customIncludedMinutes: draft.planTier === "custom" ? draft.customIncludedMinutes : null,
+          customRequirements: draft.planTier === "custom" ? draft.customRequirements : "",
           proposedGuardQuantity: draft.proposedGuardQuantity,
           guardLocationIds: draft.guardLocationIds,
           overageOptIn: draft.overageOptIn,
@@ -217,9 +260,16 @@ export function TelloyaOfferWorkspace({
         setDraftMessage(typeof body.message === "string" ? body.message : "We couldn’t save the draft estimate.")
         return
       }
-      if (Number.isInteger(body.version)) {
-        setDraft(current => ({ ...current, version: body.version as number }))
+      const nextVersion = Number.isInteger(body.version) ? body.version as number : draft.version
+      const saved: TelloyaOfferDraftSelection = {
+        ...draft,
+        customAmountPence: draft.planTier === "custom" ? draft.customAmountPence : null,
+        customIncludedMinutes: draft.planTier === "custom" ? draft.customIncludedMinutes : null,
+        customRequirements: draft.planTier === "custom" ? draft.customRequirements : "",
+        version: nextVersion,
       }
+      setDraft(saved)
+      setPersistedDraft(saved)
       setDraftMessage(typeof body.message === "string" ? body.message : "Draft saved.")
       router.refresh()
     } catch {
@@ -227,27 +277,6 @@ export function TelloyaOfferWorkspace({
     } finally {
       setDraftSaving(false)
     }
-  }
-
-  function refreshOffer(form: HTMLFormElement) {
-    if (!matchedApproved || matchedApproved.amountMinor === null) {
-      setFormOfferSummary({
-        basis: offerSummaryBasis,
-        text: "Choose an approved version to see the official offer total.",
-      })
-      return
-    }
-    const data = new FormData(form)
-    const guards = matchedApproved.guardQuantity == null && matchedApproved.guardAddonUnitMinor === 999
-      ? data.getAll("guardLocationIds").length
-      : 0
-    const total = matchedApproved.amountMinor + (matchedApproved.guardAddonUnitMinor ?? 0) * guards
-    setFormOfferSummary({
-      basis: offerSummaryBasis,
-      text: guards === 0
-        ? `Official offer total ${pounds(total)} per month for Telloya alone.`
-        : `Official offer total ${pounds(total)} per month. Telloya ${pounds(matchedApproved.amountMinor)} plus Relaunch Guard ${pounds((matchedApproved.guardAddonUnitMinor ?? 0) * guards)} for ${guards} location${guards === 1 ? "" : "s"}.`,
-    })
   }
 
   return <section className="panel workspace" aria-labelledby="telloya-offer-workspace-title">
@@ -318,26 +347,82 @@ export function TelloyaOfferWorkspace({
     <div className="telloya-offer-calculator">
       <h3>Choose Telloya plan</h3>
       <p className="muted">Draft estimate only. Changing a draft is not customer consent and does not create an official offer.</p>
-      <fieldset disabled={draftLocked} className="telloya-plan-cards">
-        <legend className="sr-only">Telloya plan</legend>
-        {telloyaDraftPricingFacts.plans.map(plan => <label key={plan.tier} className="checkbox telloya-plan-card">
-          <input
-            type="radio"
-            name="draftPlanTier"
-            value={plan.tier}
-            checked={draft.planTier === plan.tier}
-            onChange={() => setPlan(plan.tier)}
-          />
-          <span>
-            <strong>{plan.name}</strong>
-            {plan.popular ? " · Popular" : ""}
-            <br />
+      <label>Plan
+        <select
+          value={draft.planTier ?? ""}
+          disabled={draftLocked}
+          onChange={event => setPlan(event.target.value as TelloyaDraftPlanTier | "")}
+        >
+          <option value="">Choose a plan</option>
+          {telloyaDraftPricingFacts.plans.map(plan => <option key={plan.tier} value={plan.tier}>
+            {plan.name}
             {plan.amountPence === null
-              ? "Quotation required"
-              : `${formatGbpPence(plan.amountPence)} / month · ${plan.minutesPerMonth} minutes`}
-          </span>
-        </label>)}
-      </fieldset>
+              ? " — enter amount"
+              : ` — ${formatGbpPence(plan.amountPence)} / ${plan.minutesPerMonth} min`}
+          </option>)}
+        </select>
+      </label>
+
+      {draft.planTier && draft.planTier !== "custom" && <label>Monthly amount (£)
+        <input type="text" readOnly value={standardAmountLabel(draft.planTier).replace("£", "")} />
+      </label>}
+
+      {draft.planTier === "custom" && <>
+        <label>Monthly amount (£)
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="0.00"
+            value={customAmountText}
+            disabled={draftLocked}
+            onChange={event => {
+              const next = event.target.value
+              setCustomAmountText(next)
+              setDraft(current => ({
+                ...current,
+                customAmountPence: parseCustomAmountGbpInput(next),
+              }))
+            }}
+          />
+        </label>
+        <details>
+          <summary>Custom details</summary>
+          <label>Included minutes
+            <input
+              type="number"
+              min={1}
+              max={telloyaDraftPricingFacts.customIncludedMinutesMax}
+              value={draft.customIncludedMinutes ?? ""}
+              disabled={draftLocked}
+              onChange={event => {
+                const raw = event.target.value.trim()
+                if (raw === "") {
+                  setDraft(current => ({ ...current, customIncludedMinutes: null }))
+                  return
+                }
+                const minutes = Number(raw)
+                if (!Number.isInteger(minutes) || minutes < 1 || minutes > telloyaDraftPricingFacts.customIncludedMinutesMax) {
+                  setDraft(current => ({ ...current, customIncludedMinutes: null }))
+                  return
+                }
+                setDraft(current => ({ ...current, customIncludedMinutes: minutes }))
+              }}
+            />
+          </label>
+          <label>Special requirements
+            <textarea
+              maxLength={1000}
+              value={draft.customRequirements}
+              disabled={draftLocked}
+              onChange={event => setDraft(current => ({
+                ...current,
+                customRequirements: event.target.value.slice(0, 1000),
+              }))}
+            />
+          </label>
+          <p className="muted">Included minutes must be confirmed before an official Custom offer can be prepared. A Custom amount is a proposed price only until commercial approval creates a matching approved plan version.</p>
+        </details>
+      </>}
 
       <h3>Relaunch Guard</h3>
       <p className="muted">Optional at {formatGbpPence(telloyaDraftPricingFacts.guardUnitPence)} per location / month. Off by default. Guard locations are chosen separately from the single Telloya receptionist operating location and do not add receptionist capacity.</p>
@@ -424,13 +509,14 @@ export function TelloyaOfferWorkspace({
         <p><strong>{estimate.totalLabel}</strong></p>
       </div>
 
+      {unsavedChanges && persistedDraft.version > 0 && <p className="notice notice-warning" role="status">Unsaved changes. Update the draft before preparing an official offer.</p>}
       {!draftLocked && <p>
         <button
           type="button"
           onClick={() => void saveDraft()}
-          disabled={draftSaving || !draftStorageReady}
+          disabled={draftSaving || !draftStorageReady || !draftSaveReady(draft)}
         >
-          {draft.version > 0 ? "Update draft" : "Save draft"}
+          {persistedDraft.version > 0 ? "Update draft" : "Save draft"}
         </button>
       </p>}
       {!draftLocked && !draftStorageReady && <p className="muted">Draft saving will be available after DEV setup. The calculator still works for this session.</p>}
@@ -445,46 +531,44 @@ export function TelloyaOfferWorkspace({
       </ul>
     </div>
 
+    {draftSavedClean && persistedDraft.planTier === "custom" && matchedApproved == null && <p className="notice" role="status">
+      Custom draft saved — approval required to issue offer. Convert this proposed amount through the existing commercial plan-approval process, then reload so the approved Custom version matches the saved draft.
+    </p>}
+
+    {savedGuardUnresolved && <p className="notice notice-warning" role="status">
+      The saved draft still has a proposed Guard quantity. Confirm explicit Guard locations and update the draft, or clear the proposed quantity, before preparing an official offer.
+    </p>}
+
     {canPrepare && matchedApproved && <div>
       <h3>Prepare official offer</h3>
       <p>Uses the approved catalogue version that matches the saved draft. This creates the commercial offer record without sending email or opening Checkout.</p>
-      {guardMismatch && <p className="notice notice-warning" role="status">The draft still has a proposed Guard quantity. Confirm explicit Guard locations before preparing, or clear the proposed quantity and update the draft.</p>}
-      <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare offer" payload={form => {
-        const guardLocationIds = matchedApproved.guardQuantity == null && matchedApproved.guardAddonUnitMinor === 999
-          ? form.getAll("guardLocationIds").map(String)
-          : []
-        return {
-          operation: "prepare_offer",
-          version,
-          enquiryId,
-          planVersionId: matchedApproved.id,
-          guardLocationIds,
-          reason: form.get("reason"),
-        }
-      }}>
-        <fieldset onChange={event => { if (event.currentTarget.form) refreshOffer(event.currentTarget.form) }}>
-          <legend>Approved catalogue version for this draft</legend>
+      <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare offer" payload={form => ({
+        operation: "prepare_offer",
+        version,
+        enquiryId,
+        planVersionId: matchedApproved.id,
+        guardLocationIds: matchedApproved.guardQuantity == null && matchedApproved.guardAddonUnitMinor === 999
+          ? persistedDraft.guardLocationIds
+          : [],
+        reason: form.get("reason"),
+      })}>
+        <fieldset>
+          <legend>Approved catalogue version for this saved draft</legend>
           <input type="hidden" name="planVersionId" value={matchedApproved.id} />
+          {persistedDraft.guardLocationIds.map(id => <input key={id} type="hidden" name="guardLocationIds" value={id} />)}
           <p>{planReview(matchedApproved)}</p>
-          {matchedApproved.guardAddonUnitMinor === 999 && businessLocations.length > 0 && <>
-            <p>Tick same-business locations to include in Relaunch Guard for the official offer. Guard selection does not add Telloya receptionist capacity.</p>
-            {businessLocations.map(location => <label key={location.id} className="checkbox">
-              <input
-                type="checkbox"
-                name="guardLocationIds"
-                value={location.id}
-                defaultChecked={draft.guardLocationIds.includes(location.id)}
-              />
-              Include {location.name} in Relaunch Guard
-              {location.selected ? " · Telloya operating location" : " · Guard-only"}
-            </label>)}
-          </>}
+          {matchedApproved.guardAddonUnitMinor === 999 && <p className="muted">
+            Relaunch Guard locations from the saved draft: {persistedDraft.guardLocationIds.length === 0
+              ? "none"
+              : persistedDraft.guardLocationIds.map(id => businessLocations.find(location => location.id === id)?.name ?? id).join(", ")}.
+          </p>}
         </fieldset>
-        <p>{authoritativeSummary}</p>
+        <p>{officialSummary}</p>
         <Reason label="Why is this official offer being prepared?" />
       </CommandForm>
     </div>}
-    {!canPrepare && draftSaved && matchedApproved == null && draft.planTier && draft.planTier !== "custom" && <p className="muted">Save or update the draft to an approved catalogue tier before preparing an official offer.</p>}
+    {!canPrepare && draftSavedClean && matchedApproved == null && persistedDraft.planTier && persistedDraft.planTier !== "custom" && <p className="muted">An approved catalogue version matching the saved draft is required before preparing an official offer.</p>}
+    {!canPrepare && unsavedChanges && persistedDraft.version > 0 && <p className="muted">Save or discard unsaved calculator changes before preparing an official offer.</p>}
 
     {offerReady && <TelloyaOfferActions offer={offer} />}
     {!offerReady && <p className="muted">{workspace.primaryLabel}</p>}

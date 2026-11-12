@@ -73,7 +73,7 @@ export function TelloyaOfferWorkspace({
   const [draft, setDraft] = useState<TelloyaOfferDraftSelection>(() => initialDraft(draftPanel, workspace.planTier))
   const [draftMessage, setDraftMessage] = useState<string | null>(null)
   const [draftSaving, setDraftSaving] = useState(false)
-  const [authoritativeSummary, setAuthoritativeSummary] = useState("Choose an approved version to see the official offer total.")
+  const [formOfferSummary, setFormOfferSummary] = useState<{ basis: string; text: string } | null>(null)
   const supported = onboarding.supported ? onboarding : null
   const request = supported?.request ?? null
   const version = request?.version ?? 0
@@ -115,18 +115,18 @@ export function TelloyaOfferWorkspace({
   )
   const guardMismatch = canPrepare && matchedApproved?.guardAddonUnitMinor === 999 && draft.proposedGuardQuantity > 0
     && draft.guardLocationIds.length === 0
-
-  useEffect(() => {
-    if (!matchedApproved || matchedApproved.amountMinor === null) {
-      setAuthoritativeSummary("Choose an approved version to see the official offer total.")
-      return
-    }
+  const offerSummaryBasis = `${matchedApproved?.id ?? ""}:${draft.guardLocationIds.join(",")}`
+  let draftOfferSummary = "Choose an approved version to see the official offer total."
+  if (matchedApproved && matchedApproved.amountMinor !== null) {
     const guards = matchedApproved.guardAddonUnitMinor === 999 ? draft.guardLocationIds.length : 0
     const total = matchedApproved.amountMinor + (matchedApproved.guardAddonUnitMinor ?? 0) * guards
-    setAuthoritativeSummary(guards === 0
+    draftOfferSummary = guards === 0
       ? `Official offer total ${pounds(total)} per month for Telloya alone.`
-      : `Official offer total ${pounds(total)} per month. Telloya ${pounds(matchedApproved.amountMinor)} plus Relaunch Guard ${pounds((matchedApproved.guardAddonUnitMinor ?? 0) * guards)} for ${guards} location${guards === 1 ? "" : "s"}.`)
-  }, [matchedApproved, draft.guardLocationIds])
+      : `Official offer total ${pounds(total)} per month. Telloya ${pounds(matchedApproved.amountMinor)} plus Relaunch Guard ${pounds((matchedApproved.guardAddonUnitMinor ?? 0) * guards)} for ${guards} location${guards === 1 ? "" : "s"}.`
+  }
+  const authoritativeSummary = formOfferSummary?.basis === offerSummaryBasis
+    ? formOfferSummary.text
+    : draftOfferSummary
 
   useEffect(() => {
     if (!workspace.needsReconciliation) return
@@ -230,17 +230,24 @@ export function TelloyaOfferWorkspace({
   }
 
   function refreshOffer(form: HTMLFormElement) {
-    const data = new FormData(form)
-    const selected = offerable.find(plan => plan.id === String(data.get("planVersionId") ?? ""))
-    if (!selected || selected.amountMinor === null) {
-      setAuthoritativeSummary("Choose an approved version to see the official offer total.")
+    if (!matchedApproved || matchedApproved.amountMinor === null) {
+      setFormOfferSummary({
+        basis: offerSummaryBasis,
+        text: "Choose an approved version to see the official offer total.",
+      })
       return
     }
-    const guards = selected.guardQuantity == null && selected.guardAddonUnitMinor === 999 ? data.getAll("guardLocationIds").length : 0
-    const total = selected.amountMinor + (selected.guardAddonUnitMinor ?? 0) * guards
-    setAuthoritativeSummary(guards === 0
-      ? `Official offer total ${pounds(total)} per month for Telloya alone.`
-      : `Official offer total ${pounds(total)} per month. Telloya ${pounds(selected.amountMinor)} plus Relaunch Guard ${pounds((selected.guardAddonUnitMinor ?? 0) * guards)} for ${guards} location${guards === 1 ? "" : "s"}.`)
+    const data = new FormData(form)
+    const guards = matchedApproved.guardQuantity == null && matchedApproved.guardAddonUnitMinor === 999
+      ? data.getAll("guardLocationIds").length
+      : 0
+    const total = matchedApproved.amountMinor + (matchedApproved.guardAddonUnitMinor ?? 0) * guards
+    setFormOfferSummary({
+      basis: offerSummaryBasis,
+      text: guards === 0
+        ? `Official offer total ${pounds(total)} per month for Telloya alone.`
+        : `Official offer total ${pounds(total)} per month. Telloya ${pounds(matchedApproved.amountMinor)} plus Relaunch Guard ${pounds((matchedApproved.guardAddonUnitMinor ?? 0) * guards)} for ${guards} location${guards === 1 ? "" : "s"}.`,
+    })
   }
 
   return <section className="panel workspace" aria-labelledby="telloya-offer-workspace-title">

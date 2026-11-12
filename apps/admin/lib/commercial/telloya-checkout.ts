@@ -43,48 +43,72 @@ export function telloyaCheckoutReturn(): { state: "verifying"; message: string }
   return { state: "verifying", message: "Payment being verified" }
 }
 
-export function applyTelloyaBillingEvent(record: TelloyaBillingRecord, event: {
+const verifiedInvoice = Symbol("telloya-verified-invoice")
+
+export type StoredTelloyaSubscription = {
+  amountMinor: number
+  currency: "GBP"
+  stripeSubscriptionId: string
+}
+
+export type VerifiedTelloyaEvent = {
+  readonly [verifiedInvoice]: true
   id: string
   type: string
-  signatureValid: boolean
   livemode: boolean
   amountPence: number | null
   currency: string | null
-  subscriptionId: string | null
-  expectedAmountPence: number
-  billingReason?: string
-  cancelAtPeriodEnd?: boolean
-}): { result: string; record: TelloyaBillingRecord } {
-  if (!event.signatureValid || event.livemode) return { result: "rejected", record }
-  if (record.processedEvents.includes(event.id)) return { result: "duplicate", record }
-  const nextEvents = [...record.processedEvents, event.id]
-  if (event.currency && event.currency !== "GBP") return { result: "currency_mismatch", record: { ...record, processedEvents: nextEvents } }
-  if (event.amountPence !== null && event.amountPence !== event.expectedAmountPence && event.type.startsWith("invoice.")) {
-    return { result: "amount_mismatch", record: { ...record, processedEvents: nextEvents } }
+  stripeSubscriptionId: string | null
+  billingReason: string | null
+}
+
+type ProviderEvent = {
+  id?: unknown
+  type?: unknown
+  livemode?: unknown
+  data?: { object?: Record<string, unknown> }
+}
+
+function integer(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) ? value : null
+}
+
+export function verifyTelloyaProviderEvent(
+  raw: string,
+  signature: string,
+  secret: string,
+  construct: (raw: string, signature: string, secret: string) => ProviderEvent,
+): VerifiedTelloyaEvent {
+  const event = construct(raw, signature, secret)
+  const object = event.data?.object ?? {}
+  const amount = integer(object.amount_paid) ?? integer(object.amount_due)
+  if (typeof event.id !== "string" || typeof event.type !== "string" || raw.length === 0 || signature.length === 0 || secret.length === 0) {
+    throw new Error("unverified")
   }
-  if (event.type === "checkout.session.completed") {
-    return { result: "verifying", record: { ...record, state: "verifying", processedEvents: nextEvents, subscriptionId: event.subscriptionId } }
+  return {
+    [verifiedInvoice]: true,
+    id: event.id,
+    type: event.type,
+    livemode: event.livemode === true,
+    amountPence: amount,
+    currency: typeof object.currency === "string" ? object.currency.toUpperCase() : null,
+    stripeSubscriptionId: typeof object.subscription === "string" ? object.subscription : null,
+    billingReason: typeof object.billing_reason === "string" ? object.billing_reason : null,
   }
-  if (event.type === "invoice.paid" && event.billingReason === "subscription_create") {
-    return { result: "initial_paid", record: { ...record, state: "initial_paid", processedEvents: nextEvents, subscriptionId: event.subscriptionId ?? record.subscriptionId } }
-  }
-  if (event.type === "invoice.paid" && event.billingReason === "subscription_cycle") {
-    return { result: "recurring_paid", record: { ...record, state: "recurring_paid", processedEvents: nextEvents } }
-  }
-  if (event.type === "invoice.payment_failed") {
-    return { result: "failed", record: { ...record, state: record.state === "initial_paid" || record.state === "recurring_paid" ? "past_due" : "failed", processedEvents: nextEvents } }
-  }
-  if (event.type === "customer.subscription.updated" && event.cancelAtPeriodEnd) {
-    return { result: "cancel_at_period_end", record: { ...record, state: "cancel_at_period_end", processedEvents: nextEvents } }
-  }
-  if (event.type === "customer.subscription.deleted") {
-    return { result: "cancelled", record: { ...record, state: "cancelled", subscriptionId: null, processedEvents: nextEvents } }
-  }
-  return { result: "ignored", record: { ...record, processedEvents: nextEvents } }
+}
+
+export function classifyStoredTelloyaInvoice(stored: StoredTelloyaSubscription, event: VerifiedTelloyaEvent): string {
+  if (event[verifiedInvoice] !== true) return "unverified"
+  if (event.livemode) return "livemode_rejected"
+  if (event.type !== "invoice.paid") return "not_invoice"
+  if (event.currency !== stored.currency) return "currency_mismatch"
+  if (event.stripeSubscriptionId !== stored.stripeSubscriptionId) return "identity_mismatch"
+  if (event.amountPence !== stored.amountMinor) return "amount_mismatch"
+  if (event.billingReason !== "subscription_create" && event.billingReason !== "subscription_cycle") return "ignored"
+  return event.billingReason === "subscription_create" ? "matches_initial_invoice" : "matches_renewal_invoice"
 }
 
 export function startTelloyaCheckout(record: TelloyaBillingRecord, intent: TelloyaCheckoutIntent): { result: string; record: TelloyaBillingRecord } {
-  if (record.subscriptionId && record.state !== "cancelled" && record.state !== "failed") return { result: "duplicate_checkout", record }
-  if (record.intentKey === intent.idempotencyKey) return { result: "duplicate", record }
-  return { result: "started", record: { ...record, intentKey: intent.idempotencyKey, state: record.state === "none" ? "verifying" : record.state } }
+  void intent
+  return { result: "not_created", record }
 }

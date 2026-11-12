@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { migrationHead, pendingMigrations } from "../recovery/manifest"
 import { absentTelloyaDemo, transitionTelloyaDemo, type TelloyaDemoCommand } from "./telloya-demo-status"
-import { prepareTelloyaCheckout, applyTelloyaBillingEvent, emptyTelloyaBilling, telloyaCheckoutReturn } from "./telloya-checkout"
+import { prepareTelloyaCheckout, classifyStoredTelloyaInvoice, telloyaCheckoutReturn, verifyTelloyaProviderEvent } from "./telloya-checkout"
 import { telloyaJourneyProgress } from "./telloya-admin-journey"
 import { acceptTelloyaOffer, queueTelloyaOfferEmail, requestTelloyaAmendment, resolveTelloyaAmendment, telloyaOfferMessage } from "./telloya-offer-delivery"
 import { prepareTelloyaOffer, sendTelloyaOffer, telloyaCataloguePence, type TelloyaOfferInput } from "./telloya-offer"
@@ -116,29 +116,13 @@ describe("Telloya admin preview journey", () => {
     })
     expect(checkout.intent).toMatchObject({ mode: "subscription", interval: "month", amountPence: 8899 })
     expect(telloyaCheckoutReturn().message).toBe("Payment being verified")
-    const paid = applyTelloyaBillingEvent(emptyTelloyaBilling(), {
-      id: "evt_test_invoice",
-      type: "invoice.paid",
-      signatureValid: true,
-      livemode: false,
-      amountPence: 8899,
-      currency: "GBP",
-      subscriptionId: "sub_test",
-      expectedAmountPence: 8899,
-      billingReason: "subscription_create",
+    const stored = { amountMinor: 8899, currency: "GBP" as const, stripeSubscriptionId: "sub_stored" }
+    const verified = verifyTelloyaProviderEvent("{\"id\":\"evt_test_invoice\"}", "signed", "secret", (raw, signature) => {
+      if (signature !== "signed" || !raw.includes("evt_test_invoice")) throw new Error("signature mismatch")
+      return { id: "evt_test_invoice", type: "invoice.paid", livemode: false, data: { object: { amount_paid: 8899, currency: "gbp", subscription: "sub_stored", billing_reason: "subscription_create" } } }
     })
-    expect(paid.record.state).toBe("initial_paid")
-    expect(applyTelloyaBillingEvent(paid.record, {
-      id: "evt_test_invoice",
-      type: "invoice.paid",
-      signatureValid: true,
-      livemode: false,
-      amountPence: 8899,
-      currency: "GBP",
-      subscriptionId: "sub_test",
-      expectedAmountPence: 8899,
-      billingReason: "subscription_create",
-    }).result).toBe("duplicate")
+    expect(classifyStoredTelloyaInvoice(stored, verified)).toBe("matches_initial_invoice")
+    expect(classifyStoredTelloyaInvoice({ ...stored, amountMinor: 1 }, verified)).toBe("amount_mismatch")
 
     const setup = telloyaSetupChecklist({ initialInvoicePaid: true, completed: ["preferences", "ai", "number", "forwarding"] })
     expect(setup.customerLabel).toBe("Preparing your receptionist")
@@ -146,8 +130,8 @@ describe("Telloya admin preview journey", () => {
     expect(telloyaSetupChecklist({ initialInvoicePaid: false, completed: [] }).customerStatus).toBe("not_started")
     const view = telloyaServiceView({ offer: accepted.versions.find(version => version.current) ?? null, billing: "initial_paid", renewalDate: "2026-12-20" })
     expect(view.usage).toMatch(/not available/)
-    expect(telloyaVoiceAllowed(paid.record.state)).toBe(false)
-    expect(requestTelloyaCancellation(paid.record.state).billing).toBe("cancel_at_period_end")
+    expect(telloyaVoiceAllowed("initial_paid")).toBe(false)
+    expect(requestTelloyaCancellation("initial_paid").billing).toBe("cancel_at_period_end")
     expect(migrationHead.filename).toBe("20261112120000_telloya_admin_journey_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
     expect(pendingMigrations().map(entry => entry.filename)).toEqual(["20261112120000_telloya_admin_journey_v1.sql"])
@@ -172,16 +156,6 @@ describe("Telloya admin preview journey", () => {
       businessMatches: false,
       emailVerified: false,
     }).result).toBe("forbidden")
-    expect(applyTelloyaBillingEvent(emptyTelloyaBilling(), {
-      id: "evt_spoof",
-      type: "invoice.paid",
-      signatureValid: false,
-      livemode: true,
-      amountPence: 9898,
-      currency: "GBP",
-      subscriptionId: "sub_live",
-      expectedAmountPence: 9898,
-      billingReason: "subscription_create",
-    }).result).toBe("rejected")
+    expect(() => verifyTelloyaProviderEvent("{}", "bad", "secret", () => { throw new Error("signature mismatch") })).toThrow(/signature mismatch/)
   })
 })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { acceptTelloyaOffer } from "./telloya-offer-delivery"
 import { prepareTelloyaOffer, sendTelloyaOffer, type TelloyaOfferVersion } from "./telloya-offer"
-import { applyTelloyaBillingEvent, emptyTelloyaBilling, prepareTelloyaCheckout, startTelloyaCheckout, telloyaCheckoutReturn } from "./telloya-checkout"
+import { classifyStoredTelloyaInvoice, emptyTelloyaBilling, prepareTelloyaCheckout, startTelloyaCheckout, telloyaCheckoutReturn, verifyTelloyaProviderEvent, type VerifiedTelloyaEvent } from "./telloya-checkout"
 
 function acceptedOffer(): TelloyaOfferVersion {
   const draft = prepareTelloyaOffer([], {
@@ -46,109 +46,29 @@ describe("Telloya monthly checkout", () => {
     const prepared = prepareTelloyaCheckout(offer, approval)
     expect(prepared.intent).toMatchObject({ mode: "subscription", interval: "month", currency: "GBP", amountPence: 9898 })
     expect(telloyaCheckoutReturn()).toEqual({ state: "verifying", message: "Payment being verified" })
-    const started = startTelloyaCheckout(emptyTelloyaBilling(), prepared.intent!)
-    expect(startTelloyaCheckout(started.record, prepared.intent!).result).toBe("duplicate")
+    expect(startTelloyaCheckout(emptyTelloyaBilling(), prepared.intent!).result).toBe("not_created")
+    expect(emptyTelloyaBilling().state).toBe("none")
   })
 
-  it("ignores a spoofed or mismatched event and separates the first invoice from a later one", () => {
-    const offer = acceptedOffer()
-    let record = emptyTelloyaBilling()
-    const spoofed = applyTelloyaBillingEvent(record, {
-      id: "evt_spoof",
-      type: "invoice.paid",
-      signatureValid: false,
-      livemode: false,
-      amountPence: 9898,
-      currency: "GBP",
-      subscriptionId: "sub_test",
-      expectedAmountPence: 9898,
-      billingReason: "subscription_create",
-    })
-    expect(spoofed.result).toBe("rejected")
-    expect(spoofed.record.state).toBe("none")
-    record = applyTelloyaBillingEvent(record, {
-      id: "evt_return",
-      type: "checkout.session.completed",
-      signatureValid: true,
-      livemode: false,
-      amountPence: 9898,
-      currency: "GBP",
-      subscriptionId: "sub_test",
-      expectedAmountPence: 9898,
-    }).record
-    expect(record.state).toBe("verifying")
-    const mismatch = applyTelloyaBillingEvent(record, {
-      id: "evt_fx",
-      type: "invoice.paid",
-      signatureValid: true,
-      livemode: false,
-      amountPence: 9898,
-      currency: "USD",
-      subscriptionId: "sub_test",
-      expectedAmountPence: 9898,
-      billingReason: "subscription_create",
-    })
-    expect(mismatch.result).toBe("currency_mismatch")
-    expect(mismatch.record.state).toBe("verifying")
-    record = applyTelloyaBillingEvent(record, {
-      id: "evt_initial",
-      type: "invoice.paid",
-      signatureValid: true,
-      livemode: false,
-      amountPence: 9898,
-      currency: "GBP",
-      subscriptionId: "sub_test",
-      expectedAmountPence: 9898,
-      billingReason: "subscription_create",
-    }).record
-    expect(record.state).toBe("initial_paid")
-    expect(applyTelloyaBillingEvent(record, {
-      id: "evt_initial",
-      type: "invoice.paid",
-      signatureValid: true,
-      livemode: false,
-      amountPence: 9898,
-      currency: "GBP",
-      subscriptionId: "sub_test",
-      expectedAmountPence: 9898,
-      billingReason: "subscription_create",
-    }).result).toBe("duplicate")
-    record = applyTelloyaBillingEvent(record, {
-      id: "evt_fail",
-      type: "invoice.payment_failed",
-      signatureValid: true,
-      livemode: false,
-      amountPence: 9898,
-      currency: "GBP",
-      subscriptionId: "sub_test",
-      expectedAmountPence: 9898,
-    }).record
-    expect(record.state).toBe("past_due")
-    record = applyTelloyaBillingEvent(record, {
-      id: "evt_cancel",
-      type: "customer.subscription.updated",
-      signatureValid: true,
-      livemode: false,
-      amountPence: null,
-      currency: "GBP",
-      subscriptionId: "sub_test",
-      expectedAmountPence: 9898,
-      cancelAtPeriodEnd: true,
-    }).record
-    expect(record.state).toBe("cancel_at_period_end")
-    const intent = prepareTelloyaCheckout(offer, approval).intent!
-    expect(startTelloyaCheckout(record, intent).result).toBe("duplicate_checkout")
-    record = applyTelloyaBillingEvent(record, {
-      id: "evt_deleted",
-      type: "customer.subscription.deleted",
-      signatureValid: true,
-      livemode: false,
-      amountPence: null,
-      currency: "GBP",
-      subscriptionId: "sub_test",
-      expectedAmountPence: 9898,
-    }).record
-    expect(record.state).toBe("cancelled")
-    expect(record.subscriptionId).toBeNull()
+  it("compares a verified invoice with the stored subscription and rejects a spoofed signature", () => {
+    const stored = { amountMinor: 9898, currency: "GBP" as const, stripeSubscriptionId: "sub_stored" }
+    const construct = (raw: string, signature: string) => {
+      if (signature !== "signed" || !raw.includes("evt_initial")) throw new Error("signature mismatch")
+      return {
+        id: "evt_initial",
+        type: "invoice.paid",
+        livemode: false,
+        data: { object: { amount_paid: 9898, currency: "gbp", subscription: "sub_stored", billing_reason: "subscription_create" } },
+      }
+    }
+    expect(() => verifyTelloyaProviderEvent("{}", "bad", "secret", construct)).toThrow(/signature mismatch/)
+    const verified = verifyTelloyaProviderEvent("{\"id\":\"evt_initial\"}", "signed", "secret", construct)
+    expect(classifyStoredTelloyaInvoice(stored, verified)).toBe("matches_initial_invoice")
+    expect(classifyStoredTelloyaInvoice({ ...stored, amountMinor: 100 }, verified)).toBe("amount_mismatch")
+    expect(classifyStoredTelloyaInvoice({ ...stored, stripeSubscriptionId: "sub_other" }, verified)).toBe("identity_mismatch")
+    const renewal = { ...verified, billingReason: "subscription_cycle" } as VerifiedTelloyaEvent
+    expect(classifyStoredTelloyaInvoice(stored, renewal)).toBe("matches_renewal_invoice")
+    const live = { ...verified, livemode: true } as VerifiedTelloyaEvent
+    expect(classifyStoredTelloyaInvoice(stored, live)).toBe("livemode_rejected")
   })
 })

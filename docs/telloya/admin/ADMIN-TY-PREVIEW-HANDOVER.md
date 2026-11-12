@@ -15,7 +15,7 @@
 | ADMIN-TY-05 | DONE | `ead1c8c8` | Mocked monthly checkout. No Stripe API call. A return stays “Payment being verified”. |
 | ADMIN-TY-06 | DONE | `912c4856` | Setup checklist. Going live stays blocked. |
 | ADMIN-TY-07 | DONE | `7bcd1a04` | Plan and payment view. Cancellation is period-end only. Voice stays off. |
-| ADMIN-TY-08 | DONE | the commit that adds this file | Synthetic journey test and this handover. |
+| ADMIN-TY-08 | DONE | `cf9880a2` | Synthetic journey test and this handover. |
 
 ## What was exercised
 

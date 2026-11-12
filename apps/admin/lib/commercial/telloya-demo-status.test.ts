@@ -27,7 +27,9 @@ describe("Telloya offline demonstration status", () => {
   })
 
   it("stays closed when the source-only migration has not been applied", () => {
-    expect(decideTelloyaDemoWrite({ enabled: true, migrationApplied: false }).reason).toBe("source_only_migration_not_applied")
+    const unapplied = decideTelloyaDemoWrite({ enabled: true, migrationApplied: false })
+    expect(unapplied.status).toBe("closed")
+    if (unapplied.status === "closed") expect(unapplied.reason).toBe("source_only_migration_not_applied")
   })
 
   it("books, completes, replays and returns a cancelled booking to not booked", () => {

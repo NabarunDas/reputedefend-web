@@ -8,6 +8,7 @@ import { safeWebUrl } from "@/lib/records/model"
 import { TriageForm, ConversionForm } from "../forms"
 import { OnboardingPanel } from "../onboarding"
 import { TelloyaEnquiryInterest } from "../telloya-interest"
+import { TelloyaJourney } from "../telloya-journey"
 import { Badge, PageHeader } from "../../ui"
 
 export const metadata = { title: "Enquiry" }
@@ -36,6 +37,14 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
       {([["Website", p.websiteUrl], ["Business Profile", p.businessProfileUrl], ["Review", p.reviewUrl]] as const).map(([label, value]) => { const url = safeWebUrl(value); return url ? <p key={label}><a href={url} target="_blank" rel="noopener noreferrer">Open {label} (new tab)</a></p> : null })}
     </section>
     <TelloyaEnquiryInterest payload={p} enquiryRef={e.enquiryRef} />
+    <TelloyaJourney snapshot={{
+      source: p.source,
+      requestIntent: p.requestIntent,
+      planTier: p.planTier,
+      assigned: e.assigned,
+      nextAction: e.nextAction,
+      nextActionAt: e.nextActionAt,
+    }} />
     <section className="panel">
       <h2>Email status</h2>
       <p>Internal notification: {emailStates[e.internalStatus]}<br />Customer acknowledgement: {emailStates[e.ackStatus]}</p>

@@ -22,7 +22,7 @@ function Row({ label, value, note }: { label: string; value: string; note?: stri
 export function TelloyaEnquiryInterest({ payload, enquiryRef }: { payload: EnquiryPayload; enquiryRef: string | null }) {
   if (payload.source !== "telloya") return null
   const plan = provided(payload.planTier).toLowerCase()
-  const planLabel = PLAN_LABELS[plan] ?? (plan ? plan : "No plan tier recorded")
+  const planLabel = PLAN_LABELS[plan] ?? (plan ? plan : "Plan to be confirmed")
   const guardCount = typeof payload.guardLocationCount === "number" ? payload.guardLocationCount : null
   const optional = [
     ["Current phone setup", provided(payload.phoneSetup)],
@@ -49,7 +49,7 @@ export function TelloyaEnquiryInterest({ payload, enquiryRef }: { payload: Enqui
           ? "The customer asked for a personalised demonstration. This is not a confirmed booking and it does not provision an agent."
           : "No personalised-demonstration request was recorded."}
       />
-      <Row label="Selected plan" value={planLabel} note="Required customer interest. This is not an approved offer and it is not a subscription." />
+      <Row label="Selected plan" value={planLabel} note={plan ? "Customer interest only. This is not an approved offer and it is not a subscription." : "No plan was selected. This is not an approved offer and it is not a subscription."} />
       <Row
         label="Product field"
         value={payload.product === "complete"

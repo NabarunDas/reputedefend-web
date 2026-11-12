@@ -49,7 +49,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | R2a | DONE | `a930d731` | Plan and Guard location revisions with recalculated totals. Unchanged clone refused. |
 | R2b | DONE | `a0f632dd` | Persisted TY-referenced offer email. Template stays DRAFT until settings approval. |
 | R2c | DONE | `47192179` | Progress from recorded states. Demo required before prepare_offer and mail. Scoped amendments and idempotent queue. |
-| R2d | DONE | this commit | Full disposable database and package verification. Honest statuses above. |
+| R2d | DONE | `84adb199` | Full disposable database and package verification. Honest statuses above. |
 
 ## Test matrix
 

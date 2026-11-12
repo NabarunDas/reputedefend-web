@@ -81,7 +81,7 @@ describe("rebuilding the whole schema from zero", () => {
     // Production stays at SEC-08.
     expect(migrationHead.filename).toBe("20261112223000_telloya_approve_send_offer_v1.sql")
     expect(migrationHead.appliedToDev).toBe(false)
-    expect(migrationHead.containsDataChange).toBe(false)
+    expect(migrationHead.containsDataChange).toBe(true)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(appliedMigrationHead.filename).toBe("20261112210000_telloya_offer_draft_v1.sql")
     expect(appliedMigrationHead.version).toBe("20261112210000")

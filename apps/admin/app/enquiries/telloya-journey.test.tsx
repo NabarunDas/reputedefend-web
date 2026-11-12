@@ -66,6 +66,25 @@ describe("Telloya journey panel", () => {
     expect(screen.getByText("Offer · current")).toBeTruthy()
     expect(screen.getByText(/Queue the offer email/)).toBeTruthy()
     expect(screen.queryByText("Demo · current")).toBeNull()
+    expect(screen.getByText("Booked for 12 November 2026 at 10:00 (Europe/London).")).toBeTruthy()
+    expect(screen.getByText("Completed at 12 November 2026 at 11:00 (Europe/London).")).toBeTruthy()
+    expect(screen.queryByText(/2026-11-12T10:00:00.000Z/)).toBeNull()
+    expect(screen.queryByText(/2026-11-12T11:00:00.000Z/)).toBeNull()
+  })
+
+  it("formats a booked demonstration in the recorded timezone", () => {
+    render(<TelloyaJourney snapshot={{ source: "telloya" }} demo={{
+      availability: "ready",
+      enquiryId: "22222222-2222-4222-8222-222222222222",
+      status: "BOOKED",
+      version: 1,
+      scheduledAt: "2026-07-01T12:00:00.000Z",
+      completedAt: null,
+      timezone: "Europe/London",
+    }} />)
+    expect(screen.getByText("Booked for 1 July 2026 at 13:00 (Europe/London).")).toBeTruthy()
+    expect(screen.queryByText(/Completed at/)).toBeNull()
+    expect(screen.queryByText(/2026-07-01T12:00:00.000Z/)).toBeNull()
   })
 
   it("follows a paid subscription into setup", () => {

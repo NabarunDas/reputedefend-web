@@ -1,8 +1,14 @@
+import { formatUkDateTime } from "@/lib/admin/activity"
 import { telloyaJourneyProgress, type TelloyaJourneySnapshot, type TelloyaOfferProgress, type TelloyaSetupProgress } from "@/lib/commercial/telloya-admin-journey"
 import { formatGbpPence, previewTelloyaOffer } from "@/lib/commercial/telloya-offer"
 import { telloyaSetupChecklist, type TelloyaSetupStep } from "@/lib/commercial/telloya-setup"
 import { TelloyaDemoForm } from "./telloya-demo-form"
 import { TelloyaOfferActions, type TelloyaOfferPanel } from "./telloya-offer-actions"
+
+function demoWhenLabel(iso: string | null, timezone: string): string | null {
+  if (!iso) return null
+  return formatUkDateTime(iso, timezone)
+}
 
 const ACCEPTED_STATES = new Set(["ACCEPTED", "PAYMENT_PENDING", "ACTIVE", "PAUSED", "PAST_DUE", "CANCEL_AT_PERIOD_END"])
 const PAID_STATES = new Set(["ACTIVE", "PAUSED", "PAST_DUE", "CANCEL_AT_PERIOD_END"])
@@ -65,6 +71,9 @@ export function TelloyaJourney({ snapshot, demo = { availability: "closed" }, of
     initialInvoicePaid: paid,
     completed: offer.availability === "ready" ? SETUP_STEPS[offer.provisionState ?? ""] ?? [] : [],
   })
+  const bookedLabel = demo.availability === "ready" ? demoWhenLabel(demo.scheduledAt, demo.timezone) : null
+  const completedLabel = demo.availability === "ready" ? demoWhenLabel(demo.completedAt, demo.timezone) : null
+  const demoZone = demo.availability === "ready" && demo.timezone ? ` (${demo.timezone})` : ""
   return <section className="panel" aria-labelledby="telloya-journey-title">
     <h2 id="telloya-journey-title">Telloya progress</h2>
     <p>{progress.requestLabel} · {progress.planLabel}</p>
@@ -81,8 +90,8 @@ export function TelloyaJourney({ snapshot, demo = { availability: "closed" }, of
     {demo.availability === "unavailable" && <p>This deployment does not have the demonstration record. Nothing was saved.</p>}
     {demo.availability === "ready" && <>
       <p>Status {demo.status === "NOT_BOOKED" ? "not booked" : demo.status === "BOOKED" ? "booked" : "completed"}. Record version {demo.version}.</p>
-      {demo.scheduledAt && <p>Booked for {demo.scheduledAt}{demo.timezone ? ` (${demo.timezone})` : ""}.</p>}
-      {demo.completedAt && <p>Completed at {demo.completedAt}.</p>}
+      {bookedLabel && <p>Booked for {bookedLabel}{demoZone}.</p>}
+      {completedLabel && <p>Completed at {completedLabel}{demoZone}.</p>}
       <TelloyaDemoForm enquiryId={demo.enquiryId} version={demo.version} status={demo.status} timezone={demo.timezone} />
     </>}
     {demo.availability !== "ready" && <p><button type="button" disabled>Mark demo booked</button> <button type="button" disabled>Mark demo completed</button></p>}

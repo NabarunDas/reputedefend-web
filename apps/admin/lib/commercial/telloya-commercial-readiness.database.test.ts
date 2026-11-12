@@ -921,7 +921,7 @@ describe("Telloya commercial readiness rehearsal", () => {
          )) as outbox`,
       [subscriptionId],
     ))[0]
-    const openTelloya = async (email: string, ref: string, planId = telloyaCataloguePlans.growthCap1) => {
+    const openTelloya = async (email: string, ref: string, planId: string = telloyaCataloguePlans.growthCap1) => {
       const opened = await ready(email, 1, "growth")
       expect((await command("prepare_offer", {
         enquiryId: opened.enquiryId, planVersionId: planId, guardLocationIds: [], reason,

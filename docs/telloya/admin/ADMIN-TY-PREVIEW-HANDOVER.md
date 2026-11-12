@@ -52,7 +52,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | R2d | DONE | `84adb199` | Full disposable database and package verification. Honest statuses above. |
 | R3-A | DONE | `ed4e3874` | Offer email refuses retired agreement, unsupported tax, revoked authority and a REQUESTED amendment. Replay stays idempotent. |
 | R3-B | DONE | `ed4e3874` | Manifest marks `20261112120000` `containsDataChange: true` for the DRAFT template catalogue INSERT. |
-| Post-migration reconcile | DONE | `d173c997` | Manifest records 120 applied DEV migrations, head `20261112120000`. |
+| Post-migration reconcile | DONE | `cb692ad1` | Manifest records 120 applied DEV migrations, head `20261112120000`. |
 
 ## Test matrix
 

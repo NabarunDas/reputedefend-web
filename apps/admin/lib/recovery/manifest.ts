@@ -1850,13 +1850,16 @@ export const migrationChain: readonly MigrationEntry[] = [
   },
   {
     // Source-only Telloya admin journey. Not applied to DEV or Production.
-    // Offline demonstration status only. No Retell call, email, or Stripe object.
+    // Offline demonstration status, commercial amendment/mail functions, and one
+    // DRAFT TELLOYA_OFFER communication template catalogue row. No Retell call,
+    // no real email, and no Stripe object. The catalogue INSERT is DML outside a
+    // function body, so containsDataChange is true. The template stays DRAFT.
     version: "20261112120000",
     filename: "20261112120000_telloya_admin_journey_v1.sql",
     step: "Telloya admin journey proposal",
     kind: "additive",
     appliedToDev: false,
-    containsDataChange: false,
+    containsDataChange: true,
     safeToReplay: false,
     verification: { category: "Telloya admin journey", probe: "admin_private.telloya_admin_demo_transition_v1" },
   },

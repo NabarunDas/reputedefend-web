@@ -95,7 +95,7 @@ describe("upgrading a database that is already running", () => {
     // disposable rebuild is not a live apply. Production remains at SEC-08.
     expect(pending.at(-1)?.filename).toBe("20261112120000_telloya_admin_journey_v1.sql")
     expect(pending.at(-1)?.appliedToDev).toBe(false)
-    expect(pending.at(-1)?.containsDataChange).toBe(false)
+    expect(pending.at(-1)?.containsDataChange).toBe(true)
     expect(pending.at(-1)?.safeToReplay).toBe(false)
     expect(pending.at(-2)?.filename).toBe("20261111130000_telloya_marketing_enquiry_retention_v1.sql")
     expect(pending.at(-2)?.appliedToDev).toBe(true)

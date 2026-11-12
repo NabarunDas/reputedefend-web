@@ -760,6 +760,20 @@ BEGIN
   IF v_link.demo_completed IS DISTINCT FROM true THEN
     RETURN jsonb_build_object('status', 'demonstration_not_completed');
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM admin_private.telloya_offer_amendments AS amendment
+    WHERE amendment.subscription_id = v_sub.id AND amendment.status = 'REQUESTED'
+  ) THEN
+    RETURN jsonb_build_object('status', 'amendment_pending');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.business_memberships AS membership
+    WHERE membership.customer_id = v_sub.customer_id
+      AND membership.business_id = v_sub.business_id
+      AND membership.status = 'verified'
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'authority');
+  END IF;
   IF v_sub.public_ref !~ '^VC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$' THEN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
@@ -797,6 +811,22 @@ BEGIN
   END;
   IF v_plan_label IS NULL OR v_plan_amount IS NULL OR v_sub.amount_minor IS DISTINCT FROM v_plan_amount + (999 * v_guard) THEN
     RETURN jsonb_build_object('status', 'terms_unconfigured');
+  END IF;
+  IF v_sub.tax_behaviour IS DISTINCT FROM 'NOT_APPLICABLE'
+     OR EXISTS (
+       SELECT 1 FROM public.plan_versions AS plan
+       WHERE plan.id = v_sub.plan_version_id
+         AND plan.tax_behaviour IS DISTINCT FROM 'NOT_APPLICABLE'
+     ) THEN
+    RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'tax');
+  END IF;
+  IF v_sub.terms_ref IS NULL OR NOT EXISTS (
+    SELECT 1 FROM public.commercial_agreement_versions AS agreement
+    WHERE agreement.product_code = 'TELLOYA'
+      AND agreement.version_ref = v_sub.terms_ref
+      AND agreement.status = 'APPROVED'
+  ) THEN
+    RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'agreement');
   END IF;
   v_minutes_text := CASE WHEN v_minutes IS NULL THEN 'confirmed in the quotation' ELSE v_minutes::text END;
   v_guard_text := CASE

@@ -74,7 +74,7 @@ export async function telloyaOfferCommand(request: NextRequest) {
       const origin = customerOrigin()
       if (!origin) return reply("The customer portal address is not configured. No email was queued.", 403)
       if (!isUuid(body.subscriptionId) || !Number.isInteger(body.expectedVersion)) return reply("Reload the offer before queueing email.", 400)
-      const result = await backend().rpc<{ status: string }>("telloya_offer_mail_v1", {
+      const result = await backend().rpc<{ status: string; reason?: string }>("telloya_offer_mail_v1", {
         p_token: tokenHash(token),
         p_request: key,
         p_subscription: body.subscriptionId,
@@ -86,6 +86,10 @@ export async function telloyaOfferCommand(request: NextRequest) {
       if (result.status === "template_unapproved") return reply("The Telloya offer template is not approved. Nothing was queued.", 409)
       if (result.status === "ineligible") return reply("That offer is not linked to this Telloya enquiry. Nothing was queued.", 403)
       if (result.status === "demonstration_not_completed") return reply("Complete the offline demonstration before queueing the offer email.", 409)
+      if (result.status === "amendment_pending") return reply("A change request is open. Resolve it before queueing the offer email.", 409)
+      if (result.status === "denied" && result.reason === "authority") return reply("Business authority is no longer verified. Nothing was queued.", 403)
+      if (result.status === "terms_unconfigured" && result.reason === "agreement") return reply("The Telloya service agreement is not approved. Nothing was queued.", 409)
+      if (result.status === "terms_unconfigured" && result.reason === "tax") return reply("This tax treatment is not ready for a customer offer email. Nothing was queued.", 409)
       if (result.status === "stale_version") return reply("This offer has changed. Reload it before queueing email.", 409)
       return reply("This deployment cannot queue that email. Nothing was sent.", 503)
     }

@@ -12,6 +12,7 @@ CREATE OR REPLACE FUNCTION admin_private.telloya_sales_context_norm_v1(p_value t
 RETURNS text
 LANGUAGE sql
 IMMUTABLE
+SET search_path = ''
 AS $$
   SELECT lower(btrim(regexp_replace(coalesce(p_value, ''), '\s+', ' ', 'g')));
 $$;

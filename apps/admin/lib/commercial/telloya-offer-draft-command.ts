@@ -72,13 +72,22 @@ function mapResult(result: CommandResult): { ok: boolean; status: number; messag
     return {
       ok: true,
       status: 200,
-      message: result.message || "Draft offer estimate saved. This is not an official commercial offer.",
+      message: result.message || "Draft offer estimate saved. This is not an official commercial offer and does not record customer consent.",
       version: result.version,
       draft: result.draft,
     }
   }
   if (result.status === "denied" && result.reason === "offer_locked") {
     return { ok: false, status: 409, message: "An official offer already exists. Use the revision flow instead of editing this draft." }
+  }
+  if (result.status === "denied" && result.reason === "onboarding_closed") {
+    return { ok: false, status: 409, message: "This Telloya onboarding request is closed. Draft edits are locked." }
+  }
+  if (result.status === "denied" && result.reason === "wrong_product") {
+    return { ok: false, status: 409, message: "This enquiry is not on an active Telloya onboarding request." }
+  }
+  if (result.status === "denied" && result.reason === "guard_location_mismatch") {
+    return { ok: false, status: 409, message: "Guard locations must belong to the linked business." }
   }
   if (result.status === "denied" && result.reason === "onboarding_missing") {
     return { ok: false, status: 409, message: "Prepare the sales context before saving a draft estimate." }

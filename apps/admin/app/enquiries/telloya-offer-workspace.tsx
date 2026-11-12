@@ -79,9 +79,11 @@ export function TelloyaOfferWorkspace({
   const version = request?.version ?? 0
   const plans = supported?.approvedPlans ?? []
   const offerable = plans.filter(plan => plan.offerable)
-  const selectedLocations = supported?.locations.filter(item => item.selected) ?? []
+  const businessLocations = supported?.locations ?? []
+  const selectedLocations = businessLocations.filter(item => item.selected)
   const usableBusinesses = supported?.businesses.filter(item => item.membership !== "revoked") ?? []
   const offerReady = offer.availability === "ready"
+  const draftStorageReady = draftPanel.availability === "ready"
   const draftLocked = draftPanel.availability === "locked" || Boolean(request?.subscriptionId) || offerReady
   const estimate = useMemo(() => estimateTelloyaDraft({
     planTier: draft.planTier,
@@ -98,6 +100,7 @@ export function TelloyaOfferWorkspace({
     mailReady: offer.availability === "ready",
   })
   const matchedApproved = mapDraftTierToApprovedPlan(offerable, draft.planTier)
+  const draftSaved = draft.version > 0
   const canPrepare = Boolean(
     supported
     && request
@@ -106,9 +109,24 @@ export function TelloyaOfferWorkspace({
     && selectedLocations.length > 0
     && supported.termsConfigured
     && matchedApproved
+    && draftSaved
     && draft.planTier
     && draft.planTier !== "custom",
   )
+  const guardMismatch = canPrepare && matchedApproved?.guardAddonUnitMinor === 999 && draft.proposedGuardQuantity > 0
+    && draft.guardLocationIds.length === 0
+
+  useEffect(() => {
+    if (!matchedApproved || matchedApproved.amountMinor === null) {
+      setAuthoritativeSummary("Choose an approved version to see the official offer total.")
+      return
+    }
+    const guards = matchedApproved.guardAddonUnitMinor === 999 ? draft.guardLocationIds.length : 0
+    const total = matchedApproved.amountMinor + (matchedApproved.guardAddonUnitMinor ?? 0) * guards
+    setAuthoritativeSummary(guards === 0
+      ? `Official offer total ${pounds(total)} per month for Telloya alone.`
+      : `Official offer total ${pounds(total)} per month. Telloya ${pounds(matchedApproved.amountMinor)} plus Relaunch Guard ${pounds((matchedApproved.guardAddonUnitMinor ?? 0) * guards)} for ${guards} location${guards === 1 ? "" : "s"}.`)
+  }, [matchedApproved, draft.guardLocationIds])
 
   useEffect(() => {
     if (!workspace.needsReconciliation) return
@@ -315,17 +333,18 @@ export function TelloyaOfferWorkspace({
       </fieldset>
 
       <h3>Relaunch Guard</h3>
-      <p className="muted">Optional at {formatGbpPence(telloyaDraftPricingFacts.guardUnitPence)} per location / month. Off by default.</p>
-      {selectedLocations.length > 0
+      <p className="muted">Optional at {formatGbpPence(telloyaDraftPricingFacts.guardUnitPence)} per location / month. Off by default. Guard locations are chosen separately from the single Telloya receptionist operating location and do not add receptionist capacity.</p>
+      {businessLocations.length > 0
         ? <fieldset disabled={draftLocked}>
-          <legend className="sr-only">Confirmed Guard locations</legend>
-          {selectedLocations.map(location => <label key={location.id} className="checkbox">
+          <legend className="sr-only">Relaunch Guard locations</legend>
+          {businessLocations.map(location => <label key={location.id} className="checkbox">
             <input
               type="checkbox"
               checked={draft.guardLocationIds.includes(location.id)}
               onChange={() => toggleGuardLocation(location.id)}
             />
             Include {location.name} in Relaunch Guard
+            {location.selected ? " · Telloya operating location" : " · Guard-only (no extra receptionist)"}
           </label>)}
         </fieldset>
         : <label>Proposed Guard quantity
@@ -337,7 +356,7 @@ export function TelloyaOfferWorkspace({
             disabled={draftLocked}
             onChange={event => setGuardQuantity(Number(event.target.value))}
           />
-          <span className="muted"> Proposed for illustration until an operating location is confirmed.</span>
+          <span className="muted"> Draft estimate only until business locations are available for explicit Guard selection.</span>
         </label>}
 
       <details>
@@ -353,21 +372,34 @@ export function TelloyaOfferWorkspace({
               overageCapPence: event.target.checked ? current.overageCapPence : null,
             }))}
           />
-          Opt in to overage at {formatGbpPence(telloyaDraftPricingFacts.overageRatePence)}/min
+          Propose overage in the offer at {formatGbpPence(telloyaDraftPricingFacts.overageRatePence)}/min
         </label>
-        {draft.overageOptIn && <label>Spending cap (pence)
+        {draft.overageOptIn && <label>Proposed spending cap (£)
           <input
             type="number"
-            min={1}
-            value={draft.overageCapPence ?? ""}
+            min={0.01}
+            step={0.01}
+            value={draft.overageCapPence == null ? "" : (draft.overageCapPence / 100).toFixed(2)}
             disabled={draftLocked}
-            onChange={event => setDraft(current => ({
-              ...current,
-              overageCapPence: event.target.value === "" ? null : Math.max(1, Math.trunc(Number(event.target.value)) || 1),
-            }))}
+            onChange={event => {
+              const raw = event.target.value.trim()
+              if (raw === "") {
+                setDraft(current => ({ ...current, overageCapPence: null }))
+                return
+              }
+              const poundsValue = Number(raw)
+              if (!Number.isFinite(poundsValue) || poundsValue <= 0) {
+                setDraft(current => ({ ...current, overageCapPence: null }))
+                return
+              }
+              setDraft(current => ({
+                ...current,
+                overageCapPence: Math.max(1, Math.round(poundsValue * 100)),
+              }))
+            }}
           />
         </label>}
-        <p className="muted">Overage is never part of the fixed monthly total.</p>
+        <p className="muted">This is a proposed offer term only. It is not customer consent. Charging still requires authenticated customer opt-in and a customer-approved spending cap. Overage is never part of the fixed monthly total.</p>
       </details>
 
       <label>Special notes
@@ -386,13 +418,17 @@ export function TelloyaOfferWorkspace({
       </div>
 
       {!draftLocked && <p>
-        <button type="button" onClick={() => void saveDraft()} disabled={draftSaving}>
+        <button
+          type="button"
+          onClick={() => void saveDraft()}
+          disabled={draftSaving || !draftStorageReady}
+        >
           {draft.version > 0 ? "Update draft" : "Save draft"}
         </button>
       </p>}
-      {draftLocked && <p className="muted">Draft editing is locked because an official offer already exists.</p>}
+      {!draftLocked && !draftStorageReady && <p className="muted">Draft saving will be available after DEV setup. The calculator still works for this session.</p>}
+      {draftLocked && <p className="muted">Draft editing is locked because this request is closed or an official offer already exists.</p>}
       {draftMessage && <p className="muted" role="status">{draftMessage}</p>}
-      {draftPanel.availability === "unavailable" && <p className="muted">Draft persistence is not installed on this deployment yet. The calculator still works for this session.</p>}
     </div>
 
     <div>
@@ -404,28 +440,36 @@ export function TelloyaOfferWorkspace({
 
     {canPrepare && matchedApproved && <div>
       <h3>Prepare official offer</h3>
-      <p>Uses the approved catalogue version that matches this draft. This creates the commercial offer record without sending email or opening Checkout.</p>
+      <p>Uses the approved catalogue version that matches the saved draft. This creates the commercial offer record without sending email or opening Checkout.</p>
+      {guardMismatch && <p className="notice notice-warning" role="status">The draft still has a proposed Guard quantity. Confirm explicit Guard locations before preparing, or clear the proposed quantity and update the draft.</p>}
       <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare offer" payload={form => {
-        const planVersionId = String(form.get("planVersionId") ?? matchedApproved.id)
-        const selected = offerable.find(plan => plan.id === planVersionId) ?? matchedApproved
-        const guardLocationIds = selected.guardQuantity == null && selected.guardAddonUnitMinor === 999
-          ? (draft.guardLocationIds.length > 0
-            ? draft.guardLocationIds
-            : form.getAll("guardLocationIds").map(String))
+        const guardLocationIds = matchedApproved.guardQuantity == null && matchedApproved.guardAddonUnitMinor === 999
+          ? form.getAll("guardLocationIds").map(String)
           : []
-        return { operation: "prepare_offer", version, enquiryId, planVersionId, guardLocationIds, reason: form.get("reason") }
+        return {
+          operation: "prepare_offer",
+          version,
+          enquiryId,
+          planVersionId: matchedApproved.id,
+          guardLocationIds,
+          reason: form.get("reason"),
+        }
       }}>
         <fieldset onChange={event => { if (event.currentTarget.form) refreshOffer(event.currentTarget.form) }}>
-          <legend>Approved catalogue version</legend>
-          {offerable.map(plan => <label key={plan.id} className="checkbox">
-            <input type="radio" name="planVersionId" value={plan.id} required defaultChecked={plan.id === matchedApproved.id} />
-            {planReview(plan)}
-          </label>)}
-          {matchedApproved.guardAddonUnitMinor === 999 && selectedLocations.length > 0 && <>
-            <p>Tick confirmed locations to include in Relaunch Guard for the official offer.</p>
-            {selectedLocations.map(location => <label key={location.id} className="checkbox">
-              <input type="checkbox" name="guardLocationIds" value={location.id} defaultChecked={draft.guardLocationIds.includes(location.id)} />
+          <legend>Approved catalogue version for this draft</legend>
+          <input type="hidden" name="planVersionId" value={matchedApproved.id} />
+          <p>{planReview(matchedApproved)}</p>
+          {matchedApproved.guardAddonUnitMinor === 999 && businessLocations.length > 0 && <>
+            <p>Tick same-business locations to include in Relaunch Guard for the official offer. Guard selection does not add Telloya receptionist capacity.</p>
+            {businessLocations.map(location => <label key={location.id} className="checkbox">
+              <input
+                type="checkbox"
+                name="guardLocationIds"
+                value={location.id}
+                defaultChecked={draft.guardLocationIds.includes(location.id)}
+              />
               Include {location.name} in Relaunch Guard
+              {location.selected ? " · Telloya operating location" : " · Guard-only"}
             </label>)}
           </>}
         </fieldset>
@@ -433,6 +477,7 @@ export function TelloyaOfferWorkspace({
         <Reason label="Why is this official offer being prepared?" />
       </CommandForm>
     </div>}
+    {!canPrepare && draftSaved && matchedApproved == null && draft.planTier && draft.planTier !== "custom" && <p className="muted">Save or update the draft to an approved catalogue tier before preparing an official offer.</p>}
 
     {offerReady && <TelloyaOfferActions offer={offer} />}
     {!offerReady && <p className="muted">{workspace.primaryLabel}</p>}

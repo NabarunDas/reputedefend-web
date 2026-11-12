@@ -37,7 +37,16 @@ describe("Telloya offer draft calculator", () => {
     expect(custom.totalLabel).toBe("Quotation required")
   })
 
-  it("treats overage as opted-in policy text, not a fixed monthly fee", () => {
+  it("treats overage as a proposed offer term, not a fixed monthly fee or customer consent", () => {
+    const incomplete = estimateTelloyaDraft({
+      planTier: "growth",
+      proposedGuardQuantity: 0,
+      overageOptIn: true,
+      overageCapPence: null,
+    })
+    expect(incomplete.monthlyTotalPence).toBe(7900)
+    expect(incomplete.overageLabel).toContain("Overage proposed")
+    expect(incomplete.overageLabel).toContain("still not customer consent")
     const estimate = estimateTelloyaDraft({
       planTier: "growth",
       proposedGuardQuantity: 0,
@@ -47,6 +56,12 @@ describe("Telloya offer draft calculator", () => {
     expect(estimate.monthlyTotalPence).toBe(7900)
     expect(estimate.overageLabel).toContain("£0.25/min")
     expect(estimate.overageLabel).toContain("£40.00")
+    expect(estimate.overageLabel).toContain("subject to customer opt-in")
+    expect(estimateTelloyaDraft({
+      planTier: "growth",
+      proposedGuardQuantity: 0,
+      overageOptIn: false,
+    }).summaryLines.some(line => line.includes("Overage not proposed"))).toBe(true)
   })
 
   it("rejects malformed plan tiers and clamps Guard quantity", () => {

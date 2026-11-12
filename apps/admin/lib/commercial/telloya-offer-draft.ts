@@ -97,11 +97,11 @@ export function estimateTelloyaDraft(input: {
   let overageLabel: string | null = null
   if (overageOptIn) {
     overageLabel = overageCapPence
-      ? `Overage opted in at ${formatGbpPence(telloyaOveragePence)}/min with a ${formatGbpPence(overageCapPence)} cap (not part of the fixed monthly total).`
-      : `Overage opted in at ${formatGbpPence(telloyaOveragePence)}/min — set a spending cap before charging is possible.`
+      ? `Overage proposed at ${formatGbpPence(telloyaOveragePence)}/min with a ${formatGbpPence(overageCapPence)} spending cap (not part of the fixed monthly total; subject to customer opt-in).`
+      : `Overage proposed at ${formatGbpPence(telloyaOveragePence)}/min — set a spending cap to complete the proposal (still not customer consent).`
     summaryLines.push(overageLabel)
   } else {
-    summaryLines.push(`Overage stays off. ${formatGbpPence(telloyaOveragePence)}/min only after explicit opt-in and a spending cap.`)
+    summaryLines.push(`Overage not proposed. ${formatGbpPence(telloyaOveragePence)}/min only after a customer-approved opt-in and spending cap.`)
   }
   return {
     planTier: input.planTier,

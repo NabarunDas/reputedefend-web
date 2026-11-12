@@ -182,7 +182,118 @@ describe("Telloya offer draft persistence", () => {
       [enquiryId],
     )
     expect(stored).toEqual([{ plan_tier: "basic", proposed_guard_quantity: 0, record_version: 2 }])
+    const events = await rows<{ from_version: number; to_version: number; before_state: { planTier: string | null } | null; after_state: { planTier: string } }>(
+      `select from_version, to_version, before_state, after_state
+       from admin_private.telloya_offer_draft_events where enquiry_id = $1 order by id`,
+      [enquiryId],
+    )
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ from_version: 0, to_version: 1, before_state: null })
+    expect(events[0].after_state).toMatchObject({ planTier: "growth", version: 1 })
+    expect(events[1]).toMatchObject({ from_version: 1, to_version: 2 })
+    expect(events[1].before_state).toMatchObject({ planTier: "growth", version: 1 })
+    expect(events[1].after_state).toMatchObject({ planTier: "basic", overageOptIn: true, overageCapPence: 2500, version: 2 })
     expect(await rows(`select 1 from public.commercial_subscriptions`)).toEqual([])
+  })
+
+  it("rejects payload source spoofing, closed requests, and cross-business Guard ids", async () => {
+    const spoofed = (await db.query<{ id: string }>(
+      `insert into public.enquiries(submission_key, fingerprint, source, payload, internal_status, ack_status)
+       values (gen_random_uuid(), md5('spoof'), 'contact', $1::jsonb, 'SKIPPED', 'SKIPPED') returning id`,
+      [JSON.stringify({ source: "telloya", email: "spoof@example.test", fullName: "Spoof" })],
+    )).rows[0].id
+    expect(await rpc<Record<string, unknown>>("telloya_offer_draft_v1", [token, spoofed])).toMatchObject({ status: "denied" })
+    expect(await rpc<Record<string, unknown>>("telloya_offer_draft_command_v1", [
+      token, randomUUID(), "save", {
+        enquiryId: spoofed,
+        expectedVersion: 0,
+        planTier: "growth",
+        proposedGuardQuantity: 0,
+        guardLocationIds: [],
+        overageOptIn: false,
+        overageCapPence: null,
+        notes: "",
+      },
+    ])).toMatchObject({ status: "denied", reason: "not_telloya" })
+
+    const enquiryId = await telloyaEnquiry("draft.closed@example.test")
+    await rpc<Record<string, unknown>>("telloya_offer_draft_command_v1", [
+      token, randomUUID(), "save", {
+        enquiryId,
+        expectedVersion: 0,
+        planTier: "growth",
+        proposedGuardQuantity: 0,
+        guardLocationIds: [],
+        overageOptIn: false,
+        overageCapPence: null,
+        notes: "Before close.",
+      },
+    ])
+    await db.query(
+      `update public.onboarding_requests set state = 'CLOSED' where enquiry_id = $1 and product_code = 'TELLOYA'`,
+      [enquiryId],
+    )
+    expect(await rpc<Record<string, unknown>>("telloya_offer_draft_v1", [token, enquiryId])).toMatchObject({
+      status: "ready",
+      locked: true,
+    })
+    expect(await rpc<Record<string, unknown>>("telloya_offer_draft_command_v1", [
+      token, randomUUID(), "save", {
+        enquiryId,
+        expectedVersion: 1,
+        planTier: "pro",
+        proposedGuardQuantity: 0,
+        guardLocationIds: [],
+        overageOptIn: false,
+        overageCapPence: null,
+        notes: "",
+      },
+    ])).toMatchObject({ status: "denied", reason: "onboarding_closed" })
+
+    const guardEnquiry = await telloyaEnquiry("draft.guard@example.test")
+    const business = (await rows<{ business_id: string }>(
+      `select business_id from public.onboarding_requests where enquiry_id = $1 and state not in ('CLOSED','DECLINED')`,
+      [guardEnquiry],
+    ))[0]
+    const ownLocation = (await db.query<{ id: string }>(
+      `insert into public.locations(business_id, location_name, country)
+       values ($1, 'Own depot', 'United Kingdom') returning id`,
+      [business.business_id],
+    )).rows[0].id
+    const otherBusiness = (await db.query<{ id: string }>(
+      `insert into public.businesses(display_name) values ('Other Yard') returning id`,
+    )).rows[0].id
+    const foreignLocation = (await db.query<{ id: string }>(
+      `insert into public.locations(business_id, location_name, country)
+       values ($1, 'Foreign depot', 'United Kingdom') returning id`,
+      [otherBusiness],
+    )).rows[0].id
+    expect(await rpc<Record<string, unknown>>("telloya_offer_draft_command_v1", [
+      token, randomUUID(), "save", {
+        enquiryId: guardEnquiry,
+        expectedVersion: 0,
+        planTier: "growth",
+        proposedGuardQuantity: 1,
+        guardLocationIds: [ownLocation, foreignLocation],
+        overageOptIn: false,
+        overageCapPence: null,
+        notes: "",
+      },
+    ])).toMatchObject({ status: "denied", reason: "guard_location_mismatch" })
+    const ownGuard = await rpc<Record<string, unknown>>("telloya_offer_draft_command_v1", [
+      token, randomUUID(), "save", {
+        enquiryId: guardEnquiry,
+        expectedVersion: 0,
+        planTier: "growth",
+        proposedGuardQuantity: 1,
+        guardLocationIds: [ownLocation],
+        overageOptIn: false,
+        overageCapPence: null,
+        notes: "Own Guard location only.",
+      },
+    ])
+    expect(ownGuard).toMatchObject({ status: "success", draft: { proposedGuardQuantity: 1 } })
+    expect((ownGuard.draft as { guardLocationIds: string[] }).guardLocationIds).toEqual([ownLocation])
   })
 
   it("locks draft edits once prepare_offer creates the official offer, and cascades with the enquiry", async () => {
@@ -259,10 +370,15 @@ describe("Telloya offer draft persistence", () => {
     expect((await rows<{ id: string }>("select id from public.communications where channel = 'EMAIL' and lifecycle = 'QUEUED'")).length).toBe(0)
   })
 
-  it("declares enquiry and onboarding cascade deletes for draft retention", () => {
+  it("declares enquiry cascade deletes for draft and audit retention", () => {
     const source = readFileSync(new URL("../../../../supabase/migrations/20261112210000_telloya_offer_draft_v1.sql", import.meta.url), "utf8")
     expect(source).toContain("onboarding_request_id uuid PRIMARY KEY REFERENCES public.onboarding_requests(id) ON DELETE CASCADE")
     expect(source).toContain("enquiry_id uuid NOT NULL REFERENCES public.enquiries(id) ON DELETE CASCADE")
+    expect(source).toContain("onboarding_request_id uuid NOT NULL REFERENCES public.onboarding_requests(id) ON DELETE CASCADE")
+    expect(source).toContain("CREATE TABLE admin_private.telloya_offer_draft_events")
     expect(source).toContain("REVOKE ALL ON TABLE admin_private.telloya_offer_drafts FROM PUBLIC, anon, authenticated, service_role")
+    expect(source).toContain("REVOKE ALL ON TABLE admin_private.telloya_offer_draft_events FROM PUBLIC, anon, authenticated, service_role")
+    expect(source).toContain("enquiry.source IS DISTINCT FROM 'telloya'")
+    expect(source).toContain("state NOT IN ('CLOSED', 'DECLINED')")
   })
 })

@@ -1,15 +1,15 @@
 # ADMIN-TY preview handover
 
-**Status:** ADMIN-TY-R7 interactive offer calculator on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV remains at applied `20261112180000` (121 migrations). Source-only `20261112210000` adds draft calculator storage and is **not** applied. This is not authorisation to launch, collect payment, send email, place a call, enable flags, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
+**Status:** ADMIN-TY-R7-B offer calculator corrections on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV remains at applied `20261112180000` (121 migrations). Source-only `20261112210000` adds draft calculator storage/audit and is **not** applied. This is not authorisation to launch, collect payment, send email, place a call, enable flags, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
 **Baseline:** `origin/develop` `c3ba97a19492eb2b7ae27ec906f77e740ef12cae`. Plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`.
 
 ## Phase labels (R7)
 
 | Item | Label | Notes |
 | --- | --- | --- |
-| Interactive draft calculator | DONE in source | Plan cards + optional Guard + live GBP total from `apps/telloya/lib/pricing.ts` without approved catalogue |
-| Draft save / reload | DONE in source | `admin_private.telloya_offer_drafts` via source-only `20261112210000`; Preview-gated command; optimistic versioning |
-| Official `prepare_offer` | UNCHANGED | Still requires approved catalogue, terms/tax, verified authority and confirmed locations |
+| Interactive draft calculator | DONE in source (R7-B) | Plan cards + independent Guard locations + live GBP total; overage is proposed offer term only |
+| Draft save / reload | DONE in source (R7-B) | Typed `enquiries.source`, active TELLOYA request only, append-only draft audit events, Save disabled until migration applied |
+| Official `prepare_offer` | DONE in source (R7-B) | Locked to saved draft tier; Guard uses explicit same-business locations; still shared commercial command |
 | Demo Completed → sales-context bootstrap | READY on DEV (composite applied) | `20261112180000` applied once to DEV; fail-closed when RPC unavailable — no multi-step commercial fallback writes |
 | Evidence-based business/location matching | DONE | Sole unrelated business/location is never auto-selected |
 | Offer workspace prepare/confirm actions | DONE | Calculator always available; Prepare offer only when gates pass; no disabled Send offer for missing catalogue |
@@ -80,7 +80,8 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | ADMIN-TY-R5 | DONE for Preview path; PARTIAL for hosted composite | `5ef9eb43` | Evidence-safe matching, composite source-only `20261112180000`, offer workspace Prepare/confirm, disposable PG coverage. Hosted apply of `20261112180000` remains blocked pending owner approval. Monthly Stripe Checkout remains BLOCKED. |
 | ADMIN-TY-R6 | DONE for source corrections | `f9819cb0` | Removed mutating exception fallback; composite reauth rolls back bootstrap writes; disposable PG covers expired sign-in, retry, concurrency and idempotency. Hosted apply of `20261112180000` still blocked. |
 | Post-R6 migration reconcile | DONE | `06fe08b9` | Manifest records 121 applied DEV migrations, head `20261112180000`. |
-| ADMIN-TY-R7 | DONE in source | `b4aaccd4` | Interactive draft calculator, draft persistence source-only `20261112210000`, prepare_offer unchanged, UI simplified. Do not apply the draft migration. |
+| ADMIN-TY-R7 | DONE in source | `b4aaccd4` | Interactive draft calculator, draft persistence source-only `20261112210000`, prepare_offer unchanged, UI simplified. |
+| ADMIN-TY-R7-B | DONE in source | pending tip SHA | Typed source + active request, independent Guard locations, proposed-overage wording/GBP cap, prepare matches saved draft, draft audit events, Save disabled when storage unavailable. Do not apply the draft migration. |
 
 ## Test matrix
 
@@ -122,7 +123,7 @@ The verified DEV ledger previously contained 120 entries and ended at `202611121
 
 `supabase/migrations/20261112210000_telloya_offer_draft_v1.sql`
 
-`appliedToDev` is false. `containsDataChange` is false. `safeToReplay` is false. The repository file is 11,165 characters. MD5 `5ded3bb34468631caf10d01041ec4bc2`. SHA-256 `69243795157948e14d485a2ada7e1bfa1437bb837befba4e3377638d8a3fd0cc`. It adds `admin_private.telloya_offer_drafts` plus service-role-only `public.telloya_offer_draft_v1` and `public.telloya_offer_draft_command_v1`. This is Admin draft-selection storage only. It is not a commercial offer, subscription, approved plan, customer quote, email, Stripe object, or Retell action. Do not apply to DEV or Production without owner approval after independent review. Do not edit or replay `20261112120000` or `20261112180000`. `pendingMigrations()` contains only this file.
+`appliedToDev` is false. `containsDataChange` is false. `safeToReplay` is false. The repository file is 13,994 characters. MD5 `5fed28886f899b8fc602705473c1fba7`. SHA-256 `775e621395ae998cce52fafcb3485172fa12ab63d1f8b0b200fa1c72bff515a9`. It adds `admin_private.telloya_offer_drafts`, append-only `admin_private.telloya_offer_draft_events`, plus service-role-only `public.telloya_offer_draft_v1` and `public.telloya_offer_draft_command_v1`. Reads/writes require typed `enquiries.source='telloya'` and the current active TELLOYA onboarding request. This is Admin draft-selection storage and revision audit only. It is not a commercial offer, subscription, approved plan, customer quote, email, Stripe object, or Retell action. Do not apply to DEV or Production without owner approval after independent review. Do not edit or replay `20261112120000` or `20261112180000`. `pendingMigrations()` contains only this file.
 
 ## Flags
 

@@ -2,10 +2,12 @@ BEGIN;
 -- Telloya Admin offer-draft selections for the interactive calculator.
 -- Source-only. Do not apply this file to DEV or Production without owner approval.
 -- Do not edit or replay 20261112120000 or 20261112180000.
--- Stores Admin draft plan/Guard intent against one Telloya onboarding request.
+-- Stores Admin draft plan/Guard intent against one active Telloya onboarding request.
 -- This is not a commercial offer, subscription, approved plan, customer quote,
 -- email, Stripe object, or Retell action. Official offers still use
 -- public.admin_commercial_command_v1('prepare_offer').
+-- overage_opt_in means Admin proposes overage in the draft offer; it is not
+-- customer consent or usage authorisation.
 
 CREATE TABLE admin_private.telloya_offer_drafts (
   onboarding_request_id uuid PRIMARY KEY REFERENCES public.onboarding_requests(id) ON DELETE CASCADE,
@@ -31,8 +33,27 @@ CREATE TABLE admin_private.telloya_offer_drafts (
 CREATE UNIQUE INDEX telloya_offer_drafts_enquiry_uidx
   ON admin_private.telloya_offer_drafts (enquiry_id);
 
+CREATE TABLE admin_private.telloya_offer_draft_events (
+  id bigserial PRIMARY KEY,
+  onboarding_request_id uuid NOT NULL REFERENCES public.onboarding_requests(id) ON DELETE CASCADE,
+  enquiry_id uuid NOT NULL REFERENCES public.enquiries(id) ON DELETE CASCADE,
+  actor_id uuid NOT NULL,
+  from_version integer NOT NULL CHECK (from_version >= 0),
+  to_version integer NOT NULL CHECK (to_version > 0),
+  before_state jsonb NULL,
+  after_state jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT telloya_offer_draft_events_version_order CHECK (to_version = from_version + 1)
+);
+
+CREATE INDEX telloya_offer_draft_events_enquiry_idx
+  ON admin_private.telloya_offer_draft_events (enquiry_id, created_at DESC);
+
 ALTER TABLE admin_private.telloya_offer_drafts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_private.telloya_offer_draft_events ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE admin_private.telloya_offer_drafts FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE admin_private.telloya_offer_draft_events FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON SEQUENCE admin_private.telloya_offer_draft_events_id_seq FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.telloya_offer_draft_v1(
   p_token text,
@@ -47,23 +68,33 @@ DECLARE
   enquiry public.enquiries;
   req public.onboarding_requests;
   draft admin_private.telloya_offer_drafts;
+  closed_exists boolean := false;
 BEGIN
   s := public.admin_session_v1(p_token);
   IF s IS NULL THEN RETURN jsonb_build_object('status', 'unauthorized'); END IF;
   IF p_enquiry_id IS NULL THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
 
   SELECT * INTO enquiry FROM public.enquiries WHERE id = p_enquiry_id;
-  IF enquiry.id IS NULL OR coalesce(enquiry.payload->>'source', '') <> 'telloya' THEN
+  IF enquiry.id IS NULL OR enquiry.source IS DISTINCT FROM 'telloya' THEN
     RETURN jsonb_build_object('status', 'denied');
   END IF;
 
   SELECT * INTO req FROM public.onboarding_requests
-  WHERE enquiry_id = enquiry.id AND product_code = 'TELLOYA'
+  WHERE enquiry_id = enquiry.id
+    AND product_code = 'TELLOYA'
+    AND state NOT IN ('CLOSED', 'DECLINED')
   ORDER BY created_at DESC
   LIMIT 1;
 
   IF req.id IS NULL THEN
-    RETURN jsonb_build_object('status', 'ready', 'draft', NULL, 'locked', false);
+    SELECT EXISTS (
+      SELECT 1 FROM public.onboarding_requests
+      WHERE enquiry_id = enquiry.id AND product_code = 'TELLOYA'
+    ) INTO closed_exists;
+    IF closed_exists THEN
+      RETURN jsonb_build_object('status', 'ready', 'draft', NULL, 'locked', true, 'version', 0);
+    END IF;
+    RETURN jsonb_build_object('status', 'ready', 'draft', NULL, 'locked', false, 'version', 0);
   END IF;
 
   SELECT * INTO draft FROM admin_private.telloya_offer_drafts
@@ -114,6 +145,9 @@ DECLARE
   selected_overage_cap integer := NULL;
   selected_notes text := '';
   location_ok integer;
+  before_state jsonb := NULL;
+  after_state jsonb;
+  from_version integer := 0;
   result jsonb;
 BEGIN
   s := public.admin_session_v1(p_token);
@@ -137,17 +171,28 @@ BEGIN
 
   PERFORM pg_advisory_xact_lock(hashtextextended('telloya-offer-draft:' || (p_payload->>'enquiryId'), 0));
   SELECT * INTO enquiry FROM public.enquiries WHERE id = (p_payload->>'enquiryId')::uuid FOR UPDATE;
-  IF enquiry.id IS NULL OR coalesce(enquiry.payload->>'source', '') <> 'telloya' THEN
+  IF enquiry.id IS NULL OR enquiry.source IS DISTINCT FROM 'telloya' THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'not_telloya');
   END IF;
 
   SELECT * INTO req FROM public.onboarding_requests
-  WHERE enquiry_id = enquiry.id AND product_code = 'TELLOYA'
+  WHERE enquiry_id = enquiry.id
+    AND product_code = 'TELLOYA'
+    AND state NOT IN ('CLOSED', 'DECLINED')
   ORDER BY created_at DESC
   LIMIT 1
   FOR UPDATE;
   IF req.id IS NULL THEN
+    IF EXISTS (
+      SELECT 1 FROM public.onboarding_requests
+      WHERE enquiry_id = enquiry.id AND product_code = 'TELLOYA'
+    ) THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'onboarding_closed');
+    END IF;
     RETURN jsonb_build_object('status', 'denied', 'reason', 'onboarding_missing');
+  END IF;
+  IF req.product_code IS DISTINCT FROM 'TELLOYA' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'wrong_product');
   END IF;
   IF req.commercial_subscription_id IS NOT NULL THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'offer_locked');
@@ -216,6 +261,19 @@ BEGIN
 
   selected_notes := left(coalesce(p_payload->>'notes', ''), 1000);
 
+  IF draft.onboarding_request_id IS NOT NULL THEN
+    from_version := draft.record_version;
+    before_state := jsonb_build_object(
+      'planTier', draft.plan_tier,
+      'proposedGuardQuantity', draft.proposed_guard_quantity,
+      'guardLocationIds', to_jsonb(draft.guard_location_ids),
+      'overageOptIn', draft.overage_opt_in,
+      'overageCapPence', draft.overage_cap_minor,
+      'notes', draft.notes,
+      'version', draft.record_version
+    );
+  END IF;
+
   IF draft.onboarding_request_id IS NULL THEN
     INSERT INTO admin_private.telloya_offer_drafts (
       onboarding_request_id, enquiry_id, plan_tier, proposed_guard_quantity,
@@ -240,19 +298,27 @@ BEGIN
     RETURNING * INTO draft;
   END IF;
 
+  after_state := jsonb_build_object(
+    'planTier', draft.plan_tier,
+    'proposedGuardQuantity', draft.proposed_guard_quantity,
+    'guardLocationIds', to_jsonb(draft.guard_location_ids),
+    'overageOptIn', draft.overage_opt_in,
+    'overageCapPence', draft.overage_cap_minor,
+    'notes', draft.notes,
+    'version', draft.record_version
+  );
+
+  INSERT INTO admin_private.telloya_offer_draft_events (
+    onboarding_request_id, enquiry_id, actor_id, from_version, to_version, before_state, after_state
+  ) VALUES (
+    req.id, enquiry.id, actor, from_version, draft.record_version, before_state, after_state
+  );
+
   result := jsonb_build_object(
     'status', 'success',
-    'message', 'Draft offer estimate saved. This is not an official commercial offer.',
+    'message', 'Draft offer estimate saved. This is not an official commercial offer and does not record customer consent.',
     'version', draft.record_version,
-    'draft', jsonb_build_object(
-      'planTier', draft.plan_tier,
-      'proposedGuardQuantity', draft.proposed_guard_quantity,
-      'guardLocationIds', to_jsonb(draft.guard_location_ids),
-      'overageOptIn', draft.overage_opt_in,
-      'overageCapPence', draft.overage_cap_minor,
-      'notes', draft.notes,
-      'version', draft.record_version
-    )
+    'draft', after_state
   );
   INSERT INTO admin_private.commercial_command_receipts(request_id, actor_id, fingerprint, response)
   VALUES (p_request, actor, fingerprint, result);

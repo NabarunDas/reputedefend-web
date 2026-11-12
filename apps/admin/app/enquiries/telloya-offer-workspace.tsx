@@ -19,14 +19,13 @@ export function TelloyaOfferWorkspace({
 }) {
   const router = useRouter()
   const key = useRef(newKey())
-  const [status, setStatus] = useState<"idle" | "working" | "done" | "error">(workspace.needsReconciliation ? "idle" : "done")
+  const [status, setStatus] = useState<"working" | "done" | "error">(workspace.needsReconciliation ? "working" : "done")
   const [message, setMessage] = useState<string | null>(null)
   const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
     if (!workspace.needsReconciliation) return
     let active = true
-    setStatus("working")
     void (async () => {
       try {
         const response = await fetch("/api/enquiries/telloya-sales-context", {
@@ -59,6 +58,7 @@ export function TelloyaOfferWorkspace({
   function resume() {
     key.current = newKey()
     setMessage(null)
+    setStatus("working")
     setRetryToken(value => value + 1)
   }
 

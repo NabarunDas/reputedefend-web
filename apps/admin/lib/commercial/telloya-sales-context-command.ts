@@ -1,5 +1,4 @@
 import "server-only"
-import { createHash } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { backend, tokenHash, validToken } from "../auth/backend"
 import { authConfig, sessionCookie } from "../auth/config"
@@ -7,222 +6,127 @@ import { adminCommandOriginError } from "../auth/command-origin"
 import { privateResponseHeaders } from "../access"
 import { isUuid } from "../records/model"
 import { ADMIN_RECENT_SIGN_IN_MESSAGE } from "../admin/reauth-copy"
-import type { OnboardingView } from "./onboarding"
 import { telloyaSalesBootstrapAllowed } from "./telloya-sales-context"
+import { reconcileTelloyaSalesContextFallback } from "./telloya-sales-context-fallback"
 
 const reply = (message: string, status: number, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ message, ...extra }, { status, headers: privateResponseHeaders })
 
-const REASON = "Automatic Telloya sales context after a completed offline demonstration."
+const OPERATIONS = new Set(["bootstrap", "confirm_business", "confirm_location", "create_location"])
 
-function stepKey(enquiryId: string, step: string): string {
-  const digest = createHash("sha256").update(`telloya-sales-context:${enquiryId}:${step}`).digest("hex")
-  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`
-}
+export type TelloyaSalesContextOperation = "bootstrap" | "confirm_business" | "confirm_location" | "create_location"
 
-function websiteOf(value: string | undefined): string {
-  const raw = (value ?? "").trim()
-  if (!raw) return ""
-  if (/^https?:\/\//i.test(raw)) return raw.slice(0, 2048)
-  return `https://${raw}`.slice(0, 2048)
-}
-
-export function parseTelloyaSalesContextCommand(body: unknown): { enquiryId: string } | null {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return null
-  const enquiryId = (body as { enquiryId?: unknown }).enquiryId
-  return isUuid(enquiryId) ? { enquiryId } : null
-}
-
-type CommandResult = { status: string; reason?: string; version?: number }
-
-async function runCommercial(
-  token: string,
-  enquiryId: string,
-  step: string,
-  operation: string,
-  version: number,
-  payload: Record<string, unknown>,
-): Promise<CommandResult> {
-  return backend().rpc<CommandResult>("admin_commercial_command_v1", {
-    p_token: tokenHash(token),
-    p_request: stepKey(enquiryId, step),
-    p_operation: operation,
-    p_payload: { enquiryId, reason: REASON, ...payload },
-    p_version: version,
-  })
-}
-
-async function loadOnboarding(token: string, enquiryId: string): Promise<OnboardingView | null> {
-  try {
-    const result = await backend().rpc<OnboardingView | { missing: true } | null>("admin_commercial_onboarding_v1", {
-      p_token: tokenHash(token),
-      p_enquiry: enquiryId,
-    })
-    if (!result || "missing" in result) return null
-    return result
-  } catch {
-    return null
-  }
-}
-
-async function loadEnquiryHints(token: string, enquiryId: string): Promise<{
-  businessName?: string
-  websiteUrl?: string
+export function parseTelloyaSalesContextCommand(body: unknown): {
+  enquiryId: string
+  operation: TelloyaSalesContextOperation
+  businessId?: string
+  locationId?: string
+  locationName?: string
   country?: string
-  locationHint?: string
-}> {
-  try {
-    const result = await backend().rpc<{ payload?: Record<string, unknown>; missing?: true } | null>("admin_enquiry_detail_v1", {
-      p_token: tokenHash(token),
-      p_id: enquiryId,
-    })
-    if (!result || "missing" in result || !result.payload) return {}
-    const payload = result.payload
-    return {
-      businessName: typeof payload.businessName === "string" ? payload.businessName : undefined,
-      websiteUrl: typeof payload.websiteUrl === "string" ? payload.websiteUrl : undefined,
-      country: typeof payload.country === "string" ? payload.country : undefined,
-      locationHint: typeof payload.locations === "string" ? payload.locations : undefined,
-    }
-  } catch {
-    return {}
+} | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null
+  const record = body as Record<string, unknown>
+  const enquiryId = record.enquiryId
+  const operation = typeof record.operation === "string" ? record.operation : "bootstrap"
+  if (!isUuid(enquiryId) || !OPERATIONS.has(operation)) return null
+  if (operation === "confirm_business" && !isUuid(record.businessId)) return null
+  if (operation === "confirm_location" && !isUuid(record.locationId)) return null
+  if (operation === "create_location") {
+    if (record.locationName !== undefined && (typeof record.locationName !== "string" || record.locationName.length > 200)) return null
+    if (record.country !== undefined && (typeof record.country !== "string" || record.country.length > 100)) return null
+  }
+  return {
+    enquiryId,
+    operation: operation as TelloyaSalesContextOperation,
+    businessId: isUuid(record.businessId) ? record.businessId : undefined,
+    locationId: isUuid(record.locationId) ? record.locationId : undefined,
+    locationName: typeof record.locationName === "string" ? record.locationName : undefined,
+    country: typeof record.country === "string" ? record.country : undefined,
   }
 }
 
-async function demoCompleted(token: string, enquiryId: string): Promise<boolean> {
-  try {
-    const result = await backend().rpc<{ status?: string; demo_status?: string } | null>("telloya_admin_demo_v1", {
-      p_token: tokenHash(token),
-      p_enquiry_id: enquiryId,
-    })
-    return result?.status === "ready" && result.demo_status === "COMPLETED"
-  } catch {
-    return false
+type CommandResult = {
+  status: string
+  reason?: string
+  exception?: string
+  message?: string
+  version?: number
+}
+
+function mapResult(result: CommandResult): { ok: boolean; status: number; message: string; exception?: string } {
+  if (result.status === "reauth_required") return { ok: false, status: 403, message: ADMIN_RECENT_SIGN_IN_MESSAGE }
+  if (result.status === "unauthorized") return { ok: false, status: 401, message: "Your session has ended. Please sign in again." }
+  if (result.status === "success") {
+    return {
+      ok: true,
+      status: 200,
+      message: result.message || "Telloya offer workspace is ready for review. No offer email was sent.",
+      exception: result.exception,
+    }
   }
+  if (result.status === "denied" && result.reason === "demonstration_not_completed") {
+    return { ok: false, status: 409, message: "Complete the offline demonstration before preparing the offer workspace." }
+  }
+  if (result.status === "denied" && result.reason === "not_telloya") {
+    return { ok: false, status: 403, message: "A Telloya sales context can be prepared only for a Telloya enquiry." }
+  }
+  if (result.exception === "revoked_membership" || result.reason === "revoked") {
+    return { ok: false, status: 409, message: "Business authority has been withdrawn. Matching does not restore it.", exception: "revoked_membership" }
+  }
+  if (result.exception) {
+    return {
+      ok: false,
+      status: 409,
+      message: result.message || "Resolve the highlighted exception before continuing.",
+      exception: result.exception,
+    }
+  }
+  if (result.status === "invalid") return { ok: false, status: 400, message: "Check the enquiry before preparing the offer workspace." }
+  if (result.status === "conflict") {
+    return {
+      ok: false,
+      status: 409,
+      message: result.message || "Telloya sales context could not be prepared safely. Reload the enquiry before trying again.",
+      exception: result.exception,
+    }
+  }
+  return { ok: false, status: 503, message: "We couldn’t prepare the offer workspace. Reload the enquiry before trying again." }
 }
 
 export async function reconcileTelloyaSalesContext(input: {
   token: string
   enquiryId: string
-  businessName?: string
-  websiteUrl?: string
+  operation?: TelloyaSalesContextOperation
+  businessId?: string
+  locationId?: string
+  locationName?: string
   country?: string
-  locationHint?: string
+  idempotencyKey: string
 }): Promise<{ ok: boolean; status: number; message: string; exception?: string }> {
   if (!telloyaSalesBootstrapAllowed()) {
     return { ok: false, status: 403, message: "Telloya sales-context bootstrap stays closed outside Preview with the journey flag enabled." }
   }
-  if (!(await demoCompleted(input.token, input.enquiryId))) {
-    return { ok: false, status: 409, message: "Complete the offline demonstration before preparing the offer workspace." }
+  const operation = input.operation ?? "bootstrap"
+  try {
+    const result = await backend().rpc<CommandResult>("telloya_sales_context_command_v1", {
+      p_token: tokenHash(input.token),
+      p_request: input.idempotencyKey,
+      p_operation: operation,
+      p_payload: {
+        enquiryId: input.enquiryId,
+        ...(input.businessId ? { businessId: input.businessId } : {}),
+        ...(input.locationId ? { locationId: input.locationId } : {}),
+        ...(input.locationName ? { locationName: input.locationName } : {}),
+        ...(input.country ? { country: input.country } : {}),
+      },
+    })
+    return mapResult(result)
+  } catch {
+    if (operation === "bootstrap") {
+      return reconcileTelloyaSalesContextFallback({ token: input.token, enquiryId: input.enquiryId })
+    }
+    return { ok: false, status: 503, message: "Telloya sales-context is unavailable on this deployment until the source-only migration is applied." }
   }
-
-  const hints = await loadEnquiryHints(input.token, input.enquiryId)
-  const businessName = (input.businessName || hints.businessName || "Telloya business").trim().slice(0, 200) || "Telloya business"
-  const websiteUrl = websiteOf(input.websiteUrl || hints.websiteUrl)
-  const country = (input.country || hints.country || "United Kingdom").trim().slice(0, 100) || "United Kingdom"
-
-  let view = await loadOnboarding(input.token, input.enquiryId)
-  if (!view?.supported) {
-    return { ok: false, status: 503, message: "Commercial onboarding is unavailable on this deployment." }
-  }
-
-  if (!view.request) {
-    const classified = await runCommercial(input.token, input.enquiryId, "classify", "classify", 0, { product: "TELLOYA" })
-    if (classified.status === "reauth_required") return { ok: false, status: 403, message: ADMIN_RECENT_SIGN_IN_MESSAGE }
-    if (classified.status === "unauthorized") return { ok: false, status: 401, message: "Your session has ended. Please sign in again." }
-    if (classified.status !== "success") {
-      return { ok: false, status: 409, message: "Telloya onboarding could not be opened for this enquiry." }
-    }
-    view = await loadOnboarding(input.token, input.enquiryId)
-    if (!view?.supported || !view.request) {
-      return { ok: false, status: 503, message: "Telloya onboarding could not be reloaded after classify." }
-    }
-  }
-
-  if (view.request.product !== "TELLOYA") {
-    return { ok: false, status: 403, message: "This enquiry already has a non-Telloya onboarding request.", exception: "resolve_customer" }
-  }
-
-  if (view.step === "customer") {
-    if (view.candidates.length > 1) {
-      return { ok: false, status: 409, message: "More than one customer matches this enquiry. Resolve the customer before continuing.", exception: "resolve_customer" }
-    }
-    const version = view.request.version
-    const payload = view.candidates.length === 1
-      ? { customerId: view.candidates[0].id }
-      : { create: true }
-    const matched = await runCommercial(input.token, input.enquiryId, "match_customer", "match_customer", version, payload)
-    if (matched.status === "reauth_required") return { ok: false, status: 403, message: ADMIN_RECENT_SIGN_IN_MESSAGE }
-    if (matched.status === "unauthorized") return { ok: false, status: 401, message: "Your session has ended. Please sign in again." }
-    if (matched.status !== "success") {
-      return { ok: false, status: 409, message: "The customer record could not be linked automatically.", exception: "resolve_customer" }
-    }
-    view = await loadOnboarding(input.token, input.enquiryId)
-    if (!view?.supported || !view.request) {
-      return { ok: false, status: 503, message: "Telloya onboarding could not be reloaded after customer match." }
-    }
-  }
-
-  if (view.step === "business") {
-    const usable = view.businesses.filter(item => item.membership !== "revoked")
-    const revokedOnly = view.businesses.length > 0 && usable.length === 0
-    if (revokedOnly) {
-      return { ok: false, status: 409, message: "Business authority has been withdrawn. Matching does not restore it.", exception: "revoked_membership" }
-    }
-    if (usable.length > 1) {
-      return { ok: false, status: 409, message: "More than one business could apply. Resolve the business before continuing.", exception: "resolve_business" }
-    }
-    const version = view.request.version
-    const payload = usable.length === 1
-      ? { businessId: usable[0].id, membership: usable[0].membership === "verified" ? "verified" : "pending" }
-      : {
-          create: true,
-          name: businessName,
-          website: websiteUrl,
-          membership: "pending",
-        }
-    const matched = await runCommercial(input.token, input.enquiryId, "match_business", "match_business", version, payload)
-    if (matched.status === "reauth_required") return { ok: false, status: 403, message: ADMIN_RECENT_SIGN_IN_MESSAGE }
-    if (matched.status === "unauthorized") return { ok: false, status: 401, message: "Your session has ended. Please sign in again." }
-    if (matched.status === "denied" && matched.reason === "revoked") {
-      return { ok: false, status: 409, message: "Business authority has been withdrawn. Matching does not restore it.", exception: "revoked_membership" }
-    }
-    if (matched.status !== "success") {
-      return { ok: false, status: 409, message: "The business record could not be linked automatically.", exception: "resolve_business" }
-    }
-    view = await loadOnboarding(input.token, input.enquiryId)
-    if (!view?.supported || !view.request) {
-      return { ok: false, status: 503, message: "Telloya onboarding could not be reloaded after business match." }
-    }
-  }
-
-  if (view.step === "locations") {
-    const selected = view.locations.filter(item => item.selected)
-    if (selected.length === 1) {
-      return { ok: true, status: 200, message: "Telloya offer workspace is ready for review. No offer email was sent." }
-    }
-    if (view.locations.length === 1) {
-      const located = await runCommercial(input.token, input.enquiryId, "select_locations", "select_locations", view.request.version, {
-        locationIds: [view.locations[0].id],
-      })
-      if (located.status === "reauth_required") return { ok: false, status: 403, message: ADMIN_RECENT_SIGN_IN_MESSAGE }
-      if (located.status === "unauthorized") return { ok: false, status: 401, message: "Your session has ended. Please sign in again." }
-      if (located.status !== "success") {
-        return { ok: false, status: 409, message: "The operating location could not be confirmed automatically.", exception: "confirm_operating_location" }
-      }
-      return { ok: true, status: 200, message: "Telloya offer workspace is ready for review. No offer email was sent." }
-    }
-    // Do not invent a verified location from enquiry text. Leave an inline exception for Admin.
-    void country
-    return {
-      ok: true,
-      status: 200,
-      message: "Telloya offer workspace is ready for review. Confirm the operating location before a sendable offer.",
-      exception: "confirm_operating_location",
-    }
-  }
-
-  return { ok: true, status: 200, message: "Telloya offer workspace is ready for review. No offer email was sent." }
 }
 
 export async function telloyaSalesContextCommand(request: NextRequest) {
@@ -257,6 +161,12 @@ export async function telloyaSalesContextCommand(request: NextRequest) {
     const result = await reconcileTelloyaSalesContext({
       token,
       enquiryId: parsed.enquiryId,
+      operation: parsed.operation,
+      businessId: parsed.businessId,
+      locationId: parsed.locationId,
+      locationName: parsed.locationName,
+      country: parsed.country,
+      idempotencyKey: key,
     })
     return reply(result.message, result.status, result.exception ? { exception: result.exception } : {})
   } catch {
@@ -264,14 +174,22 @@ export async function telloyaSalesContextCommand(request: NextRequest) {
   }
 }
 
-/** Used after a successful COMPLETED demo transition in the same request. Never blocks demo recording. */
+/** Used after a successful COMPLETED demo transition. Never blocks demo recording. */
 export async function reconcileTelloyaSalesContextAfterDemo(input: {
   token: string
   enquiryId: string
-}): Promise<void> {
-  if (!telloyaSalesBootstrapAllowed()) return
-  await reconcileTelloyaSalesContext({
-    token: input.token,
-    enquiryId: input.enquiryId,
-  }).catch(() => undefined)
+  idempotencyKey: string
+}): Promise<{ exception?: string; message?: string } | null> {
+  if (!telloyaSalesBootstrapAllowed()) return null
+  try {
+    const result = await reconcileTelloyaSalesContext({
+      token: input.token,
+      enquiryId: input.enquiryId,
+      operation: "bootstrap",
+      idempotencyKey: input.idempotencyKey,
+    })
+    return { exception: result.exception, message: result.message }
+  } catch {
+    return { message: "Telloya sales-context bootstrap could not finish. Open the enquiry to retry." }
+  }
 }

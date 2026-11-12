@@ -118,18 +118,42 @@ export function buildTelloyaSalesWorkspace(input: {
     })
   }
 
-  if (onboarding?.step === "business" && onboarding.businesses.filter(item => item.membership !== "revoked").length > 1) {
-    exceptions.push({
-      code: "resolve_business",
-      message: "More than one business could apply. Choose the correct business before continuing.",
-    })
+  if (onboarding?.step === "business") {
+    const usable = onboarding.businesses.filter(item => item.membership !== "revoked")
+    if (usable.length > 1) {
+      exceptions.push({
+        code: "resolve_business",
+        message: "More than one business could apply. Confirm the matching business before continuing.",
+      })
+    } else if (usable.length === 1) {
+      exceptions.push({
+        code: "confirm_business_authority",
+        message: "Confirm the business. A sole existing membership is not selected without matching enquiry evidence.",
+      })
+    } else if (usable.length === 0 && onboarding.businesses.some(item => item.membership === "revoked")) {
+      exceptions.push({
+        code: "revoked_membership",
+        message: "Business authority has been withdrawn. Matching does not restore it.",
+      })
+    }
   }
 
   const selectedLocations = onboarding?.locations.filter(item => item.selected) ?? []
-  if (demoCompleted && selectedLocations.length === 0) {
+  if (
+    demoCompleted
+    && selectedLocations.length === 0
+    && onboarding?.step !== "business"
+    && onboarding?.step !== "customer"
+    && (
+      !request
+      || onboarding?.step === "locations"
+      || onboarding?.step === "next"
+      || onboarding?.step === "classify"
+    )
+  ) {
     exceptions.push({
       code: "confirm_operating_location",
-      message: "Confirm the operating location. Enquiry location text is not a verified service address.",
+      message: "Confirm the operating location. Enquiry location text is not a verified service address, and a sole existing location is not selected automatically.",
     })
   }
 

@@ -8,6 +8,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh }
 
 import { TelloyaOfferWorkspace } from "./telloya-offer-workspace"
 import type { TelloyaSalesWorkspace } from "@/lib/commercial/telloya-sales-context"
+import type { OnboardingView } from "@/lib/commercial/onboarding"
 
 const enquiryId = "21affacc-2e97-4b9a-992d-9f0644ab7115"
 
@@ -23,16 +24,46 @@ const workspace = (overrides: Partial<TelloyaSalesWorkspace> = {}): TelloyaSales
   voiceLocationSummary: "London workshop",
   guardInterestSummary: "Guard interest recorded for 2 locations. Unticked until Admin chooses Guard locations.",
   illustrativeMonthly: "£98.98 illustrative catalogue total",
-  exceptions: [{ code: "confirm_operating_location", message: "Confirm the operating location. Enquiry location text is not a verified service address." }],
+  exceptions: [{ code: "confirm_operating_location", message: "Confirm the operating location. Enquiry location text is not a verified service address, and a sole existing location is not selected automatically." }],
   blockers: [
     { code: "approved_catalogue_missing", message: "Not sendable — approved Telloya plan catalogue is not configured." },
     { code: "service_agreement_missing", message: "Not sendable — approved service agreement and tax treatment are not configured." },
   ],
   sendable: false,
   needsReconciliation: true,
-  onboardingStep: "classify",
+  onboardingStep: "locations",
   ...overrides,
 })
+
+const onboarding: OnboardingView = {
+  supported: true,
+  productHint: "TELLOYA",
+  step: "locations",
+  termsConfigured: false,
+  invitationReady: false,
+  invitationSent: false,
+  emailVerified: false,
+  contactVerified: false,
+  membership: "pending",
+  outstanding: [],
+  nextAction: null,
+  request: {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    product: "TELLOYA",
+    state: "MAILBOX_REQUIRED",
+    version: 3,
+    customerId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    businessId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    declineReason: null,
+    subscriptionId: null,
+  },
+  customer: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Alex Owner", emailVerified: false, version: 1 },
+  candidates: [],
+  businesses: [{ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Owner Yard", membership: "pending", membershipVersion: 1 }],
+  locations: [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "Other site", country: "United Kingdom", selected: false }],
+  history: [],
+  approvedPlans: [],
+}
 
 beforeEach(() => {
   refresh.mockReset()
@@ -47,21 +78,19 @@ afterEach(() => {
 })
 
 describe("Telloya offer workspace", () => {
-  it("shows a prefilled offer screen and reconciles once without the five-step wizard", async () => {
-    render(<TelloyaOfferWorkspace enquiryId={enquiryId} workspace={workspace()} offer={{ availability: "no_offer" }} />)
+  it("shows a prefilled offer screen with inline location confirmation and no five-step wizard", async () => {
+    render(<TelloyaOfferWorkspace enquiryId={enquiryId} workspace={workspace()} offer={{ availability: "no_offer" }} onboarding={onboarding} businessName="Owner Yard" country="United Kingdom" />)
     expect(screen.getByRole("heading", { name: "Personalised offer workspace" })).toBeTruthy()
     expect(screen.getByText("Alex Owner · alex@example.com · +447700900123")).toBeTruthy()
-    expect(screen.getByText("Owner Yard")).toBeTruthy()
-    expect(screen.getByText(/Not sendable — approved Telloya plan catalogue/)).toBeTruthy()
+    expect(screen.getByText("Confirm operating location")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Confirm Other site" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Send offer" })).toHaveProperty("disabled", true)
-    expect(screen.queryByText("Product")).toBeNull()
     expect(screen.queryByText("Open onboarding")).toBeNull()
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/enquiries/telloya-sales-context", expect.objectContaining({
       method: "POST",
-      body: JSON.stringify({ enquiryId }),
+      body: JSON.stringify({ enquiryId, operation: "bootstrap" }),
     })))
     await waitFor(() => expect(refresh).toHaveBeenCalled())
-    expect(screen.getByText(/Telloya offer workspace is ready for review/)).toBeTruthy()
   })
 
   it("does not POST again when the sales context is already reconciled", async () => {
@@ -69,8 +98,58 @@ describe("Telloya offer workspace", () => {
       enquiryId={enquiryId}
       workspace={workspace({ needsReconciliation: false, exceptions: [], onboardingStep: "next" })}
       offer={{ availability: "no_offer" }}
+      onboarding={{ ...onboarding, step: "next", locations: [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "London workshop", country: "United Kingdom", selected: true }] }}
     />)
     expect(screen.getByText("Review personalised offer draft")).toBeTruthy()
+    await waitFor(() => expect(fetch).not.toHaveBeenCalled())
+  })
+
+  it("exposes Prepare offer with plan and Guard controls when authority and catalogue are ready", async () => {
+    render(<TelloyaOfferWorkspace
+      enquiryId={enquiryId}
+      workspace={workspace({
+        needsReconciliation: false,
+        exceptions: [],
+        blockers: [],
+        sendable: true,
+        primaryLabel: "Prepare personalised offer",
+        onboardingStep: "next",
+      })}
+      offer={{ availability: "no_offer" }}
+      onboarding={{
+        ...onboarding,
+        step: "next",
+        termsConfigured: true,
+        membership: "verified",
+        locations: [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "London workshop", country: "United Kingdom", selected: true }],
+        approvedPlans: [{
+          id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          versionNumber: 1,
+          tierCode: "GROWTH",
+          tierLabel: "Growth",
+          amountMinor: 7900,
+          currency: "GBP",
+          cadence: "month",
+          termsRef: "terms",
+          includedMinutes: 300,
+          baseAmountMinor: 7900,
+          guardUnitMinor: 999,
+          overageRateMinor: null,
+          conditionsStatus: "APPROVED",
+          telloyaQuantity: 1,
+          guardQuantity: null,
+          selectedLocations: 1,
+          guardAddonUnitMinor: 999,
+          offerable: true,
+          unavailableReason: null,
+          matchesApprovedSchedule: true,
+        }],
+      }}
+    />)
+    expect(screen.getByRole("heading", { name: "Prepare personalised offer" })).toBeTruthy()
+    expect(screen.getByText(/Growth, version 1/)).toBeTruthy()
+    expect(screen.getByText(/Include London workshop in Relaunch Guard/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Prepare offer" })).toBeTruthy()
     await waitFor(() => expect(fetch).not.toHaveBeenCalled())
   })
 })

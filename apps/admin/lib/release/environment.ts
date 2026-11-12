@@ -423,7 +423,11 @@ export const environmentContract: readonly EnvVariable[] = [
     whenAbsent: "The enquiry page can show Telloya progress. Demonstration recording, offer revision, offer mail, customer amendment requests, and checkout stay closed.",
     blocksAdminLaunch: false,
     blocksOptionalCapabilityOnly: true,
-    readBy: ["apps/admin/lib/commercial/telloya-admin-journey-flag.ts", "apps/customer/lib/portal/onboarding/flag.ts"],
+    readBy: [
+      "apps/admin/lib/commercial/telloya-admin-journey-flag.ts",
+      "apps/admin/lib/commercial/telloya-sales-context.ts",
+      "apps/customer/lib/portal/onboarding/flag.ts",
+    ],
   },
   {
     name: "TELLOYA_RETELL_DEV_API_KEY",
@@ -556,6 +560,7 @@ export const environmentContract: readonly EnvVariable[] = [
       "apps/admin/lib/jobs/dev-payment-events.ts",
       "apps/admin/lib/jobs/dev-stripe-one-shot.ts",
       "apps/admin/lib/commercial/provider-lane.ts",
+      "apps/admin/lib/commercial/telloya-sales-context.ts",
       "apps/admin/proxy.ts",
       "apps/customer/lib/case/config.ts",
       "apps/customer/lib/config.ts",

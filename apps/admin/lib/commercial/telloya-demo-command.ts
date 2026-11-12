@@ -80,7 +80,17 @@ export async function telloyaDemoCommand(request: NextRequest) {
       case "recorded":
       case "replay":
         if (args.p_status === "COMPLETED") {
-          await reconcileTelloyaSalesContextAfterDemo({ token, enquiryId: args.p_enquiry_id })
+          const bootstrap = await reconcileTelloyaSalesContextAfterDemo({
+            token,
+            enquiryId: args.p_enquiry_id,
+            idempotencyKey: key,
+          })
+          if (bootstrap?.exception || bootstrap?.message) {
+            return NextResponse.json({
+              message: "Saved. The demonstration record has been updated.",
+              salesContext: bootstrap,
+            }, { status: 200, headers: privateResponseHeaders })
+          }
         }
         return reply("Saved. The demonstration record has been updated.", 200)
       case "unauthorized":

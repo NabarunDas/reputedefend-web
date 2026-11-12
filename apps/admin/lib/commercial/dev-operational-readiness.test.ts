@@ -16,7 +16,7 @@ describe("controlled Retell DEV operational readiness", () => {
     expect(readiness).toContain("3.0.4")
     expect(readiness).toContain("POST https://api.retellai.com/v3/create-web-call")
     expect(readiness).toContain("600 seconds")
-    expect(readiness).toContain("pendingMigrations()` is empty.")
+    expect(readiness).toContain("pendingMigrations()` contains only `20261112180000` telloya_sales_context_v1 (source-only).")
     expect(readiness).toContain("I understand this controlled web call may incur a provider usage charge.")
     expect(readiness).toContain("max_call_duration_ms")
     expect(prerequisites).toContain("TELLOYA_ENQUIRY_ENABLED")

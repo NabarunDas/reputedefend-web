@@ -25,27 +25,6 @@ function req(payload: unknown, headers: Record<string, string> = {}) {
   })
 }
 
-const emptyOnboarding = {
-  supported: true,
-  productHint: "TELLOYA",
-  step: "classify",
-  termsConfigured: false,
-  invitationReady: false,
-  invitationSent: false,
-  emailVerified: false,
-  contactVerified: false,
-  membership: null,
-  outstanding: [],
-  nextAction: null,
-  request: null,
-  customer: null,
-  candidates: [],
-  businesses: [],
-  locations: [],
-  history: [],
-  approvedPlans: [],
-}
-
 beforeEach(() => {
   vi.stubEnv("ADMIN_AUTH_ENABLED", "true")
   vi.stubEnv("ADMIN_ORIGIN", origin)
@@ -58,8 +37,9 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs())
 
 describe("parseTelloyaSalesContextCommand", () => {
-  it("accepts only a Telloya enquiry id", () => {
-    expect(parseTelloyaSalesContextCommand({ enquiryId })).toEqual({ enquiryId })
+  it("accepts bootstrap and confirmation operations", () => {
+    expect(parseTelloyaSalesContextCommand({ enquiryId })).toEqual({ enquiryId, operation: "bootstrap", businessId: undefined, locationId: undefined, locationName: undefined, country: undefined })
+    expect(parseTelloyaSalesContextCommand({ enquiryId, operation: "confirm_business", businessId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })?.operation).toBe("confirm_business")
     expect(parseTelloyaSalesContextCommand({ enquiryId: "not-a-uuid" })).toBeNull()
   })
 })
@@ -72,15 +52,59 @@ describe("Telloya sales-context command", () => {
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
-  it("reconciles a completed demo with no onboarding request without inventing a location", async () => {
+  it("calls the composite sales-context command for bootstrap", async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      status: "success",
+      exception: "confirm_operating_location",
+      message: "Confirm the operating location. Enquiry location text is not a verified service address.",
+    })
+    const result = await reconcileTelloyaSalesContext({ token, enquiryId, idempotencyKey: key })
+    expect(result.ok).toBe(true)
+    expect(result.exception).toBe("confirm_operating_location")
+    expect(mocks.rpc).toHaveBeenCalledWith("telloya_sales_context_command_v1", expect.objectContaining({
+      p_operation: "bootstrap",
+      p_request: key,
+    }))
+  })
+
+  it("falls back to evidence-safe orchestration when the composite migration is unapplied", async () => {
     mocks.rpc
+      .mockRejectedValueOnce(new Error("function telloya_sales_context_command_v1 does not exist"))
       .mockResolvedValueOnce({ status: "ready", demo_status: "COMPLETED" })
-      .mockResolvedValueOnce({ payload: { businessName: "Owner Yard", websiteUrl: "https://example.com", country: "United Kingdom", locations: "London" } })
-      .mockResolvedValueOnce(emptyOnboarding)
+      .mockResolvedValueOnce({ payload: { businessName: "Owner Yard", websiteUrl: "", locations: "London", country: "United Kingdom" } })
+      .mockResolvedValueOnce({
+        supported: true,
+        productHint: "TELLOYA",
+        step: "classify",
+        termsConfigured: false,
+        invitationReady: false,
+        invitationSent: false,
+        emailVerified: false,
+        contactVerified: false,
+        membership: null,
+        outstanding: [],
+        nextAction: null,
+        request: null,
+        customer: null,
+        candidates: [],
+        businesses: [],
+        locations: [],
+        history: [],
+        approvedPlans: [],
+      })
       .mockResolvedValueOnce({ status: "success", version: 1 })
       .mockResolvedValueOnce({
-        ...emptyOnboarding,
+        supported: true,
+        productHint: "TELLOYA",
         step: "customer",
+        termsConfigured: false,
+        invitationReady: false,
+        invitationSent: false,
+        emailVerified: false,
+        contactVerified: false,
+        membership: null,
+        outstanding: [],
+        nextAction: null,
         request: {
           id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           product: "TELLOYA",
@@ -91,11 +115,26 @@ describe("Telloya sales-context command", () => {
           declineReason: null,
           subscriptionId: null,
         },
+        customer: null,
+        candidates: [],
+        businesses: [],
+        locations: [],
+        history: [],
+        approvedPlans: [],
       })
       .mockResolvedValueOnce({ status: "success", version: 2 })
       .mockResolvedValueOnce({
-        ...emptyOnboarding,
+        supported: true,
+        productHint: "TELLOYA",
         step: "business",
+        termsConfigured: false,
+        invitationReady: false,
+        invitationSent: false,
+        emailVerified: false,
+        contactVerified: false,
+        membership: null,
+        outstanding: [],
+        nextAction: null,
         request: {
           id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           product: "TELLOYA",
@@ -107,62 +146,19 @@ describe("Telloya sales-context command", () => {
           subscriptionId: null,
         },
         customer: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Alex", emailVerified: false, version: 1 },
-      })
-      .mockResolvedValueOnce({ status: "success", version: 3 })
-      .mockResolvedValueOnce({
-        ...emptyOnboarding,
-        step: "locations",
-        membership: "pending",
-        request: {
-          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-          product: "TELLOYA",
-          state: "MAILBOX_REQUIRED",
-          version: 3,
-          customerId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-          businessId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-          declineReason: null,
-          subscriptionId: null,
-        },
+        candidates: [],
+        businesses: [{ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Different Yard", membership: "pending", membershipVersion: 1 }],
         locations: [],
+        history: [],
+        approvedPlans: [],
       })
 
-    const result = await reconcileTelloyaSalesContext({ token, enquiryId })
+    const result = await reconcileTelloyaSalesContext({ token, enquiryId, idempotencyKey: key })
     expect(result.ok).toBe(true)
-    expect(result.exception).toBe("confirm_operating_location")
-    const operations = mocks.rpc.mock.calls
-      .filter(call => call[0] === "admin_commercial_command_v1")
-      .map(call => call[1].p_operation)
-    expect(operations).toEqual(["classify", "match_customer", "match_business"])
-    expect(operations).not.toContain("select_locations")
-    expect(operations).not.toContain("prepare_offer")
-  })
-
-  it("fails closed on ambiguous customers and does not create duplicates", async () => {
-    mocks.rpc
-      .mockResolvedValueOnce({ status: "ready", demo_status: "COMPLETED" })
-      .mockResolvedValueOnce({ payload: {} })
-      .mockResolvedValueOnce({
-        ...emptyOnboarding,
-        step: "customer",
-        request: {
-          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-          product: "TELLOYA",
-          state: "RECEIVED",
-          version: 1,
-          customerId: null,
-          businessId: null,
-          declineReason: null,
-          subscriptionId: null,
-        },
-        candidates: [
-          { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "One", emailVerified: true },
-          { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Two", emailVerified: false },
-        ],
-      })
-    const result = await reconcileTelloyaSalesContext({ token, enquiryId })
-    expect(result.ok).toBe(false)
-    expect(result.exception).toBe("resolve_customer")
-    expect(mocks.rpc.mock.calls.some(call => call[0] === "admin_commercial_command_v1")).toBe(false)
+    expect(result.exception).toBe("confirm_business_authority")
+    const commercial = mocks.rpc.mock.calls.filter(call => call[0] === "admin_commercial_command_v1").map(call => call[1].p_operation)
+    expect(commercial).toEqual(["classify", "match_customer"])
+    expect(commercial).not.toContain("match_business")
   })
 
   it("rejects a forged origin on the HTTP command", async () => {

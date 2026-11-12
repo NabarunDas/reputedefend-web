@@ -53,7 +53,7 @@ export default async function Enquiry({ params }: { params: Promise<{ id: string
       nextAction: e.nextAction,
       nextActionAt: e.nextActionAt,
     }} demo={demo} offer={offer} offerFirst={telloyaOfferFirst} />
-    {salesWorkspace && demoStatus === "COMPLETED" && <TelloyaOfferWorkspace enquiryId={e.id} workspace={salesWorkspace} offer={offer} />}
+    {salesWorkspace && demoStatus === "COMPLETED" && <TelloyaOfferWorkspace enquiryId={e.id} workspace={salesWorkspace} offer={offer} onboarding={onboarding} businessName={p.businessName} country={p.country} />}
     <section className="panel">
       <h2>Email status</h2>
       <p>Internal notification: {emailStates[e.internalStatus]}<br />Customer acknowledgement: {emailStates[e.ackStatus]}</p>

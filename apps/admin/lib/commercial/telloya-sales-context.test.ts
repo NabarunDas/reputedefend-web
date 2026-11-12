@@ -103,30 +103,30 @@ describe("buildTelloyaSalesWorkspace", () => {
     expect(missing?.exceptions.some(item => item.code === "plan_interest_missing")).toBe(true)
   })
 
-  it("keeps Guard interest unselected and fails closed on revoked membership", () => {
+  it("keeps Guard interest unselected and requires confirmation for a sole unrelated business", () => {
     const workspace = buildTelloyaSalesWorkspace({
       payload: payload({ guardInterested: true, guardLocationCount: 1 }),
       demoStatus: "COMPLETED",
       onboarding: {
         ...classifyView,
-        step: "next",
+        step: "business",
         request: {
           id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           product: "TELLOYA",
           state: "IN_REVIEW",
           version: 3,
           customerId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-          businessId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          businessId: null,
           declineReason: null,
           subscriptionId: null,
         },
-        membership: "revoked",
-        locations: [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "Yard", country: "United Kingdom", selected: true }],
+        businesses: [{ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Different Yard", membership: "pending", membershipVersion: 1 }],
+        locations: [],
       },
       offer: { availability: "no_offer" },
     })
     expect(workspace?.guardInterestSummary).toMatch(/Unticked/)
-    expect(workspace?.exceptions.some(item => item.code === "revoked_membership")).toBe(true)
+    expect(workspace?.exceptions.some(item => item.code === "confirm_business_authority")).toBe(true)
     expect(workspace?.sendable).toBe(false)
   })
 

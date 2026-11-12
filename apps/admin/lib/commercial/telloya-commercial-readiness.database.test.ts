@@ -805,15 +805,18 @@ describe("Telloya commercial readiness rehearsal", () => {
     expect(stored.delivery_status).toBe("NONE")
     expect(stored.subject).toBe("Your Telloya proposal — TY-26-MAIL2A")
     expect(stored.subject).not.toContain(mailOffer.public_ref)
+    expect(stored.body_text).toContain("Telloya — a ProfileRelaunch company")
     expect(stored.body_text).toContain("Enquiry TY-26-MAIL2A")
     expect(stored.body_text).toContain("Plan: Growth")
-    expect(stored.body_text).toContain("Monthly price: £79.00")
+    expect(stored.body_text).toContain("Monthly Telloya amount: £79.00")
+    expect(stored.body_text).toContain("Recurring monthly total: £79.00")
     expect(stored.body_text).toContain("Included minutes: 300")
-    expect(stored.body_text).toContain("Guard add-ons: not included")
+    expect(stored.body_text).toContain("Relaunch Guard: not included")
     expect(stored.body_text).toContain(`https://customer.profilerelaunch.com/portal/onboarding/offer/${mailOffer.public_ref}`)
     expect(stored.body_text).toContain("This link is not a payment link.")
     expect(stored.body_text.split(mailOffer.public_ref)).toHaveLength(2)
     expect(stored.body_html).toContain(">Review your offer</a>")
+    expect(stored.body_html).toContain("Telloya — a ProfileRelaunch company")
     expect(stored.body_html.match(/<a /g)).toHaveLength(1)
     expect(stored.body_html).not.toContain("<script")
     expect((await rows<{ event_type: string }>(
@@ -839,10 +842,10 @@ describe("Telloya commercial readiness rehearsal", () => {
   it("persists the approved plan, price, minutes and Guard cost for every Telloya plan", async () => {
     await db.query("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true)")
     const cases = [
-      { email: "mail.basic@example.test", ref: "TY-26-BASIC2", plan: telloyaCataloguePlans.basicCap1, guard: false, lines: ["Plan: Basic", "Monthly price: £49.00", "Included minutes: 120", "Guard add-ons: not included"] },
-      { email: "mail.pro@example.test", ref: "TY-26-PRO2AA", plan: telloyaCataloguePlans.proCap1, guard: false, lines: ["Plan: Pro", "Monthly price: £120.00", "Included minutes: 500", "Guard add-ons: not included"] },
-      { email: "mail.custom@example.test", ref: "TY-26-CUSTM2", plan: telloyaCataloguePlans.customCap1, guard: false, lines: ["Plan: Custom", "Monthly price: £150.00", "Included minutes: confirmed in the quotation", "Guard add-ons: not included"] },
-      { email: "mail.guard@example.test", ref: "TY-26-GUARD3", plan: telloyaCataloguePlans.growthCap1, guard: true, lines: ["Plan: Growth", "Monthly price: £88.99", "Included minutes: 300", "Guard add-ons: 1 location at £9.99 each (£9.99)"] },
+      { email: "mail.basic@example.test", ref: "TY-26-BASIC2", plan: telloyaCataloguePlans.basicCap1, guard: false, lines: ["Plan: Basic", "Monthly Telloya amount: £49.00", "Recurring monthly total: £49.00", "Included minutes: 120", "Relaunch Guard: not included"] },
+      { email: "mail.pro@example.test", ref: "TY-26-PRO2AA", plan: telloyaCataloguePlans.proCap1, guard: false, lines: ["Plan: Pro", "Monthly Telloya amount: £120.00", "Recurring monthly total: £120.00", "Included minutes: 500", "Relaunch Guard: not included"] },
+      { email: "mail.custom@example.test", ref: "TY-26-CUSTM2", plan: telloyaCataloguePlans.customCap1, guard: false, lines: ["Plan: Custom", "Monthly Telloya amount: £150.00", "Recurring monthly total: £150.00", "Included minutes: confirmed in the quotation", "Relaunch Guard: not included"] },
+      { email: "mail.guard@example.test", ref: "TY-26-GUARD3", plan: telloyaCataloguePlans.growthCap1, guard: true, lines: ["Plan: Growth", "Monthly Telloya amount: £79.00", "Recurring monthly total: £88.99", "Included minutes: 300", "Relaunch Guard: 1 location at £9.99 each (£9.99)"] },
     ]
     for (const item of cases) {
       const opened = await ready(item.email, 1, "growth")

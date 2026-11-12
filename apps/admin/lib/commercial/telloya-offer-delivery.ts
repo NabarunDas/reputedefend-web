@@ -21,34 +21,83 @@ export type TelloyaAmendment = {
 
 const CATEGORIES = new Set(["price", "minutes", "guard", "timing", "other"])
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+}
+
 export function telloyaOfferMessage(input: {
   enquiryRef: string
   customerId: string
   selector: string
   version: TelloyaOfferVersion
+  customerName?: string | null
 }): TelloyaOfferMessage | null {
   if (!/^TY-\d{2}-[A-Z0-9]{6}$/.test(input.enquiryRef)) return null
   if (!input.customerId || input.selector === input.enquiryRef || !/^[A-Za-z0-9-]{12,40}$/.test(input.selector)) return null
   const guard = input.version.guardLocations > 0
-  const subject = guard
-    ? `Your Telloya + Relaunch Guard proposal — ${input.enquiryRef}`
-    : input.version.planCode === "custom"
-      ? `Your personalised Telloya proposal — ${input.enquiryRef}`
-      : `Your Telloya ${input.version.planCode[0].toUpperCase()}${input.version.planCode.slice(1)} proposal — ${input.enquiryRef}`
+  const name = input.customerName?.trim() || ""
+  const greeting = name ? `Hello ${name},` : "Hello,"
+  const subject = `Your Telloya proposal — ${input.enquiryRef}`
   const reviewPath = `/portal/onboarding/offer/${input.selector}`
-  const price = input.version.monthlyTotalPence === null ? "a price confirmed in the offer" : `£${(input.version.monthlyTotalPence / 100).toFixed(2)} per month`
+  const price = input.version.monthlyTotalPence === null
+    ? "a price confirmed in the offer"
+    : `£${(input.version.monthlyTotalPence / 100).toFixed(2)} per month`
+  const planLabel = input.version.planCode === "custom"
+    ? "Custom"
+    : `${input.version.planCode[0].toUpperCase()}${input.version.planCode.slice(1)}`
+  const minutesText = input.version.includedMinutes === null
+    ? "confirmed in the quotation"
+    : String(input.version.includedMinutes)
+  const guardText = guard
+    ? `${input.version.guardLocations} Relaunch Guard location${input.version.guardLocations === 1 ? "" : "s"} are listed. Guard monitoring is not active.`
+    : "not included"
   const text = [
-    subject,
-    `This proposal is ${price}.`,
-    input.version.includedMinutes === null ? "The included minutes are quoted in the offer." : `${input.version.includedMinutes} minutes are included each month.`,
-    guard ? `${input.version.guardLocations} Relaunch Guard locations are listed. Guard monitoring is not active.` : "Relaunch Guard is not included.",
-    "Review your offer and subscribe",
-    `Open ${reviewPath} after you sign in. This link is not a payment link.`,
+    greeting,
+    "",
+    "Telloya — a ProfileRelaunch company",
+    `Enquiry ${input.enquiryRef}`,
+    `Plan: ${planLabel}`,
+    `Included minutes: ${minutesText}`,
+    `Recurring monthly total: ${price}`,
+    `Relaunch Guard: ${guardText}`,
+    "Standard setup is included. One operating location and one receptionist number apply on standard tiers.",
+    "",
+    "Next steps:",
+    "1. Review your offer in the Customer Portal.",
+    "2. Request changes, or accept the versioned service agreement and recurring consent.",
+    "3. Continue to secure payment when that step is available.",
+    "",
+    "Review your offer",
+    reviewPath,
+    "This link is not a payment link.",
   ].join("\n")
+  const html = [
+    '<div style="font-family:Georgia,serif;color:#15202b;line-height:1.5;max-width:560px">',
+    '<p style="margin:0 0 12px 0;font-size:13px;letter-spacing:0.04em;text-transform:uppercase;color:#5b6b7c">Telloya — a ProfileRelaunch company</p>',
+    `<p style="margin:0 0 16px 0">${escapeHtml(greeting)}</p>`,
+    `<p style="margin:0 0 8px 0">Enquiry <strong>${escapeHtml(input.enquiryRef)}</strong></p>`,
+    `<p style="margin:0 0 4px 0">Plan: <strong>${escapeHtml(planLabel)}</strong></p>`,
+    `<p style="margin:0 0 4px 0">Included minutes: ${escapeHtml(minutesText)}</p>`,
+    `<p style="margin:0 0 16px 0"><strong>Recurring monthly total: ${escapeHtml(price)}</strong></p>`,
+    `<p style="margin:0 0 16px 0">Relaunch Guard: ${escapeHtml(guardText)}</p>`,
+    '<p style="margin:0 0 8px 0"><strong>Next steps</strong></p>',
+    '<ol style="margin:0 0 20px 20px;padding:0">',
+    "<li>Review your offer in the Customer Portal.</li>",
+    "<li>Request changes, or accept the versioned service agreement and recurring consent.</li>",
+    "<li>Continue to secure payment when that step is available.</li>",
+    "</ol>",
+    `<p style="margin:0 0 12px 0"><a href="${escapeHtml(reviewPath)}">Review your offer</a></p>`,
+    '<p style="margin:0;color:#5b6b7c;font-size:13px">This link is not a payment link.</p>',
+    "</div>",
+  ].join("")
   return {
     subject,
     text,
-    html: `<p>${text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;").replaceAll("\n", "</p><p>")}</p>`,
+    html,
     idempotencyKey: `${input.customerId}:${input.version.version}:${input.version.termsHash}:offer`,
     reviewPath,
   }

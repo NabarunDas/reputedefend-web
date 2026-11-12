@@ -1906,6 +1906,24 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya offer draft", probe: "public.telloya_offer_draft_command_v1" },
   },
+  {
+    // Telloya Admin approve-and-send offer orchestration. SOURCE-ONLY. Not applied
+    // to DEV or Production. Do not edit or replay 20261112120000, 20261112180000,
+    // or 20261112210000. Adds telloya_prepare_offer_from_draft_v1,
+    // telloya_offer_preview_v1, personalised telloya_offer_mail_v1, Admin delivery
+    // fields on telloya_offer_admin_v1, and admin_private.telloya_approve_send_receipts.
+    // Schema and function changes only. containsDataChange is false.
+    // Repository file is 37,279 characters. MD5 075c53a95eb896922e64c3466faf2d4a.
+    // SHA-256 26c1b86d9dd1027b368615e70498ea613474cd344df793afe24b29ec7a3ea998.
+    version: "20261112223000",
+    filename: "20261112223000_telloya_approve_send_offer_v1.sql",
+    step: "Telloya approve-and-send offer orchestration",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya approve send", probe: "public.telloya_prepare_offer_from_draft_v1" },
+  },
 ]
 
 /**
@@ -2059,8 +2077,11 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` is empty. `20261112210000` telloya_offer_draft_v1 was
- * applied once to DEV. The repository file is 17,672 characters. MD5
+ * `pendingMigrations()` contains only
+ * `20261112223000_telloya_approve_send_offer_v1.sql` (source-only;
+ * appliedToDev false). The repository migration head is `20261112223000`.
+ * `20261112210000` telloya_offer_draft_v1 was applied once to DEV. The
+ * repository file is 17,672 characters. MD5
  * 199dbfa368261693ed869a134a5fc664. SHA-256
  * e152df8d7204214965aec5c5fe64a2f37b8a63135005479bfcb219f737415f55.
  * containsDataChange is false. public.telloya_offer_draft_v1 and

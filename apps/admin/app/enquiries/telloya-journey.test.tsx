@@ -63,8 +63,8 @@ describe("Telloya journey panel", () => {
       emailQueued: false,
       paymentStatus: "none",
     }} />)
-    expect(screen.getByText("Offer · current")).toBeTruthy()
-    expect(screen.getByText(/Queue the offer email/)).toBeTruthy()
+    expect(screen.getByText("Quote · current")).toBeTruthy()
+    expect(screen.getByText(/Approve & Send Offer/)).toBeTruthy()
     expect(screen.queryByText("Demo · current")).toBeNull()
     expect(screen.getByText("Booked for 12 November 2026 at 10:00 (Europe/London).")).toBeTruthy()
     expect(screen.getByText("Completed at 12 November 2026 at 11:00 (Europe/London).")).toBeTruthy()
@@ -87,7 +87,7 @@ describe("Telloya journey panel", () => {
       }}
       offer={{ availability: "no_offer" }}
     />)
-    expect(screen.getByText(/Prepare \/ Review personalised offer/)).toBeTruthy()
+    expect(screen.getByText(/Save or review the personalised quote/)).toBeTruthy()
     expect(screen.getByText(/personalised offer workspace below/)).toBeTruthy()
     expect(screen.queryByText(/Illustrative monthly total/)).toBeNull()
     expect(screen.queryByRole("button", { name: "Send offer" })).toBeNull()

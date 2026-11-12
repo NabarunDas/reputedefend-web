@@ -89,6 +89,10 @@ export function TelloyaOfferWorkspace({
   const [customAmountText, setCustomAmountText] = useState(() => formatCustomAmountGbpInput(initial.customAmountPence))
   const [draftMessage, setDraftMessage] = useState<string | null>(null)
   const [draftSaving, setDraftSaving] = useState(false)
+  const [previewMessage, setPreviewMessage] = useState<string | null>(null)
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const [preview, setPreview] = useState<{ subject: string; text: string; html: string; recipient: string | null } | null>(null)
+  const previewKey = useRef(newKey())
   const supported = onboarding.supported ? onboarding : null
   const request = supported?.request ?? null
   const version = request?.version ?? 0
@@ -125,7 +129,7 @@ export function TelloyaOfferWorkspace({
     customAmountPence: persistedDraft.customAmountPence,
     customIncludedMinutes: persistedDraft.customIncludedMinutes,
   })
-  const canPrepare = Boolean(
+  const canApproveSend = Boolean(
     supported
     && request
     && !request.subscriptionId
@@ -137,6 +141,10 @@ export function TelloyaOfferWorkspace({
     && !savedGuardUnresolved
     && persistedDraft.planTier,
   )
+  const canResumeApproveSend = offer.availability === "ready"
+    && offer.state === "OFFERED"
+    && !offer.emailQueued
+  const quoteSavedBlocked = draftSavedClean && !canApproveSend && !offerReady
   let officialSummary = "Choose an approved version to see the official offer total."
   if (matchedApproved && matchedApproved.amountMinor !== null) {
     const guards = matchedApproved.guardAddonUnitMinor === 999 ? persistedDraft.guardLocationIds.length : 0
@@ -227,6 +235,44 @@ export function TelloyaOfferWorkspace({
         : [...current.guardLocationIds, locationId]
       return { ...current, guardLocationIds, proposedGuardQuantity: guardLocationIds.length }
     })
+  }
+
+  async function previewEmail() {
+    if (previewBusy) return
+    setPreviewBusy(true)
+    setPreviewMessage(null)
+    previewKey.current = newKey()
+    try {
+      const response = await fetch("/api/enquiries/offer", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": previewKey.current,
+        },
+        body: JSON.stringify({
+          operation: "preview",
+          enquiryId,
+        }),
+      })
+      const body = await response.json().catch(() => ({ message: "We couldn’t preview the offer email." }))
+      if (!response.ok) {
+        setPreview(null)
+        setPreviewMessage(typeof body.message === "string" ? body.message : "We couldn’t preview the offer email.")
+        return
+      }
+      setPreview({
+        subject: typeof body.subject === "string" ? body.subject : "",
+        text: typeof body.text === "string" ? body.text : "",
+        html: typeof body.html === "string" ? body.html : "",
+        recipient: typeof body.recipient === "string" ? body.recipient : null,
+      })
+      setPreviewMessage(typeof body.message === "string" ? body.message : "Email preview ready. Nothing was queued or sent.")
+    } catch {
+      setPreview(null)
+      setPreviewMessage("We couldn’t preview the offer email. Reload the enquiry before trying again.")
+    } finally {
+      setPreviewBusy(false)
+    }
   }
 
   async function saveDraft() {
@@ -539,36 +585,73 @@ export function TelloyaOfferWorkspace({
       The saved draft still has a proposed Guard quantity. Confirm explicit Guard locations and update the draft, or clear the proposed quantity, before preparing an official offer.
     </p>}
 
-    {canPrepare && matchedApproved && <div>
-      <h3>Prepare official offer</h3>
-      <p>Uses the approved catalogue version that matches the saved draft. This creates the commercial offer record without sending email or opening Checkout.</p>
-      <CommandForm endpoint="onboarding" actionUrl="/api/enquiries/onboarding" submitLabel="Prepare offer" payload={form => ({
-        operation: "prepare_offer",
-        version,
+    {quoteSavedBlocked && <div className="notice notice-warning" role="status">
+      <p>Quote saved — cannot send yet.</p>
+      <ul>
+        {checklist.filter(item => !item.ready && item.code !== "offer" && item.code !== "mail").map(item => <li key={item.code}>{item.label}</li>)}
+        {workspace.blockers.map(item => <li key={item.code}>{item.message}</li>)}
+        {workspace.exceptions.map(item => <li key={item.code}>{item.message}</li>)}
+        {savedGuardUnresolved && <li>Confirm explicit Guard locations or clear the proposed quantity.</li>}
+        {persistedDraft.planTier === "custom" && matchedApproved == null && <li>Custom draft still needs a matching approved catalogue version.</li>}
+      </ul>
+    </div>}
+
+    {canApproveSend && matchedApproved && <div>
+      <h3>Review &amp; approve</h3>
+      <p>Uses the saved draft version {persistedDraft.version} and the matching approved catalogue version. Approve &amp; Send prepares the commercial offer and queues the personalised email. Queued does not mean delivered. Draft save never sends email.</p>
+      <CommandForm endpoint="offer" actionUrl="/api/enquiries/offer" submitLabel="Approve & Send Offer" payload={form => ({
+        operation: "approve_send",
         enquiryId,
-        planVersionId: matchedApproved.id,
-        guardLocationIds: matchedApproved.guardQuantity == null && matchedApproved.guardAddonUnitMinor === 999
-          ? persistedDraft.guardLocationIds
-          : [],
+        expectedDraftVersion: persistedDraft.version,
         reason: form.get("reason"),
       })}>
         <fieldset>
-          <legend>Approved catalogue version for this saved draft</legend>
-          <input type="hidden" name="planVersionId" value={matchedApproved.id} />
-          {persistedDraft.guardLocationIds.map(id => <input key={id} type="hidden" name="guardLocationIds" value={id} />)}
+          <legend>Itemised quote for this saved draft</legend>
           <p>{planReview(matchedApproved)}</p>
           {matchedApproved.guardAddonUnitMinor === 999 && <p className="muted">
             Relaunch Guard locations from the saved draft: {persistedDraft.guardLocationIds.length === 0
               ? "none"
               : persistedDraft.guardLocationIds.map(id => businessLocations.find(location => location.id === id)?.name ?? id).join(", ")}.
           </p>}
+          <p>{officialSummary}</p>
         </fieldset>
-        <p>{officialSummary}</p>
-        <Reason label="Why is this official offer being prepared?" />
+        <Reason label="Why is this offer being approved and sent?" />
       </CommandForm>
     </div>}
-    {!canPrepare && draftSavedClean && matchedApproved == null && persistedDraft.planTier && persistedDraft.planTier !== "custom" && <p className="muted">An approved catalogue version matching the saved draft is required before preparing an official offer.</p>}
-    {!canPrepare && unsavedChanges && persistedDraft.version > 0 && <p className="muted">Save or discard unsaved calculator changes before preparing an official offer.</p>}
+
+    {canResumeApproveSend && offer.availability === "ready" && <div>
+      <h3>Approve &amp; Send Offer</h3>
+      <p>The commercial offer is already prepared. Approving queues the personalised email. Queued does not mean delivered.</p>
+      <CommandForm endpoint="offer" actionUrl="/api/enquiries/offer" submitLabel="Approve & Send Offer" payload={form => ({
+        operation: "approve_send",
+        enquiryId,
+        expectedDraftVersion: Math.max(persistedDraft.version, 1),
+        subscriptionId: offer.subscriptionId,
+        expectedVersion: offer.version,
+        reason: form.get("reason"),
+      })}>
+        <Reason label="Why is this offer being approved and sent?" />
+      </CommandForm>
+    </div>}
+
+    {!canApproveSend && draftSavedClean && matchedApproved == null && persistedDraft.planTier && persistedDraft.planTier !== "custom" && <p className="muted">An approved catalogue version matching the saved draft is required before Approve &amp; Send.</p>}
+    {!canApproveSend && unsavedChanges && persistedDraft.version > 0 && <p className="muted">Save or discard unsaved calculator changes before Approve &amp; Send.</p>}
+
+    <div>
+      <h3>Preview email</h3>
+      <p className="muted">Read-only composition from the saved draft or linked offer. Preview does not queue or send email.</p>
+      <p><button type="button" onClick={() => void previewEmail()} disabled={previewBusy}>Preview email</button></p>
+      {previewMessage && <p className="muted" role="status">{previewMessage}</p>}
+      {preview && <div className="notice" role="region" aria-label="Offer email preview">
+        {preview.recipient && <p>Recipient {preview.recipient}</p>}
+        <p><strong>Subject</strong></p>
+        <p>{preview.subject || "(empty)"}</p>
+        <p><strong>Text</strong></p>
+        <pre>{preview.text || "(empty)"}</pre>
+        <p><strong>HTML</strong></p>
+        <pre>{preview.html || "(empty)"}</pre>
+      </div>}
+    </div>
 
     {offerReady && <TelloyaOfferActions offer={offer} />}
     {!offerReady && <p className="muted">{workspace.primaryLabel}</p>}

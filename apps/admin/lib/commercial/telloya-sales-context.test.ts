@@ -80,7 +80,7 @@ describe("buildTelloyaSalesWorkspace", () => {
     expect(workspace?.illustrativeMonthly).toMatch(/illustrative catalogue total/)
     expect(workspace?.needsReconciliation).toBe(true)
     expect(workspace?.sendable).toBe(false)
-    expect(workspace?.primaryLabel).toBe("Review personalised offer draft")
+    expect(workspace?.primaryLabel).toBe("Review & approve offer")
     expect(workspace?.exceptions.some(item => item.code === "confirm_operating_location")).toBe(true)
     expect(workspace?.blockers.some(item => item.code === "approved_catalogue_missing")).toBe(true)
     expect(workspace?.blockers.some(item => item.code === "service_agreement_missing")).toBe(true)
@@ -178,6 +178,26 @@ describe("buildTelloyaSalesWorkspace", () => {
     })
     expect(workspace?.needsReconciliation).toBe(false)
     expect(workspace?.sendable).toBe(true)
-    expect(workspace?.primaryLabel).toBe("Prepare personalised offer")
+    expect(workspace?.primaryAction).toBe("prepare_review")
+    expect(workspace?.primaryLabel).toBe("Approve & Send Offer")
+  })
+
+  it("uses Approve & Send when an offered subscription has not been queued", () => {
+    const workspace = buildTelloyaSalesWorkspace({
+      payload: payload(),
+      demoStatus: "COMPLETED",
+      onboarding: unsupported,
+      offer: {
+        availability: "ready",
+        subscriptionId: "33333333-3333-4333-8333-333333333333",
+        offerRef: "VC-26-ABCDEF",
+        state: "OFFERED",
+        version: 1,
+        amendments: [],
+        emailQueued: false,
+      },
+    })
+    expect(workspace?.primaryAction).toBe("approve_send")
+    expect(workspace?.primaryLabel).toBe("Approve & Send Offer")
   })
 })

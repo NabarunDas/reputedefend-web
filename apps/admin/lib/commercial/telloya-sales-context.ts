@@ -24,7 +24,7 @@ export type TelloyaSalesBlocker =
 
 export type TelloyaSalesWorkspace = {
   available: boolean
-  primaryAction: "prepare_review" | "queue_mail" | "wait" | "none"
+  primaryAction: "prepare_review" | "approve_send" | "wait" | "none"
   primaryLabel: string
   product: "TELLOYA"
   planInterest: string
@@ -229,14 +229,14 @@ export function buildTelloyaSalesWorkspace(input: {
     primaryAction = "none"
     primaryLabel = "Complete the offline demonstration first"
   } else if (input.offer.availability === "ready" && input.offer.state === "OFFERED" && !input.offer.emailQueued) {
-    primaryAction = "queue_mail"
-    primaryLabel = "Queue offer email"
+    primaryAction = "approve_send"
+    primaryLabel = "Approve & Send Offer"
   } else if (input.offer.availability === "ready") {
     primaryAction = "wait"
     primaryLabel = "Review the linked commercial offer"
   } else {
     primaryAction = "prepare_review"
-    primaryLabel = sendable ? "Prepare personalised offer" : "Review personalised offer draft"
+    primaryLabel = sendable ? "Approve & Send Offer" : "Review & approve offer"
   }
 
   return {

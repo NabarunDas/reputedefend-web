@@ -23,10 +23,28 @@ export type TelloyaOfferPanel =
       plans?: TelloyaOfferPlan[]
       locations?: TelloyaOfferLocation[]
       emailQueued?: boolean
+      emailLifecycle?: string | null
+      emailDeliveryStatus?: string | null
+      emailRecipient?: string | null
       agreementAccepted?: boolean
       paymentStatus?: "none" | "verifying" | "paid"
       provisionState?: string | null
     }
+
+export function telloyaOfferEmailDeliveryLabel(offer: Extract<TelloyaOfferPanel, { availability: "ready" }>): string {
+  const lifecycle = (offer.emailLifecycle ?? "").toUpperCase()
+  const delivery = (offer.emailDeliveryStatus ?? "").toUpperCase()
+  if (!offer.emailQueued && !lifecycle) {
+    return offer.state === "DRAFT" ? "Draft" : "Awaiting approval"
+  }
+  if (delivery === "DELIVERED") return "Delivered"
+  if (delivery === "FAILED" || lifecycle === "FAILED") return "Failed"
+  if (delivery === "BLOCKED" || lifecycle === "BLOCKED") return "Blocked"
+  if (delivery === "PROVIDER_ACCEPTED") return "Provider accepted"
+  if (lifecycle === "QUEUED" && (delivery === "NONE" || delivery === "")) return "Queued"
+  if (offer.emailQueued) return "Queued"
+  return offer.state === "DRAFT" ? "Draft" : "Awaiting approval"
+}
 
 export function TelloyaOfferActions({ offer }: { offer: TelloyaOfferPanel }) {
   if (offer.availability === "closed") return null
@@ -35,9 +53,11 @@ export function TelloyaOfferActions({ offer }: { offer: TelloyaOfferPanel }) {
   const open = offer.amendments.find(item => item.status === "REQUESTED")
   const plans = offer.plans ?? []
   const locations = offer.locations ?? []
+  const deliveryLabel = telloyaOfferEmailDeliveryLabel(offer)
   return <>
     <p>Commercial offer {offer.offerRef} is {offer.state}. Record version {offer.version}. {offer.enquiryRef ? `Enquiry ${offer.enquiryRef}. ` : ""}This is the ProfileRelaunch subscription, not a separate Telloya price list.</p>
     {offer.amountMinor !== undefined && <p>Current monthly total {formatGbpPence(offer.amountMinor)}{offer.tier ? ` on ${offer.tier}` : ""}.</p>}
+    <p>Offer email delivery: {deliveryLabel}.{offer.emailRecipient ? ` Recipient ${offer.emailRecipient}.` : ""} Queued is not delivered.</p>
     {open && <>
       <p>Change request: {open.text}</p>
       {plans.length > 0 && <CommandForm endpoint="offer" actionUrl="/api/enquiries/offer" submitLabel="Issue revised offer" payload={form => ({
@@ -61,8 +81,5 @@ export function TelloyaOfferActions({ offer }: { offer: TelloyaOfferPanel }) {
         <p>Declining leaves the current offer unchanged.</p>
       </CommandForm>
     </>}
-    {offer.state === "OFFERED" && <CommandForm endpoint="offer" actionUrl="/api/enquiries/offer" submitLabel="Queue offer email" payload={() => ({ operation: "mail", subscriptionId: offer.subscriptionId, expectedVersion: offer.version })}>
-      <p>Queueing uses the shared email outbox. It does not mark the message accepted or delivered.</p>
-    </CommandForm>}
   </>
 }

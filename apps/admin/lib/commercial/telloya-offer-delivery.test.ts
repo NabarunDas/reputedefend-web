@@ -33,10 +33,19 @@ describe("Telloya offer delivery", () => {
       selector: "offer-selector-1",
       version: versions[0],
     })
-    expect(message?.subject).toBe("Your Telloya + Relaunch Guard proposal — TY-26-ABCDEF")
-    expect(message?.text).toContain("Review your offer and subscribe")
+    expect(message?.subject).toBe("Your Telloya proposal — TY-26-ABCDEF")
+    expect(message?.text).toContain("Hello,")
+    expect(message?.text).toContain("Telloya — a ProfileRelaunch company")
+    expect(message?.text).toContain("Review your offer")
     expect(message?.reviewPath).toBe("/portal/onboarding/offer/offer-selector-1")
     expect(message?.text).toContain("This link is not a payment link.")
+    expect(telloyaOfferMessage({
+      enquiryRef: "TY-26-ABCDEF",
+      customerId: "customer-1",
+      selector: "offer-selector-1",
+      version: versions[0],
+      customerName: "Alex Owner",
+    })?.text).toContain("Hello Alex Owner,")
     const first = queueTelloyaOfferEmail([], versions[0], message)
     const second = queueTelloyaOfferEmail(first.messages, versions[0], message)
     expect(first.result).toBe("queued")
@@ -53,7 +62,13 @@ describe("Telloya offer delivery", () => {
       customerId: "customer-1",
       selector: "offer-selector-1",
       version,
-    })?.subject).toBe("Your Telloya Growth proposal — TY-26-ABCDEF")
+    })?.subject).toBe("Your Telloya proposal — TY-26-ABCDEF")
+    expect(telloyaOfferMessage({
+      enquiryRef: "TY-26-ABCDEF",
+      customerId: "customer-1",
+      selector: "offer-selector-1",
+      version,
+    })?.text).toContain("Plan: Growth")
   })
 
   it("keeps a sent offer unchanged when the customer requests an amendment", () => {

@@ -97,6 +97,9 @@ export async function getTelloyaOffer(id: string): Promise<TelloyaOfferPanel> {
       plans?: TelloyaOfferPlan[]
       locations?: TelloyaOfferLocation[]
       emailQueued?: boolean
+      emailLifecycle?: string | null
+      emailDeliveryStatus?: string | null
+      emailRecipient?: string | null
       agreementAccepted?: boolean
       paymentStatus?: "none" | "verifying" | "paid"
       provisionState?: string | null
@@ -120,6 +123,9 @@ export async function getTelloyaOffer(id: string): Promise<TelloyaOfferPanel> {
       plans: Array.isArray(result.plans) ? result.plans : [],
       locations: Array.isArray(result.locations) ? result.locations : [],
       emailQueued: result.emailQueued === true,
+      emailLifecycle: typeof result.emailLifecycle === "string" ? result.emailLifecycle : null,
+      emailDeliveryStatus: typeof result.emailDeliveryStatus === "string" ? result.emailDeliveryStatus : null,
+      emailRecipient: typeof result.emailRecipient === "string" ? result.emailRecipient : null,
       agreementAccepted: result.agreementAccepted === true,
       paymentStatus: result.paymentStatus,
       provisionState: result.provisionState ?? null,

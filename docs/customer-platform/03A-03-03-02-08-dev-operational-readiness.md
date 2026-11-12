@@ -6,7 +6,7 @@ This is a DEV-only audit and runbook. It does not enable a feature flag, store a
 
 - GitHub PR #440 and PR #442 are merged. `develop` records the initiation migration as applied.
 - The repository migration head is `20261106200000_admin_commercial_initiate_agent_test_call_v1.sql`.
-- The confirmed hosted DEV ledger contains 122 applied migrations and ends at `20261112210000`. `pendingMigrations()` is empty.
+- The confirmed hosted DEV ledger contains 122 applied migrations and ends at `20261112210000`. `pendingMigrations()` contains only `20261112223000_telloya_approve_send_offer_v1.sql` (source-only). The repository migration head is `20261112223000`.
 - `containsDataChange` is false and `safeToReplay` is false for that file. Do not replay it. Do not apply it to Production.
 - The SQL file header still contains the earlier instruction not to apply `20261106200000` to hosted DEV. Leave that file unchanged. The manifest is the current ledger record.
 - The confirmed apply created zero test attempts.

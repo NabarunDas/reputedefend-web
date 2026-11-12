@@ -6,7 +6,9 @@
 export const telloyaStages = [
   "enquiry",
   "demo",
-  "offer",
+  "quote",
+  "sent",
+  "response",
   "agreement",
   "payment",
   "setup",
@@ -18,7 +20,9 @@ export type TelloyaStage = (typeof telloyaStages)[number]
 export const telloyaStageLabels: Record<TelloyaStage, string> = {
   enquiry: "Enquiry",
   demo: "Demo",
-  offer: "Offer",
+  quote: "Quote",
+  sent: "Offer Sent",
+  response: "Customer Response",
   agreement: "Agreement",
   payment: "Payment",
   setup: "Setup",
@@ -82,17 +86,19 @@ export function telloyaJourneyProgress(input: TelloyaJourneySnapshot): TelloyaJo
     next = demo === "BOOKED"
       ? "Mark the demonstration completed only after it has actually finished."
       : "Mark the demonstration booked after it is arranged offline."
-  } else if (offer === "none" || offer === "draft") {
-    current = "offer"
-    next = "Prepare / Review personalised offer. The completed demonstration opens the offer workspace automatically."
-  } else if (offer === "prepared") {
-    current = "offer"
-    next = "Queue the offer email. The commercial offer is prepared and has not been sent."
-  } else if (offer === "sent" || offer === "amendment") {
-    current = "offer"
-    next = offer === "amendment"
-      ? "Review the amendment request. The sent offer stays unchanged until a new version is issued."
-      : "Wait for the customer to review the current offer in the authenticated portal."
+  } else if (offer === "none" || offer === "draft" || offer === "prepared") {
+    current = "quote"
+    next = offer === "prepared"
+      ? "Approve & Send Offer. The commercial offer is prepared and has not been queued."
+      : offer === "draft"
+        ? "Review the saved quote, then Approve & Send Offer when the gates pass."
+        : "Save or review the personalised quote. The completed demonstration opens the offer workspace automatically."
+  } else if (offer === "sent") {
+    current = "sent"
+    next = "Wait for the customer to review the current offer in the authenticated portal."
+  } else if (offer === "amendment") {
+    current = "response"
+    next = "Review the amendment request. The sent offer stays unchanged until a new version is issued."
   } else if (!input.agreementAccepted) {
     current = "agreement"
     next = "The customer must accept the exact current terms. Legal approval is still required before a real acceptance."

@@ -19,7 +19,7 @@ const growthPlanId = "ffffffff-ffff-4fff-8fff-ffffffffffff"
 const workspace = (overrides: Partial<TelloyaSalesWorkspace> = {}): TelloyaSalesWorkspace => ({
   available: true,
   primaryAction: "prepare_review",
-  primaryLabel: "Review personalised offer draft",
+  primaryLabel: "Review & approve offer",
   product: "TELLOYA",
   planInterest: "Growth",
   planTier: "growth",
@@ -197,7 +197,7 @@ describe("Telloya offer workspace", () => {
       onboarding={{ ...onboarding, step: "next", locations: [{ id: voiceId, name: "London workshop", country: "United Kingdom", selected: true }] }}
       draft={draftPanel()}
     />)
-    expect(screen.getByText("Review personalised offer draft")).toBeTruthy()
+    expect(screen.getByText("Review & approve offer")).toBeTruthy()
     await waitFor(() => expect(fetch).not.toHaveBeenCalled())
   })
 
@@ -237,7 +237,7 @@ describe("Telloya offer workspace", () => {
     expect(screen.getByRole("button", { name: "Update draft" })).toBeTruthy()
   })
 
-  it("hides Prepare offer after unsaved plan changes and shows it again only for the saved draft", async () => {
+  it("hides Approve & Send after unsaved plan changes and shows it again only for the saved draft", async () => {
     render(<TelloyaOfferWorkspace
       enquiryId={enquiryId}
       workspace={workspace({
@@ -245,7 +245,7 @@ describe("Telloya offer workspace", () => {
         exceptions: [],
         blockers: [],
         sendable: true,
-        primaryLabel: "Prepare personalised offer",
+        primaryLabel: "Approve & Send Offer",
         onboardingStep: "next",
       })}
       offer={{ availability: "no_offer" }}
@@ -265,17 +265,18 @@ describe("Telloya offer workspace", () => {
         ],
       }}
     />)
-    expect(screen.getByRole("heading", { name: "Prepare official offer" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Review & approve" })).toBeTruthy()
     expect(screen.getByText(/Growth, version 1/)).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Prepare offer" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Approve & Send Offer" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Preview email" })).toBeTruthy()
     fireEvent.change(screen.getByLabelText("Plan"), { target: { value: "basic" } })
     expect(screen.getByText(/Unsaved changes/)).toBeTruthy()
-    expect(screen.queryByRole("heading", { name: "Prepare official offer" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Prepare offer" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Review & approve" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Approve & Send Offer" })).toBeNull()
     await waitFor(() => expect(fetch).not.toHaveBeenCalled())
   })
 
-  it("shows Custom approval messaging instead of Prepare offer for an unsaved or unapproved Custom draft", () => {
+  it("shows Custom approval messaging instead of Approve & Send for an unsaved or unapproved Custom draft", () => {
     render(<TelloyaOfferWorkspace
       enquiryId={enquiryId}
       workspace={workspace({
@@ -283,7 +284,7 @@ describe("Telloya offer workspace", () => {
         exceptions: [],
         blockers: [],
         sendable: true,
-        primaryLabel: "Prepare personalised offer",
+        primaryLabel: "Approve & Send Offer",
         onboardingStep: "next",
       })}
       offer={{ availability: "no_offer" }}
@@ -303,11 +304,12 @@ describe("Telloya offer workspace", () => {
       }}
     />)
     expect(screen.getByText(/Custom draft saved — approval required to issue offer/)).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Prepare offer" })).toBeNull()
+    expect(screen.getByText(/Quote saved — cannot send yet/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Approve & Send Offer" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Send offer" })).toBeNull()
   })
 
-  it("does not expose Prepare offer until the draft has been saved", () => {
+  it("does not expose Approve & Send until the draft has been saved", () => {
     render(<TelloyaOfferWorkspace
       enquiryId={enquiryId}
       workspace={workspace({
@@ -315,7 +317,7 @@ describe("Telloya offer workspace", () => {
         exceptions: [],
         blockers: [],
         sendable: true,
-        primaryLabel: "Prepare personalised offer",
+        primaryLabel: "Approve & Send Offer",
         onboardingStep: "next",
       })}
       offer={{ availability: "no_offer" }}
@@ -329,7 +331,8 @@ describe("Telloya offer workspace", () => {
         approvedPlans: [growthPlan],
       }}
     />)
-    expect(screen.queryByRole("heading", { name: "Prepare official offer" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Prepare offer" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Review & approve" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Approve & Send Offer" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Preview email" })).toBeTruthy()
   })
 })

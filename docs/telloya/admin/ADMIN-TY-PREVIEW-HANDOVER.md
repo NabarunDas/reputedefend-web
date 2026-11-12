@@ -1,26 +1,28 @@
 # ADMIN-TY preview handover
 
-**Status:** Post-R7 migration reconciliation on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV is at applied `20261112210000` (122 migrations). Draft calculator storage is operational on DEV. Branch-scoped Preview keeps `TELLOYA_ADMIN_JOURNEY_ENABLED=true` for this PR only. This is not authorisation to launch, collect payment, send email, place a call, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
+**Status:** ADMIN-TY-R8 source complete on draft PR #487 / `cursor/telloya-admin-e2e-preview-20261112`. Hosted DEV remains at applied `20261112210000` (122 migrations). Repository head is source-only `20261112223000` (pending; do not apply without owner approval). Quote-to-email source is implemented; customer-facing send stays closed. Branch-scoped Preview keeps `TELLOYA_ADMIN_JOURNEY_ENABLED=true` for this PR only. This is not authorisation to launch, collect payment, send email, place a call, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
 **Baseline:** `origin/develop` `c3ba97a19492eb2b7ae27ec906f77e740ef12cae`. Plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`.
 
-## Phase labels (R7)
+## Phase labels (R8)
 
 | Item | Label | Notes |
 | --- | --- | --- |
-| Interactive draft calculator | DONE in source (R7-C-SIMPLE) | Plan dropdown + auto amounts; Custom editable GBP; Guard + live total; unsaved changes block prepare |
-| Draft save / reload | READY on DEV (draft storage applied) | Typed `enquiries.source`, Custom amount/minutes/requirements audited; Save works on Preview/DEV with applied RPC |
-| Official `prepare_offer` | DONE in source (R7-C-SIMPLE) | Locked to saved draft only; Custom requires matching approved plan version; still shared commercial command |
-| Demo Completed → sales-context bootstrap | READY on DEV (composite applied) | `20261112180000` applied once to DEV; fail-closed when RPC unavailable — no multi-step commercial fallback writes |
-| Evidence-based business/location matching | DONE | Sole unrelated business/location is never auto-selected |
-| Offer workspace prepare/confirm actions | DONE | Calculator always available; Prepare offer only when gates pass; no disabled Send offer for missing catalogue |
-| Composite fail-closed / no mutating fallback | DONE (R6-A) | Generic RPC exceptions never call `admin_commercial_command_v1` |
-| Recent-sign-in rollback | DONE (R6-B) | Expired 30-minute Admin privilege aborts the bootstrap subtransaction with no intermediate rows |
+| Interactive draft calculator | DONE in source (R7-C-SIMPLE) | Plan dropdown + auto amounts; Custom editable GBP; Guard + live total; unsaved changes block Approve & Send |
+| Draft save / reload | READY on DEV (draft storage applied) | Typed `enquiries.source`, Custom amount/minutes/requirements audited; Save works on Preview/DEV with applied RPC; never sends email |
+| Server-side prepare-from-draft | DONE in source (R8-B) | Source-only `telloya_prepare_offer_from_draft_v1` locks draft + matches approved plan/Custom amount/minutes/Guard IDs |
+| Approve & Send Offer | DONE in source (R8-A/B) | One Admin action: prepare-from-draft then queue via existing `telloya_offer_mail_v1`; recoverable OFFERED / NOT_QUEUED |
+| Personalised offer email | DONE in source (R8-C) | Telloya — a ProfileRelaunch company greeting, itemised totals, Review your offer portal CTA; still DRAFT template + empty mail control |
+| Read-only email preview | DONE in source (R8-C) | `telloya_offer_preview_v1`; preview does not queue |
+| Admin delivery status | DONE in source (R8-C) | Queued / Provider accepted / Delivered / Failed / Blocked / Awaiting approval from real communication fields |
+| Progress stages | DONE in source (R8-A) | Enquiry → Demo → Quote → Offer Sent → Customer Response → Agreement → Payment → Setup → Active |
+| Demo Completed → sales-context bootstrap | READY on DEV (composite applied) | `20261112180000` applied once to DEV; fail-closed when RPC unavailable |
 | Shared commercial agreement / portal accept / durable mail / payment evidence | REUSED | No second terms or payment architecture |
 | Monthly Stripe Checkout | BLOCKED | `startTelloyaCheckout` returns `not_created`; not operational |
-| Hosted catalogue / Telloya service agreement / tax | BLOCKED | Draft estimate works; official offer stays not sendable |
+| Hosted catalogue / Telloya service agreement / tax / mail enablement | BLOCKED (R8-D) | Official send stays not sendable until owner-approved catalogue, agreement, tax, template, and mail control |
 | `20261112120000` | DONE applied once to DEV | Byte-identical; do not replay or apply to Production |
 | `20261112180000` | DONE applied once to DEV | Byte-identical 18,615 chars; do not replay or apply to Production |
 | `20261112210000` | DONE applied once to DEV | Draft storage; 17,672 chars; do not replay or apply to Production |
+| `20261112223000` | PARTIAL source-only | Approve/send + personalised mail + preview; `appliedToDev: false`; do not apply without owner approval |
 
 ## What is implemented
 
@@ -84,17 +86,19 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | ADMIN-TY-R7-B | DONE in source | `692db05c` | Typed source + active request, independent Guard locations, proposed-overage wording/GBP cap, prepare matches saved draft, draft audit events, Save disabled when storage unavailable. Do not apply the draft migration. |
 | ADMIN-TY-R7-C-SIMPLE | DONE in source | `bddf0d26` | Plan dropdown, Custom editable amount, unsaved-draft prepare gate, Custom approval required before official offer. |
 | Post-R7 migration reconcile | DONE | `0afda76da686ea6aa0054959ad99c6e09db51c86` | Manifest records 122 applied DEV migrations, head `20261112210000`; `pendingMigrations()` empty. |
+| ADMIN-TY-R8-A/B/C | DONE in source | tip recorded after CI | Approve & Send, prepare-from-draft, personalised email, preview, delivery status, progress stages. Hosted apply of `20261112223000` and R8-D enablement remain blocked. |
 
 ## Test matrix
 
 | Behaviour | Where it is tested |
 | --- | --- |
-| Applied head is `20261112210000`; `pendingMigrations()` is empty | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
+| Applied head is `20261112210000`; pending is only `20261112223000` | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
 | Draft calculator pence totals, Custom £150 + Guard, invalid Custom amounts, unsaved equality | `apps/admin/lib/commercial/telloya-offer-draft.test.ts` |
 | Draft command parse rejects bad payloads | `apps/admin/lib/commercial/telloya-offer-draft-command.test.ts` |
 | Draft save/reload/stale version/lock after prepare_offer/cascade | `apps/admin/lib/commercial/telloya-offer-draft.database.test.ts` |
+| Approve-from-draft, Custom £150 + 2 Guard queue once, preview, stale/unresolved/custom mismatch | `apps/admin/lib/commercial/telloya-approve-send.database.test.ts` |
 | Evidence-safe sales-context bootstrap, sole-business/location confirmation, revoked ownership, concurrency, prepare_offer, expired recent sign-in rollback/retry | `apps/admin/lib/commercial/telloya-sales-context.database.test.ts` |
-| Offer workspace calculator, Save draft, checklist, Prepare offer controls, no disabled Send offer | `apps/admin/app/enquiries/telloya-offer-workspace.test.tsx`, `telloya-sales-context.test.ts` |
+| Offer workspace calculator, Save draft, checklist, Approve & Send, Preview email | `apps/admin/app/enquiries/telloya-offer-workspace.test.tsx`, `telloya-sales-context.test.ts` |
 | Fail-closed composite errors never trigger legacy commercial writes | `apps/admin/lib/commercial/telloya-sales-context-command.test.ts` |
 | Staff session, non-Telloya rejection, spoofed session, stale version, time zone, retention cascade | `supabase/tests/database/telloya-admin-journey.database.test.ts` |
 | Flag-off demonstration command does not call the database | `apps/admin/lib/commercial/telloya-demo-command.test.ts` |

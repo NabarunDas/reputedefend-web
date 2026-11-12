@@ -2,8 +2,11 @@ BEGIN;
 -- Telloya Admin approve-and-send offer orchestration (source-only).
 -- Source-only. Do not apply this file to DEV or Production without owner approval.
 -- Do not edit or replay 20261112120000, 20261112180000, or 20261112210000.
+-- ADMIN-TY-R8-R1: draft estimate preview without catalogue, advisory lock on
+-- approve-send receipts, composer contract V1.
 -- Adds server-side prepare-from-saved-draft, personalised TELLOYA_OFFER composition,
--- read-only email preview, and Admin delivery-status fields.
+-- read-only email preview (including illustrative draft estimates), and Admin
+-- delivery-status fields.
 -- Does not enable mail control, approve the DRAFT template, seed catalogue rows,
 -- create Stripe objects, send customer email, or touch Production.
 
@@ -18,6 +21,8 @@ CREATE TABLE IF NOT EXISTS admin_private.telloya_approve_send_receipts (
 ALTER TABLE admin_private.telloya_approve_send_receipts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE admin_private.telloya_approve_send_receipts FROM PUBLIC, anon, authenticated, service_role;
 
+DROP FUNCTION IF EXISTS admin_private.telloya_offer_compose_v1(text, text, text, text, text, text, text, text, text);
+
 CREATE OR REPLACE FUNCTION admin_private.telloya_offer_compose_v1(
   p_enquiry_ref text,
   p_customer_name text,
@@ -27,7 +32,8 @@ CREATE OR REPLACE FUNCTION admin_private.telloya_offer_compose_v1(
   p_guard_text text,
   p_total_price text,
   p_custom_notes text,
-  p_href text
+  p_draft_estimate boolean,
+  p_review_href text
 ) RETURNS jsonb
 LANGUAGE plpgsql
 IMMUTABLE
@@ -40,6 +46,10 @@ DECLARE
   v_html text;
   v_name text;
   v_notes text;
+  v_href text;
+  v_is_draft boolean;
+  v_draft_banner text := 'Illustrative draft — not an approved offer; no email sent';
+  v_portal_no_link text := 'Sign in to the Customer Portal to review your offer when it is issued. This is not a payment link.';
 BEGIN
   v_name := nullif(btrim(coalesce(p_customer_name, '')), '');
   v_greeting := CASE
@@ -47,8 +57,15 @@ BEGIN
     ELSE 'Hello ' || v_name || ','
   END;
   v_notes := nullif(btrim(coalesce(p_custom_notes, '')), '');
-  v_subject := 'Your Telloya proposal — ' || p_enquiry_ref;
-  v_text := v_greeting
+  v_href := nullif(btrim(coalesce(p_review_href, '')), '');
+  v_is_draft := coalesce(p_draft_estimate, false);
+  v_subject := CASE
+    WHEN v_is_draft THEN '[Draft estimate] Your Telloya proposal — ' || p_enquiry_ref
+    ELSE 'Your Telloya proposal — ' || p_enquiry_ref
+  END;
+  v_text := 'TELLOYA_OFFER_COMPOSER_V1'
+    || CASE WHEN v_is_draft THEN E'\n\n' || v_draft_banner ELSE '' END
+    || E'\n\n' || v_greeting
     || E'\n\nTelloya — a ProfileRelaunch company'
     || E'\nEnquiry ' || p_enquiry_ref
     || E'\nPlan: ' || p_plan_label
@@ -63,10 +80,23 @@ BEGIN
     || E'\n1. Review your offer in the Customer Portal.'
     || E'\n2. Request changes, or accept the versioned service agreement and recurring consent.'
     || E'\n3. Continue to secure payment when that step is available.'
-    || E'\n\nReview your offer'
-    || E'\n' || p_href
-    || E'\nThis link is not a payment link.';
-  v_html := '<div style="font-family:Georgia,serif;color:#15202b;line-height:1.5;max-width:560px">'
+    || CASE
+      WHEN v_href IS NOT NULL THEN
+        E'\n\nReview your offer'
+        || E'\n' || v_href
+        || E'\nThis link is not a payment link.'
+      ELSE
+        E'\n\n' || v_portal_no_link
+    END;
+  v_html := '<!-- TELLOYA_OFFER_COMPOSER_V1 -->'
+    || '<div style="font-family:Georgia,serif;color:#15202b;line-height:1.5;max-width:560px">'
+    || CASE
+      WHEN v_is_draft THEN
+        '<p style="margin:0 0 16px 0;padding:12px 14px;border:1px solid #b45309;background:#fffbeb;color:#92400e;font-size:14px">'
+        || admin_private.telloya_offer_html_v1(v_draft_banner)
+        || '</p>'
+      ELSE ''
+    END
     || '<p style="margin:0 0 12px 0;font-size:13px;letter-spacing:0.04em;text-transform:uppercase;color:#5b6b7c">Telloya — a ProfileRelaunch company</p>'
     || '<p style="margin:0 0 16px 0">' || admin_private.telloya_offer_html_v1(v_greeting) || '</p>'
     || '<p style="margin:0 0 8px 0">Enquiry <strong>' || admin_private.telloya_offer_html_v1(p_enquiry_ref) || '</strong></p>'
@@ -84,14 +114,24 @@ BEGIN
     || '<li>Request changes, or accept the versioned service agreement and recurring consent.</li>'
     || '<li>Continue to secure payment when that step is available.</li>'
     || '</ol>'
-    || '<p style="margin:0 0 12px 0"><a href="' || admin_private.telloya_offer_html_v1(p_href) || '" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:4px">Review your offer</a></p>'
-    || '<p style="margin:0;color:#5b6b7c;font-size:13px">This link is not a payment link.</p>'
+    || CASE
+      WHEN v_href IS NOT NULL THEN
+        '<p style="margin:0 0 12px 0"><a href="' || admin_private.telloya_offer_html_v1(v_href) || '" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:4px">Review your offer</a></p>'
+        || '<p style="margin:0;color:#5b6b7c;font-size:13px">This link is not a payment link.</p>'
+      ELSE
+        '<p style="margin:0;color:#5b6b7c;font-size:14px">' || admin_private.telloya_offer_html_v1(v_portal_no_link) || '</p>'
+    END
     || '</div>';
-  RETURN jsonb_build_object('subject', v_subject, 'text', v_text, 'html', v_html);
+  RETURN jsonb_build_object(
+    'subject', v_subject,
+    'text', v_text,
+    'html', v_html,
+    'composerVersion', 1
+  );
 END;
 $fn$;
 
-REVOKE ALL ON FUNCTION admin_private.telloya_offer_compose_v1(text, text, text, text, text, text, text, text, text)
+REVOKE ALL ON FUNCTION admin_private.telloya_offer_compose_v1(text, text, text, text, text, text, text, text, boolean, text)
   FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.telloya_offer_mail_v1(
@@ -118,6 +158,8 @@ DECLARE
   v_plan_amount integer;
   v_guard integer;
   v_template_version integer;
+  v_template_reason text;
+  v_template_body text;
   v_plan_label text;
   v_minutes_text text;
   v_guard_text text;
@@ -190,13 +232,22 @@ BEGIN
   IF admin_private.contact_verified_v1(v_sub.customer_id, 'email') IS DISTINCT FROM true THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'recipient_unverified');
   END IF;
-  SELECT version INTO v_template_version
+  SELECT version, reason, body_text_template
+  INTO v_template_version, v_template_reason, v_template_body
   FROM admin_private.communication_templates
   WHERE template_key = 'TELLOYA_OFFER' AND status = 'APPROVED'
   ORDER BY version DESC
   LIMIT 1;
   IF v_template_version IS NULL THEN
     RETURN jsonb_build_object('status', 'template_unapproved');
+  END IF;
+  IF (
+    position('server-composed Telloya offer email' in coalesce(v_template_reason, '')) = 0
+    AND position('TELLOYA_OFFER_COMPOSER_V1' in coalesce(v_template_reason, '')) = 0
+    AND position('server-composed Telloya offer email' in coalesce(v_template_body, '')) = 0
+    AND position('TELLOYA_OFFER_COMPOSER_V1' in coalesce(v_template_body, '')) = 0
+  ) THEN
+    RETURN jsonb_build_object('status', 'template_unapproved', 'reason', 'composer_contract');
   END IF;
   SELECT chosen.tier_code, chosen.included_minutes, chosen.amount_minor
   INTO v_tier, v_minutes, v_plan_amount
@@ -254,7 +305,7 @@ BEGIN
   v_href := p_origin || '/portal/onboarding/offer/' || v_sub.public_ref;
   v_composed := admin_private.telloya_offer_compose_v1(
     v_link.enquiry_ref, v_customer_name, v_plan_label, v_minutes_text,
-    v_base_price, v_guard_text, v_price, v_custom_notes, v_href
+    v_base_price, v_guard_text, v_price, v_custom_notes, false, v_href
   );
   BEGIN
     INSERT INTO public.communications(
@@ -280,9 +331,19 @@ BEGIN
     PERFORM admin_private.write_record_audit_v1(
       v_actor, 'COMMUNICATION_CHANGED', 'success', v_comm.id, p_request, 'communication',
       'Queued a Telloya offer email. The provider has not accepted it.',
-      jsonb_build_object('operation', 'queue_telloya_offer', 'enquiryRef', v_link.enquiry_ref)
+      jsonb_build_object(
+        'operation', 'queue_telloya_offer',
+        'enquiryRef', v_link.enquiry_ref,
+        'composerVersion', 1,
+        'templateVersion', v_template_version
+      )
     );
-    RETURN jsonb_build_object('status', 'queued', 'communicationId', v_comm.id, 'deliveryStatus', v_comm.delivery_status);
+    RETURN jsonb_build_object(
+      'status', 'queued',
+      'communicationId', v_comm.id,
+      'deliveryStatus', v_comm.delivery_status,
+      'composerVersion', 1
+    );
   EXCEPTION WHEN unique_violation THEN
     SELECT * INTO v_existing
     FROM public.communications
@@ -323,25 +384,30 @@ DECLARE
   v_guard_text text;
   v_base_price text;
   v_price text;
-  v_href text;
+  v_href text := NULL;
   v_custom_notes text := '';
   v_composed jsonb;
   v_mail public.communications;
   v_draft admin_private.telloya_offer_drafts;
   v_req public.onboarding_requests;
-  v_plan public.plan_versions;
-  v_conditions public.commercial_plan_conditions;
   v_enquiry_ref text;
-  v_has_offer boolean := false;
+  v_origin_ok boolean := false;
+  v_total_minor integer;
 BEGIN
   v_actor := admin_private.telloya_admin_demo_actor_v1(p_token);
   IF v_actor IS NULL THEN
     RETURN jsonb_build_object('status', 'unauthorized');
   END IF;
-  IF p_enquiry IS NULL OR p_origin IS NULL OR p_origin !~ '^https://[a-z0-9.-]+$'
-     OR (p_origin !~ '^https://([a-z0-9-]+\.)*(profilerelaunch\.com|telloya\.com)$' AND p_origin <> 'https://localhost') THEN
+  IF p_enquiry IS NULL THEN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
+  v_origin_ok := p_origin IS NOT NULL
+    AND nullif(btrim(p_origin), '') IS NOT NULL
+    AND p_origin ~ '^https://[a-z0-9.-]+$'
+    AND (
+      p_origin ~ '^https://([a-z0-9-]+\.)*(profilerelaunch\.com|telloya\.com)$'
+      OR p_origin = 'https://localhost'
+    );
 
   SELECT public_ref INTO v_enquiry_ref FROM public.enquiries WHERE id = p_enquiry;
 
@@ -353,7 +419,6 @@ BEGIN
   LIMIT 1;
 
   IF FOUND THEN
-    v_has_offer := true;
     SELECT * INTO v_link FROM admin_private.telloya_linked_offer_v1(v_sub.id) AS linked;
     IF NOT FOUND THEN
       RETURN jsonb_build_object('status', 'ineligible');
@@ -379,56 +444,92 @@ BEGIN
     LEFT JOIN admin_private.telloya_offer_drafts AS draft ON draft.onboarding_request_id = request.id
     WHERE request.commercial_subscription_id = v_sub.id
     ORDER BY request.created_at DESC LIMIT 1;
-    v_href := p_origin || '/portal/onboarding/offer/' || v_sub.public_ref;
+    IF v_origin_ok THEN
+      v_href := p_origin || '/portal/onboarding/offer/' || v_sub.public_ref;
+    END IF;
     SELECT * INTO v_mail
     FROM public.communications
     WHERE commercial_subscription_id = v_sub.id AND template_key = 'TELLOYA_OFFER' AND lifecycle IS DISTINCT FROM 'CANCELLED'
     ORDER BY created_at DESC LIMIT 1;
-  ELSE
-    SELECT * INTO v_req FROM public.onboarding_requests
-    WHERE enquiry_id = p_enquiry AND product_code = 'TELLOYA' AND state NOT IN ('DECLINED', 'CLOSED')
-    ORDER BY created_at DESC LIMIT 1;
-    IF v_req.id IS NULL THEN
-      RETURN jsonb_build_object('status', 'no_offer');
-    END IF;
-    SELECT * INTO v_draft FROM admin_private.telloya_offer_drafts WHERE onboarding_request_id = v_req.id;
-    IF v_draft.onboarding_request_id IS NULL OR v_draft.plan_tier IS NULL THEN
-      RETURN jsonb_build_object('status', 'draft_required');
-    END IF;
-    IF v_draft.plan_tier = 'custom' THEN
-      SELECT plan.* INTO v_plan
-      FROM public.plan_versions AS plan
-      JOIN public.commercial_plan_conditions AS conditions
-        ON conditions.plan_version_id = plan.id AND conditions.status = 'APPROVED'
-      WHERE plan.product_code = 'TELLOYA' AND plan.status = 'APPROVED' AND plan.tier_code = 'CUSTOM'
-        AND plan.amount_minor = v_draft.custom_amount_minor
-        AND conditions.included_minutes IS NOT DISTINCT FROM v_draft.custom_included_minutes
-        AND plan.amount_minor IS NOT NULL AND plan.effective_from <= pg_catalog.now()
-        AND (plan.effective_to IS NULL OR plan.effective_to > pg_catalog.now())
-      ORDER BY plan.version_number DESC LIMIT 1;
-    ELSE
-      SELECT plan.* INTO v_plan
-      FROM public.plan_versions AS plan
-      WHERE plan.product_code = 'TELLOYA' AND plan.status = 'APPROVED'
-        AND lower(plan.tier_code) = v_draft.plan_tier
-        AND plan.amount_minor IS NOT NULL AND plan.effective_from <= pg_catalog.now()
-        AND (plan.effective_to IS NULL OR plan.effective_to > pg_catalog.now())
-      ORDER BY plan.version_number DESC LIMIT 1;
-    END IF;
-    IF v_plan.id IS NULL THEN
-      RETURN jsonb_build_object('status', 'terms_unconfigured', 'reason', 'catalogue');
-    END IF;
-    SELECT * INTO v_conditions FROM public.commercial_plan_conditions
-    WHERE plan_version_id = v_plan.id AND status = 'APPROVED';
-    SELECT admin_private.normalize_email_v1(email), full_name INTO v_email, v_customer_name
-    FROM public.customers WHERE id = v_req.customer_id;
-    v_tier := v_plan.tier_code;
-    v_minutes := v_conditions.included_minutes;
-    v_plan_amount := v_plan.amount_minor;
-    v_guard := cardinality(v_draft.guard_location_ids);
-    v_custom_notes := coalesce(v_draft.custom_requirements, '');
-    v_href := p_origin || '/portal/onboarding/offer/VC-PREVIEW';
+
+    v_plan_label := CASE v_tier
+      WHEN 'BASIC' THEN 'Basic'
+      WHEN 'GROWTH' THEN 'Growth'
+      WHEN 'PRO' THEN 'Pro'
+      WHEN 'CUSTOM' THEN 'Custom'
+      ELSE coalesce(v_tier, 'Plan')
+    END;
+    v_minutes_text := CASE WHEN v_minutes IS NULL THEN 'confirmed in the quotation' ELSE v_minutes::text END;
+    v_guard_text := CASE
+      WHEN coalesce(v_guard, 0) = 0 THEN 'not included'
+      ELSE v_guard::text || CASE WHEN v_guard = 1 THEN ' location' ELSE ' locations' END
+        || ' at ' || admin_private.telloya_gbp_v1(999) || ' each (' || admin_private.telloya_gbp_v1(999 * v_guard) || ')'
+    END;
+    v_base_price := admin_private.telloya_gbp_v1(coalesce(v_plan_amount, 0));
+    v_price := admin_private.telloya_gbp_v1(v_sub.amount_minor);
+    v_composed := admin_private.telloya_offer_compose_v1(
+      coalesce(v_enquiry_ref, 'TY-00-000000'),
+      v_customer_name, v_plan_label, v_minutes_text, v_base_price, v_guard_text, v_price,
+      v_custom_notes, false, v_href
+    );
+    RETURN jsonb_build_object(
+      'status', 'ready',
+      'previewOnly', true,
+      'previewMode', 'approved_offer',
+      'sendable', false,
+      'subject', v_composed->>'subject',
+      'text', v_composed->>'text',
+      'html', v_composed->>'html',
+      'recipient', v_email,
+      'composerVersion', 1,
+      'queued', v_mail.id IS NOT NULL,
+      'deliveryStatus', v_mail.delivery_status,
+      'lifecycle', v_mail.lifecycle
+    );
   END IF;
+
+  SELECT * INTO v_req FROM public.onboarding_requests
+  WHERE enquiry_id = p_enquiry AND product_code = 'TELLOYA' AND state NOT IN ('DECLINED', 'CLOSED')
+  ORDER BY created_at DESC LIMIT 1;
+  IF v_req.id IS NULL THEN
+    RETURN jsonb_build_object('status', 'no_offer');
+  END IF;
+  SELECT * INTO v_draft FROM admin_private.telloya_offer_drafts WHERE onboarding_request_id = v_req.id;
+  IF v_draft.onboarding_request_id IS NULL OR v_draft.plan_tier IS NULL THEN
+    RETURN jsonb_build_object('status', 'draft_required');
+  END IF;
+
+  IF v_draft.plan_tier = 'basic' THEN
+    v_tier := 'BASIC';
+    v_plan_amount := 4900;
+    v_minutes := 120;
+  ELSIF v_draft.plan_tier = 'growth' THEN
+    v_tier := 'GROWTH';
+    v_plan_amount := 7900;
+    v_minutes := 300;
+  ELSIF v_draft.plan_tier = 'pro' THEN
+    v_tier := 'PRO';
+    v_plan_amount := 12000;
+    v_minutes := 500;
+  ELSIF v_draft.plan_tier = 'custom' THEN
+    IF v_draft.custom_amount_minor IS NULL OR v_draft.custom_amount_minor <= 0 THEN
+      RETURN jsonb_build_object('status', 'invalid', 'reason', 'custom_incomplete');
+    END IF;
+    v_tier := 'CUSTOM';
+    v_plan_amount := v_draft.custom_amount_minor;
+    v_minutes := v_draft.custom_included_minutes;
+  ELSE
+    RETURN jsonb_build_object('status', 'draft_required');
+  END IF;
+
+  IF cardinality(v_draft.guard_location_ids) > 0 THEN
+    v_guard := cardinality(v_draft.guard_location_ids);
+  ELSE
+    v_guard := coalesce(v_draft.proposed_guard_quantity, 0);
+  END IF;
+  v_custom_notes := coalesce(v_draft.custom_requirements, '');
+  SELECT admin_private.normalize_email_v1(email), full_name INTO v_email, v_customer_name
+  FROM public.customers WHERE id = v_req.customer_id;
 
   v_plan_label := CASE v_tier
     WHEN 'BASIC' THEN 'Basic'
@@ -443,24 +544,26 @@ BEGIN
     ELSE v_guard::text || CASE WHEN v_guard = 1 THEN ' location' ELSE ' locations' END
       || ' at ' || admin_private.telloya_gbp_v1(999) || ' each (' || admin_private.telloya_gbp_v1(999 * v_guard) || ')'
   END;
+  v_total_minor := coalesce(v_plan_amount, 0) + 999 * coalesce(v_guard, 0);
   v_base_price := admin_private.telloya_gbp_v1(coalesce(v_plan_amount, 0));
-  v_price := admin_private.telloya_gbp_v1(
-    CASE WHEN v_has_offer THEN v_sub.amount_minor ELSE coalesce(v_plan_amount, 0) + 999 * coalesce(v_guard, 0) END
-  );
+  v_price := admin_private.telloya_gbp_v1(v_total_minor);
+  -- Draft estimates never emit a live offer href, even when origin is valid.
   v_composed := admin_private.telloya_offer_compose_v1(
     coalesce(v_enquiry_ref, 'TY-00-000000'),
-    v_customer_name, v_plan_label, v_minutes_text, v_base_price, v_guard_text, v_price, v_custom_notes, v_href
+    v_customer_name, v_plan_label, v_minutes_text, v_base_price, v_guard_text, v_price,
+    v_custom_notes, true, NULL
   );
   RETURN jsonb_build_object(
     'status', 'ready',
     'previewOnly', true,
+    'previewMode', 'draft_estimate',
+    'sendable', false,
     'subject', v_composed->>'subject',
     'text', v_composed->>'text',
     'html', v_composed->>'html',
     'recipient', v_email,
-    'queued', v_mail.id IS NOT NULL,
-    'deliveryStatus', v_mail.delivery_status,
-    'lifecycle', v_mail.lifecycle
+    'composerVersion', 1,
+    'queued', false
   );
 END;
 $fn$;
@@ -509,6 +612,7 @@ BEGIN
   END IF;
 
   v_fingerprint := 'prepare_from_draft:' || p_enquiry::text || ':' || p_expected_draft_version::text;
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_request::text, 0));
   SELECT * INTO v_receipt FROM admin_private.telloya_approve_send_receipts WHERE request_id = p_request;
   IF FOUND THEN
     IF v_receipt.fingerprint IS DISTINCT FROM v_fingerprint THEN
@@ -668,8 +772,19 @@ BEGIN
       'planVersionId', v_sub.plan_version_id,
       'draftVersion', v_draft.record_version
     );
-    INSERT INTO admin_private.telloya_approve_send_receipts(request_id, actor_id, fingerprint, response)
-    VALUES (p_request, v_actor, v_fingerprint, v_result);
+    BEGIN
+      INSERT INTO admin_private.telloya_approve_send_receipts(request_id, actor_id, fingerprint, response)
+      VALUES (p_request, v_actor, v_fingerprint, v_result);
+    EXCEPTION WHEN unique_violation THEN
+      SELECT * INTO v_receipt FROM admin_private.telloya_approve_send_receipts WHERE request_id = p_request;
+      IF FOUND THEN
+        IF v_receipt.fingerprint IS DISTINCT FROM v_fingerprint THEN
+          RETURN jsonb_build_object('status', 'conflict', 'reason', 'fingerprint');
+        END IF;
+        RETURN v_receipt.response;
+      END IF;
+      RAISE;
+    END;
     RETURN v_result;
   END IF;
 
@@ -702,8 +817,19 @@ BEGIN
     'draftVersion', v_draft.record_version,
     'requestVersion', v_req.record_version
   );
-  INSERT INTO admin_private.telloya_approve_send_receipts(request_id, actor_id, fingerprint, response)
-  VALUES (p_request, v_actor, v_fingerprint, v_result);
+  BEGIN
+    INSERT INTO admin_private.telloya_approve_send_receipts(request_id, actor_id, fingerprint, response)
+    VALUES (p_request, v_actor, v_fingerprint, v_result);
+  EXCEPTION WHEN unique_violation THEN
+    SELECT * INTO v_receipt FROM admin_private.telloya_approve_send_receipts WHERE request_id = p_request;
+    IF FOUND THEN
+      IF v_receipt.fingerprint IS DISTINCT FROM v_fingerprint THEN
+        RETURN jsonb_build_object('status', 'conflict', 'reason', 'fingerprint');
+      END IF;
+      RETURN v_receipt.response;
+    END IF;
+    RAISE;
+  END;
   RETURN v_result;
 END;
 $fn$;

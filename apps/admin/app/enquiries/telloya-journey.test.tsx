@@ -18,6 +18,7 @@ describe("Telloya journey panel", () => {
     expect(screen.getByText("Preview / test only, not available to customers")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Send offer" })).toHaveProperty("disabled", true)
     expect(screen.getByText(/No illustrative total is available/)).toBeTruthy()
+    expect(screen.getByText(/Going live stays blocked/)).toBeTruthy()
   })
 
   it("shows a labelled catalogue illustration for Growth and two Guard locations", () => {

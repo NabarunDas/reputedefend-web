@@ -1,11 +1,13 @@
 import { telloyaJourneyProgress, type TelloyaJourneySnapshot } from "@/lib/commercial/telloya-admin-journey"
 import { telloyaDemoWriteAvailable } from "@/lib/commercial/telloya-demo-status"
 import { formatGbpPence, previewTelloyaOffer } from "@/lib/commercial/telloya-offer"
+import { telloyaSetupChecklist } from "@/lib/commercial/telloya-setup"
 
 export function TelloyaJourney({ snapshot }: { snapshot: TelloyaJourneySnapshot }) {
   const progress = telloyaJourneyProgress(snapshot)
   if (!progress) return null
   const preview = previewTelloyaOffer(snapshot.planTier, snapshot.guardLocationCount)
+  const setup = telloyaSetupChecklist({ initialInvoicePaid: false, completed: [] })
   return <section className="panel" aria-labelledby="telloya-journey-title">
     <h2 id="telloya-journey-title">Telloya progress</h2>
     <p>{progress.requestLabel} · {progress.planLabel}</p>
@@ -27,5 +29,7 @@ export function TelloyaJourney({ snapshot }: { snapshot: TelloyaJourneySnapshot 
       ? <p>Illustrative monthly total {formatGbpPence(preview.monthlyTotalPence)} for {preview.planCode}, including {formatGbpPence(preview.guardAmountPence)} for {preview.guardLocations} Guard locations. One voice location and one number. Overage is off.</p>
       : <p>No illustrative total is available until a plan is confirmed.</p>}
     <p><button type="button" disabled>Send offer</button></p>
+    <h3>Setup</h3>
+    <p>{setup.next} Going live stays blocked until the voice safety gates are verified. Recording a number or forwarding instructions does not turn forwarding on and does not place a call.</p>
   </section>
 }

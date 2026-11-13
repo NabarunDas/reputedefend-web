@@ -23,7 +23,7 @@
 | `20261112180000` | DONE applied once to DEV | Byte-identical 18,615 chars; do not replay or apply to Production |
 | `20261112210000` | DONE applied once to DEV | Draft storage; 17,672 chars; do not replay or apply to Production |
 | `20261112223000` | DONE applied once to DEV | R8 approve/send + draft preview + published price match + composer contract V1; 45,006 chars; do not replay or apply to Production |
-| `20261113120000` | SOURCE-ONLY (not applied) | R1 hardened fail-closed offer-mail test allowlist (owner-grant provision; required customer_id); `appliedToDev: false`; do not apply without owner approval |
+| `20261113120000` | SOURCE-ONLY (not applied) | R2-FINAL fail-closed allowlist + `telloya_offer_mail_provider_ready_v1` last-mile (membership-for-that-business, mail_control, OFFERED, no pending amendment); `appliedToDev: false`; do not apply without owner approval |
 
 ## What is implemented
 
@@ -96,6 +96,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | ADMIN-TY-R8-D-01A | DONE in source | `516a58dbf3e55c29068ebe292773d1201a530324` | Legal candidates + unresolved confirmations; source-only mail test allowlist migration; DRAFT catalogue runbook. No hosted apply, send, template approve, or Stripe. |
 | ADMIN-TY-R8-D-01A-R1 | DONE in source | `e70f5a133f679c221712e195d4016c2b46a7b05b` | Owner-grant provision only; required customer_id + verified email; Admin authorize denied; TELLOYA_OFFER dispatch recheck; shutdown/revoke. Allowlist remains source-only. |
 | ADMIN-TY-R8-D-01A-R2 | DONE in source | `c4eef5478f21dfe9ad298febfaf816bd150dfda9` | Grants bind `bound_customer_id` + `bound_email_hash`; automatic develop dispatcher leases TELLOYA_OFFER once; last-mile `communication_begin_provider_attempt_v1` recheck; Guided/Guard unchanged. Allowlist remains source-only. |
+| ADMIN-TY-R8-D-01A-R2-FINAL | DONE in source | — (uncommitted in this agent turn) | Adds `telloya_offer_mail_provider_ready_v1`; candidates/claim/begin_provider require NULL ready reason; rechecks membership for that business, mail_control, OFFERED, no pending amendment, allowlist, composer contract. Allowlist remains source-only. |
 
 ## Test matrix
 
@@ -106,7 +107,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | Draft command parse rejects bad payloads | `apps/admin/lib/commercial/telloya-offer-draft-command.test.ts` |
 | Draft save/reload/stale version/lock after prepare_offer/cascade | `apps/admin/lib/commercial/telloya-offer-draft.database.test.ts` |
 | Approve-from-draft, Custom £150 + 2 Guard queue once, preview, stale/unresolved/custom mismatch | `apps/admin/lib/commercial/telloya-approve-send.database.test.ts` |
-| Automatic TELLOYA_OFFER develop dispatch claim/revoke/origin + case-less denial | `apps/admin/lib/commercial/telloya-offer-mail-dispatch.database.test.ts` |
+| Automatic TELLOYA_OFFER develop dispatch claim/revoke/origin + case-less denial + R2-FINAL provider_ready gates | `apps/admin/lib/commercial/telloya-offer-mail-dispatch.database.test.ts` |
 | Evidence-safe sales-context bootstrap, sole-business/location confirmation, revoked ownership, concurrency, prepare_offer, expired recent sign-in rollback/retry | `apps/admin/lib/commercial/telloya-sales-context.database.test.ts` |
 | Offer workspace calculator, Save draft, checklist, Approve & Send, Preview email | `apps/admin/app/enquiries/telloya-offer-workspace.test.tsx`, `telloya-sales-context.test.ts` |
 | Fail-closed composite errors never trigger legacy commercial writes | `apps/admin/lib/commercial/telloya-sales-context-command.test.ts` |

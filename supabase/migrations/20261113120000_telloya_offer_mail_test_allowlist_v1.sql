@@ -1,4 +1,4 @@
--- ADMIN-TY-R8-D-01A-R2: fail-closed Telloya offer mail test allowlist + automatic DEV dispatch.
+-- ADMIN-TY-R8-D-01A-R2-FINAL: fail-closed Telloya offer mail test allowlist + automatic DEV dispatch.
 -- SOURCE-ONLY until the owner explicitly approves a DEV apply. Do not apply to
 -- Production. Do not edit or replay previously applied migrations.
 --
@@ -7,7 +7,9 @@
 -- 2) Owner grants bind to exact customer_id + email hash at insert; provision fails on mismatch.
 -- 3) Ordinary Admin sessions cannot authorise recipients.
 -- 4) Automatic DEV dispatcher supports TELLOYA_OFFER via commercial_subscription_id (not cases).
--- 5) Last-mile provider attempt rechecks TELLOYA_OFFER permission; Guided/Guard unchanged.
+-- 5) Last-mile provider attempt rechecks TELLOYA_OFFER permission via
+--    telloya_offer_mail_provider_ready_v1 (membership for that business, mail_control,
+--    OFFERED, no pending amendment, allowlist, composer contract); Guided/Guard unchanged.
 -- 6) Zero recipient addresses or grants are seeded. Empty allowlist queues nobody.
 
 DROP FUNCTION IF EXISTS public.telloya_offer_mail_test_recipient_command_v1(text, uuid, text, jsonb);
@@ -847,10 +849,121 @@ GRANT EXECUTE ON FUNCTION public.admin_dev_send_email_claim_v1(text, uuid, uuid,
   TO service_role;
 
 -- ---------------------------------------------------------------------------
--- R2: automatic DEV dispatcher support for TELLOYA_OFFER + last-mile recheck.
+-- R2-FINAL: automatic DEV dispatcher support for TELLOYA_OFFER + last-mile recheck.
 -- Case-backed Guided/Guard/Evidence/Quote paths keep their existing behaviour.
 -- Develop-only origin gate is unchanged. Worker/env are not enabled here.
 -- ---------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS admin_private.telloya_offer_mail_provider_ready_v1(uuid);
+
+CREATE OR REPLACE FUNCTION admin_private.telloya_offer_mail_provider_ready_v1(
+  p_communication uuid
+) RETURNS text
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+  v_comm public.communications;
+  v_sub public.commercial_subscriptions;
+  v_email text;
+  v_recipient text;
+  v_enabled boolean := false;
+  v_template_body text;
+BEGIN
+  IF p_communication IS NULL THEN
+    RETURN 'invalid';
+  END IF;
+  SELECT * INTO v_comm FROM public.communications AS communications WHERE communications.id = p_communication;
+  IF NOT FOUND THEN
+    RETURN 'not_found';
+  END IF;
+  -- Callers only invoke this for TELLOYA_OFFER; non-Telloya returns NULL.
+  IF v_comm.template_key IS DISTINCT FROM 'TELLOYA_OFFER' THEN
+    RETURN NULL;
+  END IF;
+  IF v_comm.case_id IS NOT NULL OR v_comm.commercial_subscription_id IS NULL THEN
+    RETURN 'structure';
+  END IF;
+  SELECT * INTO v_sub
+  FROM public.commercial_subscriptions AS subscriptions
+  WHERE subscriptions.id = v_comm.commercial_subscription_id;
+  IF NOT FOUND
+     OR v_sub.customer_id IS DISTINCT FROM v_comm.customer_id
+     OR v_sub.business_id IS DISTINCT FROM v_comm.business_id
+  THEN
+    RETURN 'subscription_mismatch';
+  END IF;
+  IF v_sub.state IS DISTINCT FROM 'OFFERED' THEN
+    RETURN 'offer_not_open';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM admin_private.telloya_offer_amendments AS amendment
+    WHERE amendment.subscription_id = v_sub.id
+      AND amendment.status = 'REQUESTED'
+  ) THEN
+    RETURN 'amendment_pending';
+  END IF;
+  SELECT control.mail_enabled INTO v_enabled
+  FROM admin_private.telloya_offer_mail_control AS control
+  LIMIT 1;
+  IF COALESCE(v_enabled, false) IS DISTINCT FROM true THEN
+    RETURN 'mail_disabled';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.business_memberships AS membership
+    WHERE membership.customer_id = v_sub.customer_id
+      AND membership.business_id = v_sub.business_id
+      AND membership.status = 'verified'
+  ) THEN
+    RETURN 'authority';
+  END IF;
+  IF admin_private.contact_verified_v1(v_sub.customer_id, 'email') IS DISTINCT FROM true THEN
+    RETURN 'recipient_unverified';
+  END IF;
+  SELECT admin_private.normalize_email_v1(customers.email) INTO v_email
+  FROM public.customers AS customers
+  WHERE customers.id = v_sub.customer_id;
+  v_recipient := admin_private.normalize_email_v1(v_comm.recipient);
+  IF v_email IS NULL OR v_recipient IS NULL OR v_email IS DISTINCT FROM v_recipient THEN
+    RETURN 'recipient_mismatch';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM admin_private.telloya_offer_mail_test_recipients AS allowed
+    WHERE allowed.enabled IS TRUE
+      AND allowed.customer_id = v_sub.customer_id
+      AND allowed.email_normalized = v_email
+  ) THEN
+    RETURN 'test_recipient_not_allowed';
+  END IF;
+  SELECT templates.body_text_template INTO v_template_body
+  FROM admin_private.communication_templates AS templates
+  WHERE templates.template_key = 'TELLOYA_OFFER'
+    AND templates.status = 'APPROVED'
+  ORDER BY templates.version DESC
+  LIMIT 1;
+  IF v_template_body IS NULL
+     OR v_template_body IS DISTINCT FROM admin_private.telloya_offer_composer_contract_body_v1()
+  THEN
+    RETURN 'template';
+  END IF;
+  IF position(
+       admin_private.telloya_offer_composer_contract_id_v1()
+       IN coalesce(v_comm.body_html, '')
+     ) = 0
+  THEN
+    RETURN 'template';
+  END IF;
+  RETURN NULL;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION admin_private.telloya_offer_mail_provider_ready_v1(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION admin_private.dev_mail_link_reason_v1(
   p_template text, p_text text, p_html text, p_origin text, p_case_ref text
@@ -1072,67 +1185,6 @@ BEGIN
   SELECT coalesce(jsonb_agg(jsonb_build_object('communicationId', picked.id) ORDER BY picked.queued_at NULLS LAST, picked.created_at, picked.id), '[]'::jsonb)
   INTO listed
   FROM (
-    SELECT c.id, coalesce(c.queued_at, c.created_at) AS queued_at, c.created_at
-    FROM public.communications c
-    JOIN admin_private.job_outbox o
-      ON o.event_key = 'send-email:' || c.id::text || ':v' || c.content_version::text
-     AND o.topic = 'SEND_EMAIL'
-     AND o.aggregate_id = c.id
-    JOIN public.cases cs ON cs.id = c.case_id
-    JOIN public.customers cu ON cu.id = cs.customer_id
-    JOIN admin_private.dev_mail_dispatch_activation gate
-      ON coalesce(c.queued_at, c.created_at) >= gate.active_from
-    WHERE c.lifecycle = 'QUEUED'
-      AND c.content_locked IS TRUE
-      AND c.template_key IN (
-        'EVIDENCE_REQUEST', 'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT', 'QUOTE_OFFER',
-        'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION'
-      )
-      AND admin_private.normalize_email_v1(c.recipient) = admin_private.normalize_email_v1(cu.email)
-      AND NOT EXISTS (
-        SELECT 1 FROM admin_private.email_suppressions s
-        WHERE s.address_normalized = admin_private.normalize_email_v1(c.recipient)
-      )
-      AND c.delivery_status IS DISTINCT FROM 'PROVIDER_ACCEPTED'
-      AND c.delivery_status IS DISTINCT FROM 'DELIVERED'
-      AND c.delivery_status IS DISTINCT FROM 'TRANSIENT_BOUNCE'
-      AND c.delivery_status IS DISTINCT FROM 'UNDETERMINED_BOUNCE'
-      AND c.delivery_status IS DISTINCT FROM 'BOUNCED'
-      AND c.delivery_status IS DISTINCT FROM 'COMPLAINED'
-      AND c.delivery_status IS DISTINCT FROM 'SUPPRESSED'
-      AND c.delivery_status IS DISTINCT FROM 'FAILED'
-      AND c.delivery_status IS DISTINCT FROM 'ACCEPTANCE_UNKNOWN'
-      AND (
-        c.first_provider_attempt_at IS NULL
-        OR admin_private.dev_mail_retry_due_v1(o.id)
-      )
-      AND admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin, cs.public_ref) IS NULL
-    ORDER BY coalesce(c.queued_at, c.created_at) NULLS LAST, c.created_at, c.id
-    LIMIT v_limit
-  ) picked;
-  RETURN jsonb_build_object('status', 'success', 'communications', listed);
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.dev_mail_dispatch_candidates_v1(p_limit integer, p_customer_origin text)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-DECLARE
-  v_limit integer;
-  listed jsonb;
-BEGIN
-  IF p_customer_origin IS NULL
-    OR p_customer_origin !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app$'
-  THEN
-    RETURN jsonb_build_object('status', 'denied', 'reason', 'origin', 'communications', '[]'::jsonb);
-  END IF;
-  v_limit := least(greatest(coalesce(p_limit, 20), 1), 20);
-  SELECT coalesce(jsonb_agg(jsonb_build_object('communicationId', picked.id) ORDER BY picked.queued_at NULLS LAST, picked.created_at, picked.id), '[]'::jsonb)
-  INTO listed
-  FROM (
     SELECT * FROM (
       SELECT c.id, coalesce(c.queued_at, c.created_at) AS queued_at, c.created_at
       FROM public.communications c
@@ -1176,29 +1228,14 @@ BEGIN
         ON o.event_key = 'send-email:' || c.id::text || ':v' || c.content_version::text
        AND o.topic = 'SEND_EMAIL'
        AND o.aggregate_id = c.id
-      JOIN public.customers cu ON cu.id = c.customer_id
       JOIN public.commercial_subscriptions sub
         ON sub.id = c.commercial_subscription_id
-       AND sub.customer_id = c.customer_id
-       AND sub.business_id = c.business_id
       JOIN admin_private.dev_mail_dispatch_activation gate
         ON coalesce(c.queued_at, c.created_at) >= gate.active_from
       WHERE c.lifecycle = 'QUEUED'
         AND c.content_locked IS TRUE
         AND c.template_key = 'TELLOYA_OFFER'
-        AND c.case_id IS NULL
-        AND c.commercial_subscription_id IS NOT NULL
-        AND admin_private.normalize_email_v1(c.recipient) = admin_private.normalize_email_v1(cu.email)
-        AND admin_private.telloya_offer_mail_test_recipient_permitted_v1(
-              c.customer_id, admin_private.normalize_email_v1(c.recipient)
-            ) IS TRUE
-        AND EXISTS (
-          SELECT 1 FROM admin_private.communication_templates t
-          WHERE t.template_key = 'TELLOYA_OFFER'
-            AND t.status = 'APPROVED'
-            AND position('TELLOYA_OFFER_COMPOSER_CONTRACT_V1' IN coalesce(t.body_text_template, '')) > 0
-            AND position('TELLOYA_OFFER_COMPOSER_CONTRACT_V1' IN coalesce(c.body_html, '')) > 0
-        )
+        AND admin_private.telloya_offer_mail_provider_ready_v1(c.id) IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM admin_private.email_suppressions s
           WHERE s.address_normalized = admin_private.normalize_email_v1(c.recipient)
@@ -1247,6 +1284,7 @@ DECLARE
   v_key text;
   v_link text;
   v_case_ref text;
+  v_ready text;
 BEGIN
   IF p_communication IS NULL
     OR p_customer_origin IS NULL
@@ -1292,19 +1330,9 @@ BEGIN
     THEN
       RETURN jsonb_build_object('status', 'denied', 'reason', 'recipient_mismatch');
     END IF;
-    IF admin_private.telloya_offer_mail_test_recipient_permitted_v1(
-         comm.customer_id, admin_private.normalize_email_v1(comm.recipient)
-       ) IS DISTINCT FROM true THEN
-      RETURN jsonb_build_object('status', 'denied', 'reason', 'test_recipient_not_allowed');
-    END IF;
-    IF NOT EXISTS (
-      SELECT 1 FROM admin_private.communication_templates t
-      WHERE t.template_key = 'TELLOYA_OFFER'
-        AND t.status = 'APPROVED'
-        AND position('TELLOYA_OFFER_COMPOSER_CONTRACT_V1' IN coalesce(t.body_text_template, '')) > 0
-        AND position('TELLOYA_OFFER_COMPOSER_CONTRACT_V1' IN coalesce(comm.body_html, '')) > 0
-    ) THEN
-      RETURN jsonb_build_object('status', 'denied', 'reason', 'template');
+    v_ready := admin_private.telloya_offer_mail_provider_ready_v1(comm.id);
+    IF v_ready IS NOT NULL THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', v_ready);
     END IF;
   ELSIF NOT EXISTS (
     SELECT 1
@@ -1504,7 +1532,11 @@ $$;
 CREATE OR REPLACE FUNCTION public.communication_begin_provider_attempt_v1(
   p_communication uuid, p_content_version integer, p_idempotency_key text
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE row public.communications; started timestamptz; permitted boolean;
+DECLARE
+  row public.communications;
+  started timestamptz;
+  permitted boolean;
+  v_ready text;
 BEGIN
   IF p_communication IS NULL OR p_content_version IS NULL OR p_content_version < 1 THEN
     RETURN jsonb_build_object('status', 'unavailable');
@@ -1523,19 +1555,9 @@ BEGIN
     )
   THEN RETURN jsonb_build_object('status', 'denied'); END IF;
   IF row.template_key = 'TELLOYA_OFFER' THEN
-    IF row.case_id IS NOT NULL
-      OR row.commercial_subscription_id IS NULL
-      OR NOT EXISTS (
-        SELECT 1 FROM public.commercial_subscriptions sub
-        WHERE sub.id = row.commercial_subscription_id
-          AND sub.customer_id = row.customer_id
-          AND sub.business_id = row.business_id
-      )
-      OR admin_private.telloya_offer_mail_test_recipient_permitted_v1(
-           row.customer_id, admin_private.normalize_email_v1(row.recipient)
-         ) IS DISTINCT FROM true
-    THEN
-      RETURN jsonb_build_object('status', 'denied', 'reason', 'test_recipient_not_allowed');
+    v_ready := admin_private.telloya_offer_mail_provider_ready_v1(row.id);
+    IF v_ready IS NOT NULL THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', v_ready);
     END IF;
   END IF;
   IF row.delivery_status IN ('PROVIDER_ACCEPTED', 'TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE') THEN

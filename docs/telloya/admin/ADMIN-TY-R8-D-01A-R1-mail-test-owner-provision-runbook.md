@@ -1,4 +1,4 @@
-# ADMIN-TY-R8-D-01A-R1 / R2 — Telloya offer mail test recipient owner provision (DRAFT runbook)
+# ADMIN-TY-R8-D-01A-R1 / R2 / R2-FINAL — Telloya offer mail test recipient owner provision (DRAFT runbook)
 
 **Status:** DRAFT. Source-only. Do not apply the allowlist migration, insert grants, or send email until the owner explicitly approves each step.
 
@@ -43,9 +43,11 @@ Admin `telloya_offer_mail_test_recipient_command_v1('authorize', …)` must retu
 - `shutdown` disables every enabled allowlist row.
 - Revocation after queue does not cancel the durable `SEND_EMAIL` job; `admin_dev_send_email_claim_v1`, automatic `dev_mail_dispatch_claim_v1`, and `communication_begin_provider_attempt_v1` recheck TELLOYA_OFFER permission before provider dispatch. Guided/Guard mail is unchanged.
 
-## R2 note (automatic develop dispatch)
+## R2 / R2-FINAL note (automatic develop dispatch)
 
 With an APPROVED composer-contract TELLOYA_OFFER template, an allowlisted recipient, and a queued offer whose text+html CTA uses a develop customer portal `/portal/onboarding/offer/VC-…` link, `dev_mail_dispatch_candidates_v1` / `dev_mail_dispatch_claim_v1` may lease that communication once. Wrong portal origin, wrong VC, or `/portal/cases/` links stay denied.
+
+R2-FINAL last-mile: `admin_private.telloya_offer_mail_provider_ready_v1` rechecks **before** `first_provider_attempt_at` is marked. Candidates, claim, and `communication_begin_provider_attempt_v1` all require a NULL ready reason. Rechecks include verified membership for **that** offer business (another business’s verified membership is not enough), `telloya_offer_mail_control.mail_enabled`, subscription `state = OFFERED`, no `telloya_offer_amendments` row with `status = REQUESTED`, contact email verification matching the communication recipient, enabled allowlist row, and exact APPROVED composer-contract template equality plus body_html contract marker.
 
 Automatic delivery remains gated by the existing develop-only Admin Preview mail lane (`apps/admin/lib/communications/dev-lane.ts`: `VERCEL_GIT_COMMIT_REF=develop`, DEV Supabase URL, matching customer portal). This Cursor feature-branch Preview does **not** satisfy that lane and does not enable the worker. Owner-approved controlled send testing stays on develop DEV after separate authorisation. Do not broaden Vercel env or auto-enable the worker from this branch.
 

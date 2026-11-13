@@ -1,5 +1,5 @@
 /**
- * Disposable PGlite coverage for ADMIN-TY-R8-D-01A-R2 automatic TELLOYA_OFFER
+ * Disposable PGlite coverage for ADMIN-TY-R8-D-01A-R2-FINAL automatic TELLOYA_OFFER
  * develop-mail dispatch. Replays the repository chain in-process only.
  * No hosted replay, real Resend send, Stripe, or Retell.
  */
@@ -26,6 +26,8 @@ type Json = {
   deliveryStatus?: string
   communicationId?: string
   communications?: Array<{ communicationId?: string }>
+  firstProviderAttemptAt?: string | null
+  providerCallPermitted?: boolean
 }
 
 async function rpc<T>(name: string, args: unknown[]) {
@@ -194,6 +196,30 @@ async function enableMail() {
   )
 }
 
+async function expectProviderDenied(communicationId: string, reason: string) {
+  expect((await rpc<Json>("dev_mail_dispatch_candidates_v1", [20, developOrigin])).communications
+    ?.map(row => row.communicationId)).not.toContain(communicationId)
+  expect(await rpc<Json>("dev_mail_dispatch_claim_v1", [communicationId, developOrigin])).toMatchObject({
+    status: "denied", reason,
+  })
+  expect(await rpc<Json>("communication_begin_provider_attempt_v1", [
+    communicationId, 1, `send-email:${communicationId}:v1`,
+  ])).toMatchObject({ status: "denied", reason })
+  expect((await rows<{
+    lifecycle: string
+    delivery_status: string
+    first_provider_attempt_at: string | null
+  }>(
+    `select lifecycle, delivery_status, first_provider_attempt_at
+     from public.communications where id = $1`,
+    [communicationId],
+  ))[0]).toEqual({
+    lifecycle: "QUEUED",
+    delivery_status: "NONE",
+    first_provider_attempt_at: null,
+  })
+}
+
 describe("Telloya offer automatic develop mail dispatch", () => {
   it("includes a queued TELLOYA_OFFER once, denies allowlist revoke, and rejects bad origins", async () => {
     const email = "r8.dispatch.ok@example.test"
@@ -309,6 +335,94 @@ describe("Telloya offer automatic develop mail dispatch", () => {
       token, randomUUID(), noAllow.prepared.subscriptionId, noAllow.prepared.version, developOrigin,
     ])
     expect(noAllowQueued).toMatchObject({ status: "denied", reason: "test_recipient_not_allowed" })
+
+    await db.query("delete from admin_private.telloya_offer_mail_control")
+  })
+
+  it("last-mile provider_ready rechecks membership, mail_control, OFFERED, amendment, and email verification", async () => {
+    const email = "r8.dispatch.ready@example.test"
+    const { opened, prepared } = await preparedOffer(email)
+    await approveTemplate()
+    await enableMail()
+    await ensureActivation()
+    await provisionTestRecipient(email, opened.customer_id)
+
+    const queued = await rpc<Json>("telloya_offer_mail_v1", [
+      token, randomUUID(), prepared.subscriptionId, prepared.version, developOrigin,
+    ])
+    expect(queued).toMatchObject({ status: "queued", deliveryStatus: "NONE" })
+    const communicationId = String(queued.communicationId)
+
+    const otherBusiness = (await rows<{ id: string }>(
+      "insert into public.businesses(display_name) values ('Other Ready Yard') returning id",
+    ))[0].id
+    await db.query(
+      `insert into public.business_memberships(customer_id, business_id, status, verified_at, verified_by, evidence)
+       values ($1, $2, 'verified', now(), $3, $4)`,
+      [opened.customer_id, otherBusiness, admin, reason],
+    )
+    await db.query(
+      `update public.business_memberships
+       set status = 'revoked', verified_at = null, verified_by = null, evidence = $3
+       where customer_id = $1 and business_id = $2`,
+      [opened.customer_id, opened.business_id, reason],
+    )
+    await expectProviderDenied(communicationId, "authority")
+    await db.query(
+      `update public.business_memberships
+       set status = 'verified', verified_at = now(), verified_by = $3, evidence = $4
+       where customer_id = $1 and business_id = $2`,
+      [opened.customer_id, opened.business_id, admin, reason],
+    )
+
+    await db.query(
+      "update admin_private.telloya_offer_mail_control set mail_enabled = false where singleton is true",
+    )
+    await expectProviderDenied(communicationId, "mail_disabled")
+    await enableMail()
+
+    const amendmentId = randomUUID()
+    await db.query(
+      `insert into admin_private.telloya_offer_amendments(
+         id, request_id, subscription_id, customer_id, request_text, status, idempotency_key
+       ) values ($1, $2, $3, $4, 'Please revise the quotation.', 'REQUESTED', $5)`,
+      [amendmentId, randomUUID(), prepared.subscriptionId, opened.customer_id, `amd_${randomUUID().replaceAll("-", "").slice(0, 24)}`],
+    )
+    await expectProviderDenied(communicationId, "amendment_pending")
+    await db.query("delete from admin_private.telloya_offer_amendments where id = $1", [amendmentId])
+
+    await db.query(
+      "update public.commercial_subscriptions set state = 'ACCEPTED' where id = $1",
+      [prepared.subscriptionId],
+    )
+    await expectProviderDenied(communicationId, "offer_not_open")
+    await db.query(
+      "update public.commercial_subscriptions set state = 'OFFERED' where id = $1",
+      [prepared.subscriptionId],
+    )
+
+    await db.query(
+      "delete from public.customer_contact_verifications where customer_id = $1 and channel = 'email'",
+      [opened.customer_id],
+    )
+    await expectProviderDenied(communicationId, "recipient_unverified")
+    await db.query(
+      `insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence)
+       values ($1, 'email', $2, $3, $4)`,
+      [opened.customer_id, email, admin, reason],
+    )
+
+    expect((await rpc<Json>("dev_mail_dispatch_candidates_v1", [20, developOrigin])).communications
+      ?.map(row => row.communicationId)).toContain(communicationId)
+    const begun = await rpc<Json>("communication_begin_provider_attempt_v1", [
+      communicationId, 1, `send-email:${communicationId}:v1`,
+    ])
+    expect(begun).toMatchObject({ status: "success", providerCallPermitted: true })
+    expect(begun.firstProviderAttemptAt).toBeTruthy()
+    expect((await rows<{ first_provider_attempt_at: string | null }>(
+      "select first_provider_attempt_at from public.communications where id = $1",
+      [communicationId],
+    ))[0].first_provider_attempt_at).toBeTruthy()
 
     await db.query("delete from admin_private.telloya_offer_mail_control")
   })

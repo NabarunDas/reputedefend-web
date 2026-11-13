@@ -66,12 +66,18 @@ async function agreement(product: "TELLOYA" | "COMPLETE", versionRef: string) {
   )
 }
 
-async function offer(product: "TELLOYA" | "COMPLETE", business: string, locations: string[], amount: number) {
+async function offer(
+  product: "TELLOYA" | "COMPLETE", business: string, locations: string[], amount: number,
+  selectedGuardLocations?: string[],
+) {
   const ref = refs[refNumber]
   refNumber += 1
   if (!ref) throw new Error("test reference exhausted")
   const terms = `${product}-SET-${ref.slice(-4)}`
-  const guardQuantity = product === "COMPLETE" ? 1 : 0
+  const guardQuantity = selectedGuardLocations?.length ?? (product === "COMPLETE" ? 1 : 0)
+  // Standard Telloya plan versions hold the voice-only base price. Guard
+  // locations are extra subscription items billed at the accepted total.
+  const planAmount = product === "TELLOYA" ? amount - 999 * guardQuantity : amount
   const id = randomUUID()
   const version = ++planNumber
   await db.query(
@@ -79,7 +85,7 @@ async function offer(product: "TELLOYA" | "COMPLETE", business: string, location
       id, product_code, version_number, status, effective_from, billing_cadence, currency,
       amount_minor, tax_behaviour, terms_ref
     ) values ($1, $2, $3, 'DRAFT', now() - interval '30 days' + make_interval(mins => $3), 'MONTH', 'GBP', $4, 'NOT_APPLICABLE', $5)`,
-    [id, product, version, amount, terms],
+    [id, product, version, planAmount, terms],
   )
   await db.query(
     `insert into public.plan_components(plan_version_id, component_code, quantity_limit, scope) values ($1, 'TELLOYA', 2, 'LOCATION')`,
@@ -98,6 +104,22 @@ async function offer(product: "TELLOYA" | "COMPLETE", business: string, location
   )
   await db.query(`update public.plan_versions set status = 'APPROVED', approved_by = $2, approved_at = now() where id = $1`, [id, actor])
   await agreement(product, terms)
+  // Approve voice/Guard pricing conditions before the OFFERED transition
+  // validates the fully pinned commercial billable snapshot.
+  const guardUnit = guardQuantity > 0 ? 999 : null
+  const base = amount - (guardUnit ?? 0) * guardQuantity
+  await db.query(
+    `insert into public.commercial_plan_conditions(
+      id, plan_version_id, tier_code, tier_label, included_minutes, minutes_rollover,
+      base_amount_minor, guard_unit_amount_minor, overage_rate_minor, content_hash,
+      status, approved_by, approved_at
+    ) values (
+      $1, $2, 'GROWTH', 'Growth', 300, false, $3, $4, 25,
+      admin_private.commercial_plan_conditions_hash_v1('GROWTH', 300, false, $3, $4, 25),
+      'APPROVED', $5, now()
+    )`,
+    [randomUUID(), id, base, guardUnit, actor],
+  )
   const subscription = randomUUID()
   await db.query(
     `insert into public.commercial_subscriptions(
@@ -114,8 +136,17 @@ async function offer(product: "TELLOYA" | "COMPLETE", business: string, location
   if (guardQuantity > 0) {
     await db.query(
       `insert into public.commercial_subscription_items(subscription_id, component_code, quantity, quantity_limit_snapshot)
-       values ($1, 'GUARD', 1, 2)`,
-      [subscription],
+       values ($1, 'GUARD', $2, $3)`,
+      [subscription, guardQuantity, product === "COMPLETE" ? 2 : guardQuantity],
+    )
+  }
+  // Official Guard offers pin the customer's chosen real locations, not just
+  // an unbound quantity. The historical Complete fixture above is unchanged.
+  for (const locationId of selectedGuardLocations ?? []) {
+    await db.query(
+      `insert into admin_private.commercial_offer_guard_locations(subscription_id, location_id)
+       values ($1, $2)`,
+      [subscription, locationId],
     )
   }
   await db.query(`update public.commercial_subscriptions set state = 'OFFERED' where id = $1`, [subscription])
@@ -132,20 +163,6 @@ async function offer(product: "TELLOYA" | "COMPLETE", business: string, location
       [request, location],
     )
   }
-  const guardUnit = guardQuantity > 0 ? 999 : null
-  const base = amount - (guardUnit ?? 0) * guardQuantity
-  await db.query(
-    `insert into public.commercial_plan_conditions(
-      id, plan_version_id, tier_code, tier_label, included_minutes, minutes_rollover,
-      base_amount_minor, guard_unit_amount_minor, overage_rate_minor, content_hash,
-      status, approved_by, approved_at
-    ) values (
-      $1, $2, 'GROWTH', 'Growth', 300, false, $3, $4, 25,
-      admin_private.commercial_plan_conditions_hash_v1('GROWTH', 300, false, $3, $4, 25),
-      'APPROVED', $5, now()
-    )`,
-    [randomUUID(), id, base, guardUnit, actor],
-  )
   const versionRow = await rows<{ record_version: number }>(
     `select record_version from public.commercial_subscriptions where id = $1`,
     [subscription],
@@ -181,6 +198,7 @@ async function preparedCheckout(options: {
   business?: string
   locations?: string[]
   amount?: number
+  guardLocationIds?: string[]
   priceId?: string
   sessionId?: string
 }) {
@@ -190,6 +208,7 @@ async function preparedCheckout(options: {
     options.business ?? (product === "COMPLETE" ? kitchen : bakery),
     options.locations ?? (product === "COMPLETE" ? [oven] : [high, dock]),
     options.amount ?? (product === "COMPLETE" ? 14900 : 7900),
+    options.guardLocationIds,
   )
   const accepted = await rpc<Row>("customer_portal_commercial_offer_command_v1", [
     session, randomUUID(), prepared.ref, JSON.stringify(consent(prepared)),
@@ -478,6 +497,71 @@ describe("atomic commercial payment settlement", () => {
     expect(projected[0].value.completed).not.toContain("Ready for use")
     expect(projected[0].value.completed).not.toContain("Service setup recorded")
   })
+
+  for (const scenario of [
+    {
+      count: 1, total: 8899, locations: [high],
+      priceId: "price_1P2abcDEF3ghiJKN", sessionId: "cs_test_c3D4e5F6g7H8i9J0k1L2m3N4",
+      eventId: "evt_1P2abcDEF3ghiJKN", invoiceId: "in_1P2abcDEF3ghiJKN",
+    },
+    {
+      count: 2, total: 9898, locations: [high, dock],
+      priceId: "price_1P2abcDEF3ghiJKP", sessionId: "cs_test_d4E5f6G7h8I9j0K1l2M3n4P5",
+      eventId: "evt_1P2abcDEF3ghiJKP", invoiceId: "in_1P2abcDEF3ghiJKP",
+    },
+  ]) {
+    it(`settles one paid Telloya invoice with ${scenario.count} confirmed Guard location(s), without activating coverage`, async () => {
+      const before = await effects()
+      const armed = await preparedCheckout({
+        product: "TELLOYA", business: bakery, locations: [high],
+        guardLocationIds: scenario.locations, amount: scenario.total,
+        priceId: scenario.priceId, sessionId: scenario.sessionId,
+      })
+      const accepted = await rows<{
+        amount_minor: number; base_amount_minor: number; guard_quantity: number; guard_unit_amount_minor: number
+      }>(
+        `select amount_minor, base_amount_minor, guard_quantity, guard_unit_amount_minor
+         from public.commercial_offer_acceptances where subscription_id = $1`,
+        [armed.prepared.subscription],
+      )
+      expect(accepted).toEqual([{
+        amount_minor: scenario.total, base_amount_minor: 7900,
+        guard_quantity: scenario.count, guard_unit_amount_minor: 999,
+      }])
+      expect(await rows(
+        `select location_id from admin_private.commercial_offer_guard_locations
+         where subscription_id = $1 order by location_id`,
+        [armed.prepared.subscription],
+      )).toEqual(scenario.locations.map(location_id => ({ location_id })).sort((a, b) => a.location_id.localeCompare(b.location_id)))
+      expect(await rows(
+        `select amount_minor, guard_quantity, guard_charge_minor
+         from public.commercial_checkout_preparations where subscription_id = $1`,
+        [armed.prepared.subscription],
+      )).toEqual([{
+        amount_minor: scenario.total,
+        guard_quantity: scenario.count,
+        guard_charge_minor: scenario.count * 999,
+      }])
+
+      expect(await receive(scenario.eventId, scenario.invoiceId)).toMatchObject({ status: "success" })
+      const leased = await claim(scenario.eventId, armed.priceId)
+      expect(leased.status).toBe("success")
+      const body = facts({
+        eventId: scenario.eventId, invoiceId: scenario.invoiceId,
+        priceId: armed.priceId, sessionId: armed.sessionId, amount: armed.amount,
+        identity: commercialIdentity(armed),
+      })
+      expect(await settle(leased.jobId, leased.leaseToken, body)).toMatchObject({
+        status: "settled", state: "ACTIVE", retryable: false,
+      })
+      expect(await settle(leased.jobId, randomUUID(), body)).toMatchObject({ status: "already_processed" })
+      expect(await evidenceCount()).toBe(1)
+      expect(await effects()).toEqual({ ...before, evidence: before.evidence + 1 })
+      const products = await rpc<Row>("customer_portal_products_v1", [session])
+      expect(JSON.stringify(products)).toContain("Payment received. Your AI receptionist setup has not started.")
+      expect(JSON.stringify(products)).not.toContain("Ready for use")
+    })
+  }
 
   it("settles one paid Complete invoice without opening Guard coverage", async () => {
     const before = await effects()

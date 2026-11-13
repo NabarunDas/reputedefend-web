@@ -13,3 +13,30 @@ export function parseActivityFilters(params: Record<string, string | string[] | 
 export const ukDate = (value: string) => new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/London" }).format(new Date(value))
 /** The Europe/London calendar date on its own, for naming the working day. */
 export const ukDay = (value: string | Date) => new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/London" }).format(new Date(value))
+
+/** UK-style date and time in the recorded IANA zone when valid, otherwise Europe/London. */
+export function formatUkDateTime(value: string, timeZone?: string | null): string | null {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const zone = resolveUkDisplayTimeZone(timeZone)
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: zone,
+  }).format(date)
+}
+
+function resolveUkDisplayTimeZone(timeZone?: string | null): string {
+  const candidate = timeZone?.trim()
+  if (!candidate) return "Europe/London"
+  try {
+    new Intl.DateTimeFormat("en-GB", { timeZone: candidate }).format(new Date(0))
+    return candidate
+  } catch {
+    return "Europe/London"
+  }
+}

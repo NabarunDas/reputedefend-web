@@ -324,6 +324,16 @@ button, input, textarea, select { font: inherit; }
 }
 .panel.workspace { padding: 1.35rem; }
 
+.telloya-offer-calculator { margin: 1.15rem 0 1.35rem; }
+.telloya-offer-calculator > label { display: block; margin: 0 0 .85rem; }
+.telloya-offer-calculator select { width: min(100%, 22rem); }
+.telloya-send-checklist {
+  list-style: none;
+  padding: 0;
+  margin: .35rem 0 0;
+}
+.telloya-send-checklist li { padding: .2rem 0; }
+
 h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 .75rem; }
 h2 { font-size: 1.05rem; margin: 0 0 .65rem; }
 h3 { font-size: 1rem; margin: 0 0 .4rem; }

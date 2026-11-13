@@ -7,12 +7,13 @@ const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // This validator fixture models the complete applied manifest, not a literal
 // copy of live DEV migration history. Live DEV is still missing the three
 // initial foundation entries tracked in issue #190. The synthetic chain ends
-// at the observed DEV ledger head 20261110170000. The verified live ledger
-// has 118 entries. This synthetic chain includes the three foundation files,
-// so it is longer than the live ledger. The invitation file is applied and
-// must not be replayed. Do not apply it to Production. The products
-// projection file remains applied and must not be replayed.
-// Production remains at SEC-08 and is NOT represented by this synthetic ledger.
+// at the observed DEV ledger head 20261113120000. The verified live ledger
+// has 124 entries. pendingMigrations() is empty. This synthetic chain includes
+// the three foundation files, so it is longer than the live ledger. The
+// invitation file is applied and must not be replayed. Do not apply it to
+// Production. The products projection file remains applied and must not be
+// replayed. Production remains at SEC-08 and is NOT represented by this
+// synthetic ledger.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
   version: entry.version,
   name: logicalName(entry.filename),
@@ -33,10 +34,8 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([
-      "20261111130000_telloya_marketing_enquiry_retention_v1.sql",
-    ])
-    expect(healthyRemote.slice(-14).map(entry => entry.version)).toEqual([
+    expect(pending.map(entry => entry.filename)).toEqual([])
+    expect(healthyRemote.slice(-20).map(entry => entry.version)).toEqual([
       "20261105120000",
       "20261105130000",
       "20261105144256",
@@ -51,25 +50,55 @@ describe("the migration history validator", () => {
       "20261107110000",
       "20261107120000",
       "20261110170000",
+      "20261111130000",
+      "20261112120000",
+      "20261112180000",
+      "20261112210000",
+      "20261112223000",
+      "20261113120000",
     ])
-    const priorApplied = healthyRemote.slice(0, -14)
+    const priorApplied = healthyRemote.slice(0, -20)
     expect(healthyRemote.at(-1)).toEqual({
+      version: "20261113120000",
+      name: "telloya_offer_mail_test_allowlist_v1",
+    })
+    expect(healthyRemote.at(-2)).toEqual({
+      version: "20261112223000",
+      name: "telloya_approve_send_offer_v1",
+    })
+    expect(healthyRemote.at(-3)).toEqual({
+      version: "20261112210000",
+      name: "telloya_offer_draft_v1",
+    })
+    expect(healthyRemote.at(-4)).toEqual({
+      version: "20261112180000",
+      name: "telloya_sales_context_v1",
+    })
+    expect(healthyRemote.at(-5)).toEqual({
+      version: "20261112120000",
+      name: "telloya_admin_journey_v1",
+    })
+    expect(healthyRemote.at(-6)).toEqual({
+      version: "20261111130000",
+      name: "telloya_marketing_enquiry_retention_v1",
+    })
+    expect(healthyRemote.at(-7)).toEqual({
       version: "20261110170000",
       name: "telloya_enquiry_receptionist_questions_v1",
     })
-    expect(healthyRemote.at(-2)).toEqual({
+    expect(healthyRemote.at(-8)).toEqual({
       version: "20261107120000",
       name: "telloya_inbound_admission_reservation_v1",
     })
-    expect(healthyRemote.at(-3)).toEqual({
+    expect(healthyRemote.at(-9)).toEqual({
       version: "20261107110000",
       name: "telloya_subscription_usage_ledger_v1",
     })
-    expect(healthyRemote.at(-4)).toEqual({
+    expect(healthyRemote.at(-10)).toEqual({
       version: "20261106200000",
       name: "admin_commercial_initiate_agent_test_call_v1",
     })
-    expect(healthyRemote.at(-5)).toEqual({
+    expect(healthyRemote.at(-11)).toEqual({
       version: "20261106140000",
       name: "telloya_standard_location_cap_v1",
     })

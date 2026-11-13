@@ -100,6 +100,13 @@ describe("Telloya enquiry interest in Admin", () => {
     expect(screen.queryByText("General enquiry")).toBeNull()
   })
 
+  it("names a missing plan as still to be confirmed", () => {
+    render(<TelloyaEnquiryInterest payload={{ ...payload, planTier: undefined }} enquiryRef="TY-26-NOPLAN" />)
+    expect(screen.getByText("Plan to be confirmed")).toBeTruthy()
+    expect(screen.getByText(/No plan was selected/)).toBeTruthy()
+    expect(screen.queryByText(/required plan/i)).toBeNull()
+  })
+
   it("does not render for a ProfileRelaunch enquiry", () => {
     const { container } = render(<TelloyaEnquiryInterest payload={{ ...payload, source: "contact", product: undefined, planTier: undefined }} enquiryRef={null} />)
     expect(container.textContent).toBe("")

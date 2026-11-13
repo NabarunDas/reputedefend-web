@@ -27,16 +27,26 @@ const commercialTail = [
 ]
 
 describe("Telloya commercial migration chain", () => {
-  it("records the commercial tail as applied and leaves nothing pending", () => {
-    expect(appliedMigrationHead.filename).toBe("20261110170000_telloya_enquiry_receptionist_questions_v1.sql")
+  it("records the commercial tail and allowlist migration as applied with nothing pending", () => {
+    expect(appliedMigrationHead.filename).toBe("20261113120000_telloya_offer_mail_test_allowlist_v1.sql")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
     const pending = pendingMigrations()
     const afterPreviousHead = chainAfter("20261105120000")
     expect(afterPreviousHead.slice(0, commercialTail.length).map(entry => entry.filename)).toEqual(commercialTail)
+    expect(pending.map(entry => entry.filename)).toEqual([])
     expect(pending.map(entry => entry.filename)).toEqual(chainAfter(appliedMigrationHead.version).map(entry => entry.filename))
-    expect(pending.every(entry => entry.appliedToDev === false && entry.containsDataChange === false && entry.safeToReplay === false)).toBe(true)
+    expect(findMigration("20261112223000_telloya_approve_send_offer_v1.sql")).toMatchObject({
+      appliedToDev: true,
+      containsDataChange: true,
+      safeToReplay: false,
+    })
+    expect(findMigration("20261112120000_telloya_admin_journey_v1.sql")).toMatchObject({
+      appliedToDev: true,
+      containsDataChange: true,
+      safeToReplay: false,
+    })
     for (const filename of commercialTail) {
       expect(pending.map(entry => entry.filename)).not.toContain(filename)
       expect(findMigration(filename)).toMatchObject({
@@ -73,6 +83,20 @@ const people = [
   ["c01c0000-0000-4000-8000-0000000000a4", "c01c0000-0000-4000-8000-0000000000d4", "custom.match@example.test"],
   ["c01c0000-0000-4000-8000-0000000000a5", "c01c0000-0000-4000-8000-0000000000d5", "custom.miss@example.test"],
   ["c01c0000-0000-4000-8000-0000000000a6", "c01c0000-0000-4000-8000-0000000000d6", "stranger.ready@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000a7", "c01c0000-0000-4000-8000-0000000000d7", "amend.open@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000a8", "c01c0000-0000-4000-8000-0000000000d8", "amend.mail@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000a9", "c01c0000-0000-4000-8000-0000000000d9", "amend.note@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000ba", "c01c0000-0000-4000-8000-0000000000ea", "amend.tier@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000bb", "c01c0000-0000-4000-8000-0000000000eb", "mail.basic@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000bc", "c01c0000-0000-4000-8000-0000000000ec", "mail.pro@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000bd", "c01c0000-0000-4000-8000-0000000000ed", "mail.custom@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000be", "c01c0000-0000-4000-8000-0000000000ee", "mail.guard@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000bf", "c01c0000-0000-4000-8000-0000000000ef", "gate.demo@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000c1", "c01c0000-0000-4000-8000-0000000000f1", "gate.phone@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000c2", "c01c0000-0000-4000-8000-0000000000f2", "mail.agree@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000c3", "c01c0000-0000-4000-8000-0000000000f3", "mail.tax@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000c4", "c01c0000-0000-4000-8000-0000000000f4", "mail.auth@example.test"],
+  ["c01c0000-0000-4000-8000-0000000000c5", "c01c0000-0000-4000-8000-0000000000f5", "mail.amend@example.test"],
 ] as const
 
 type Result = Record<string, unknown>
@@ -165,6 +189,21 @@ async function offerRow(enquiryId: string) {
      where request.enquiry_id = $1 and request.state = 'OFFERED'`,
     [enquiryId],
   ))[0]
+}
+
+async function provisionTestRecipient(email: string, customerId: string) {
+  const grantRef = `grant_${randomUUID().replaceAll("-", "")}`
+  await db.query(
+    `insert into admin_private.telloya_offer_mail_test_owner_grants(
+      grant_ref, purpose, bound_customer_id, bound_email_hash, enabled, expires_at, note
+    ) values ($1, 'telloya_offer_mail_test', $2, md5(admin_private.normalize_email_v1($3)), true, now() + interval '1 hour', 'disposable')`,
+    [grantRef, customerId, email],
+  )
+  const result = await rpc<Result>("telloya_offer_mail_test_recipient_provision_v1", [
+    grantRef, randomUUID(), customerId, email, "disposable",
+  ])
+  expect(result).toMatchObject({ status: "success", customerId, enabled: true })
+  return result
 }
 
 async function submit(session: string, selector: string, priceMinor: number) {
@@ -609,5 +648,372 @@ describe("Telloya commercial readiness rehearsal", () => {
       enquiryId: missed.enquiryId, planVersionId: telloyaCataloguePlans.customCap2, guardLocationIds: [], reason,
     }, missed.version)).status).toBe("success")
     expect((await offerRow(missed.enquiryId)).amount_minor).toBe(telloyaPublishedPrices.testCustomTwoLocationMinor)
+  })
+
+  it("keeps amendments and offer mail on the commercial subscription", async () => {
+    const opened = await ready("amend.open@example.test", 1, "growth")
+    const session = sessions.get("amend.open@example.test") ?? ""
+    const secondGuard = (await db.query<{ id: string }>(
+      `insert into public.locations(business_id, location_name, country)
+       values ((select business_id from public.onboarding_requests where enquiry_id = $1), 'Guard yard two', 'United Kingdom')
+       returning id`,
+      [opened.enquiryId],
+    )).rows[0].id
+    expect((await command("prepare_offer", {
+      enquiryId: opened.enquiryId,
+      planVersionId: telloyaCataloguePlans.growthCap1,
+      guardLocationIds: [opened.locationIds[0], secondGuard],
+      reason,
+    }, opened.version)).status).toBe("success")
+    const offer = await offerRow(opened.enquiryId)
+    expect(offer.amount_minor).toBe(9898)
+    expect(await rpc<Result>("telloya_offer_amendment_v1", [
+      session, randomUUID(), offer.public_ref, "Please remove one Guard location.",
+    ])).toMatchObject({ status: "ineligible" })
+    await db.query(
+      "update public.enquiries set source = 'telloya', public_ref = 'TY-26-GUARD2' where id = $1",
+      [opened.enquiryId],
+    )
+    await db.query(
+      "insert into admin_private.telloya_admin_demos(enquiry_id, status, completed_at) values ($1, 'COMPLETED', now())",
+      [opened.enquiryId],
+    )
+    const amended = await rpc<Result>("telloya_offer_amendment_v1", [
+      session, randomUUID(), offer.public_ref, "Please remove one Guard location.",
+    ])
+    expect(amended).toMatchObject({ status: "recorded", version: 1, subscriptionVersion: offer.record_version })
+    await expect(submit(session, offer.public_ref, 9898)).rejects.toThrow(/telloya_amendment_pending/)
+    expect((await rows<{ state: string }>("select state from public.commercial_subscriptions where id = $1", [offer.id]))[0].state).toBe("OFFERED")
+    const revise = (version: number, decision: string, plan: string | null, locations: string[]) =>
+      db.query<{ value: Result }>(
+        "select public.telloya_offer_revision_v1($1,$2,$3,$4,$5,$6,$7::uuid[]) as value",
+        [token, randomUUID(), amended.amendmentId, version, decision, plan, locations],
+      ).then(result => result.rows[0].value)
+    expect(await revise(0, "REVISED", telloyaCataloguePlans.growthCap1, [opened.locationIds[0]])).toMatchObject({ status: "stale_version" })
+    expect(await revise(1, "REVISED", telloyaCataloguePlans.growthCap1, [opened.locationIds[0], secondGuard])).toMatchObject({
+      status: "unchanged", subscriptionId: offer.id, amountMinor: 9898,
+    })
+    expect((await rows<{ n: number }>("select count(*)::int as n from public.commercial_subscriptions where business_id = $1", [offer.business_id]))[0].n).toBe(1)
+    const revised = await revise(1, "REVISED", telloyaCataloguePlans.growthCap1, [opened.locationIds[0]])
+    expect(revised).toMatchObject({ status: "recorded", decision: "REVISED", amountMinor: 8899, guardLocationCount: 1 })
+    expect(revised.subscriptionId).not.toBe(offer.id)
+    const chain = await rows<{ id: string; state: string; amount_minor: number; plan_version_id: string }>(
+      "select id, state, amount_minor, plan_version_id from public.commercial_subscriptions where id = any($1::uuid[]) order by state",
+      [[offer.id, revised.subscriptionId]],
+    )
+    expect(chain).toEqual([
+      { id: offer.id, state: "CANCELED", amount_minor: 9898, plan_version_id: telloyaCataloguePlans.growthCap1 },
+      { id: revised.subscriptionId, state: "OFFERED", amount_minor: 8899, plan_version_id: telloyaCataloguePlans.growthCap1 },
+    ])
+    expect((await rows<{ location_id: string }>(
+      "select location_id from admin_private.commercial_offer_guard_locations where subscription_id = $1 order by location_id",
+      [offer.id],
+    )).map(row => row.location_id).sort()).toEqual([opened.locationIds[0], secondGuard].sort())
+    expect((await rows<{ location_id: string }>(
+      "select location_id from admin_private.commercial_offer_guard_locations where subscription_id = $1",
+      [revised.subscriptionId],
+    ))).toEqual([{ location_id: opened.locationIds[0] }])
+    expect((await rows<{ revision_subscription_id: string }>(
+      "select revision_subscription_id from admin_private.telloya_offer_amendments where id = $1",
+      [amended.amendmentId],
+    ))[0].revision_subscription_id).toBe(revised.subscriptionId)
+    expect(await rpc<Result>("customer_portal_commercial_offer_v1", [session, offer.public_ref])).toMatchObject({ status: "unavailable" })
+    expect((await submit(session, String(revised.offerRef), 8899)).accepted.status).toBe("success")
+    expect(await rpc<Result>("telloya_offer_amendment_v1", [
+      session, randomUUID(), revised.offerRef, "Please change this after acceptance.",
+    ])).toMatchObject({ status: "offer_not_open" })
+
+    const noted = await ready("amend.note@example.test", 1, "growth")
+    const noteSession = sessions.get("amend.note@example.test") ?? ""
+    expect((await command("prepare_offer", {
+      enquiryId: noted.enquiryId, planVersionId: telloyaCataloguePlans.growthCap1, guardLocationIds: [], reason,
+    }, noted.version)).status).toBe("success")
+    const noteOffer = await offerRow(noted.enquiryId)
+    await db.query("update public.enquiries set source = 'telloya', public_ref = 'TY-26-NOTE2A' where id = $1", [noted.enquiryId])
+    const noteRequest = await rpc<Result>("telloya_offer_amendment_v1", [
+      noteSession, randomUUID(), noteOffer.public_ref, "Please change the receptionist greeting.",
+    ])
+    const notedResult = (await db.query<{ value: Result }>(
+      "select public.telloya_offer_revision_v1($1,$2,$3,$4,'NOTED',null,'{}'::uuid[]) as value",
+      [token, randomUUID(), noteRequest.amendmentId, 1],
+    )).rows[0].value
+    expect(notedResult).toMatchObject({ status: "recorded", decision: "NOTED", subscriptionId: noteOffer.id })
+    expect((await rows<{ n: number; state: string }>(
+      `select count(*)::int as n, max(state) as state from public.commercial_subscriptions where business_id = $1`,
+      [noteOffer.business_id],
+    ))[0]).toEqual({ n: 1, state: "OFFERED" })
+    expect((await rows<{ revision_subscription_id: string | null; status: string }>(
+      "select revision_subscription_id, status from admin_private.telloya_offer_amendments where id = $1",
+      [noteRequest.amendmentId],
+    ))[0]).toEqual({ revision_subscription_id: null, status: "NOTED" })
+
+    const tier = await ready("amend.tier@example.test", 1, "basic")
+    const tierSession = sessions.get("amend.tier@example.test") ?? ""
+    expect((await command("prepare_offer", {
+      enquiryId: tier.enquiryId, planVersionId: telloyaCataloguePlans.basicCap1, guardLocationIds: [], reason,
+    }, tier.version)).status).toBe("success")
+    const tierOffer = await offerRow(tier.enquiryId)
+    expect(tierOffer.amount_minor).toBe(4900)
+    await db.query("update public.enquiries set source = 'telloya', public_ref = 'TY-26-TIER2A' where id = $1", [tier.enquiryId])
+    await db.query("insert into admin_private.telloya_admin_demos(enquiry_id, status, completed_at) values ($1, 'COMPLETED', now())", [tier.enquiryId])
+    const tierRequest = await rpc<Result>("telloya_offer_amendment_v1", [
+      tierSession, randomUUID(), tierOffer.public_ref, "Please move this offer from Basic to Growth.",
+    ])
+    const tierRevised = (await db.query<{ value: Result }>(
+      "select public.telloya_offer_revision_v1($1,$2,$3,$4,'REVISED',$5,'{}'::uuid[]) as value",
+      [token, randomUUID(), tierRequest.amendmentId, 1, telloyaCataloguePlans.growthCap1],
+    )).rows[0].value
+    expect(tierRevised).toMatchObject({ status: "recorded", decision: "REVISED", amountMinor: 7900, guardLocationCount: 0 })
+    expect((await rows<{ plan_version_id: string; state: string }>(
+      "select plan_version_id, state from public.commercial_subscriptions where id = $1",
+      [tierRevised.subscriptionId],
+    ))[0]).toEqual({ plan_version_id: telloyaCataloguePlans.growthCap1, state: "OFFERED" })
+
+    const mailed = await ready("amend.mail@example.test", 1, "growth")
+    const mailSession = sessions.get("amend.mail@example.test") ?? ""
+    expect((await command("prepare_offer", {
+      enquiryId: mailed.enquiryId, planVersionId: telloyaCataloguePlans.growthCap1, guardLocationIds: [], reason,
+    }, mailed.version)).status).toBe("success")
+    const mailOffer = await offerRow(mailed.enquiryId)
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), mailOffer.id, mailOffer.record_version, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "mail_disabled" })
+    expect((await rows<{ n: number }>("select count(*)::int as n from public.communications where template_key = 'TELLOYA_OFFER'"))[0].n).toBe(0)
+    await db.query("update public.enquiries set source = 'telloya', public_ref = 'TY-26-MAIL2A' where id = $1", [mailed.enquiryId])
+    await db.query("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true)")
+    expect((await rows<{ status: string; approval_source: string | null }>(
+      "select status, approval_source from admin_private.communication_templates where template_key = 'TELLOYA_OFFER' and version = 1",
+    ))[0]).toEqual({ status: "DRAFT", approval_source: null })
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), mailOffer.id, mailOffer.record_version + 1, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "stale_version" })
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), mailOffer.id, mailOffer.record_version, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "demonstration_not_completed" })
+    await db.query("insert into admin_private.telloya_admin_demos(enquiry_id, status, completed_at) values ($1, 'COMPLETED', now())", [mailed.enquiryId])
+    const beforeAllow = (await rows<{ n: number }>("select count(*)::int as n from public.communications where template_key = 'TELLOYA_OFFER'"))[0].n
+    const beforeAllowOutbox = (await rows<{ n: number }>("select count(*)::int as n from admin_private.job_outbox where topic = 'SEND_EMAIL'"))[0].n
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), mailOffer.id, mailOffer.record_version, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "denied", reason: "test_recipient_not_allowed" })
+    expect((await rows<{ n: number }>("select count(*)::int as n from public.communications where template_key = 'TELLOYA_OFFER'"))[0].n).toBe(beforeAllow)
+    expect((await rows<{ n: number }>("select count(*)::int as n from admin_private.job_outbox where topic = 'SEND_EMAIL'"))[0].n).toBe(beforeAllowOutbox)
+    await provisionTestRecipient("amend.mail@example.test", mailOffer.customer_id)
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), mailOffer.id, mailOffer.record_version, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "template_unapproved" })
+    await db.query("update public.admin_sessions set created_at = now() where token_hash = $1", [token])
+    const draft = (await rows<{ id: string; record_version: number }>(
+      "select id, record_version from admin_private.communication_templates where template_key = 'TELLOYA_OFFER' and version = 1",
+    ))[0]
+    expect(await rpc<Result>("admin_settings_command_v1", [
+      token, randomUUID(), "approve_template_draft", { id: draft.id }, draft.record_version,
+    ])).toMatchObject({ status: "success" })
+    expect((await rows<{ status: string; approval_source: string }>(
+      "select status, approval_source from admin_private.communication_templates where id = $1",
+      [draft.id],
+    ))[0]).toEqual({ status: "APPROVED", approval_source: "ADMIN" })
+    const queued = await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), mailOffer.id, mailOffer.record_version, "https://customer.profilerelaunch.com",
+    ])
+    expect(queued).toMatchObject({ status: "queued", deliveryStatus: "NONE" })
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), mailOffer.id, mailOffer.record_version, "https://evil.example",
+    ])).toMatchObject({ status: "invalid" })
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), mailOffer.id, mailOffer.record_version, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "replay", communicationId: queued.communicationId, deliveryStatus: "NONE" })
+    const stored = (await rows<{ delivery_status: string; subject: string; body_text: string; body_html: string; n: number }>(
+      `select delivery_status, subject, body_text, body_html,
+        (select count(*)::int from public.communications where commercial_subscription_id = $1) as n
+       from public.communications where id = $2`,
+      [mailOffer.id, queued.communicationId],
+    ))[0]
+    expect(stored.n).toBe(1)
+    expect(stored.delivery_status).toBe("NONE")
+    expect(stored.subject).toBe("Your Telloya proposal — TY-26-MAIL2A")
+    expect(stored.subject).not.toContain(mailOffer.public_ref)
+    expect(stored.body_text).toContain("Telloya — a ProfileRelaunch company")
+    expect(stored.body_text).toContain("Enquiry TY-26-MAIL2A")
+    expect(stored.body_text).toContain("Plan: Growth")
+    expect(stored.body_text).toContain("Monthly Telloya amount: £79.00")
+    expect(stored.body_text).toContain("Recurring monthly total: £79.00")
+    expect(stored.body_text).toContain("Included minutes: 300")
+    expect(stored.body_text).toContain("Relaunch Guard: not included")
+    expect(stored.body_text).toContain(`https://customer.profilerelaunch.com/portal/onboarding/offer/${mailOffer.public_ref}`)
+    expect(stored.body_text).toContain("This link is not a payment link.")
+    expect(stored.body_text.split(mailOffer.public_ref)).toHaveLength(2)
+    expect(stored.body_html).toContain(">Review your offer</a>")
+    expect(stored.body_html).toContain("Telloya — a ProfileRelaunch company")
+    expect(stored.body_html.match(/<a /g)).toHaveLength(1)
+    expect(stored.body_html).not.toContain("<script")
+    expect((await rows<{ event_type: string }>(
+      "select event_type from admin_private.communication_delivery_events where communication_id = $1",
+      [queued.communicationId],
+    )).map(row => row.event_type)).toEqual(["QUEUED"])
+    expect((await rows<{ n: number }>(
+      "select count(*)::int as n from admin_private.communication_delivery_events where communication_id = $1 and event_type in ('PROVIDER_ACCEPTED', 'DELIVERED')",
+      [queued.communicationId],
+    ))[0].n).toBe(0)
+    expect(await rpc<Result>("telloya_offer_amendment_v1", [
+      mailSession, randomUUID(), "<p>not a selector</p>", "Please change this.",
+    ])).toMatchObject({ status: "invalid" })
+    const accepted = await submit(mailSession, mailOffer.public_ref, mailOffer.amount_minor)
+    expect(accepted.accepted.status).toBe("success")
+    expect(await rpc<Result>("telloya_offer_amendment_v1", [
+      mailSession, randomUUID(), mailOffer.public_ref, "Please change this after acceptance.",
+    ])).toMatchObject({ status: "offer_not_open" })
+    expect((await rows<{ value: string }>("select admin_private.telloya_offer_html_v1('<script>\"&') as value"))[0].value).toBe("&lt;script&gt;&quot;&amp;")
+    await db.query("delete from admin_private.telloya_offer_mail_control")
+  })
+
+  it("persists the approved plan, price, minutes and Guard cost for every Telloya plan", async () => {
+    await db.query("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true)")
+    const cases = [
+      { email: "mail.basic@example.test", ref: "TY-26-BASIC2", plan: telloyaCataloguePlans.basicCap1, guard: false, lines: ["Plan: Basic", "Monthly Telloya amount: £49.00", "Recurring monthly total: £49.00", "Included minutes: 120", "Relaunch Guard: not included"] },
+      { email: "mail.pro@example.test", ref: "TY-26-PRO2AA", plan: telloyaCataloguePlans.proCap1, guard: false, lines: ["Plan: Pro", "Monthly Telloya amount: £120.00", "Recurring monthly total: £120.00", "Included minutes: 500", "Relaunch Guard: not included"] },
+      { email: "mail.custom@example.test", ref: "TY-26-CUSTM2", plan: telloyaCataloguePlans.customCap1, guard: false, lines: ["Plan: Custom", "Monthly Telloya amount: £150.00", "Recurring monthly total: £150.00", "Included minutes: confirmed in the quotation", "Relaunch Guard: not included"] },
+      { email: "mail.guard@example.test", ref: "TY-26-GUARD3", plan: telloyaCataloguePlans.growthCap1, guard: true, lines: ["Plan: Growth", "Monthly Telloya amount: £79.00", "Recurring monthly total: £88.99", "Included minutes: 300", "Relaunch Guard: 1 location at £9.99 each (£9.99)"] },
+    ]
+    for (const item of cases) {
+      const opened = await ready(item.email, 1, "growth")
+      const guardLocationIds = item.guard ? [opened.locationIds[0]] : []
+      expect((await command("prepare_offer", {
+        enquiryId: opened.enquiryId, planVersionId: item.plan, guardLocationIds, reason,
+      }, opened.version)).status).toBe("success")
+      await db.query("update public.enquiries set source = 'telloya', public_ref = $2 where id = $1", [opened.enquiryId, item.ref])
+      await db.query("insert into admin_private.telloya_admin_demos(enquiry_id, status, completed_at) values ($1, 'COMPLETED', now())", [opened.enquiryId])
+      const offer = await offerRow(opened.enquiryId)
+      await provisionTestRecipient(item.email, offer.customer_id)
+      const queued = await rpc<Result>("telloya_offer_mail_v1", [
+        token, randomUUID(), offer.id, offer.record_version, "https://customer.profilerelaunch.com",
+      ])
+      expect(queued.status).toBe("queued")
+      const stored = (await rows<{ subject: string; body_text: string; body_html: string; delivery_status: string }>(
+        "select subject, body_text, body_html, delivery_status from public.communications where id = $1",
+        [queued.communicationId],
+      ))[0]
+      expect(stored.subject).toBe(`Your Telloya proposal — ${item.ref}`)
+      expect(stored.subject).not.toContain(offer.public_ref)
+      expect(stored.delivery_status).toBe("NONE")
+      expect(stored.body_text).toContain(`Enquiry ${item.ref}`)
+      for (const line of item.lines) expect(stored.body_text).toContain(line)
+      expect(stored.body_text.split("https://")).toHaveLength(2)
+      expect(stored.body_html.match(/<a /g)).toHaveLength(1)
+      expect(stored.body_html).toContain(`/portal/onboarding/offer/${offer.public_ref}`)
+      expect(stored.body_text).not.toContain(`Enquiry ${offer.public_ref}`)
+    }
+    await db.query("delete from admin_private.telloya_offer_mail_control")
+  })
+
+  it("prepares and queues a Telloya offer only after the demonstration, for that enquiry", async () => {
+    const opened = await ready("gate.demo@example.test", 1, "growth")
+    await db.query("update public.enquiries set source = 'telloya', public_ref = 'TY-26-GATE2A' where id = $1", [opened.enquiryId])
+    expect(await command("prepare_offer", {
+      enquiryId: opened.enquiryId, planVersionId: telloyaCataloguePlans.growthCap1, guardLocationIds: [], reason,
+    }, opened.version)).toMatchObject({ status: "denied", reason: "demonstration_not_completed" })
+    expect((await rows<{ n: number }>(
+      `select count(*)::int as n from public.commercial_subscriptions sub
+       join public.onboarding_requests request on request.commercial_subscription_id = sub.id
+       where request.enquiry_id = $1`,
+      [opened.enquiryId],
+    ))[0].n).toBe(0)
+    await db.query("insert into admin_private.telloya_admin_demos(enquiry_id, status, completed_at) values ($1, 'COMPLETED', now())", [opened.enquiryId])
+    expect((await command("prepare_offer", {
+      enquiryId: opened.enquiryId, planVersionId: telloyaCataloguePlans.growthCap1, guardLocationIds: [], reason,
+    }, opened.version)).status).toBe("success")
+    const offer = await offerRow(opened.enquiryId)
+    expect(await rpc<Result>("telloya_offer_amendment_v1", [
+      sessions.get("stranger.ready@example.test") ?? "", randomUUID(), offer.public_ref, "Please change another customer's offer.",
+    ])).toMatchObject({ status: "unavailable" })
+    const phone = await ready("gate.phone@example.test", 1, "growth")
+    expect((await command("prepare_offer", {
+      enquiryId: phone.enquiryId, planVersionId: telloyaCataloguePlans.growthCap1, guardLocationIds: [], reason,
+    }, phone.version)).status).toBe("success")
+    const phoneOffer = await offerRow(phone.enquiryId)
+    await db.query("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true)")
+    const before = (await rows<{ n: number }>("select count(*)::int as n from public.communications where template_key = 'TELLOYA_OFFER'"))[0].n
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), phoneOffer.id, phoneOffer.record_version, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "ineligible" })
+    expect((await rows<{ n: number }>("select count(*)::int as n from public.communications where template_key = 'TELLOYA_OFFER'"))[0].n).toBe(before)
+    await provisionTestRecipient("gate.demo@example.test", offer.customer_id)
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), offer.id, offer.record_version, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "queued", deliveryStatus: "NONE" })
+    await db.query("delete from admin_private.telloya_offer_mail_control")
+  })
+
+  it("refuses a new offer email when agreement, tax, authority or an amendment block it", async () => {
+    await db.query("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true)")
+    const counts = async (subscriptionId: string) => (await rows<{ communications: number; outbox: number }>(
+      `select
+         (select count(*)::int from public.communications where commercial_subscription_id = $1) as communications,
+         (select count(*)::int from admin_private.job_outbox where topic = 'SEND_EMAIL' and aggregate_id in (
+           select id from public.communications where commercial_subscription_id = $1
+         )) as outbox`,
+      [subscriptionId],
+    ))[0]
+    const openTelloya = async (email: string, ref: string, planId: string = telloyaCataloguePlans.growthCap1) => {
+      const opened = await ready(email, 1, "growth")
+      expect((await command("prepare_offer", {
+        enquiryId: opened.enquiryId, planVersionId: planId, guardLocationIds: [], reason,
+      }, opened.version)).status).toBe("success")
+      await db.query("update public.enquiries set source = 'telloya', public_ref = $2 where id = $1", [opened.enquiryId, ref])
+      await db.query("insert into admin_private.telloya_admin_demos(enquiry_id, status, completed_at) values ($1, 'COMPLETED', now())", [opened.enquiryId])
+      return offerRow(opened.enquiryId)
+    }
+
+    const agreementOffer = await openTelloya("mail.agree@example.test", "TY-26-AGREE2", telloyaCataloguePlans.basicCap1)
+    await provisionTestRecipient("mail.agree@example.test", agreementOffer.customer_id)
+    const beforeAgreement = await counts(agreementOffer.id)
+    await db.query(
+      `update public.commercial_agreement_versions
+       set status = 'RETIRED', retired_by = $2, retired_at = now()
+       where product_code = 'TELLOYA' and version_ref = $1 and status = 'APPROVED'`,
+      ["TELLOYA-TEST-BASIC-CAP-1", admin],
+    )
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), agreementOffer.id, agreementOffer.record_version, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "terms_unconfigured", reason: "agreement" })
+    expect(await counts(agreementOffer.id)).toEqual(beforeAgreement)
+
+    const taxOffer = await openTelloya("mail.tax@example.test", "TY-26-TAX2AA")
+    await provisionTestRecipient("mail.tax@example.test", taxOffer.customer_id)
+    const beforeTax = await counts(taxOffer.id)
+    await db.exec("alter table public.commercial_subscriptions disable trigger commercial_subscriptions_guard")
+    await db.query("update public.commercial_subscriptions set tax_behaviour = 'EXCLUSIVE', tax_amount_minor = 0 where id = $1", [taxOffer.id])
+    await db.exec("alter table public.commercial_subscriptions enable trigger commercial_subscriptions_guard")
+    const taxVersion = (await rows<{ record_version: number }>("select record_version from public.commercial_subscriptions where id = $1", [taxOffer.id]))[0].record_version
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), taxOffer.id, taxVersion, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "terms_unconfigured", reason: "tax" })
+    expect(await counts(taxOffer.id)).toEqual(beforeTax)
+
+    const authOffer = await openTelloya("mail.auth@example.test", "TY-26-AUTH2A")
+    const beforeAuth = await counts(authOffer.id)
+    await db.query(
+      `update public.business_memberships
+       set status = 'revoked', verified_at = null, verified_by = null
+       where customer_id = $1 and business_id = $2`,
+      [authOffer.customer_id, authOffer.business_id],
+    )
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), authOffer.id, authOffer.record_version, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "denied", reason: "authority" })
+    expect(await counts(authOffer.id)).toEqual(beforeAuth)
+
+    const amendOffer = await openTelloya("mail.amend@example.test", "TY-26-AMEND2")
+    const amendSession = sessions.get("mail.amend@example.test") ?? ""
+    const beforeAmend = await counts(amendOffer.id)
+    expect(await rpc<Result>("telloya_offer_amendment_v1", [
+      amendSession, randomUUID(), amendOffer.public_ref, "Please change the greeting before you send this.",
+    ])).toMatchObject({ status: "recorded" })
+    expect(await rpc<Result>("telloya_offer_mail_v1", [
+      token, randomUUID(), amendOffer.id, amendOffer.record_version, "https://customer.profilerelaunch.com",
+    ])).toMatchObject({ status: "amendment_pending" })
+    expect(await counts(amendOffer.id)).toEqual(beforeAmend)
+
+    await db.query("delete from admin_private.telloya_offer_mail_control")
   })
 })

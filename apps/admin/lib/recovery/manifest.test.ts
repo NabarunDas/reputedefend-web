@@ -19,13 +19,14 @@ describe("the migration chain manifest", () => {
   })
 
   it("records the observed DEV ledger head, with Production/AWS still at SEC-08", () => {
-    expect(appliedMigrationHead.filename).toBe("20261110170000_telloya_enquiry_receptionist_questions_v1.sql")
-    expect(appliedMigrationHead.version).toBe("20261110170000")
+    expect(appliedMigrationHead.filename).toBe("20261113120000_telloya_offer_mail_test_allowlist_v1.sql")
+    expect(appliedMigrationHead.version).toBe("20261113120000")
     expect(appliedMigrationHead.appliedToDev).toBe(true)
     expect(appliedMigrationHead.containsDataChange).toBe(false)
     expect(appliedMigrationHead.safeToReplay).toBe(false)
-    expect(migrationHead.filename).toBe("20261111130000_telloya_marketing_enquiry_retention_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.filename).toBe("20261113120000_telloya_offer_mail_test_allowlist_v1.sql")
+    expect(migrationHead.version).toBe("20261113120000")
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     expect(findMigration("20261013153000_public_request_rate_limit_v1.sql")?.appliedToDev).toBe(true)
@@ -40,10 +41,8 @@ describe("the migration chain manifest", () => {
   })
 
   it("records COM-13, COM-14A and PAY-ENV-01 as DEV-applied without authorising Production", () => {
-    expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261111130000_telloya_marketing_enquiry_retention_v1.sql",
-    ])
-    expect(chainAfter(appliedMigrationHead.version)).toEqual(pendingMigrations())
+    expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
+    expect(chainAfter(appliedMigrationHead.version).map(entry => entry.filename)).toEqual([])
     expect(findMigration("20261106120000_admin_commercial_verify_agent_test_call_v1.sql")).toMatchObject({
       appliedToDev: true,
       containsDataChange: false,
@@ -60,7 +59,7 @@ describe("the migration chain manifest", () => {
       "20260916000000_relaunch_guard_data_foundation_v1.sql",
     ]
     expect(ledgerGap.every(filename => findMigration(filename)?.appliedToDev === true)).toBe(true)
-    expect(migrationChain.filter(entry => entry.appliedToDev).length - ledgerGap.length).toBe(118)
+    expect(migrationChain.filter(entry => entry.appliedToDev).length - ledgerGap.length).toBe(124)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261028160000_guided_pack_publish_visibility_v1.sql")?.safeToReplay).toBe(false)
     expect(findMigration("20261028120000_guided_postpayment_handover_v1.sql")?.appliedToDev).toBe(true)
@@ -115,6 +114,9 @@ describe("the migration chain manifest", () => {
     expect(findMigration(appliedMigrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(appliedMigrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(appliedMigrationHead.filename)?.safeToReplay).toBe(false)
+    expect(findMigration("20261112223000_telloya_approve_send_offer_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261112223000_telloya_approve_send_offer_v1.sql")?.containsDataChange).toBe(true)
+    expect(findMigration("20261112223000_telloya_approve_send_offer_v1.sql")?.safeToReplay).toBe(false)
     // The location cap is the DEV ledger head. It was applied once.
     // Do not replay 20261106140000. Do not apply 20261106140000 to Production.
     // The test-call file is applied immediately before it.
@@ -128,9 +130,52 @@ describe("the migration chain manifest", () => {
     // The repository head is the applied admission migration.
     // Do not replay 20261107120000. Do not apply 20261107120000 to Production.
     // Do not replay 20261106200000. Do not apply 20261106200000 to Production.
-    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(false)
+    expect(findMigration(appliedMigrationHead.filename)?.verification).toEqual({
+      category: "Telloya offer mail test allowlist",
+      probe: "public.telloya_offer_mail_test_recipient_provision_v1",
+    })
+    expect(findMigration(migrationHead.filename)?.appliedToDev).toBe(true)
     expect(findMigration(migrationHead.filename)?.containsDataChange).toBe(false)
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
+    expect(findMigration(migrationHead.filename)?.verification).toEqual({
+      category: "Telloya offer mail test allowlist",
+      probe: "public.telloya_offer_mail_test_recipient_provision_v1",
+    })
+    expect(findMigration("20261112223000_telloya_approve_send_offer_v1.sql")?.verification).toEqual({
+      category: "Telloya approve send",
+      probe: "public.telloya_prepare_offer_from_draft_v1",
+    })
+    const approveSendSql = readFileSync(new URL("20261112223000_telloya_approve_send_offer_v1.sql", directory), "utf8")
+    expect(approveSendSql.length).toBe(45006)
+    expect(createHash("md5").update(approveSendSql).digest("hex")).toBe("d8bdfefcb0bef55f8dcc8b62979e20bf")
+    expect(createHash("sha256").update(approveSendSql).digest("hex")).toBe("f5ba88fb55086cdbc409e53aa4d305864b729ebcf8a0905637c4f62c3fa8e6ea")
+    expect(approveSendSql).toContain("TELLOYA_OFFER_COMPOSER_CONTRACT_V1")
+    expect(approveSendSql).toContain("telloya_published_standard_v1")
+    expect(approveSendSql).toContain("pg_advisory_xact_lock")
+    expect(approveSendSql).toContain("draft_estimate")
+    expect(approveSendSql).not.toMatch(/v_text := 'TELLOYA_OFFER_COMPOSER/)
+    const allowlistSql = readFileSync(new URL("20261113120000_telloya_offer_mail_test_allowlist_v1.sql", directory), "utf8")
+    expect(allowlistSql.length).toBe(70342)
+    expect(createHash("md5").update(allowlistSql).digest("hex")).toBe("0ed68955835e7045e967f0f8882e3338")
+    expect(createHash("sha256").update(allowlistSql).digest("hex")).toBe("107b3b7ec515626780ec3d4e8d90ed04b69f5628d67e966e667595b15838adc5")
+    expect(allowlistSql).toContain("telloya_offer_mail_test_recipients")
+    expect(allowlistSql).toContain("test_recipient_not_allowed")
+    expect(allowlistSql).toContain("owner_provision_required")
+    expect(allowlistSql).toContain("telloya_offer_mail_test_recipient_provision_v1")
+    expect(allowlistSql).toContain("telloya_offer_mail_test_owner_grants")
+    expect(allowlistSql).toContain("bound_customer_id")
+    expect(allowlistSql).toContain("bound_email_hash")
+    expect(allowlistSql).toContain("dev_mail_dispatch_candidates_v1")
+    expect(allowlistSql).toContain("TELLOYA_OFFER")
+    expect(allowlistSql).toContain("communication_begin_provider_attempt_v1")
+    expect(allowlistSql).toContain("telloya_offer_mail_provider_ready_v1")
+    expect(allowlistSql).toContain("R2-FINAL")
+    expect(allowlistSql).toContain("grant_customer_mismatch")
+    expect(allowlistSql).toContain("grant_email_mismatch")
+    expect((allowlistSql.match(/CREATE OR REPLACE FUNCTION public\.dev_mail_dispatch_candidates_v1/g) || []).length).toBe(1)
+    expect(findMigration("20261112210000_telloya_offer_draft_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261112180000_telloya_sales_context_v1.sql")?.appliedToDev).toBe(true)
+    expect(findMigration("20261112120000_telloya_admin_journey_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261103230000_customer_commercial_payment_verification_v1.sql")).toMatchObject({
       appliedToDev: true,
       containsDataChange: false,
@@ -390,6 +435,8 @@ describe("the migration chain manifest", () => {
       "20261022172455",
       "20261031160000",
       "20261102110000",
+      "20261112120000",
+      "20261112223000",
     ])
   })
 

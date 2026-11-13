@@ -69,6 +69,7 @@ export async function onboardingCommand(request: NextRequest) {
         if (result.reason === "revoked") return reply("Business authority has been withdrawn. Matching does not restore it.", 403)
         if (result.reason === "membership") return reply("Verified authority needs existing email or phone proof and a recent Admin sign-in. This step does not change authority.", 403)
         if (result.reason === "offer_state") return reply("This offer is no longer a prepared offer, so it cannot be declined from this screen.", 403)
+        if (result.reason === "demonstration_not_completed") return reply("Complete the offline demonstration before preparing a Telloya offer.", 409)
         return reply("That customer, business or location is not part of this request, or the request is not open.", 403)
       case "invalid": return reply("Check the selected records and the note before saving.", 400)
       default: return reply("We couldn’t confirm the change. Reload the enquiry before trying again.", 503)

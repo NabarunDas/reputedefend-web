@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseActivityFilters, ukDate, ukDay } from "./activity"
+import { formatUkDateTime, parseActivityFilters, ukDate, ukDay } from "./activity"
 describe("activity filters", () => {
   it.each([{ before: "9223372036854775808" }, { before: "-1" }, { before: "0" }, { before: "1e2" }, { before: ["1", "2"] }, { action: "__proto__" }, { outcome: "unknown" }])("rejects unsafe filters %j", value => {
     expect(parseActivityFilters(value)).toBeNull()
@@ -30,5 +30,12 @@ describe("activity filters", () => {
   it("names the London calendar date, including across midnight UTC in summer", () => {
     expect(ukDay("2026-07-01T23:30:00Z")).toBe("Thursday, 2 July 2026")
     expect(ukDay("2026-01-01T23:30:00Z")).toBe("Thursday, 1 January 2026")
+  })
+  it("formats a human-readable UK date and time in the recorded zone", () => {
+    expect(formatUkDateTime("2026-11-12T10:00:00.000Z", "Europe/London")).toBe("12 November 2026 at 10:00")
+    expect(formatUkDateTime("2026-07-01T12:00:00.000Z", "Europe/London")).toBe("1 July 2026 at 13:00")
+    expect(formatUkDateTime("2026-11-12T15:00:00.000Z", "America/New_York")).toBe("12 November 2026 at 10:00")
+    expect(formatUkDateTime("2026-11-12T10:00:00.000Z", "Not/AZone")).toBe("12 November 2026 at 10:00")
+    expect(formatUkDateTime("not-a-time", "Europe/London")).toBeNull()
   })
 })

@@ -104,6 +104,22 @@ async function offer(
   )
   await db.query(`update public.plan_versions set status = 'APPROVED', approved_by = $2, approved_at = now() where id = $1`, [id, actor])
   await agreement(product, terms)
+  // Approve voice/Guard pricing conditions before the OFFERED transition
+  // validates the fully pinned commercial billable snapshot.
+  const guardUnit = guardQuantity > 0 ? 999 : null
+  const base = amount - (guardUnit ?? 0) * guardQuantity
+  await db.query(
+    `insert into public.commercial_plan_conditions(
+      id, plan_version_id, tier_code, tier_label, included_minutes, minutes_rollover,
+      base_amount_minor, guard_unit_amount_minor, overage_rate_minor, content_hash,
+      status, approved_by, approved_at
+    ) values (
+      $1, $2, 'GROWTH', 'Growth', 300, false, $3, $4, 25,
+      admin_private.commercial_plan_conditions_hash_v1('GROWTH', 300, false, $3, $4, 25),
+      'APPROVED', $5, now()
+    )`,
+    [randomUUID(), id, base, guardUnit, actor],
+  )
   const subscription = randomUUID()
   await db.query(
     `insert into public.commercial_subscriptions(
@@ -147,20 +163,6 @@ async function offer(
       [request, location],
     )
   }
-  const guardUnit = guardQuantity > 0 ? 999 : null
-  const base = amount - (guardUnit ?? 0) * guardQuantity
-  await db.query(
-    `insert into public.commercial_plan_conditions(
-      id, plan_version_id, tier_code, tier_label, included_minutes, minutes_rollover,
-      base_amount_minor, guard_unit_amount_minor, overage_rate_minor, content_hash,
-      status, approved_by, approved_at
-    ) values (
-      $1, $2, 'GROWTH', 'Growth', 300, false, $3, $4, 25,
-      admin_private.commercial_plan_conditions_hash_v1('GROWTH', 300, false, $3, $4, 25),
-      'APPROVED', $5, now()
-    )`,
-    [randomUUID(), id, base, guardUnit, actor],
-  )
   const versionRow = await rows<{ record_version: number }>(
     `select record_version from public.commercial_subscriptions where id = $1`,
     [subscription],

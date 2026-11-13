@@ -8,9 +8,10 @@ const appliedChain = migrationChain.filter(entry => entry.appliedToDev)
 // copy of live DEV migration history. Live DEV is still missing the three
 // initial foundation entries tracked in issue #190. The synthetic chain ends
 // at the observed DEV ledger head 20261112223000. The verified live ledger
-// has 123 entries. This synthetic chain includes the three foundation files,
-// so it is longer than the live ledger. The invitation file is applied and
-// must not be replayed. Do not apply it to Production. The products
+// has 123 entries. Repository head 20261113120000 remains pending
+// (appliedToDev false). This synthetic chain includes the three foundation
+// files, so it is longer than the live ledger. The invitation file is applied
+// and must not be replayed. Do not apply it to Production. The products
 // projection file remains applied and must not be replayed.
 // Production remains at SEC-08 and is NOT represented by this synthetic ledger.
 const healthyRemote: RemoteMigration[] = appliedChain.map(entry => ({
@@ -33,7 +34,9 @@ describe("the migration history validator", () => {
 
   it("keeps synthetic remote history aligned through the observed DEV head", () => {
     const pending = migrationChain.filter(entry => !entry.appliedToDev)
-    expect(pending.map(entry => entry.filename)).toEqual([])
+    expect(pending.map(entry => entry.filename)).toEqual([
+      "20261113120000_telloya_offer_mail_test_allowlist_v1.sql",
+    ])
     expect(healthyRemote.slice(-19).map(entry => entry.version)).toEqual([
       "20261105120000",
       "20261105130000",

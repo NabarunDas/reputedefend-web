@@ -1931,6 +1931,23 @@ export const migrationChain: readonly MigrationEntry[] = [
     safeToReplay: false,
     verification: { category: "Telloya approve send", probe: "public.telloya_prepare_offer_from_draft_v1" },
   },
+  {
+    // ADMIN-TY-R8-D-01A: fail-closed Telloya offer mail test-recipient allowlist.
+    // SOURCE-ONLY. appliedToDev false until the owner explicitly approves a DEV
+    // apply. Do not apply to Production. Do not edit or replay 20261112223000.
+    // Schema and functions only: containsDataChange false. Seeds no recipient
+    // addresses and does not enable mail_control or approve templates.
+    // Repository file is 17,578 characters. MD5 65784a64d3494ae62ffab902fb5edf66.
+    // SHA-256 999c82d15794bbf345dd228353e4446fb0333ebc50525b82b328d59300eae497.
+    version: "20261113120000",
+    filename: "20261113120000_telloya_offer_mail_test_allowlist_v1.sql",
+    step: "Telloya offer mail test-recipient allowlist",
+    kind: "additive",
+    appliedToDev: false,
+    containsDataChange: false,
+    safeToReplay: false,
+    verification: { category: "Telloya offer mail test allowlist", probe: "public.telloya_offer_mail_test_recipient_command_v1" },
+  },
 ]
 
 /**
@@ -1942,7 +1959,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
 
 /**
  * Newest DEV-applied migration is the verified DEV ledger head
- * `20261112223000`. The live DEV ledger contains 123 entries. The previous
+ * `20261112223000`. The live DEV ledger contains 123 entries. The repository
+ * migration head is `20261113120000` (source-only allowlist; not applied). The previous
  * ledger contained 122 entries and ended at `20261112210000`. The ledger
  * before that contained 121 entries and ended at `20261112180000`. The ledger
  * before that contained 120 entries and ended at `20261112120000`. The ledger
@@ -2085,9 +2103,13 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `20261105172055`, `20261105180000`, `20261105190000`, `20261105200000`
  * and `20261106003939` are already applied on DEV and must not be replayed.
  * Do not replay them. Do not apply them to Production.
- * `pendingMigrations()` is empty. The repository migration head is
- * `20261112223000`. `20261112223000` telloya_approve_send_offer_v1 was applied
- * once to DEV. The repository file is 45,006 characters. MD5
+ * `pendingMigrations()` returns only `20261113120000_telloya_offer_mail_test_allowlist_v1.sql`.
+ * The repository migration head is `20261113120000`. That allowlist migration is
+ * source-only (`appliedToDev` false; `containsDataChange` false; `safeToReplay`
+ * false). Repository file is 17,578 characters. MD5 65784a64d3494ae62ffab902fb5edf66.
+ * SHA-256 999c82d15794bbf345dd228353e4446fb0333ebc50525b82b328d59300eae497. Do not
+ * apply it to DEV or Production without owner approval. `20261112223000`
+ * telloya_approve_send_offer_v1 was applied once to DEV. The repository file is 45,006 characters. MD5
  * d8bdfefcb0bef55f8dcc8b62979e20bf. SHA-256
  * f5ba88fb55086cdbc409e53aa4d305864b729ebcf8a0905637c4f62c3fa8e6ea.
  * containsDataChange is true. admin_private.telloya_approve_send_receipts has

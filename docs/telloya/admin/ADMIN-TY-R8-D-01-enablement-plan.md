@@ -12,7 +12,7 @@ Enable one **controlled DEV-only** official Telloya offer path that reuses exist
 
 ## Preconditions (must already be true)
 
-- DEV ledger head `20261112223000`; R8 approve/send RPCs present; `pendingMigrations()` empty.
+- DEV ledger applied head `20261112223000`; R8 approve/send RPCs present; repository head `20261113120000`; `pendingMigrations()` returns the allowlist source-only file.
 - Owner policy prices and commercial rules unchanged (`telloyaOwnerApprovedPolicy`).
 - Written owner sign-off for D1–D9 in R8-D-00 (D10 is R9).
 

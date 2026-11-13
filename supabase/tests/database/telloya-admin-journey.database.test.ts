@@ -68,9 +68,9 @@ describe("Telloya admin journey migration", () => {
       containsDataChange: true,
       safeToReplay: false,
     })
-    expect(migrationHead.filename).toBe("20261112223000_telloya_approve_send_offer_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(true)
-    expect(migrationHead.containsDataChange).toBe(true)
+    expect(migrationHead.filename).toBe("20261113120000_telloya_offer_mail_test_allowlist_v1.sql")
+    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     const privileges = await rows<{ role: string; allowed: boolean }>(
       `select role, has_function_privilege(role, '${transitionSignature}', 'EXECUTE') as allowed

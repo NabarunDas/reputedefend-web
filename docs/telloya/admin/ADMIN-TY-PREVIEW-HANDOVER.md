@@ -1,6 +1,6 @@
 # ADMIN-TY preview handover
 
-**Status:** ADMIN-TY-R8 applied on DEV (123 migrations, head `20261112223000`). `pendingMigrations()` is empty. Repository and applied head are `20261112223000_telloya_approve_send_offer_v1.sql` (45,006 characters; `appliedToDev: true`; `containsDataChange: true`; `safeToReplay: false`). Verified post-apply: receipts table RLS enabled; approve/send RPCs service-role-only; `TELLOYA_OFFER` remains DRAFT at `record_version` 2; 0 approved templates; 0 mail-control enabled; 0 commercial subscriptions; 0 Telloya offer communications. Customer-facing send stays closed and R8-D gated. Tip SHA `8f789041f58f3aa81198287dfaabe2fe85ce8749`. Branch-scoped Preview keeps `TELLOYA_ADMIN_JOURNEY_ENABLED=true` for this PR only. This is not authorisation to launch, collect payment, send email, place a call, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
+**Status:** ADMIN-TY-R8 applied on DEV (123 migrations, applied head `20261112223000`). `pendingMigrations()` returns `20261113120000_telloya_offer_mail_test_allowlist_v1.sql` (source-only; `appliedToDev: false`). Applied head remains `20261112223000_telloya_approve_send_offer_v1.sql`; repository migration head is `20261113120000_telloya_offer_mail_test_allowlist_v1.sql`. Applied file `20261112223000_telloya_approve_send_offer_v1.sql` (45,006 characters; `appliedToDev: true`; `containsDataChange: true`; `safeToReplay: false`). Verified post-apply: receipts table RLS enabled; approve/send RPCs service-role-only; `TELLOYA_OFFER` remains DRAFT at `record_version` 2; 0 approved templates; 0 mail-control enabled; 0 commercial subscriptions; 0 Telloya offer communications. Customer-facing send stays closed and R8-D gated. Tip SHA `8f789041f58f3aa81198287dfaabe2fe85ce8749`. Branch-scoped Preview keeps `TELLOYA_ADMIN_JOURNEY_ENABLED=true` for this PR only. This is not authorisation to launch, collect payment, send email, place a call, seed catalogue/agreements, merge the PR, or apply further hosted migrations.
 **Baseline:** `origin/develop` `c3ba97a19492eb2b7ae27ec906f77e740ef12cae`. Plan branch `plans/telloya-admin-e2e-preview-20261112` at `a9d925204e39a9e590e5fe964a0314f0679f83cf`.
 
 ## Phase labels (R8)
@@ -23,6 +23,7 @@
 | `20261112180000` | DONE applied once to DEV | Byte-identical 18,615 chars; do not replay or apply to Production |
 | `20261112210000` | DONE applied once to DEV | Draft storage; 17,672 chars; do not replay or apply to Production |
 | `20261112223000` | DONE applied once to DEV | R8 approve/send + draft preview + published price match + composer contract V1; 45,006 chars; do not replay or apply to Production |
+| `20261113120000` | SOURCE-ONLY (not applied) | Fail-closed offer-mail test-recipient allowlist; `appliedToDev: false`; do not apply without owner approval |
 
 ## What is implemented
 
@@ -92,12 +93,13 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | Post-R8 migration reconcile | DONE | `8f789041f58f3aa81198287dfaabe2fe85ce8749` | Manifest records 123 applied DEV migrations, head `20261112223000`; `pendingMigrations()` empty. Send remains blocked; R8-D gated. |
 | ADMIN-TY-R8-D-00 | DONE as documentation | `8bdcfc4630903e0723e8c8d8a5ca2f9e6ac88d3e` | Commercial reuse audit and owner decision pack only. Pricing/policy already approved are not re-asked. Open: agreement, privacy supplement, tax, hosted catalogue, template, sender/recipient, mail-control, controlled DEV send, Stripe Checkout deps (R9). |
 | ADMIN-TY-R8-D-01 | PLANNED (not authorised) | — | Bounded enablement plan after owner signs R8-D-00 open rows. No seed, send, Stripe, or Production in this docs slice. |
+| ADMIN-TY-R8-D-01A | DONE in source | Tip SHA pending | Legal candidates + unresolved confirmations; source-only mail test allowlist migration; DRAFT catalogue runbook. No hosted apply, send, template approve, or Stripe. |
 
 ## Test matrix
 
 | Behaviour | Where it is tested |
 | --- | --- |
-| Applied head is `20261112223000`; `pendingMigrations()` empty | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
+| Applied head is `20261112223000`; repository head `20261113120000`; `pendingMigrations()` is the allowlist file | `apps/admin/lib/recovery/manifest.test.ts`, `history.test.ts`, `readiness.test.ts` |
 | Draft calculator pence totals, Custom £150 + Guard, invalid Custom amounts, unsaved equality | `apps/admin/lib/commercial/telloya-offer-draft.test.ts` |
 | Draft command parse rejects bad payloads | `apps/admin/lib/commercial/telloya-offer-draft-command.test.ts` |
 | Draft save/reload/stale version/lock after prepare_offer/cascade | `apps/admin/lib/commercial/telloya-offer-draft.database.test.ts` |
@@ -140,7 +142,7 @@ The verified DEV ledger previously contained 120 entries and ended at `202611121
 
 `supabase/migrations/20261112223000_telloya_approve_send_offer_v1.sql`
 
-`appliedToDev` is true. `containsDataChange` is true. `safeToReplay` is false. The repository file is 45,006 characters. MD5 `d8bdfefcb0bef55f8dcc8b62979e20bf`. SHA-256 `f5ba88fb55086cdbc409e53aa4d305864b729ebcf8a0905637c4f62c3fa8e6ea`. It adds approve/send orchestration including `public.telloya_prepare_offer_from_draft_v1`, `public.telloya_offer_preview_v1`, personalised `telloya_offer_mail_v1`, Admin delivery fields, and `admin_private.telloya_approve_send_receipts` with RLS. Verified post-apply: receipts RLS enabled; service-role-only RPCs; `TELLOYA_OFFER` still DRAFT at `record_version` 2; 0 approved templates; 0 mail-control enabled; 0 commercial subscriptions; 0 Telloya offer communications. Customer-facing send stays blocked and R8-D gated. Do not edit or replay `20261112223000`. Do not apply `20261112223000` to Production. Do not edit or replay `20261112210000`, `20261112180000`, or `20261112120000`. `pendingMigrations()` is empty.
+`appliedToDev` is true. `containsDataChange` is true. `safeToReplay` is false. The repository file is 45,006 characters. MD5 `d8bdfefcb0bef55f8dcc8b62979e20bf`. SHA-256 `f5ba88fb55086cdbc409e53aa4d305864b729ebcf8a0905637c4f62c3fa8e6ea`. It adds approve/send orchestration including `public.telloya_prepare_offer_from_draft_v1`, `public.telloya_offer_preview_v1`, personalised `telloya_offer_mail_v1`, Admin delivery fields, and `admin_private.telloya_approve_send_receipts` with RLS. Verified post-apply: receipts RLS enabled; service-role-only RPCs; `TELLOYA_OFFER` still DRAFT at `record_version` 2; 0 approved templates; 0 mail-control enabled; 0 commercial subscriptions; 0 Telloya offer communications. Customer-facing send stays blocked and R8-D gated. Do not edit or replay `20261112223000`. Do not apply `20261112223000` to Production. Do not edit or replay `20261112210000`, `20261112180000`, or `20261112120000`. `pendingMigrations()` returns `20261113120000_telloya_offer_mail_test_allowlist_v1.sql` (not applied to DEV). Repository migration head is `20261113120000`.
 
 ## Flags
 

@@ -298,6 +298,9 @@ describe.skipIf(!pgBin)("concurrent Telloya offer preparation", () => {
       expect(approved.status).toBe("success")
     }
     await psql("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true)")
+    await psql(`insert into admin_private.telloya_offer_mail_test_recipients(email_normalized, customer_id, enabled, note)
+      values (admin_private.normalize_email_v1('${email}'), '${customerId}', true, 'disposable allowlist')
+      on conflict (email_normalized) do update set enabled = true, customer_id = excluded.customer_id`)
     const send = (key: string) => `select public.telloya_offer_mail_v1('${token}', '${key}'::uuid, '${subscriptionId}'::uuid, ${version}, 'https://customer.profilerelaunch.com')::text;`
     const leftSession = heldSession()
     const rightSession = heldSession()

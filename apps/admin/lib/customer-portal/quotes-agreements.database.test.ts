@@ -102,6 +102,7 @@ const upgradedFiles = [
   "20261112180000_telloya_sales_context_v1.sql",
   "20261112210000_telloya_offer_draft_v1.sql",
   "20261112223000_telloya_approve_send_offer_v1.sql",
+  "20261113120000_telloya_offer_mail_test_allowlist_v1.sql",
 ].join(",")
 const db = new PGlite()
 

@@ -2,7 +2,7 @@
 
 **Status:** audit and owner decision preparation only.  
 **Baseline tip at pack authoring:** `43d8c815fb26e4481f09bd2c75bd08d21221346c` on draft PR #487.  
-**DEV ledger:** 123 migrations; applied head `20261112223000`; repository head `20261113120000`; `pendingMigrations()` returns allowlist source-only file.  
+**DEV ledger:** 124 migrations; applied head `20261113120000`; repository head `20261113120000`; `pendingMigrations()` empty. Allowlist applied once; do not replay; grants not seeded; send still disabled.  
 **This pack does not** create or approve commercial rows, enable email, send messages, run hosted SQL, change Vercel, create Stripe objects, contact Retell, modify Production, or merge.
 
 Reuse ProfileRelaunch commercial mechanisms. Do not build a second Telloya sales stack. Do not re-ask decisions already recorded in `telloyaOwnerApprovedPolicy`, `telloyaLocationPolicy`, C-06A/C-06B, or `docs/telloya/phase-c/catalogue-proposal.md`.

@@ -1,6 +1,6 @@
 # ADMIN-TY-R8-D-01A-R1 / R2 / R2-FINAL — Telloya offer mail test recipient owner provision (DRAFT runbook)
 
-**Status:** DRAFT. Source-only. Do not apply the allowlist migration, insert grants, or send email until the owner explicitly approves each step.
+**Status:** DRAFT. Allowlist migration `20261113120000` is applied once on DEV (do not replay; do not apply to Production). Grants are still not seeded. Do not insert grants or send email until the owner explicitly approves each step.
 
 ## Why this exists
 
@@ -8,7 +8,7 @@ Ordinary Admin sessions cannot authorise Telloya offer test recipients. Enrolmen
 
 ## Preconditions (all required)
 
-1. Owner has approved applying **only** `20261113120000_telloya_offer_mail_test_allowlist_v1.sql` to DEV (not Production).
+1. Allowlist migration `20261113120000_telloya_offer_mail_test_allowlist_v1.sql` is already applied on DEV. Do not replay it. Do not apply it to Production.
 2. A real verified DEV customer exists with matching verified email and verified business membership (do not invent).
 3. Owner issues a fresh opaque `grant_ref` matching `^[A-Za-z0-9_-]{16,128}$` (not an email address).
 4. Global `telloya_offer_mail_control.mail_enabled` remains OFF until a separate send decision.

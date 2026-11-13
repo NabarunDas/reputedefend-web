@@ -25,9 +25,7 @@ async function rows<T>(sql: string, params: unknown[] = []) {
 }
 
 beforeAll(async () => {
-  expect(pendingMigrations().map(entry => entry.filename)).toEqual([
-      "20261113120000_telloya_offer_mail_test_allowlist_v1.sql",
-    ])
+  expect(pendingMigrations().map(entry => entry.filename)).toEqual([])
   expect(findMigration("20261112223000_telloya_approve_send_offer_v1.sql")).toMatchObject({
     appliedToDev: true,
     containsDataChange: true,

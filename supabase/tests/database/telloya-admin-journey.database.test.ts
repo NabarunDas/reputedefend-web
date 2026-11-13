@@ -69,7 +69,7 @@ describe("Telloya admin journey migration", () => {
       safeToReplay: false,
     })
     expect(migrationHead.filename).toBe("20261113120000_telloya_offer_mail_test_allowlist_v1.sql")
-    expect(migrationHead.appliedToDev).toBe(false)
+    expect(migrationHead.appliedToDev).toBe(true)
     expect(migrationHead.containsDataChange).toBe(false)
     expect(migrationHead.safeToReplay).toBe(false)
     const privileges = await rows<{ role: string; allowed: boolean }>(

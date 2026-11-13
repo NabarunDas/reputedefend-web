@@ -75,6 +75,9 @@ async function offer(
   if (!ref) throw new Error("test reference exhausted")
   const terms = `${product}-SET-${ref.slice(-4)}`
   const guardQuantity = selectedGuardLocations?.length ?? (product === "COMPLETE" ? 1 : 0)
+  // Standard Telloya plan versions hold the voice-only base price. Guard
+  // locations are extra subscription items billed at the accepted total.
+  const planAmount = product === "TELLOYA" ? amount - 999 * guardQuantity : amount
   const id = randomUUID()
   const version = ++planNumber
   await db.query(
@@ -82,7 +85,7 @@ async function offer(
       id, product_code, version_number, status, effective_from, billing_cadence, currency,
       amount_minor, tax_behaviour, terms_ref
     ) values ($1, $2, $3, 'DRAFT', now() - interval '30 days' + make_interval(mins => $3), 'MONTH', 'GBP', $4, 'NOT_APPLICABLE', $5)`,
-    [id, product, version, amount, terms],
+    [id, product, version, planAmount, terms],
   )
   await db.query(
     `insert into public.plan_components(plan_version_id, component_code, quantity_limit, scope) values ($1, 'TELLOYA', 2, 'LOCATION')`,
@@ -118,7 +121,7 @@ async function offer(
     await db.query(
       `insert into public.commercial_subscription_items(subscription_id, component_code, quantity, quantity_limit_snapshot)
        values ($1, 'GUARD', $2, $3)`,
-      [subscription, guardQuantity, guardQuantity],
+      [subscription, guardQuantity, product === "COMPLETE" ? 2 : guardQuantity],
     )
   }
   // Official Guard offers pin the customer's chosen real locations, not just

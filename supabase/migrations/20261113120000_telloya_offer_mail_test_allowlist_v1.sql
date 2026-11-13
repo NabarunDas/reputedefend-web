@@ -1,13 +1,14 @@
--- ADMIN-TY-R8-D-01A-R1: fail-closed Telloya offer mail test-recipient allowlist.
+-- ADMIN-TY-R8-D-01A-R2: fail-closed Telloya offer mail test allowlist + automatic DEV dispatch.
 -- SOURCE-ONLY until the owner explicitly approves a DEV apply. Do not apply to
 -- Production. Do not edit or replay previously applied migrations.
 --
 -- Hardening:
 -- 1) Sendable allowlist rows require exact customer_id + matching verified email.
--- 2) Ordinary Admin sessions cannot authorise recipients. Enrolment uses a
---    one-time owner grant reference via telloya_offer_mail_test_recipient_provision_v1.
--- 3) Provider claim rechecks TELLOYA_OFFER permission; Guided/Guard mail unchanged.
--- 4) Zero recipient addresses or grants are seeded. Empty allowlist queues nobody.
+-- 2) Owner grants bind to exact customer_id + email hash at insert; provision fails on mismatch.
+-- 3) Ordinary Admin sessions cannot authorise recipients.
+-- 4) Automatic DEV dispatcher supports TELLOYA_OFFER via commercial_subscription_id (not cases).
+-- 5) Last-mile provider attempt rechecks TELLOYA_OFFER permission; Guided/Guard unchanged.
+-- 6) Zero recipient addresses or grants are seeded. Empty allowlist queues nobody.
 
 DROP FUNCTION IF EXISTS public.telloya_offer_mail_test_recipient_command_v1(text, uuid, text, jsonb);
 DROP FUNCTION IF EXISTS public.telloya_offer_mail_test_recipient_provision_v1(text, uuid, uuid, text, text);
@@ -20,6 +21,9 @@ CREATE TABLE admin_private.telloya_offer_mail_test_owner_grants (
   grant_ref text NOT NULL,
   purpose text NOT NULL DEFAULT 'telloya_offer_mail_test'
     CHECK (purpose = 'telloya_offer_mail_test'),
+  bound_customer_id uuid NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
+  bound_email_hash text NOT NULL
+    CHECK (bound_email_hash ~ '^[a-f0-9]{32}$'),
   enabled boolean NOT NULL DEFAULT true,
   expires_at timestamptz NOT NULL,
   consumed_at timestamptz NULL,
@@ -132,6 +136,9 @@ BEGIN
   IF v_grant.enabled IS DISTINCT FROM true OR v_grant.consumed_at IS NOT NULL OR v_grant.expires_at <= pg_catalog.now() THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'grant_unusable');
   END IF;
+  IF v_grant.bound_customer_id IS DISTINCT FROM p_customer_id THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'grant_customer_mismatch');
+  END IF;
   v_email := admin_private.normalize_email_v1(p_email);
   IF v_email IS NULL OR v_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' THEN
     RETURN jsonb_build_object('status', 'invalid', 'reason', 'email');
@@ -144,6 +151,9 @@ BEGIN
   END IF;
   IF v_customer_email IS DISTINCT FROM v_email THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'email_mismatch');
+  END IF;
+  IF md5(v_email) IS DISTINCT FROM v_grant.bound_email_hash THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'grant_email_mismatch');
   END IF;
   IF admin_private.contact_verified_v1(p_customer_id, 'email') IS DISTINCT FROM true THEN
     RETURN jsonb_build_object('status', 'denied', 'reason', 'recipient_unverified');
@@ -343,7 +353,11 @@ BEGIN
   END IF;
   IF p_request IS NULL OR p_subscription IS NULL OR p_expected_version IS NULL
      OR p_origin IS NULL OR p_origin !~ '^https://[a-z0-9.-]+$'
-     OR (p_origin !~ '^https://([a-z0-9-]+\.)*(profilerelaunch\.com|telloya\.com)$' AND p_origin <> 'https://localhost') THEN
+     OR (
+       p_origin !~ '^https://([a-z0-9-]+\.)*(profilerelaunch\.com|telloya\.com)$'
+       AND p_origin <> 'https://localhost'
+       AND p_origin !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app$'
+     ) THEN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
   SELECT control.mail_enabled INTO v_enabled FROM admin_private.telloya_offer_mail_control AS control LIMIT 1;
@@ -831,3 +845,728 @@ REVOKE ALL ON FUNCTION public.admin_dev_send_email_claim_v1(text, uuid, uuid, bo
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_dev_send_email_claim_v1(text, uuid, uuid, boolean, text)
   TO service_role;
+
+-- ---------------------------------------------------------------------------
+-- R2: automatic DEV dispatcher support for TELLOYA_OFFER + last-mile recheck.
+-- Case-backed Guided/Guard/Evidence/Quote paths keep their existing behaviour.
+-- Develop-only origin gate is unchanged. Worker/env are not enabled here.
+-- ---------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION admin_private.dev_mail_link_reason_v1(
+  p_template text, p_text text, p_html text, p_origin text, p_case_ref text
+) RETURNS text
+LANGUAGE plpgsql
+STABLE
+SET search_path = ''
+AS $fn$
+DECLARE
+  body text := coalesce(p_text, '') || ' ' || coalesce(p_html, '');
+  url text;
+  action_id text;
+  text_action text;
+  html_action text;
+  text_actions integer;
+  html_actions integer;
+  ref text;
+  needs_portal boolean;
+  offer_text text;
+  offer_html text;
+  offer_count_text integer;
+  offer_count_html integer;
+BEGIN
+  IF position('#t=' in coalesce(p_text, '')) > 0 OR position('#t=' in coalesce(p_html, '')) > 0 THEN
+    RETURN 'origin';
+  END IF;
+  FOR url IN
+    SELECT m[1] FROM regexp_matches(body, 'https?://[^[:space:]<>"]+', 'g') AS m
+  LOOP
+    IF position('?' in url) > 0 OR position('#' in url) > 0 OR left(url, 8) IS DISTINCT FROM 'https://' THEN
+      RETURN 'origin';
+    END IF;
+    -- Exact branding only. Not a path, subdomain, token, or action link.
+    IF url IN (
+      'https://profilerelaunch.com',
+      'https://profilerelaunch.com/',
+      'https://www.profilerelaunch.com',
+      'https://www.profilerelaunch.com/',
+      'https://profilerelaunch.com/brand/profile-relaunch-logo.png'
+    ) THEN
+      CONTINUE;
+    END IF;
+    IF p_origin IS NULL THEN
+      IF url !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app(/|$)' THEN
+        RETURN 'foreign_link';
+      END IF;
+    ELSIF NOT (url = p_origin OR left(url, length(p_origin) + 1) = p_origin || '/') THEN
+      RETURN 'foreign_link';
+    END IF;
+    IF position('/portal/cases/' IN url) > 0 THEN
+      IF p_case_ref IS NULL
+        OR (
+          position('/portal/cases/' || p_case_ref || '/' IN url) = 0
+          AND right(url, length('/portal/cases/' || p_case_ref)) IS DISTINCT FROM '/portal/cases/' || p_case_ref
+        )
+      THEN
+        RETURN 'origin';
+      END IF;
+    END IF;
+    IF position('/action/' IN url) > 0 THEN
+      IF p_template IN (
+        'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT',
+        'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION'
+      ) THEN
+        RETURN 'origin';
+      END IF;
+      IF p_origin IS NULL THEN
+        IF url !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+          RETURN 'origin';
+        END IF;
+      ELSE
+        IF left(url, length(p_origin) + 8) IS DISTINCT FROM p_origin || '/action/' THEN
+          RETURN 'origin';
+        END IF;
+        action_id := substring(url FROM length(p_origin) + 9);
+        IF action_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+          RETURN 'origin';
+        END IF;
+      END IF;
+    END IF;
+  END LOOP;
+  IF p_template IN ('CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT') THEN
+    IF position('/action/' in body) > 0 THEN
+      RETURN 'origin';
+    END IF;
+    RETURN NULL;
+  END IF;
+  IF p_template = 'TELLOYA_OFFER' THEN
+    IF p_case_ref IS NULL OR p_case_ref !~ '^VC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$' THEN
+      RETURN 'origin';
+    END IF;
+    IF position('/action/' IN body) > 0 OR position('/portal/cases/' IN body) > 0 THEN
+      RETURN 'origin';
+    END IF;
+    IF position(p_case_ref IN coalesce(p_text, '')) = 0 OR position(p_case_ref IN coalesce(p_html, '')) = 0 THEN
+      RETURN 'origin';
+    END IF;
+    IF p_origin IS NOT NULL AND position(p_origin IN coalesce(p_text, '')) = 0 THEN
+      RETURN 'origin';
+    END IF;
+    IF p_origin IS NULL AND position('https://profilerelaunch-customer-git-develop-' IN coalesce(p_text, '')) = 0 THEN
+      RETURN 'origin';
+    END IF;
+    IF p_origin IS NOT NULL AND position(p_origin IN coalesce(p_html, '')) = 0 THEN
+      RETURN 'origin';
+    END IF;
+    IF p_origin IS NULL AND position('https://profilerelaunch-customer-git-develop-' IN coalesce(p_html, '')) = 0 THEN
+      RETURN 'origin';
+    END IF;
+    SELECT count(*) INTO offer_count_text
+    FROM regexp_matches(coalesce(p_text, ''), 'https://[^[:space:]<>"]+/portal/onboarding/offer/VC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}', 'g');
+    SELECT count(*) INTO offer_count_html
+    FROM regexp_matches(coalesce(p_html, ''), 'https://[^[:space:]<>"]+/portal/onboarding/offer/VC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}', 'g');
+    offer_text := substring(coalesce(p_text, '') FROM 'https://[^[:space:]<>"]+/portal/onboarding/offer/VC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}');
+    offer_html := substring(coalesce(p_html, '') FROM 'https://[^[:space:]<>"]+/portal/onboarding/offer/VC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}');
+    IF offer_count_text IS DISTINCT FROM 1
+      OR offer_count_html IS DISTINCT FROM 1
+      OR offer_text IS DISTINCT FROM offer_html
+      OR offer_text IS NULL
+      OR right(offer_text, length(p_case_ref)) IS DISTINCT FROM p_case_ref
+    THEN
+      RETURN 'origin';
+    END IF;
+    IF p_origin IS NOT NULL AND left(offer_text, length(p_origin) + 1) IS DISTINCT FROM p_origin || '/' THEN
+      RETURN 'origin';
+    END IF;
+    IF p_origin IS NULL AND offer_text !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app/portal/onboarding/offer/VC-[0-9]{2}-[A-HJ-NP-Z2-9]{6}$' THEN
+      RETURN 'origin';
+    END IF;
+    RETURN NULL;
+  END IF;
+  needs_portal := p_template IN (
+    'EVIDENCE_REQUEST', 'QUOTE_OFFER', 'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION'
+  );
+  IF NOT needs_portal THEN
+    RETURN 'origin';
+  END IF;
+  IF p_case_ref IS NOT NULL THEN
+    IF position(p_case_ref IN coalesce(p_text, '')) = 0 OR position(p_case_ref IN coalesce(p_html, '')) = 0 THEN
+      RETURN 'origin';
+    END IF;
+    FOR ref IN
+      SELECT m[1] FROM regexp_matches(body, '((?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6})', 'g') AS m
+    LOOP
+      IF ref IS DISTINCT FROM p_case_ref THEN
+        RETURN 'origin';
+      END IF;
+    END LOOP;
+  END IF;
+  IF p_origin IS NOT NULL AND position(p_origin IN coalesce(p_text, '')) = 0 THEN
+    RETURN 'origin';
+  END IF;
+  IF p_origin IS NULL AND position('https://profilerelaunch-customer-git-develop-' IN coalesce(p_text, '')) = 0 THEN
+    RETURN 'origin';
+  END IF;
+  IF p_origin IS NOT NULL AND position(p_origin IN coalesce(p_html, '')) = 0 THEN
+    RETURN 'origin';
+  END IF;
+  IF p_template IN ('EVIDENCE_REQUEST', 'QUOTE_OFFER') THEN
+    SELECT count(*) INTO text_actions
+    FROM regexp_matches(coalesce(p_text, ''), 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'g');
+    SELECT count(*) INTO html_actions
+    FROM regexp_matches(coalesce(p_html, ''), 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'g');
+    text_action := substring(coalesce(p_text, '') FROM 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
+    html_action := substring(coalesce(p_html, '') FROM 'https://[^[:space:]<>"]+/action/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
+    IF text_actions IS DISTINCT FROM 1 OR html_actions IS DISTINCT FROM 1 OR text_action IS DISTINCT FROM html_action THEN
+      RETURN 'origin';
+    END IF;
+  END IF;
+  IF p_template = 'GUIDED_PACK_READY'
+    AND (
+      admin_private.fulfilment_page_count_v1(p_text, 'documents') IS DISTINCT FROM 1
+      OR admin_private.fulfilment_page_count_v1(p_html, 'documents') IS DISTINCT FROM 1
+    )
+  THEN
+    RETURN 'origin';
+  END IF;
+  IF p_template = 'GUIDED_COMPLETION'
+    AND (
+      position('/portal/cases/' IN coalesce(p_text, '')) = 0
+      OR position('/documents' IN coalesce(p_text, '')) = 0
+      OR position('/portal/cases/' IN coalesce(p_html, '')) = 0
+      OR position('/documents' IN coalesce(p_html, '')) = 0
+    )
+  THEN
+    RETURN 'origin';
+  END IF;
+  IF p_template = 'GUIDED_PAYMENT_REQUEST'
+    AND (
+      position('/portal/cases/' IN coalesce(p_text, '')) = 0
+      OR position('/payments' IN coalesce(p_text, '')) = 0
+      OR position('/portal/cases/' IN coalesce(p_html, '')) = 0
+      OR position('/payments' IN coalesce(p_html, '')) = 0
+      OR position('/action/' IN body) > 0
+    )
+  THEN
+    RETURN 'origin';
+  END IF;
+  RETURN NULL;
+END;
+$fn$;
+
+CREATE OR REPLACE FUNCTION public.dev_mail_dispatch_candidates_v1(p_limit integer, p_customer_origin text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_limit integer;
+  listed jsonb;
+BEGIN
+  IF p_customer_origin IS NULL
+    OR p_customer_origin !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app$'
+  THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'origin', 'communications', '[]'::jsonb);
+  END IF;
+  v_limit := least(greatest(coalesce(p_limit, 20), 1), 20);
+  SELECT coalesce(jsonb_agg(jsonb_build_object('communicationId', picked.id) ORDER BY picked.queued_at NULLS LAST, picked.created_at, picked.id), '[]'::jsonb)
+  INTO listed
+  FROM (
+    SELECT c.id, coalesce(c.queued_at, c.created_at) AS queued_at, c.created_at
+    FROM public.communications c
+    JOIN admin_private.job_outbox o
+      ON o.event_key = 'send-email:' || c.id::text || ':v' || c.content_version::text
+     AND o.topic = 'SEND_EMAIL'
+     AND o.aggregate_id = c.id
+    JOIN public.cases cs ON cs.id = c.case_id
+    JOIN public.customers cu ON cu.id = cs.customer_id
+    JOIN admin_private.dev_mail_dispatch_activation gate
+      ON coalesce(c.queued_at, c.created_at) >= gate.active_from
+    WHERE c.lifecycle = 'QUEUED'
+      AND c.content_locked IS TRUE
+      AND c.template_key IN (
+        'EVIDENCE_REQUEST', 'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT', 'QUOTE_OFFER',
+        'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION'
+      )
+      AND admin_private.normalize_email_v1(c.recipient) = admin_private.normalize_email_v1(cu.email)
+      AND NOT EXISTS (
+        SELECT 1 FROM admin_private.email_suppressions s
+        WHERE s.address_normalized = admin_private.normalize_email_v1(c.recipient)
+      )
+      AND c.delivery_status IS DISTINCT FROM 'PROVIDER_ACCEPTED'
+      AND c.delivery_status IS DISTINCT FROM 'DELIVERED'
+      AND c.delivery_status IS DISTINCT FROM 'TRANSIENT_BOUNCE'
+      AND c.delivery_status IS DISTINCT FROM 'UNDETERMINED_BOUNCE'
+      AND c.delivery_status IS DISTINCT FROM 'BOUNCED'
+      AND c.delivery_status IS DISTINCT FROM 'COMPLAINED'
+      AND c.delivery_status IS DISTINCT FROM 'SUPPRESSED'
+      AND c.delivery_status IS DISTINCT FROM 'FAILED'
+      AND c.delivery_status IS DISTINCT FROM 'ACCEPTANCE_UNKNOWN'
+      AND (
+        c.first_provider_attempt_at IS NULL
+        OR admin_private.dev_mail_retry_due_v1(o.id)
+      )
+      AND admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin, cs.public_ref) IS NULL
+    ORDER BY coalesce(c.queued_at, c.created_at) NULLS LAST, c.created_at, c.id
+    LIMIT v_limit
+  ) picked;
+  RETURN jsonb_build_object('status', 'success', 'communications', listed);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.dev_mail_dispatch_candidates_v1(p_limit integer, p_customer_origin text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_limit integer;
+  listed jsonb;
+BEGIN
+  IF p_customer_origin IS NULL
+    OR p_customer_origin !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app$'
+  THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'origin', 'communications', '[]'::jsonb);
+  END IF;
+  v_limit := least(greatest(coalesce(p_limit, 20), 1), 20);
+  SELECT coalesce(jsonb_agg(jsonb_build_object('communicationId', picked.id) ORDER BY picked.queued_at NULLS LAST, picked.created_at, picked.id), '[]'::jsonb)
+  INTO listed
+  FROM (
+    SELECT * FROM (
+      SELECT c.id, coalesce(c.queued_at, c.created_at) AS queued_at, c.created_at
+      FROM public.communications c
+      JOIN admin_private.job_outbox o
+        ON o.event_key = 'send-email:' || c.id::text || ':v' || c.content_version::text
+       AND o.topic = 'SEND_EMAIL'
+       AND o.aggregate_id = c.id
+      JOIN public.cases cs ON cs.id = c.case_id
+      JOIN public.customers cu ON cu.id = cs.customer_id
+      JOIN admin_private.dev_mail_dispatch_activation gate
+        ON coalesce(c.queued_at, c.created_at) >= gate.active_from
+      WHERE c.lifecycle = 'QUEUED'
+        AND c.content_locked IS TRUE
+        AND c.template_key IN (
+          'EVIDENCE_REQUEST', 'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT', 'QUOTE_OFFER',
+          'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION'
+        )
+        AND admin_private.normalize_email_v1(c.recipient) = admin_private.normalize_email_v1(cu.email)
+        AND NOT EXISTS (
+          SELECT 1 FROM admin_private.email_suppressions s
+          WHERE s.address_normalized = admin_private.normalize_email_v1(c.recipient)
+        )
+        AND c.delivery_status IS DISTINCT FROM 'PROVIDER_ACCEPTED'
+        AND c.delivery_status IS DISTINCT FROM 'DELIVERED'
+        AND c.delivery_status IS DISTINCT FROM 'TRANSIENT_BOUNCE'
+        AND c.delivery_status IS DISTINCT FROM 'UNDETERMINED_BOUNCE'
+        AND c.delivery_status IS DISTINCT FROM 'BOUNCED'
+        AND c.delivery_status IS DISTINCT FROM 'COMPLAINED'
+        AND c.delivery_status IS DISTINCT FROM 'SUPPRESSED'
+        AND c.delivery_status IS DISTINCT FROM 'FAILED'
+        AND c.delivery_status IS DISTINCT FROM 'ACCEPTANCE_UNKNOWN'
+        AND (
+          c.first_provider_attempt_at IS NULL
+          OR admin_private.dev_mail_retry_due_v1(o.id)
+        )
+        AND admin_private.dev_mail_link_reason_v1(c.template_key, c.body_text, c.body_html, p_customer_origin, cs.public_ref) IS NULL
+      UNION ALL
+      SELECT c.id, coalesce(c.queued_at, c.created_at) AS queued_at, c.created_at
+      FROM public.communications c
+      JOIN admin_private.job_outbox o
+        ON o.event_key = 'send-email:' || c.id::text || ':v' || c.content_version::text
+       AND o.topic = 'SEND_EMAIL'
+       AND o.aggregate_id = c.id
+      JOIN public.customers cu ON cu.id = c.customer_id
+      JOIN public.commercial_subscriptions sub
+        ON sub.id = c.commercial_subscription_id
+       AND sub.customer_id = c.customer_id
+       AND sub.business_id = c.business_id
+      JOIN admin_private.dev_mail_dispatch_activation gate
+        ON coalesce(c.queued_at, c.created_at) >= gate.active_from
+      WHERE c.lifecycle = 'QUEUED'
+        AND c.content_locked IS TRUE
+        AND c.template_key = 'TELLOYA_OFFER'
+        AND c.case_id IS NULL
+        AND c.commercial_subscription_id IS NOT NULL
+        AND admin_private.normalize_email_v1(c.recipient) = admin_private.normalize_email_v1(cu.email)
+        AND admin_private.telloya_offer_mail_test_recipient_permitted_v1(
+              c.customer_id, admin_private.normalize_email_v1(c.recipient)
+            ) IS TRUE
+        AND EXISTS (
+          SELECT 1 FROM admin_private.communication_templates t
+          WHERE t.template_key = 'TELLOYA_OFFER'
+            AND t.status = 'APPROVED'
+            AND position('TELLOYA_OFFER_COMPOSER_CONTRACT_V1' IN coalesce(t.body_text_template, '')) > 0
+            AND position('TELLOYA_OFFER_COMPOSER_CONTRACT_V1' IN coalesce(c.body_html, '')) > 0
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM admin_private.email_suppressions s
+          WHERE s.address_normalized = admin_private.normalize_email_v1(c.recipient)
+        )
+        AND c.delivery_status IS DISTINCT FROM 'PROVIDER_ACCEPTED'
+        AND c.delivery_status IS DISTINCT FROM 'DELIVERED'
+        AND c.delivery_status IS DISTINCT FROM 'TRANSIENT_BOUNCE'
+        AND c.delivery_status IS DISTINCT FROM 'UNDETERMINED_BOUNCE'
+        AND c.delivery_status IS DISTINCT FROM 'BOUNCED'
+        AND c.delivery_status IS DISTINCT FROM 'COMPLAINED'
+        AND c.delivery_status IS DISTINCT FROM 'SUPPRESSED'
+        AND c.delivery_status IS DISTINCT FROM 'FAILED'
+        AND c.delivery_status IS DISTINCT FROM 'ACCEPTANCE_UNKNOWN'
+        AND (
+          c.first_provider_attempt_at IS NULL
+          OR admin_private.dev_mail_retry_due_v1(o.id)
+        )
+        AND admin_private.dev_mail_link_reason_v1(
+              c.template_key, c.body_text, c.body_html, p_customer_origin, sub.public_ref
+            ) IS NULL
+    ) eligible
+    ORDER BY eligible.queued_at NULLS LAST, eligible.created_at, eligible.id
+    LIMIT v_limit
+  ) picked;
+  RETURN jsonb_build_object('status', 'success', 'communications', listed);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.dev_mail_dispatch_claim_v1(p_communication uuid, p_customer_origin text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  comm public.communications;
+  expected text;
+  text_upload text;
+  html_upload text;
+  text_urls integer;
+  html_urls integer;
+  outbox admin_private.job_outbox;
+  row admin_private.jobs;
+  token uuid;
+  attempt_no integer;
+  v_key text;
+  v_link text;
+  v_case_ref text;
+BEGIN
+  IF p_communication IS NULL
+    OR p_customer_origin IS NULL
+    OR p_customer_origin !~ '^https://profilerelaunch-customer-git-develop-[a-z0-9-]+\.vercel\.app$'
+  THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'origin');
+  END IF;
+
+  SELECT * INTO comm
+  FROM public.communications
+  WHERE id = p_communication
+  FOR UPDATE SKIP LOCKED;
+  IF NOT FOUND THEN
+    IF EXISTS (SELECT 1 FROM public.communications WHERE id = p_communication) THEN
+      RETURN jsonb_build_object('status', 'conflict', 'reason', 'locked');
+    END IF;
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
+  END IF;
+  IF comm.lifecycle IS DISTINCT FROM 'QUEUED' OR comm.content_locked IS NOT TRUE THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
+  END IF;
+  IF comm.template_key = 'PAYMENT_CONFIRMATION' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'payment_worker_owned');
+  END IF;
+  IF comm.template_key IS NULL OR comm.template_key NOT IN (
+    'EVIDENCE_REQUEST', 'CASE_UPDATE', 'CONVERSATION_REPLY', 'GUARD_ALERT', 'QUOTE_OFFER',
+    'GUIDED_PAYMENT_REQUEST', 'GUIDED_PACK_READY', 'GUIDED_COMPLETION', 'TELLOYA_OFFER'
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_send_email');
+  END IF;
+  IF comm.template_key = 'TELLOYA_OFFER' THEN
+    IF comm.case_id IS NOT NULL
+      OR comm.commercial_subscription_id IS NULL
+      OR NOT EXISTS (
+        SELECT 1
+        FROM public.commercial_subscriptions sub
+        JOIN public.customers cu ON cu.id = sub.customer_id
+        WHERE sub.id = comm.commercial_subscription_id
+          AND sub.customer_id = comm.customer_id
+          AND sub.business_id = comm.business_id
+          AND admin_private.normalize_email_v1(comm.recipient) = admin_private.normalize_email_v1(cu.email)
+      )
+    THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'recipient_mismatch');
+    END IF;
+    IF admin_private.telloya_offer_mail_test_recipient_permitted_v1(
+         comm.customer_id, admin_private.normalize_email_v1(comm.recipient)
+       ) IS DISTINCT FROM true THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'test_recipient_not_allowed');
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1 FROM admin_private.communication_templates t
+      WHERE t.template_key = 'TELLOYA_OFFER'
+        AND t.status = 'APPROVED'
+        AND position('TELLOYA_OFFER_COMPOSER_CONTRACT_V1' IN coalesce(t.body_text_template, '')) > 0
+        AND position('TELLOYA_OFFER_COMPOSER_CONTRACT_V1' IN coalesce(comm.body_html, '')) > 0
+    ) THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'template');
+    END IF;
+  ELSIF NOT EXISTS (
+    SELECT 1
+    FROM public.cases cs
+    JOIN public.customers cu ON cu.id = cs.customer_id
+    WHERE cs.id = comm.case_id
+      AND admin_private.normalize_email_v1(comm.recipient) = admin_private.normalize_email_v1(cu.email)
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'recipient_mismatch');
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM admin_private.email_suppressions s
+    WHERE s.address_normalized = admin_private.normalize_email_v1(comm.recipient)
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'suppressed');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM admin_private.dev_mail_dispatch_activation gate
+    WHERE coalesce(comm.queued_at, comm.created_at) >= gate.active_from
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'before_activation');
+  END IF;
+  IF comm.delivery_status IN (
+    'PROVIDER_ACCEPTED', 'DELIVERED', 'TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE',
+    'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED'
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'already_processed');
+  END IF;
+  v_key := 'send-email:' || comm.id::text || ':v' || comm.content_version::text;
+  IF comm.delivery_status = 'ACCEPTANCE_UNKNOWN' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'acceptance_unknown');
+  END IF;
+  -- A recorded attempt is safe to repeat only when the job itself is a due RETRY.
+  -- A live lease stays a conflict. An expired lease without that RETRY stays unsent.
+  IF comm.first_provider_attempt_at IS NOT NULL AND EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    JOIN admin_private.job_outbox ob ON ob.id = j.outbox_id
+    WHERE ob.event_key = v_key
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'RUNNING'
+      AND j.lease_expires_at IS NOT NULL
+      AND j.lease_expires_at >= now()
+  ) THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'leased');
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    JOIN admin_private.job_outbox ob ON ob.id = j.outbox_id
+    WHERE ob.event_key = v_key
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'DEAD_LETTER'
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'dead_letter');
+  END IF;
+  IF comm.first_provider_attempt_at IS NOT NULL AND NOT EXISTS (
+    SELECT 1
+    FROM admin_private.jobs j
+    JOIN admin_private.job_outbox ob ON ob.id = j.outbox_id
+    WHERE ob.event_key = v_key
+      AND j.job_type = 'SEND_EMAIL'
+      AND j.status = 'RETRY'
+      AND j.scheduled_at <= now()
+  ) THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'acceptance_unknown');
+  END IF;
+
+  IF length(v_key) > 200 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+
+  IF comm.template_key = 'TELLOYA_OFFER' THEN
+    SELECT sub.public_ref INTO v_case_ref
+    FROM public.commercial_subscriptions sub
+    WHERE sub.id = comm.commercial_subscription_id;
+  ELSE
+    SELECT cs.public_ref INTO v_case_ref FROM public.cases cs WHERE cs.id = comm.case_id;
+  END IF;
+  v_link := admin_private.dev_mail_link_reason_v1(comm.template_key, comm.body_text, comm.body_html, p_customer_origin, v_case_ref);
+  IF v_link IS NOT NULL THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', v_link);
+  END IF;
+  IF comm.template_key = 'GUIDED_PACK_READY' THEN
+    expected := 'documents';
+    text_upload := substring(comm.body_text from 'https://[A-Za-z0-9.-]+/portal/cases/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}/(?:payments|documents)');
+    html_upload := substring(coalesce(comm.body_html, '') from 'https://[A-Za-z0-9.-]+/portal/cases/(?:PR|RV)-[0-9]{2}-[A-HJ-NP-Z2-9]{6}/(?:payments|documents)');
+    text_urls := admin_private.fulfilment_page_count_v1(comm.body_text, expected);
+    html_urls := admin_private.fulfilment_page_count_v1(comm.body_html, expected);
+    IF comm.body_html IS NULL
+      OR text_urls IS DISTINCT FROM 1
+      OR html_urls IS DISTINCT FROM 1
+      OR text_upload IS DISTINCT FROM html_upload
+      OR text_upload IS NULL
+      OR position(p_customer_origin || '/portal/cases/' IN text_upload) IS DISTINCT FROM 1
+      OR right(text_upload, length(expected)) IS DISTINCT FROM expected
+      OR position('/action/' in comm.body_text) > 0
+      OR position('/action/' in comm.body_html) > 0
+    THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'origin');
+    END IF;
+  END IF;
+
+  SELECT * INTO outbox FROM admin_private.job_outbox WHERE event_key = v_key FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_queued');
+  END IF;
+  IF outbox.topic IS DISTINCT FROM 'SEND_EMAIL'
+    OR outbox.aggregate_id IS DISTINCT FROM comm.id
+    OR outbox.payload->>'communicationId' IS DISTINCT FROM comm.id::text
+    OR outbox.payload->>'contentVersion' IS DISTINCT FROM comm.content_version::text
+  THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_send_email');
+  END IF;
+  IF outbox.promoted_at IS NULL AND outbox.available_at > now() THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_ready');
+  END IF;
+
+  IF outbox.promoted_at IS NULL THEN
+    INSERT INTO admin_private.jobs(outbox_id, job_type, idempotency_key, payload, status, scheduled_at)
+    VALUES (outbox.id, 'SEND_EMAIL', outbox.event_key, outbox.payload, 'PENDING', outbox.available_at)
+    ON CONFLICT (outbox_id) DO NOTHING;
+    UPDATE admin_private.job_outbox
+      SET promoted_at = now(), last_error = NULL
+      WHERE id = outbox.id AND promoted_at IS NULL;
+  END IF;
+
+  SELECT * INTO row FROM admin_private.jobs WHERE outbox_id = outbox.id FOR UPDATE;
+  IF row.id IS NULL OR row.job_type IS DISTINCT FROM 'SEND_EMAIL' OR row.idempotency_key IS DISTINCT FROM v_key THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_send_email');
+  END IF;
+  IF row.status = 'SUCCEEDED' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'already_processed', 'jobId', row.id, 'jobStatus', row.status);
+  END IF;
+  IF row.status = 'DEAD_LETTER' THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'dead_letter', 'jobId', row.id, 'jobStatus', row.status);
+  END IF;
+  IF row.status = 'RUNNING' AND row.lease_expires_at IS NOT NULL AND row.lease_expires_at >= now() THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'leased', 'jobId', row.id);
+  END IF;
+  IF row.status IN ('PENDING', 'RETRY') AND row.scheduled_at > now() THEN
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'not_ready', 'jobId', row.id);
+  END IF;
+
+  IF row.status = 'RUNNING' THEN
+    IF row.attempts >= row.max_attempts THEN
+      PERFORM admin_private.finish_job_attempt_v1(row.id, row.lease_token, 'DEAD_LETTER', 'Maximum attempts exhausted after worker lease expiry');
+      UPDATE admin_private.jobs
+        SET status = 'DEAD_LETTER', dead_lettered_at = now(), lease_expires_at = NULL,
+            lease_owner = NULL, lease_token = NULL,
+            last_error = 'Maximum attempts exhausted after worker lease expiry',
+            updated_at = now(), record_version = row.record_version + 1
+        WHERE id = row.id AND status = 'RUNNING';
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'dead_letter', 'jobId', row.id, 'jobStatus', 'DEAD_LETTER');
+    END IF;
+    PERFORM admin_private.finish_job_attempt_v1(row.id, row.lease_token, 'LEASE_EXPIRED', 'Lease expired before completion');
+  ELSIF row.attempts >= row.max_attempts THEN
+    UPDATE admin_private.jobs
+      SET status = 'DEAD_LETTER', dead_lettered_at = now(), lease_expires_at = NULL,
+          lease_owner = NULL, lease_token = NULL,
+          last_error = 'Maximum attempts exhausted after worker lease expiry',
+          updated_at = now(), record_version = row.record_version + 1
+      WHERE id = row.id AND status IN ('PENDING', 'RETRY');
+    RETURN jsonb_build_object('status', 'denied', 'reason', 'dead_letter', 'jobId', row.id, 'jobStatus', 'DEAD_LETTER');
+  END IF;
+
+  token := extensions.gen_random_uuid();
+  SELECT coalesce(max(a.attempt_number), 0) + 1 INTO attempt_no
+  FROM admin_private.job_attempts a WHERE a.job_id = row.id;
+  UPDATE admin_private.jobs
+    SET status = 'RUNNING', claimed_at = now(),
+        lease_expires_at = now() + make_interval(secs => 120),
+        lease_owner = 'dev-mail-dispatch', lease_token = token,
+        attempts = row.attempts + 1, updated_at = now(),
+        record_version = row.record_version + 1
+    WHERE id = row.id AND attempts < max_attempts
+    RETURNING * INTO row;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'conflict', 'reason', 'leased');
+  END IF;
+  INSERT INTO admin_private.job_attempts(job_id, attempt_number, lease_owner, lease_token, deployment_id)
+  VALUES (row.id, attempt_no, 'dev-mail-dispatch', token, NULL);
+
+  RETURN jsonb_build_object(
+    'status', 'success',
+    'replay', false,
+    'jobId', row.id,
+    'jobType', row.job_type,
+    'idempotencyKey', row.idempotency_key,
+    'payload', row.payload,
+    'leaseToken', token,
+    'attemptNumber', row.attempts,
+    'attempts', row.attempts,
+    'maxAttempts', row.max_attempts
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.communication_begin_provider_attempt_v1(
+  p_communication uuid, p_content_version integer, p_idempotency_key text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE row public.communications; started timestamptz; permitted boolean;
+BEGIN
+  IF p_communication IS NULL OR p_content_version IS NULL OR p_content_version < 1 THEN
+    RETURN jsonb_build_object('status', 'unavailable');
+  END IF;
+  SELECT * INTO row FROM public.communications WHERE id = p_communication FOR UPDATE;
+  IF row.id IS NULL OR row.lifecycle <> 'QUEUED' OR row.content_locked IS NOT TRUE
+    OR row.content_version <> p_content_version
+  THEN RETURN jsonb_build_object('status', 'unavailable'); END IF;
+  IF p_idempotency_key IS NULL
+    OR p_idempotency_key <> ('send-email:' || row.id::text || ':v' || row.content_version::text)
+  THEN RETURN jsonb_build_object('status', 'conflict'); END IF;
+  IF row.delivery_status IN ('DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED')
+    OR EXISTS (
+      SELECT 1 FROM admin_private.email_suppressions s
+      WHERE s.address_normalized = admin_private.normalize_email_v1(row.recipient)
+    )
+  THEN RETURN jsonb_build_object('status', 'denied'); END IF;
+  IF row.template_key = 'TELLOYA_OFFER' THEN
+    IF row.case_id IS NOT NULL
+      OR row.commercial_subscription_id IS NULL
+      OR NOT EXISTS (
+        SELECT 1 FROM public.commercial_subscriptions sub
+        WHERE sub.id = row.commercial_subscription_id
+          AND sub.customer_id = row.customer_id
+          AND sub.business_id = row.business_id
+      )
+      OR admin_private.telloya_offer_mail_test_recipient_permitted_v1(
+           row.customer_id, admin_private.normalize_email_v1(row.recipient)
+         ) IS DISTINCT FROM true
+    THEN
+      RETURN jsonb_build_object('status', 'denied', 'reason', 'test_recipient_not_allowed');
+    END IF;
+  END IF;
+  IF row.delivery_status IN ('PROVIDER_ACCEPTED', 'TRANSIENT_BOUNCE', 'UNDETERMINED_BOUNCE') THEN
+    RETURN jsonb_build_object(
+      'status', 'success',
+      'firstProviderAttemptAt', row.first_provider_attempt_at,
+      'providerCallPermitted', false
+    );
+  END IF;
+  UPDATE public.communications
+    SET first_provider_attempt_at = coalesce(first_provider_attempt_at, now()),
+        updated_at = now()
+    WHERE id = row.id
+    RETURNING first_provider_attempt_at INTO started;
+  permitted := started IS NOT NULL AND started > now() - interval '23 hours';
+  RETURN jsonb_build_object(
+    'status', 'success',
+    'firstProviderAttemptAt', started,
+    'providerCallPermitted', permitted
+  );
+END; $$;
+
+
+REVOKE ALL ON FUNCTION admin_private.dev_mail_link_reason_v1(text, text, text, text, text)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.dev_mail_dispatch_candidates_v1(integer, text)
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.dev_mail_dispatch_claim_v1(uuid, text)
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.communication_begin_provider_attempt_v1(uuid, integer, text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_candidates_v1(integer, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.dev_mail_dispatch_claim_v1(uuid, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.communication_begin_provider_attempt_v1(uuid, integer, text) TO service_role;

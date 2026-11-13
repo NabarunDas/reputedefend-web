@@ -192,9 +192,10 @@ async function offerRow(enquiryId: string) {
 async function provisionTestRecipient(email: string, customerId: string) {
   const grantRef = `grant_${randomUUID().replaceAll("-", "")}`
   await db.query(
-    `insert into admin_private.telloya_offer_mail_test_owner_grants(grant_ref, purpose, enabled, expires_at, note)
-     values ($1, 'telloya_offer_mail_test', true, now() + interval '1 hour', 'disposable')`,
-    [grantRef],
+    `insert into admin_private.telloya_offer_mail_test_owner_grants(
+      grant_ref, purpose, bound_customer_id, bound_email_hash, enabled, expires_at, note
+    ) values ($1, 'telloya_offer_mail_test', $2, md5(admin_private.normalize_email_v1($3)), true, now() + interval '1 hour', 'disposable')`,
+    [grantRef, customerId, email],
   )
   const result = await rpc<Result>("telloya_offer_mail_test_recipient_provision_v1", [
     grantRef, randomUUID(), customerId, email, "disposable",

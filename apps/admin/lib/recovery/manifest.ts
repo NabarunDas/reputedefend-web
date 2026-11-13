@@ -1932,14 +1932,18 @@ export const migrationChain: readonly MigrationEntry[] = [
     verification: { category: "Telloya approve send", probe: "public.telloya_prepare_offer_from_draft_v1" },
   },
   {
-    // ADMIN-TY-R8-D-01A: fail-closed Telloya offer mail test-recipient allowlist.
-    // SOURCE-ONLY. appliedToDev false until the owner explicitly approves a DEV
-    // apply. Do not apply to Production. Do not edit or replay 20261112223000.
-    // Schema and functions only: containsDataChange false. Seeds no recipient
-    // addresses and does not enable mail_control or approve templates.
-    // Repository file is 37,913 characters. MD5 c1fd986a1f92efcf9efdc815eea303b2.
-    // SHA-256 d9285979cb6440ece8aa6c140ba631763229a3cdf162a53333bbb1add5eefdb3.
+    // ADMIN-TY-R8-D-01A / R1 / R2: fail-closed Telloya offer mail test-recipient
+    // allowlist. SOURCE-ONLY. appliedToDev false until the owner explicitly
+    // approves a DEV apply. Do not apply to Production. Do not edit or replay
+    // 20261112223000. Schema and functions only: containsDataChange false.
+    // Seeds no recipient addresses and does not enable mail_control or approve
+    // templates. Repository file is 71,076 characters.
+    // MD5 40c729c2c82fb8bd31ede147f6f82df1.
+    // SHA-256 81a79f15b31b074567fd34a01942ef6f90695890fa7cb10a31aef5106efeac27.
     // R1: customer_id required; owner-grant provision only; TELLOYA_OFFER dispatch recheck.
+    // R2: grants bind bound_customer_id + bound_email_hash; automatic
+    // dev_mail_dispatch_candidates_v1 / claim_v1 support TELLOYA_OFFER;
+    // communication_begin_provider_attempt_v1 rechecks allowlist.
     version: "20261113120000",
     filename: "20261113120000_telloya_offer_mail_test_allowlist_v1.sql",
     step: "Telloya offer mail test-recipient allowlist",
@@ -2107,9 +2111,11 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `pendingMigrations()` returns only `20261113120000_telloya_offer_mail_test_allowlist_v1.sql`.
  * The repository migration head is `20261113120000`. That allowlist migration is
  * source-only (`appliedToDev` false; `containsDataChange` false; `safeToReplay`
- * false). Repository file is 37,913 characters. MD5 c1fd986a1f92efcf9efdc815eea303b2.
- * SHA-256 d9285979cb6440ece8aa6c140ba631763229a3cdf162a53333bbb1add5eefdb3. Do not
- * apply it to DEV or Production without owner approval. `20261112223000`
+ * false). Repository file is 71,076 characters. MD5 40c729c2c82fb8bd31ede147f6f82df1.
+ * SHA-256 81a79f15b31b074567fd34a01942ef6f90695890fa7cb10a31aef5106efeac27.
+ * R2 binds owner grants to customer+email and extends automatic develop dispatch
+ * for TELLOYA_OFFER. Do not apply it to DEV or Production without owner approval.
+ * `20261112223000`
  * telloya_approve_send_offer_v1 was applied once to DEV. The repository file is 45,006 characters. MD5
  * d8bdfefcb0bef55f8dcc8b62979e20bf. SHA-256
  * f5ba88fb55086cdbc409e53aa4d305864b729ebcf8a0905637c4f62c3fa8e6ea.

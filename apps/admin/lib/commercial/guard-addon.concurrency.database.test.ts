@@ -299,8 +299,12 @@ describe.skipIf(!pgBin)("concurrent Telloya offer preparation", () => {
     }
     await psql("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true)")
     const grantRef = `grant_${randomUUID().replaceAll("-", "")}`
-    await psql(`insert into admin_private.telloya_offer_mail_test_owner_grants(grant_ref, purpose, enabled, expires_at, note)
-      values ('${grantRef}', 'telloya_offer_mail_test', true, now() + interval '1 hour', 'disposable')`)
+    await psql(`insert into admin_private.telloya_offer_mail_test_owner_grants(
+      grant_ref, purpose, bound_customer_id, bound_email_hash, enabled, expires_at, note
+    ) values (
+      '${grantRef}', 'telloya_offer_mail_test', '${customerId}'::uuid,
+      md5(admin_private.normalize_email_v1('${email}')), true, now() + interval '1 hour', 'disposable'
+    )`)
     const provisioned = JSON.parse(await psql(
       `select public.telloya_offer_mail_test_recipient_provision_v1('${grantRef}', '${randomUUID()}'::uuid, '${customerId}'::uuid, '${email}', 'disposable')::text`,
     ))
@@ -419,8 +423,12 @@ describe.skipIf(!pgBin)("concurrent Telloya offer preparation", () => {
     }
     await psql("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true) on conflict (singleton) do update set mail_enabled = true")
     const grantRef = `grant_${randomUUID().replaceAll("-", "")}`
-    await psql(`insert into admin_private.telloya_offer_mail_test_owner_grants(grant_ref, purpose, enabled, expires_at, note)
-      values ('${grantRef}', 'telloya_offer_mail_test', true, now() + interval '1 hour', 'disposable')`)
+    await psql(`insert into admin_private.telloya_offer_mail_test_owner_grants(
+      grant_ref, purpose, bound_customer_id, bound_email_hash, enabled, expires_at, note
+    ) values (
+      '${grantRef}', 'telloya_offer_mail_test', '${customerId}'::uuid,
+      md5(admin_private.normalize_email_v1('${email}')), true, now() + interval '1 hour', 'disposable'
+    )`)
     const provisioned = JSON.parse(await psql(
       `select public.telloya_offer_mail_test_recipient_provision_v1('${grantRef}', '${randomUUID()}'::uuid, '${customerId}'::uuid, '${email}', 'disposable')::text`,
     ))

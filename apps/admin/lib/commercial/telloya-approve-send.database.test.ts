@@ -144,9 +144,10 @@ async function approveTemplate() {
 async function provisionTestRecipient(email: string, customerId: string) {
   const grantRef = `grant_${randomUUID().replaceAll("-", "")}`
   await db.query(
-    `insert into admin_private.telloya_offer_mail_test_owner_grants(grant_ref, purpose, enabled, expires_at, note)
-     values ($1, 'telloya_offer_mail_test', true, now() + interval '1 hour', 'disposable')`,
-    [grantRef],
+    `insert into admin_private.telloya_offer_mail_test_owner_grants(
+      grant_ref, purpose, bound_customer_id, bound_email_hash, enabled, expires_at, note
+    ) values ($1, 'telloya_offer_mail_test', $2, md5(admin_private.normalize_email_v1($3)), true, now() + interval '1 hour', 'disposable')`,
+    [grantRef, customerId, email],
   )
   const result = await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_provision_v1", [
     grantRef, randomUUID(), customerId, email, "disposable",
@@ -805,9 +806,10 @@ describe("Telloya offer mail test-recipient allowlist", () => {
     const mismatch = await preparedOffer("r8.owner.mismatch@example.test")
     const grantRef = `grant_${randomUUID().replaceAll("-", "")}`
     await db.query(
-      `insert into admin_private.telloya_offer_mail_test_owner_grants(grant_ref, purpose, enabled, expires_at, note)
-       values ($1, 'telloya_offer_mail_test', true, now() + interval '1 hour', 'mismatch')`,
-      [grantRef],
+      `insert into admin_private.telloya_offer_mail_test_owner_grants(
+        grant_ref, purpose, bound_customer_id, bound_email_hash, enabled, expires_at, note
+      ) values ($1, 'telloya_offer_mail_test', $2, md5(admin_private.normalize_email_v1($3)), true, now() + interval '1 hour', 'mismatch')`,
+      [grantRef, mismatch.opened.customer_id, "r8.owner.mismatch@example.test"],
     )
     expect(await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_provision_v1", [
       grantRef, randomUUID(), mismatch.opened.customer_id, email, "wrong email",
@@ -817,6 +819,30 @@ describe("Telloya offer mail test-recipient allowlist", () => {
       "select consumed_at from admin_private.telloya_offer_mail_test_owner_grants where grant_ref = $1",
       [grantRef],
     ))[0].consumed_at).toBeNull()
+
+    const wrongCustomerGrant = `grant_${randomUUID().replaceAll("-", "")}`
+    await db.query(
+      `insert into admin_private.telloya_offer_mail_test_owner_grants(
+        grant_ref, purpose, bound_customer_id, bound_email_hash, enabled, expires_at, note
+      ) values ($1, 'telloya_offer_mail_test', $2, md5(admin_private.normalize_email_v1($3)), true, now() + interval '1 hour', 'bound customer')`,
+      [wrongCustomerGrant, opened.customer_id, email],
+    )
+    expect(await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_provision_v1", [
+      wrongCustomerGrant, randomUUID(), mismatch.opened.customer_id, "r8.owner.mismatch@example.test", "wrong customer",
+    ])).toMatchObject({ status: "denied", reason: "grant_customer_mismatch" })
+    expect(await allowlistCount()).toBe(beforeRows)
+
+    const wrongEmailGrant = `grant_${randomUUID().replaceAll("-", "")}`
+    await db.query(
+      `insert into admin_private.telloya_offer_mail_test_owner_grants(
+        grant_ref, purpose, bound_customer_id, bound_email_hash, enabled, expires_at, note
+      ) values ($1, 'telloya_offer_mail_test', $2, md5(admin_private.normalize_email_v1($3)), true, now() + interval '1 hour', 'bound email')`,
+      [wrongEmailGrant, opened.customer_id, "r8.owner.otherbound@example.test"],
+    )
+    expect(await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_provision_v1", [
+      wrongEmailGrant, randomUUID(), opened.customer_id, email, "wrong bound email",
+    ])).toMatchObject({ status: "denied", reason: "grant_email_mismatch" })
+    expect(await allowlistCount()).toBe(beforeRows)
 
     const provisioned = await provisionTestRecipient(email, opened.customer_id)
     expect(provisioned).toMatchObject({ status: "success", enabled: true, customerId: opened.customer_id })

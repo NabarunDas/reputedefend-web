@@ -1937,8 +1937,9 @@ export const migrationChain: readonly MigrationEntry[] = [
     // apply. Do not apply to Production. Do not edit or replay 20261112223000.
     // Schema and functions only: containsDataChange false. Seeds no recipient
     // addresses and does not enable mail_control or approve templates.
-    // Repository file is 17,578 characters. MD5 65784a64d3494ae62ffab902fb5edf66.
-    // SHA-256 999c82d15794bbf345dd228353e4446fb0333ebc50525b82b328d59300eae497.
+    // Repository file is 37,913 characters. MD5 c1fd986a1f92efcf9efdc815eea303b2.
+    // SHA-256 d9285979cb6440ece8aa6c140ba631763229a3cdf162a53333bbb1add5eefdb3.
+    // R1: customer_id required; owner-grant provision only; TELLOYA_OFFER dispatch recheck.
     version: "20261113120000",
     filename: "20261113120000_telloya_offer_mail_test_allowlist_v1.sql",
     step: "Telloya offer mail test-recipient allowlist",
@@ -1946,7 +1947,7 @@ export const migrationChain: readonly MigrationEntry[] = [
     appliedToDev: false,
     containsDataChange: false,
     safeToReplay: false,
-    verification: { category: "Telloya offer mail test allowlist", probe: "public.telloya_offer_mail_test_recipient_command_v1" },
+    verification: { category: "Telloya offer mail test allowlist", probe: "public.telloya_offer_mail_test_recipient_provision_v1" },
   },
 ]
 
@@ -2106,8 +2107,8 @@ export const migrationHead = migrationChain[migrationChain.length - 1]
  * `pendingMigrations()` returns only `20261113120000_telloya_offer_mail_test_allowlist_v1.sql`.
  * The repository migration head is `20261113120000`. That allowlist migration is
  * source-only (`appliedToDev` false; `containsDataChange` false; `safeToReplay`
- * false). Repository file is 17,578 characters. MD5 65784a64d3494ae62ffab902fb5edf66.
- * SHA-256 999c82d15794bbf345dd228353e4446fb0333ebc50525b82b328d59300eae497. Do not
+ * false). Repository file is 37,913 characters. MD5 c1fd986a1f92efcf9efdc815eea303b2.
+ * SHA-256 d9285979cb6440ece8aa6c140ba631763229a3cdf162a53333bbb1add5eefdb3. Do not
  * apply it to DEV or Production without owner approval. `20261112223000`
  * telloya_approve_send_offer_v1 was applied once to DEV. The repository file is 45,006 characters. MD5
  * d8bdfefcb0bef55f8dcc8b62979e20bf. SHA-256

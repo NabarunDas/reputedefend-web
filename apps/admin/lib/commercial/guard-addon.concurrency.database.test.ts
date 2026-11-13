@@ -298,9 +298,13 @@ describe.skipIf(!pgBin)("concurrent Telloya offer preparation", () => {
       expect(approved.status).toBe("success")
     }
     await psql("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true)")
-    await psql(`insert into admin_private.telloya_offer_mail_test_recipients(email_normalized, customer_id, enabled, note)
-      values (admin_private.normalize_email_v1('${email}'), '${customerId}', true, 'disposable allowlist')
-      on conflict (email_normalized) do update set enabled = true, customer_id = excluded.customer_id`)
+    const grantRef = `grant_${randomUUID().replaceAll("-", "")}`
+    await psql(`insert into admin_private.telloya_offer_mail_test_owner_grants(grant_ref, purpose, enabled, expires_at, note)
+      values ('${grantRef}', 'telloya_offer_mail_test', true, now() + interval '1 hour', 'disposable')`)
+    const provisioned = JSON.parse(await psql(
+      `select public.telloya_offer_mail_test_recipient_provision_v1('${grantRef}', '${randomUUID()}'::uuid, '${customerId}'::uuid, '${email}', 'disposable')::text`,
+    ))
+    expect(provisioned).toMatchObject({ status: "success", customerId, enabled: true })
     const send = (key: string) => `select public.telloya_offer_mail_v1('${token}', '${key}'::uuid, '${subscriptionId}'::uuid, ${version}, 'https://customer.profilerelaunch.com')::text;`
     const leftSession = heldSession()
     const rightSession = heldSession()
@@ -334,6 +338,140 @@ describe.skipIf(!pgBin)("concurrent Telloya offer preparation", () => {
     } finally {
       leftSession.end()
       rightSession.end()
+      await psql("delete from admin_private.telloya_offer_mail_control")
+    }
+  }, 60000)
+
+  it("revokes while a concurrent queue either succeeds first or is denied after revoke", async () => {
+    const plan = randomUUID()
+    const enquiry = randomUUID()
+    const customerId = "c0b1c000-0000-4000-8000-0000000000a3"
+    const email = "concurrent.revoke@example.com"
+    await psql(`
+      insert into auth.users(id, email, email_confirmed_at) values
+        ('c0b1c000-0000-4000-8000-0000000000d3', '${email}', now());
+      insert into public.customers(id, full_name, email) values ('${customerId}', 'Revoke Owner', '${email}');
+      insert into public.customer_contact_verifications(customer_id, channel, verified_value, verified_by, evidence)
+      values ('${customerId}', 'email', '${email}', '${admin}', '${reason}');
+      update public.plan_versions
+        set status = 'RETIRED', retired_by = '${admin}', retired_at = now()
+        where product_code = 'TELLOYA' and tier_code = 'BASIC' and status = 'APPROVED';
+      insert into public.plan_versions(
+        id, product_code, version_number, tier_code, status, effective_from, billing_cadence, currency,
+        amount_minor, tax_behaviour, terms_ref
+      ) values (
+        '${plan}', 'TELLOYA', 3, 'BASIC', 'DRAFT', now() - interval '1 day', 'MONTH', 'GBP',
+        4900, 'NOT_APPLICABLE', 'TELLOYA-BASIC-1'
+      );
+      insert into public.plan_components(plan_version_id, component_code, quantity_limit, scope)
+      values ('${plan}', 'TELLOYA', 1, 'LOCATION');
+      insert into public.commercial_plan_conditions(
+        id, plan_version_id, tier_code, tier_label, included_minutes, minutes_rollover,
+        base_amount_minor, guard_unit_amount_minor, overage_rate_minor, content_hash,
+        status, approved_by, approved_at
+      ) values (
+        '${randomUUID()}', '${plan}', 'BASIC', 'Basic', 120, false, 4900, 999, 25,
+        admin_private.commercial_plan_conditions_hash_v1('BASIC', 120, false, 4900, 999, 25),
+        'APPROVED', '${admin}', now()
+      );
+      update public.plan_versions set status = 'APPROVED', approved_by = '${admin}', approved_at = now() where id = '${plan}';
+      insert into public.enquiries(id, submission_key, fingerprint, source, payload, public_ref, internal_status, ack_status)
+      values (
+        '${enquiry}', gen_random_uuid(), md5('concurrent-revoke'), 'telloya',
+        jsonb_build_object(
+          'fullName', 'Revoke Owner', 'email', '${email}', 'phone', '07123456789',
+          'businessName', 'Revoke Shop', 'country', 'United Kingdom', 'service', 'telloya',
+          'subject', 'Telloya receptionist', 'details', 'Please set up Telloya for this shop.',
+          'source', 'telloya', 'planTier', 'basic', 'guardInterested', false, 'guardLocationCount', 0,
+          'overageInterested', false
+        ),
+        'TY-26-RVK2AA', 'SKIPPED', 'SKIPPED'
+      );
+      insert into admin_private.telloya_admin_demos(enquiry_id, status, completed_at)
+      values ('${enquiry}', 'COMPLETED', now());
+    `)
+    const call = (operation: string, payload: Record<string, unknown>, version: number) =>
+      `select public.admin_commercial_command_v1('${token}', '${randomUUID()}'::uuid, '${operation}', '${JSON.stringify(payload).replace(/'/g, "''")}'::jsonb, ${version})::text`
+    const opened = JSON.parse(await psql(call("classify", { enquiryId: enquiry, product: "TELLOYA", reason }, 0)))
+    expect(opened.status).toBe("success")
+    const matched = JSON.parse(await psql(call("match_customer", { enquiryId: enquiry, customerId, reason }, opened.version)))
+    expect(matched.status).toBe("success")
+    const business = JSON.parse(await psql(call("match_business", {
+      enquiryId: enquiry, create: true, name: "Revoke Shop", website: "", membership: "verified", reason,
+    }, matched.version)))
+    expect(business.status).toBe("success")
+    const located = JSON.parse(await psql(call("select_locations", {
+      enquiryId: enquiry, locationIds: [], create: true, locationName: "Revoke yard", country: "United Kingdom", reason,
+    }, business.version)))
+    expect(located.status).toBe("success")
+    const prepared = JSON.parse(await psql(call("prepare_offer", {
+      enquiryId: enquiry, planVersionId: plan, guardLocationIds: [], reason,
+    }, located.version)))
+    expect(prepared.status).toBe("success")
+    const subscription = await psql(`select id::text || '|' || record_version::text from public.commercial_subscriptions where business_id = (select business_id from public.onboarding_requests where enquiry_id = '${enquiry}')`)
+    const [subscriptionId, version] = subscription.split("|")
+    const template = await psql("select id::text || '|' || record_version::text || '|' || status from admin_private.communication_templates where template_key = 'TELLOYA_OFFER' and version = 1")
+    const [templateId, templateVersion, templateStatus] = template.split("|")
+    if (templateStatus !== "APPROVED") {
+      await psql(`update public.admin_sessions set created_at = now() where token_hash = '${token}'`)
+      const approved = JSON.parse(await psql(`select public.admin_settings_command_v1('${token}', '${randomUUID()}'::uuid, 'approve_template_draft', jsonb_build_object('id', '${templateId}'), ${templateVersion})::text`))
+      expect(approved.status).toBe("success")
+    }
+    await psql("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true) on conflict (singleton) do update set mail_enabled = true")
+    const grantRef = `grant_${randomUUID().replaceAll("-", "")}`
+    await psql(`insert into admin_private.telloya_offer_mail_test_owner_grants(grant_ref, purpose, enabled, expires_at, note)
+      values ('${grantRef}', 'telloya_offer_mail_test', true, now() + interval '1 hour', 'disposable')`)
+    const provisioned = JSON.parse(await psql(
+      `select public.telloya_offer_mail_test_recipient_provision_v1('${grantRef}', '${randomUUID()}'::uuid, '${customerId}'::uuid, '${email}', 'disposable')::text`,
+    ))
+    expect(provisioned).toMatchObject({ status: "success", enabled: true })
+
+    const queueSql = `select public.telloya_offer_mail_v1('${token}', '${randomUUID()}'::uuid, '${subscriptionId}'::uuid, ${version}, 'https://customer.profilerelaunch.com')::text;`
+    const revokeSql = `select public.telloya_offer_mail_test_recipient_command_v1('${token}', '${randomUUID()}'::uuid, 'revoke', jsonb_build_object('customerId', '${customerId}', 'expectedVersion', ${provisioned.version}))::text;`
+    const queueSession = heldSession()
+    const revokeSession = heldSession()
+    try {
+      await queueSession.query("BEGIN;")
+      await revokeSession.query("BEGIN;")
+      const queuePromise = queueSession.query(queueSql)
+      const revokePromise = revokeSession.query(revokeSql)
+      const first = await Promise.race([
+        queuePromise.then(result => ({ who: "queue" as const, result })),
+        revokePromise.then(result => ({ who: "revoke" as const, result })),
+      ])
+      const secondPromise = first.who === "queue" ? revokePromise : queuePromise
+      if (first.who === "queue") await queueSession.query("COMMIT;")
+      else await revokeSession.query("COMMIT;")
+      const secondResult = await secondPromise
+      if (first.who === "queue") await revokeSession.query("COMMIT;")
+      else await queueSession.query("COMMIT;")
+
+      const parse = (result: { stdout: string; stderr: string }) => {
+        const text = result.stdout
+        const start = text.indexOf("{")
+        const end = text.lastIndexOf("}")
+        if (start < 0 || end < start) throw new Error(`expected JSON\nSTDOUT:\n${text}\nSTDERR:\n${result.stderr}`)
+        return JSON.parse(text.slice(start, end + 1)) as { status: string; reason?: string; enabled?: boolean }
+      }
+      const firstParsed = parse(first.result)
+      const secondParsed = parse(secondResult)
+      const byWho = first.who === "queue"
+        ? { queue: firstParsed, revoke: secondParsed }
+        : { queue: secondParsed, revoke: firstParsed }
+      expect(byWho.revoke).toMatchObject({ status: "success", enabled: false })
+      expect(["queued", "denied"]).toContain(byWho.queue.status)
+      if (byWho.queue.status === "denied") {
+        expect(byWho.queue.reason).toBe("test_recipient_not_allowed")
+        expect(await psql(`select count(*) from public.communications where commercial_subscription_id = '${subscriptionId}'`)).toBe("0")
+      } else {
+        expect(await psql(`select count(*) from public.communications where commercial_subscription_id = '${subscriptionId}'`)).toBe("1")
+      }
+      expect(await psql(
+        `select admin_private.telloya_offer_mail_test_recipient_permitted_v1('${customerId}'::uuid, admin_private.normalize_email_v1('${email}'))::text`,
+      )).toBe("false")
+    } finally {
+      queueSession.end()
+      revokeSession.end()
       await psql("delete from admin_private.telloya_offer_mail_control")
     }
   }, 60000)

@@ -189,14 +189,18 @@ async function offerRow(enquiryId: string) {
   ))[0]
 }
 
-async function authorizeTestRecipient(email: string, customerId: string) {
+async function provisionTestRecipient(email: string, customerId: string) {
+  const grantRef = `grant_${randomUUID().replaceAll("-", "")}`
   await db.query(
-    `insert into admin_private.telloya_offer_mail_test_recipients(email_normalized, customer_id, enabled, note)
-     values (admin_private.normalize_email_v1($1), $2, true, 'disposable allowlist')
-     on conflict (email_normalized) do update
-       set enabled = true, customer_id = excluded.customer_id`,
-    [email, customerId],
+    `insert into admin_private.telloya_offer_mail_test_owner_grants(grant_ref, purpose, enabled, expires_at, note)
+     values ($1, 'telloya_offer_mail_test', true, now() + interval '1 hour', 'disposable')`,
+    [grantRef],
   )
+  const result = await rpc<Result>("telloya_offer_mail_test_recipient_provision_v1", [
+    grantRef, randomUUID(), customerId, email, "disposable",
+  ])
+  expect(result).toMatchObject({ status: "success", customerId, enabled: true })
+  return result
 }
 
 async function submit(session: string, selector: string, priceMinor: number) {
@@ -791,7 +795,7 @@ describe("Telloya commercial readiness rehearsal", () => {
     ])).toMatchObject({ status: "denied", reason: "test_recipient_not_allowed" })
     expect((await rows<{ n: number }>("select count(*)::int as n from public.communications where template_key = 'TELLOYA_OFFER'"))[0].n).toBe(beforeAllow)
     expect((await rows<{ n: number }>("select count(*)::int as n from admin_private.job_outbox where topic = 'SEND_EMAIL'"))[0].n).toBe(beforeAllowOutbox)
-    await authorizeTestRecipient("amend.mail@example.test", mailOffer.customer_id)
+    await provisionTestRecipient("amend.mail@example.test", mailOffer.customer_id)
     expect(await rpc<Result>("telloya_offer_mail_v1", [
       token, randomUUID(), mailOffer.id, mailOffer.record_version, "https://customer.profilerelaunch.com",
     ])).toMatchObject({ status: "template_unapproved" })
@@ -877,7 +881,7 @@ describe("Telloya commercial readiness rehearsal", () => {
       await db.query("update public.enquiries set source = 'telloya', public_ref = $2 where id = $1", [opened.enquiryId, item.ref])
       await db.query("insert into admin_private.telloya_admin_demos(enquiry_id, status, completed_at) values ($1, 'COMPLETED', now())", [opened.enquiryId])
       const offer = await offerRow(opened.enquiryId)
-      await authorizeTestRecipient(item.email, offer.customer_id)
+      await provisionTestRecipient(item.email, offer.customer_id)
       const queued = await rpc<Result>("telloya_offer_mail_v1", [
         token, randomUUID(), offer.id, offer.record_version, "https://customer.profilerelaunch.com",
       ])
@@ -930,7 +934,7 @@ describe("Telloya commercial readiness rehearsal", () => {
       token, randomUUID(), phoneOffer.id, phoneOffer.record_version, "https://customer.profilerelaunch.com",
     ])).toMatchObject({ status: "ineligible" })
     expect((await rows<{ n: number }>("select count(*)::int as n from public.communications where template_key = 'TELLOYA_OFFER'"))[0].n).toBe(before)
-    await authorizeTestRecipient("gate.demo@example.test", offer.customer_id)
+    await provisionTestRecipient("gate.demo@example.test", offer.customer_id)
     expect(await rpc<Result>("telloya_offer_mail_v1", [
       token, randomUUID(), offer.id, offer.record_version, "https://customer.profilerelaunch.com",
     ])).toMatchObject({ status: "queued", deliveryStatus: "NONE" })
@@ -958,7 +962,7 @@ describe("Telloya commercial readiness rehearsal", () => {
     }
 
     const agreementOffer = await openTelloya("mail.agree@example.test", "TY-26-AGREE2", telloyaCataloguePlans.basicCap1)
-    await authorizeTestRecipient("mail.agree@example.test", agreementOffer.customer_id)
+    await provisionTestRecipient("mail.agree@example.test", agreementOffer.customer_id)
     const beforeAgreement = await counts(agreementOffer.id)
     await db.query(
       `update public.commercial_agreement_versions
@@ -972,7 +976,7 @@ describe("Telloya commercial readiness rehearsal", () => {
     expect(await counts(agreementOffer.id)).toEqual(beforeAgreement)
 
     const taxOffer = await openTelloya("mail.tax@example.test", "TY-26-TAX2AA")
-    await authorizeTestRecipient("mail.tax@example.test", taxOffer.customer_id)
+    await provisionTestRecipient("mail.tax@example.test", taxOffer.customer_id)
     const beforeTax = await counts(taxOffer.id)
     await db.exec("alter table public.commercial_subscriptions disable trigger commercial_subscriptions_guard")
     await db.query("update public.commercial_subscriptions set tax_behaviour = 'EXCLUSIVE', tax_amount_minor = 0 where id = $1", [taxOffer.id])

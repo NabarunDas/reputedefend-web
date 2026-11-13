@@ -23,7 +23,7 @@
 | `20261112180000` | DONE applied once to DEV | Byte-identical 18,615 chars; do not replay or apply to Production |
 | `20261112210000` | DONE applied once to DEV | Draft storage; 17,672 chars; do not replay or apply to Production |
 | `20261112223000` | DONE applied once to DEV | R8 approve/send + draft preview + published price match + composer contract V1; 45,006 chars; do not replay or apply to Production |
-| `20261113120000` | SOURCE-ONLY (not applied) | Fail-closed offer-mail test-recipient allowlist; `appliedToDev: false`; do not apply without owner approval |
+| `20261113120000` | SOURCE-ONLY (not applied) | R1 hardened fail-closed offer-mail test allowlist (owner-grant provision; required customer_id); `appliedToDev: false`; do not apply without owner approval |
 
 ## What is implemented
 
@@ -94,6 +94,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | ADMIN-TY-R8-D-00 | DONE as documentation | `8bdcfc4630903e0723e8c8d8a5ca2f9e6ac88d3e` | Commercial reuse audit and owner decision pack only. Pricing/policy already approved are not re-asked. Open: agreement, privacy supplement, tax, hosted catalogue, template, sender/recipient, mail-control, controlled DEV send, Stripe Checkout deps (R9). |
 | ADMIN-TY-R8-D-01 | PLANNED (not authorised) | — | Bounded enablement plan after owner signs R8-D-00 open rows. No seed, send, Stripe, or Production in this docs slice. |
 | ADMIN-TY-R8-D-01A | DONE in source | `516a58dbf3e55c29068ebe292773d1201a530324` | Legal candidates + unresolved confirmations; source-only mail test allowlist migration; DRAFT catalogue runbook. No hosted apply, send, template approve, or Stripe. |
+| ADMIN-TY-R8-D-01A-R1 | DONE in source | *(tip after R1 commit)* | Owner-grant provision only; required customer_id + verified email; Admin authorize denied; TELLOYA_OFFER dispatch recheck; shutdown/revoke. Allowlist remains source-only. |
 
 ## Test matrix
 

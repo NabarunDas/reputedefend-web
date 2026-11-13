@@ -141,14 +141,31 @@ async function approveTemplate() {
   expect(approved.status).toBe("success")
 }
 
-async function authorizeTestRecipient(email: string, customerId: string) {
+async function provisionTestRecipient(email: string, customerId: string) {
+  const grantRef = `grant_${randomUUID().replaceAll("-", "")}`
   await db.query(
-    `insert into admin_private.telloya_offer_mail_test_recipients(email_normalized, customer_id, enabled, note)
-     values (admin_private.normalize_email_v1($1), $2, true, 'disposable allowlist')
-     on conflict (email_normalized) do update
-       set enabled = true, customer_id = excluded.customer_id`,
-    [email, customerId],
+    `insert into admin_private.telloya_offer_mail_test_owner_grants(grant_ref, purpose, enabled, expires_at, note)
+     values ($1, 'telloya_offer_mail_test', true, now() + interval '1 hour', 'disposable')`,
+    [grantRef],
   )
+  const result = await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_provision_v1", [
+    grantRef, randomUUID(), customerId, email, "disposable",
+  ])
+  expect(result).toMatchObject({ status: "success", customerId, enabled: true })
+  return result
+}
+
+async function allowlistCount() {
+  return (await rows<{ n: number }>(
+    "select count(*)::int as n from admin_private.telloya_offer_mail_test_recipients",
+  ))[0].n
+}
+
+async function recipientPermitted(customerId: string, email: string) {
+  return (await rows<{ permitted: boolean }>(
+    `select admin_private.telloya_offer_mail_test_recipient_permitted_v1($1, admin_private.normalize_email_v1($2)) as permitted`,
+    [customerId, email],
+  ))[0].permitted
 }
 
 async function installApprovedCustomMinutes(amountMinor: number, minutes: number) {
@@ -296,7 +313,7 @@ describe("Telloya approve-and-send from saved draft", () => {
       "select count(*)::int as n from admin_private.job_outbox where topic = 'SEND_EMAIL'",
     ))[0].n).toBe(beforeAllowOutbox)
 
-    await authorizeTestRecipient("r8.custom@example.test", opened.customer_id)
+    await provisionTestRecipient("r8.custom@example.test", opened.customer_id)
     const templateBlocked = await rpc<Record<string, unknown>>("telloya_offer_mail_v1", [
       token, randomUUID(), blocked.subscriptionId, blocked.version, "https://localhost",
     ])
@@ -554,7 +571,7 @@ describe("Telloya approve-and-send from saved draft", () => {
     ])
     expect(prepared).toMatchObject({ status: "success" })
     await db.query("insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true) on conflict (singleton) do update set mail_enabled = true")
-    await authorizeTestRecipient("r8.composer@example.test", opened.customer_id)
+    await provisionTestRecipient("r8.composer@example.test", opened.customer_id)
 
     const nextVersion = (await rows<{ version: number }>(
       `select coalesce(max(version), 0) + 1 as version from admin_private.communication_templates
@@ -700,7 +717,7 @@ describe("Telloya offer mail test-recipient allowlist", () => {
     return { opened, prepared }
   }
 
-  it("queues when allowlisted, blocks when not, blocks after revoke, and replays once", async () => {
+  it("queues when provisioned, blocks when not, blocks wrong customer, and replays once", async () => {
     const email = "r8.allowlist@example.test"
     const { opened, prepared } = await preparedOffer(email)
     await approveTemplate()
@@ -724,7 +741,8 @@ describe("Telloya offer mail test-recipient allowlist", () => {
       [prepared.subscriptionId],
     ))[0]).toEqual(before)
 
-    await authorizeTestRecipient(email, opened.customer_id)
+    await provisionTestRecipient(email, opened.customer_id)
+    expect(await recipientPermitted(opened.customer_id, email)).toBe(true)
     const queued = await rpc<Record<string, unknown>>("telloya_offer_mail_v1", [
       token, randomUUID(), prepared.subscriptionId, prepared.version, "https://localhost",
     ])
@@ -749,6 +767,7 @@ describe("Telloya offer mail test-recipient allowlist", () => {
       `select count(*)::int as n from public.communications where commercial_subscription_id = $1`,
       [other.prepared.subscriptionId],
     ))[0].n
+    expect(await recipientPermitted(other.opened.customer_id, "r8.allowlist.other@example.test")).toBe(false)
     expect(await rpc<Record<string, unknown>>("telloya_offer_mail_v1", [
       token, randomUUID(), other.prepared.subscriptionId, other.prepared.version, "https://localhost",
     ])).toMatchObject({ status: "denied", reason: "test_recipient_not_allowed" })
@@ -757,71 +776,133 @@ describe("Telloya offer mail test-recipient allowlist", () => {
       [other.prepared.subscriptionId],
     ))[0].n).toBe(beforeOther)
 
+    await db.query("delete from admin_private.telloya_offer_mail_control")
+  })
+
+  it("denies Admin authorize and requires a usable owner grant for provision", async () => {
+    const email = "r8.owner.grant@example.test"
+    const { opened, prepared } = await preparedOffer(email)
+    await approveTemplate()
     await db.query(
-      `update admin_private.telloya_offer_mail_test_recipients
-       set enabled = false, record_version = record_version + 1
-       where email_normalized = admin_private.normalize_email_v1($1)`,
-      [email],
+      "insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true) on conflict (singleton) do update set mail_enabled = true",
     )
-    // Existing communication still replays; a fresh subscription is blocked after revoke.
-    const revoked = await preparedOffer("r8.allowlist.revoked@example.test")
-    await authorizeTestRecipient("r8.allowlist.revoked@example.test", revoked.opened.customer_id)
+    const beforeRows = await allowlistCount()
+
+    expect(await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_command_v1", [
+      token, randomUUID(), "authorize", {
+        email,
+        customerId: opened.customer_id,
+        note: "admin cannot enrol",
+      },
+    ])).toMatchObject({ status: "denied", reason: "owner_provision_required" })
+    expect(await allowlistCount()).toBe(beforeRows)
+
+    expect(await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_provision_v1", [
+      `missing_${randomUUID().replaceAll("-", "")}`, randomUUID(), opened.customer_id, email, "no grant",
+    ])).toMatchObject({ status: "denied", reason: "grant_not_found" })
+    expect(await allowlistCount()).toBe(beforeRows)
+
+    const mismatch = await preparedOffer("r8.owner.mismatch@example.test")
+    const grantRef = `grant_${randomUUID().replaceAll("-", "")}`
     await db.query(
-      `update admin_private.telloya_offer_mail_test_recipients
-       set enabled = false, record_version = record_version + 1
-       where email_normalized = admin_private.normalize_email_v1($1)`,
-      ["r8.allowlist.revoked@example.test"],
+      `insert into admin_private.telloya_offer_mail_test_owner_grants(grant_ref, purpose, enabled, expires_at, note)
+       values ($1, 'telloya_offer_mail_test', true, now() + interval '1 hour', 'mismatch')`,
+      [grantRef],
     )
-    const beforeRevoked = (await rows<{ n: number }>(
-      `select count(*)::int as n from public.communications where commercial_subscription_id = $1`,
-      [revoked.prepared.subscriptionId],
-    ))[0].n
+    expect(await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_provision_v1", [
+      grantRef, randomUUID(), mismatch.opened.customer_id, email, "wrong email",
+    ])).toMatchObject({ status: "denied", reason: "email_mismatch" })
+    expect(await allowlistCount()).toBe(beforeRows)
+    expect((await rows<{ consumed_at: string | null }>(
+      "select consumed_at from admin_private.telloya_offer_mail_test_owner_grants where grant_ref = $1",
+      [grantRef],
+    ))[0].consumed_at).toBeNull()
+
+    const provisioned = await provisionTestRecipient(email, opened.customer_id)
+    expect(provisioned).toMatchObject({ status: "success", enabled: true, customerId: opened.customer_id })
+    expect(await allowlistCount()).toBe(beforeRows + 1)
     expect(await rpc<Record<string, unknown>>("telloya_offer_mail_v1", [
-      token, randomUUID(), revoked.prepared.subscriptionId, revoked.prepared.version, "https://localhost",
-    ])).toMatchObject({ status: "denied", reason: "test_recipient_not_allowed" })
-    expect((await rows<{ n: number }>(
-      `select count(*)::int as n from public.communications where commercial_subscription_id = $1`,
-      [revoked.prepared.subscriptionId],
-    ))[0].n).toBe(beforeRevoked)
+      token, randomUUID(), prepared.subscriptionId, prepared.version, "https://localhost",
+    ])).toMatchObject({ status: "queued", deliveryStatus: "NONE" })
+
+    await expect(db.query(
+      `insert into admin_private.telloya_offer_mail_test_recipients(email_normalized, enabled, note, grant_ref)
+       values ('email.only@example.test', true, 'no customer', $1)`,
+      [`grant_${randomUUID().replaceAll("-", "")}`],
+    )).rejects.toThrow()
 
     await db.query("delete from admin_private.telloya_offer_mail_control")
   })
 
-  it("authorises and revokes through telloya_offer_mail_test_recipient_command_v1", async () => {
-    const email = "r8.command.allow@example.test"
+  it("revokes by customerId, blocks queue, and keeps claim denied while communication stays QUEUED", async () => {
+    const email = "r8.command.revoke@example.test"
     const { opened, prepared } = await preparedOffer(email)
     await approveTemplate()
     await db.query(
       "insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true) on conflict (singleton) do update set mail_enabled = true",
     )
 
-    const authorized = await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_command_v1", [
-      token, randomUUID(), "authorize", {
-        email,
-        customerId: opened.customer_id,
-        note: "command authorize",
-      },
-    ])
-    expect(authorized).toMatchObject({
-      status: "success",
-      enabled: true,
-      emailNormalized: email.toLowerCase(),
-    })
-    expect(await rpc<Record<string, unknown>>("telloya_offer_mail_v1", [
+    const provisioned = await provisionTestRecipient(email, opened.customer_id)
+    const queued = await rpc<Record<string, unknown>>("telloya_offer_mail_v1", [
       token, randomUUID(), prepared.subscriptionId, prepared.version, "https://localhost",
-    ])).toMatchObject({ status: "queued", deliveryStatus: "NONE" })
+    ])
+    expect(queued).toMatchObject({ status: "queued", deliveryStatus: "NONE" })
+
+    expect(await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_command_v1", [
+      token, randomUUID(), "revoke", {
+        email,
+        expectedVersion: provisioned.version,
+      },
+    ])).toMatchObject({ status: "invalid", reason: "customerId" })
 
     const revoked = await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_command_v1", [
       token, randomUUID(), "revoke", {
-        email,
-        expectedVersion: authorized.version,
+        customerId: opened.customer_id,
+        expectedVersion: provisioned.version,
       },
     ])
-    expect(revoked).toMatchObject({ status: "success", enabled: false })
+    expect(revoked).toMatchObject({ status: "success", enabled: false, customerId: opened.customer_id })
+    expect(await recipientPermitted(opened.customer_id, email)).toBe(false)
 
-    const again = await preparedOffer("r8.command.allow.again@example.test")
+    const again = await preparedOffer("r8.command.revoke.again@example.test")
     expect(await rpc<Record<string, unknown>>("telloya_offer_mail_v1", [
       token, randomUUID(), again.prepared.subscriptionId, again.prepared.version, "https://localhost",
+    ])).toMatchObject({ status: "denied", reason: "test_recipient_not_allowed" })
+
+    await db.query("update public.admin_sessions set created_at = now() where token_hash = $1", [token])
+    expect(await rpc<Record<string, unknown>>("admin_dev_send_email_claim_v1", [
+      token, randomUUID(), queued.communicationId, true, "https://localhost",
+    ])).toMatchObject({ status: "denied", reason: "test_recipient_not_allowed" })
+    expect((await rows<{ lifecycle: string; delivery_status: string }>(
+      "select lifecycle, delivery_status from public.communications where id = $1",
+      [queued.communicationId],
+    ))[0]).toEqual({ lifecycle: "QUEUED", delivery_status: "NONE" })
+
+    await db.query("delete from admin_private.telloya_offer_mail_control")
+  })
+
+  it("shutdown disables every enabled recipient and blocks further queueing", async () => {
+    const first = await preparedOffer("r8.shutdown.one@example.test")
+    const second = await preparedOffer("r8.shutdown.two@example.test")
+    await approveTemplate()
+    await db.query(
+      "insert into admin_private.telloya_offer_mail_control(singleton, mail_enabled) values (true, true) on conflict (singleton) do update set mail_enabled = true",
+    )
+    await provisionTestRecipient("r8.shutdown.one@example.test", first.opened.customer_id)
+    await provisionTestRecipient("r8.shutdown.two@example.test", second.opened.customer_id)
+
+    const shutdown = await rpc<Record<string, unknown>>("telloya_offer_mail_test_recipient_command_v1", [
+      token, randomUUID(), "shutdown", {},
+    ])
+    expect(shutdown).toMatchObject({ status: "success" })
+    expect(Number(shutdown.disabledCount)).toBeGreaterThanOrEqual(2)
+    expect(await recipientPermitted(first.opened.customer_id, "r8.shutdown.one@example.test")).toBe(false)
+    expect(await recipientPermitted(second.opened.customer_id, "r8.shutdown.two@example.test")).toBe(false)
+    expect(await rpc<Record<string, unknown>>("telloya_offer_mail_v1", [
+      token, randomUUID(), first.prepared.subscriptionId, first.prepared.version, "https://localhost",
+    ])).toMatchObject({ status: "denied", reason: "test_recipient_not_allowed" })
+    expect(await rpc<Record<string, unknown>>("telloya_offer_mail_v1", [
+      token, randomUUID(), second.prepared.subscriptionId, second.prepared.version, "https://localhost",
     ])).toMatchObject({ status: "denied", reason: "test_recipient_not_allowed" })
 
     await db.query("delete from admin_private.telloya_offer_mail_control")

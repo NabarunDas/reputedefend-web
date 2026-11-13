@@ -140,7 +140,7 @@ describe("the migration chain manifest", () => {
     expect(findMigration(migrationHead.filename)?.safeToReplay).toBe(false)
     expect(findMigration(migrationHead.filename)?.verification).toEqual({
       category: "Telloya offer mail test allowlist",
-      probe: "public.telloya_offer_mail_test_recipient_command_v1",
+      probe: "public.telloya_offer_mail_test_recipient_provision_v1",
     })
     const approveSendSql = readFileSync(new URL("20261112223000_telloya_approve_send_offer_v1.sql", directory), "utf8")
     expect(approveSendSql.length).toBe(45006)
@@ -152,11 +152,14 @@ describe("the migration chain manifest", () => {
     expect(approveSendSql).toContain("draft_estimate")
     expect(approveSendSql).not.toMatch(/v_text := 'TELLOYA_OFFER_COMPOSER/)
     const allowlistSql = readFileSync(new URL("20261113120000_telloya_offer_mail_test_allowlist_v1.sql", directory), "utf8")
-    expect(allowlistSql.length).toBe(17578)
-    expect(createHash("md5").update(allowlistSql).digest("hex")).toBe("65784a64d3494ae62ffab902fb5edf66")
-    expect(createHash("sha256").update(allowlistSql).digest("hex")).toBe("999c82d15794bbf345dd228353e4446fb0333ebc50525b82b328d59300eae497")
+    expect(allowlistSql.length).toBe(37913)
+    expect(createHash("md5").update(allowlistSql).digest("hex")).toBe("c1fd986a1f92efcf9efdc815eea303b2")
+    expect(createHash("sha256").update(allowlistSql).digest("hex")).toBe("d9285979cb6440ece8aa6c140ba631763229a3cdf162a53333bbb1add5eefdb3")
     expect(allowlistSql).toContain("telloya_offer_mail_test_recipients")
     expect(allowlistSql).toContain("test_recipient_not_allowed")
+    expect(allowlistSql).toContain("owner_provision_required")
+    expect(allowlistSql).toContain("telloya_offer_mail_test_recipient_provision_v1")
+    expect(allowlistSql).toContain("telloya_offer_mail_test_owner_grants")
     expect(findMigration("20261112210000_telloya_offer_draft_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261112180000_telloya_sales_context_v1.sql")?.appliedToDev).toBe(true)
     expect(findMigration("20261112120000_telloya_admin_journey_v1.sql")?.appliedToDev).toBe(true)

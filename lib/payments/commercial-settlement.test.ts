@@ -261,6 +261,49 @@ describe("commercial settlement verification", () => {
     })).toMatchObject({ status: "verified", route: "complete", productCode: "COMPLETE" })
   })
 
+  it("verifies a single paid Telloya subscription invoice including optional Guard", () => {
+    for (const { guardQuantity, amountMinor } of [
+      { guardQuantity: 1, amountMinor: 8899 },
+      { guardQuantity: 2, amountMinor: 9898 },
+    ]) {
+      const prepared = preparation({ guardQuantity, amountMinor })
+      expect(assess({
+        preparation: prepared,
+        invoice: invoice({ amountDueMinor: amountMinor, amountPaidMinor: amountMinor }),
+      })).toMatchObject({ status: "verified", route: "telloya", reason: "paid_invoice" })
+      // The additional Guard price must be included in the immutable
+      // Checkout total; paying the £79 voice-only price is insufficient.
+      expect(assess({
+        preparation: prepared,
+        invoice: invoice({ amountDueMinor: 7900, amountPaidMinor: 7900 }),
+      })).toMatchObject({ status: "mismatch", reason: "amount" })
+      expect(assess({
+        preparation: prepared,
+        invoice: invoice({ amountDueMinor: amountMinor, amountPaidMinor: amountMinor, quantity: 2 }),
+      })).toMatchObject({ status: "unsupported", reason: "quantity" })
+      expect(assess({
+        preparation: prepared,
+        invoice: invoice({ amountDueMinor: amountMinor, amountPaidMinor: amountMinor, taxMinor: 1 }),
+      })).toMatchObject({ status: "unsupported", reason: "tax" })
+      expect(assess({
+        preparation: prepared,
+        invoice: invoice({ amountDueMinor: amountMinor, amountPaidMinor: amountMinor, discountMinor: 100 }),
+      })).toMatchObject({ status: "unsupported", reason: "discount" })
+    }
+  })
+
+  it("rejects invalid Guard counts on both Telloya and Complete preparations", () => {
+    for (const guardQuantity of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      for (const productCode of ["TELLOYA", "COMPLETE"] as const) {
+        const prepared = preparation({ productCode, guardQuantity, amountMinor: 8899 })
+        expect(assess({
+          preparation: prepared,
+          invoice: invoice({ amountDueMinor: 8899, amountPaidMinor: 8899 }),
+        })).toMatchObject({ status: "mismatch", reason: "guard_quantity" })
+      }
+    }
+  })
+
   it("does not treat a completed Checkout or an unpaid invoice as payment", () => {
     expect(assess({
       eventType: "checkout.session.completed",

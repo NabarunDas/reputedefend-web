@@ -369,8 +369,13 @@ export function assessCommercialSettlement(input: {
   if (preparation.taxBehaviour !== "NOT_APPLICABLE") return result("unsupported", route, "tax", false, productCode)
   if (preparation.cadence !== "MONTH" || preparation.currency !== "GBP") return result("unsupported", route, "billing_arrangement", false, productCode)
   if (preparation.amountMinor <= 0) return result("mismatch", route, "amount_zero", false, productCode)
-  if (productCode === "TELLOYA" && preparation.guardQuantity !== 0) return result("mismatch", route, "guard_quantity", false, productCode)
-  if (productCode === "COMPLETE" && preparation.guardQuantity < 0) return result("mismatch", route, "guard_quantity", false, productCode)
+  // A standalone Telloya offer may include separately confirmed Guard locations.
+  // Their quantity and the single aggregated recurring price are frozen in the
+  // accepted offer and commercial checkout preparation. The authoritative SQL
+  // settlement rechecks both snapshots and the business's Guard locations.
+  if (!Number.isSafeInteger(preparation.guardQuantity) || preparation.guardQuantity < 0) {
+    return result("mismatch", route, "guard_quantity", false, productCode)
+  }
   if (["CANCELED", "ENDED", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"].includes(preparation.subscriptionState) || preparation.cancelAtPeriodEnd) {
     return result("mismatch", route, "cancellation", false, productCode)
   }

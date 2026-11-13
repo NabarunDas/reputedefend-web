@@ -93,7 +93,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | Post-R8 migration reconcile | DONE | `8f789041f58f3aa81198287dfaabe2fe85ce8749` | Manifest records 123 applied DEV migrations, head `20261112223000`; `pendingMigrations()` empty. Send remains blocked; R8-D gated. |
 | ADMIN-TY-R8-D-00 | DONE as documentation | `8bdcfc4630903e0723e8c8d8a5ca2f9e6ac88d3e` | Commercial reuse audit and owner decision pack only. Pricing/policy already approved are not re-asked. Open: agreement, privacy supplement, tax, hosted catalogue, template, sender/recipient, mail-control, controlled DEV send, Stripe Checkout deps (R9). |
 | ADMIN-TY-R8-D-01 | PLANNED (not authorised) | — | Bounded enablement plan after owner signs R8-D-00 open rows. No seed, send, Stripe, or Production in this docs slice. |
-| ADMIN-TY-R8-D-01A | DONE in source | Tip SHA pending | Legal candidates + unresolved confirmations; source-only mail test allowlist migration; DRAFT catalogue runbook. No hosted apply, send, template approve, or Stripe. |
+| ADMIN-TY-R8-D-01A | DONE in source | `516a58dbf3e55c29068ebe292773d1201a530324` | Legal candidates + unresolved confirmations; source-only mail test allowlist migration; DRAFT catalogue runbook. No hosted apply, send, template approve, or Stripe. |
 
 ## Test matrix
 

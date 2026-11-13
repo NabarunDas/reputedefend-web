@@ -18,7 +18,7 @@
 | Demo Completed → sales-context bootstrap | READY on DEV (composite applied) | `20261112180000` applied once to DEV; fail-closed when RPC unavailable |
 | Shared commercial agreement / portal accept / durable mail / payment evidence | REUSED | No second terms or payment architecture |
 | Monthly Stripe Checkout | BLOCKED | `startTelloyaCheckout` returns `not_created`; not operational |
-| Hosted catalogue / Telloya service agreement / tax / mail enablement | BLOCKED (R8-D) | Official send stays not sendable until owner-approved catalogue, agreement, tax, template, and mail control |
+| Hosted catalogue / Telloya service agreement / tax / mail enablement | BLOCKED (R8-D) | Official send stays not sendable until owner-approved catalogue, agreement, tax, template, and mail control. Decision pack: `ADMIN-TY-R8-D-00-commercial-enablement-decision-pack.md`. Bounded plan: `ADMIN-TY-R8-D-01-enablement-plan.md`. |
 | `20261112120000` | DONE applied once to DEV | Byte-identical; do not replay or apply to Production |
 | `20261112180000` | DONE applied once to DEV | Byte-identical 18,615 chars; do not replay or apply to Production |
 | `20261112210000` | DONE applied once to DEV | Draft storage; 17,672 chars; do not replay or apply to Production |
@@ -90,6 +90,8 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | ADMIN-TY-R8-R1 | DONE in source | `06f0e48ee48d2419b38086cd574c931b87a84797` | Draft-estimate preview without catalogue/`CUSTOMER_ORIGIN`; advisory-lock receipt race fix; composer V1 contract; sandboxed HTML preview UI. |
 | ADMIN-TY-R8-R2 | DONE in source | `da93bfa9b77594ea5d5a797ce947d98ac1ed8787` | Exact Basic/Growth/Pro quotation match; plain text without composer id; approved template body bound to `TELLOYA_OFFER_COMPOSER_CONTRACT_V1`. |
 | Post-R8 migration reconcile | DONE | `8f789041f58f3aa81198287dfaabe2fe85ce8749` | Manifest records 123 applied DEV migrations, head `20261112223000`; `pendingMigrations()` empty. Send remains blocked; R8-D gated. |
+| ADMIN-TY-R8-D-00 | DONE as documentation | Tip SHA pending | Commercial reuse audit and owner decision pack only. Pricing/policy already approved are not re-asked. Open: agreement, privacy supplement, tax, hosted catalogue, template, sender/recipient, mail-control, controlled DEV send, Stripe Checkout deps (R9). |
+| ADMIN-TY-R8-D-01 | PLANNED (not authorised) | — | Bounded enablement plan after owner signs R8-D-00 open rows. No seed, send, Stripe, or Production in this docs slice. |
 
 ## Test matrix
 

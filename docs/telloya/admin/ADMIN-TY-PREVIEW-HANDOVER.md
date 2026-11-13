@@ -95,7 +95,7 @@ These functions write or read the shared ProfileRelaunch records. They stay clos
 | ADMIN-TY-R8-D-01 | PLANNED (not authorised) | — | Bounded enablement plan after owner signs R8-D-00 open rows. No seed, send, Stripe, or Production in this docs slice. |
 | ADMIN-TY-R8-D-01A | DONE in source | `516a58dbf3e55c29068ebe292773d1201a530324` | Legal candidates + unresolved confirmations; source-only mail test allowlist migration; DRAFT catalogue runbook. No hosted apply, send, template approve, or Stripe. |
 | ADMIN-TY-R8-D-01A-R1 | DONE in source | `e70f5a133f679c221712e195d4016c2b46a7b05b` | Owner-grant provision only; required customer_id + verified email; Admin authorize denied; TELLOYA_OFFER dispatch recheck; shutdown/revoke. Allowlist remains source-only. |
-| ADMIN-TY-R8-D-01A-R2 | DONE in source | — | Grants bind `bound_customer_id` + `bound_email_hash`; automatic develop dispatcher leases TELLOYA_OFFER once; last-mile `communication_begin_provider_attempt_v1` recheck; Guided/Guard unchanged. Allowlist remains source-only. |
+| ADMIN-TY-R8-D-01A-R2 | DONE in source |  | Grants bind `bound_customer_id` + `bound_email_hash`; automatic develop dispatcher leases TELLOYA_OFFER once; last-mile `communication_begin_provider_attempt_v1` recheck; Guided/Guard unchanged. Allowlist remains source-only. |
 
 ## Test matrix
 
